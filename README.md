@@ -44,6 +44,23 @@ For multi-device sync, connect a Supabase project in the Setup panel (see Setup 
 
 ---
 
+## Access control (Vercel)
+
+When deployed on Vercel, the app is gated by a **4-digit PIN** checked on the server (not in the browser).
+
+Set these environment variables in **Vercel → Project → Settings → Environment Variables**:
+
+| Variable | Description |
+|----------|-------------|
+| `STOCK_PIN` | 4-digit code, e.g. `4829` |
+| `COOKIE_SECRET` | Long random string (e.g. `openssl rand -hex 32`) |
+
+After a correct PIN, browsers get a signed cookie (remembered ~30 days). Change `STOCK_PIN` anytime in Vercel; redeploy if needed.
+
+Files: `middleware.js` (gate), `api/unlock.js` (PIN check), `lib/cookie.js` (signed cookie).
+
+---
+
 ## Deployment
 
 Upload the entire `measured-stock/` folder to your web server. No build step required.
