@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  MEASURED STOCK SYSTEM — VERSION LOG                                 ║
+  ╠══════════════════════════════════════════════════════════════════════╣
+  ║                                                                      ║
+  ║  v1.0  Initial release                                               ║
+  ║        Single-file HTML app. Panels: Setup, Products, Opening        ║
+  ║        Stock, Distribution, Stock Counts, Transfers, Closing         ║
+  ║        Stock, Summary. LocalStorage + Supabase cloud sync.           ║
+  ║        shadcn/ui design system, Outfit font.                         ║
+  ║                                                                      ║
+  ║  v1.1  Project folder structure                                      ║
+  ║        Split into index.html / assets/css/style.css /                ║
+  ║        assets/js/app.js / assets/img/logo.png.                       ║
+  ║        Measured logo added (transparent PNG conversion).             ║
+  ║        README, ARCHITECTURE, DATA_MODEL, PANELS docs added.         ║
+  ║        Event dates changed from free-text to date pickers.           ║
+  ║                                                                      ║
+  ║  v1.2  Full-width layout, Outfit font, reduced border radius.        ║
+  ║        File renamed to Measured-Stock-System.html.                   ║
+  ║        Supabase migration tool (supabase_migrate.html) added.        ║
+  ║        Sample data auto-populated on first load.                     ║
+  ║                                                                      ║
+  ║  v1.3  Sticky table headers (frozen panes).                          ║
+  ║        Product sort: canonical category order (Beer → Cider →        ║
+  ║        Wine → Sparkling Wine → Spirit & Mixer → RTDs →               ║
+  ║        Canned Cocktails → Hard Seltzer → Shots → Cocktails →         ║
+  ║        Soft Drinks) then A–Z within each category.                   ║
+  ║        Default categories updated to match canonical list.           ║
+  ║                                                                      ║
+  ║  v1.4  Transfer log: pack size shown in product dropdown.            ║
+  ║        Transfer log: editable date and time fields added.            ║
+  ║        Distribution: pack size column added.                         ║
+  ║        Closing Stock: pack size column added.                        ║
+  ║                                                                      ║
+  ║  v1.5  Opening Stock: blank cells by default (no auto-zero).         ║
+  ║        Opening Stock: Category column added with badge.              ║
+  ║        Opening Stock: all products shown (not just qty ordered > 0). ║
+  ║        Opening Stock: unrecognised category/supplier shown blank.    ║
+  ║                                                                      ║
+  ║  v1.6  Stock Counts: live count summary table added.                 ║
+  ║        Summary shows active session totals in cases.                 ║
+  ║        Event progress % input with at-risk (red) highlighting.       ║
+  ║        Suggested order calculation: pro-rated consumption forecast.  ║
+  ║        Count entry: blank cells by default (no auto-zero).           ║
+  ║                                                                      ║
+  ║  v1.7  Stock Counts: Download PDF button for live count summary.     ║
+  ║        PDF matches delivery note style (logo, event name,            ║
+  ║        session name, at-risk rows in red, suggested orders).         ║
+  ║                                                                      ║
+  ║  v1.8  Stock Counts: live summary now refreshes on save.             ║
+  ║        renderCountSummary called directly in saveCurrentCount.       ║
+  ║                                                                      ║
+  ║  v1.9  Category badges: blank if category doesn't exactly match      ║
+  ║        a name in Setup → Product Categories.                         ║
+  ║        Badge colour map updated for new canonical category names.    ║
+  ║                                                                      ║
+  ║  v2.0  Cloud sync overhauled — conflict-safe multi-device sync.      ║
+  ║        Every save() stamps _savedAt timestamp on the event.          ║
+  ║        _localDirty flag prevents remote poll overwriting unsaved     ║
+  ║        local changes. pollForChanges() now pulls active event if     ║
+  ║        remote is newer AND no local changes pending.                 ║
+  ║        loadFromCloud() compares timestamps on startup — keeps        ║
+  ║        whichever version (local or remote) was saved more recently.  ║
+  ║        Sync status shows last-synced time (HH:MM).                  ║
+  ║        Toast notification when another device's changes are pulled.  ║
+  ║                                                                      ║
+  ║  v2.1  Fix: Connect & Sync button broken when cloud was empty or      ║
+  ║        loadFromCloud() returned early before renderAll/startPolling.  ║
+  ║        loadFromCloud() now always calls renderAll() and startPolling  ║
+  ║        regardless of whether remote has data.                         ║
+  ║        connectCloud() simplified — no duplicate cloudUpsertEvent      ║
+  ║        call; loadFromCloud() now handles push+pull in one step.       ║
+  ║        connectCloud() now clears credentials on failed connection.    ║
+  ║                                                                      ║
+  ║  v2.2  Cloud sync fully rewritten from scratch.                       ║
+  ║        Single supabaseFetch() handles all HTTP — one place for       ║
+  ║        errors and auth headers.                                       ║
+  ║        cloudPush() / cloudPull() replace scattered fetch calls.      ║
+  ║        syncOnConnect() replaces loadFromCloud() — handles push+pull  ║
+  ║        in correct order with timestamp comparison.                    ║
+  ║        pollForChanges() skips pull while _localDirty to prevent      ║
+  ║        race conditions. stopPolling() added. Dead code removed.       ║
+  ║        connectCloud() shows exact error messages from Supabase.      ║
+  ║                                                                      ║
+  ║  v2.3  Fix: JavaScript syntax error (stray brace in catBadge) caused  ║
+  ║        entire app.js to fail silently — no buttons worked at all.    ║
+  ║                                                                      ║
+  ║  v2.4  Fix: saving opening stock now immediately refreshes the stock  ║
+  ║        count summary and count table (opening figures feed the       ║
+  ║        count panel's order suggestions).                             ║
+  ║        renderAll() now calls every panel renderer — previously only  ║
+  ║        renderProducts() was called, meaning cloud sync and event     ║
+  ║        switching left all other panels stale.                        ║
+  ║                                                                      ║
+  ║  v2.5  All tabs: products A-Z, inline category badge, no header rows. ║
+  ║        Arrival day removed from Products tab and modal.              ║
+  ║        Event dates removed from Setup tab.                           ║
+  ║        Bar Names renamed to Storage Locations.                       ║
+  ║        Opening Stock: new column order, invoice and variance removed. ║
+  ║        Invoice Qty moved to Closing Stock as Financial Reconciliation.║
+  ║        Stock Counts: sessions and summary are collapsible.           ║
+  ║        Stock Counts: sessions can be marked as Closing Count.        ║
+  ║                                                                      ║
+  ║  v2.6  Setup lists (Storage Locations, Suppliers, Categories,        ║
+  ║        Recipients) now auto-sort alphabetically/numerically on add   ║
+  ║        or rename. Existing data sorted on load.                      ║
+  ║        Products sort replaced: pure A-Z, CAT_ORDER removed.         ║
+  ║        Supplier required: saving a product without selecting a       ║
+  ║        supplier is now blocked with a toast error.                   ║
+  ║        Order Price field now evaluates math expressions on blur      ║
+  ║        (e.g. typing "6*12" becomes "72" when you tab away).         ║
+  ║                                                                      ║
+  ╚══════════════════════════════════════════════════════════════════════╝
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Measured Stock System v4.0</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <img src="assets/img/logo.png" alt="Measured">
+      </div>
+    </div>
+
+    <div class="sidebar-event">
+      <span id="syncStatus" class="sidebar-sync">○ Local</span>
+      <select id="eventSelect" onchange="switchEvent(this.value)" title="Switch event"></select>
+      <button class="sidebar-new-btn" onclick="newEvent()">+ New Event</button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" onclick="showPanel('setup')" data-panel="setup">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        Setup
+      </button>
+
+      <!-- Stock accordion -->
+      <button class="nav-item nav-mode-header" id="modeHeader-stock" onclick="toggleModeGroup('stock')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14"/><path d="M5 8a2 2 0 01-2-2V4"/><path d="M19 8a2 2 0 002-2V4"/><path d="M3 4h18"/><path d="M5 8v12a2 2 0 002 2h10a2 2 0 002-2V8"/><path d="M10 12h4"/></svg>
+        Stock
+        <svg class="nav-icon" id="modeChevron-stock" style="margin-left:auto;flex-shrink:0;transition:transform 0.2s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div id="modeGroup-stock" class="nav-mode-group">
+      <button class="nav-item nav-sub-item" data-panel="products" data-mode="stock" onclick="switchModeAndPanel('stock','products')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+        Products
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="opening" data-mode="stock" onclick="switchModeAndPanel('stock','opening')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Opening Stock
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="distribution" data-mode="stock" onclick="switchModeAndPanel('stock','distribution')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><path d="M11 18H8a2 2 0 01-2-2V9"/></svg>
+        Distribution
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="counts" data-mode="stock" onclick="switchModeAndPanel('stock','counts')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Stock Counts
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="topups" data-mode="stock" onclick="switchModeAndPanel('stock','topups')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Top-Ups
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="transfers" data-mode="stock" onclick="switchModeAndPanel('stock','transfers')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+        Transfers
+      </button>
+      <button class="nav-sub-item" data-panel="wastage" data-mode="stock" onclick="switchModeAndPanel('stock','wastage')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+        Wastage
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="closing" data-mode="stock" onclick="switchModeAndPanel('stock','closing')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+        Closing Stock
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="summary" data-mode="stock" onclick="switchModeAndPanel('stock','summary')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Summary
+      </button>
+      </div>
+
+      <!-- Kit accordion -->
+      <button class="nav-item nav-mode-header" id="modeHeader-kit" onclick="toggleModeGroup('kit')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+        Kit
+        <svg class="nav-icon" id="modeChevron-kit" style="margin-left:auto;flex-shrink:0;transition:transform 0.2s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div id="modeGroup-kit" class="nav-mode-group" style="display:none">
+      <button class="nav-item nav-sub-item" data-panel="products" data-mode="kit" onclick="switchModeAndPanel('kit','products')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+        Products
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="opening" data-mode="kit" onclick="switchModeAndPanel('kit','opening')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Opening Stock
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="distribution" data-mode="kit" onclick="switchModeAndPanel('kit','distribution')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><path d="M11 18H8a2 2 0 01-2-2V9"/></svg>
+        Distribution
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="counts" data-mode="kit" onclick="switchModeAndPanel('kit','counts')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Stock Counts
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="topups" data-mode="kit" onclick="switchModeAndPanel('kit','topups')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Top-Ups
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="transfers" data-mode="kit" onclick="switchModeAndPanel('kit','transfers')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+        Transfers
+      </button>
+      <button class="nav-sub-item" data-panel="wastage" data-mode="kit" onclick="switchModeAndPanel('kit','wastage')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+        Wastage
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="closing" data-mode="kit" onclick="switchModeAndPanel('kit','closing')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+        Closing Stock
+      </button>
+      <button class="nav-item nav-sub-item" data-panel="summary" data-mode="kit" onclick="switchModeAndPanel('kit','summary')">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Summary
+      </button>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main-content">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="mobile-menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <span class="topbar-title" id="currentPanelTitle">Setup</span>
+      </div>
+      <div class="topbar-right">
+        <span class="show-name-display" id="showNameDisplay">—</span>
+      </div>
+    </header>
+
+    <main>
+
+      <!-- ========== SETUP ========== -->
+      <div id="panel-setup" class="panel active">
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label">Products</div>
+            <div class="stat-value" id="stat-products">0</div>
+            <div class="stat-sub">SKUs registered</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Bars</div>
+            <div class="stat-value" id="stat-bars">0</div>
+            <div class="stat-sub">Active bars</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Suppliers</div>
+            <div class="stat-value" id="stat-suppliers">0</div>
+            <div class="stat-sub">Listed</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Count Sessions</div>
+            <div class="stat-value" id="stat-counts">0</div>
+            <div class="stat-sub">Stock counts done</div>
+          </div>
+        </div>
+
+        <div class="setup-grid">
+          <!-- Shared fields -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:16px">Current Event</div>
+            <div class="form-row">
+              <label>Event Name</label>
+              <input type="text" id="showName" placeholder="e.g. Highlights 2025" oninput="updateShowName()">
+            </div>
+            <div style="margin-top:8px">
+              <button class="btn btn-danger btn-sm" onclick="deleteCurrentEvent()">Delete this Event</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Storage Locations</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input type="text" id="newBarInput" placeholder="e.g. Fridge 1 / Dry Store" style="flex:1">
+              <button class="btn btn-primary btn-sm" onclick="addBar()">Add</button>
+            </div>
+            <div class="pill-list" id="barPills"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Internal Transfer Recipients</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input type="text" id="newRecipientInput" placeholder="e.g. Production" style="flex:1">
+              <button class="btn btn-primary btn-sm" onclick="addRecipient()">Add</button>
+            </div>
+            <div class="pill-list" id="recipientPills"></div>
+          </div>
+
+          <!-- Stock-specific section -->
+          <div class="card" style="border-top:2px solid #1d4ed8">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <span style="font-size:15px">📦</span>
+              <div class="card-title">Stock — Suppliers</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input type="text" id="newSupplierInput" placeholder="e.g. Jubel" style="flex:1">
+              <input type="text" id="newSupplierSOR" placeholder="SOR%" style="width:64px">
+              <button class="btn btn-primary btn-sm" onclick="addSupplier()">Add</button>
+            </div>
+            <div class="pill-list" id="supplierPills"></div>
+          </div>
+
+          <div class="card" style="border-top:2px solid #1d4ed8">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <span style="font-size:15px">📦</span>
+              <div class="card-title">Stock — Product Categories</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input type="text" id="newCategoryInput" placeholder="e.g. Low & No Alcohol" style="flex:1">
+              <button class="btn btn-primary btn-sm" onclick="addCategory()">Add</button>
+            </div>
+            <div class="pill-list" id="categoryPills"></div>
+          </div>
+
+          <!-- Kit-specific section -->
+          <div class="card" style="border-top:2px solid #92400e">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <span style="font-size:15px">🧰</span>
+              <div class="card-title">Kit — Suppliers</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input type="text" id="newKitSupplierInput" placeholder="e.g. Stage Co" style="flex:1">
+              <button class="btn btn-primary btn-sm" onclick="addKitSupplier()">Add</button>
+            </div>
+            <div class="pill-list" id="kitSupplierPills"></div>
+          </div>
+
+          <div class="card" style="border-top:2px solid #92400e">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <span style="font-size:15px">🧰</span>
+              <div class="card-title">Kit — Product Categories</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input type="text" id="newKitCategoryInput" placeholder="e.g. Staging" style="flex:1">
+              <button class="btn btn-primary btn-sm" onclick="addKitCategory()">Add</button>
+            </div>
+            <div class="pill-list" id="kitCategoryPills"></div>
+          </div>
+
+          <!-- Data & Backup -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Data & Backup</div>
+            <div class="btn-row" style="margin-top:0">
+              <button class="btn btn-outline btn-sm" onclick="loadSampleData()">Load Sample Data</button>
+              <button class="btn btn-outline btn-sm" onclick="exportData()">Export JSON</button>
+              <label class="btn btn-outline btn-sm" style="cursor:pointer">
+                Import JSON
+                <input type="file" accept=".json" onchange="importData(event)" style="display:none">
+              </label>
+            </div>
+          </div>
+
+          <!-- Cloud Sync -->
+          <div class="card" id="cloudCard" style="grid-column:1/-1">
+            <div class="card-title" style="margin-bottom:6px">☁ Cloud Sync (Multi-Device)</div>
+            <p style="font-size:12px;color:var(--muted-foreground);margin-bottom:16px;line-height:1.6">
+              Connect to <strong>Supabase</strong> for real-time sync across all devices.
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="form-row">
+                <label>Supabase Project URL</label>
+                <input type="text" id="cloudUrl" placeholder="https://xxxxxxxxxxxx.supabase.co" oninput="previewCloudConfig()">
+              </div>
+              <div class="form-row">
+                <label>Supabase Anon Key</label>
+                <input type="text" id="cloudKey" placeholder="eyJhbGciOi..." oninput="previewCloudConfig()">
+              </div>
+            </div>
+            <div class="btn-row" style="margin-top:8px">
+              <button class="btn btn-primary btn-sm" onclick="connectCloud()">Connect & Sync</button>
+              <button class="btn btn-outline btn-sm" onclick="testCloud()">Test Connection</button>
+              <button class="btn btn-danger btn-sm" onclick="disconnectCloud()" id="disconnectBtn" style="display:none">Disconnect</button>
+            </div>
+            <div id="cloudStatusMsg" style="font-size:12px;margin-top:10px;color:var(--muted-foreground)"></div>
+            <details style="margin-top:16px">
+              <summary>Setup Instructions (5 minutes)</summary>
+              <div style="font-size:12px;color:var(--muted-foreground);margin-top:10px;line-height:1.8;background:var(--muted);padding:14px;border-radius:var(--radius);border:1px solid var(--border)">
+                <strong>1.</strong> Go to <a href="https://supabase.com" target="_blank" style="color:var(--foreground)">supabase.com</a> → New Project<br>
+                <strong>2.</strong> Go to <strong>SQL Editor</strong> and run:<br>
+                <pre id="sqlSnippet" style="background:var(--foreground);color:#d4d4d8;padding:10px;border-radius:var(--radius);font-size:11px;margin:8px 0;font-family:monospace;overflow-x:auto">create table if not exists stock_events (
+  id text primary key,
+  name text,
+  data jsonb,
+  updated_at timestamptz default now()
+);
+alter table stock_events enable row level security;
+create policy "anon read write" on stock_events
+  for all using (true) with check (true);</pre>
+                <button class="btn btn-outline btn-sm" onclick="copySQL()">Copy SQL</button><br><br>
+                <strong>3.</strong> Project Settings → API → copy URL and anon key above<br>
+                <strong>4.</strong> Click <strong>Connect & Sync</strong>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== PRODUCTS ========== -->
+      <div id="panel-products" class="panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="productSearch" placeholder="Search products…" style="width:220px" oninput="renderProducts()">
+            <select id="productCatFilter" onchange="renderProducts()" style="width:130px">
+              <option value="">All Categories</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" onclick="downloadImportTemplate()">⬇ Template</button>
+            <label class="btn btn-outline btn-sm" style="cursor:pointer">
+              📥 Import Excel
+              <input type="file" accept=".xlsx,.csv" onchange="importProductsFile(event)" style="display:none" id="xlsxImportInput">
+            </label>
+            <button class="btn btn-primary btn-sm" onclick="openAddProduct()">+ Add Product</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-scroll"><table>
+            <thead>
+              <tr>
+                <th>Product</th><th>Category</th><th>Supplier</th><th>SKU Code</th>
+                <th>Pack Size</th><th>Units/SKU</th><th>Qty Ordered</th><th>Order Price (£)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="productTableBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- ========== OPENING STOCK ========== -->
+      <div id="panel-opening" class="panel">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">Opening Stock — Delivery & Count</div>
+          <p style="font-size:13px;color:var(--muted-foreground);margin-top:2px">Record what was actually delivered vs ordered. Variance = Delivered − Ordered.</p>
+        </div>
+        <div class="table-wrap" style="margin-bottom:0">
+          <div class="table-scroll"><table>
+            <thead>
+              <tr>
+                <th>Product</th><th>Category</th><th>Pack Size</th><th>Already in Stock</th><th>Qty Ordered (SKUs)</th><th>Qty Delivered (SKUs)</th><th>Damaged</th><th>Opening Stock</th>
+              </tr>
+            </thead>
+            <tbody id="openingTableBody"></tbody>
+          </table></div>
+        </div>
+        <div class="sticky-save-bar">
+          <p>Saves automatically as you type.</p>
+          <button class="btn btn-primary btn-sm" onclick="saveOpening()">Save Opening Stock</button>
+        </div>
+      </div>
+
+      <!-- ========== DISTRIBUTION ========== -->
+      <div id="panel-distribution" class="panel">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">Distribution — Allocate Stock to Bars</div>
+          <p style="font-size:13px;color:var(--muted-foreground);margin-top:2px">Enter how many units (cases/SKUs) to allocate to each bar. Left to Allocate updates live.</p>
+        </div>
+        <div class="table-wrap">
+          <div class="table-scroll"><table id="distTable">
+            <thead id="distHead"></thead>
+            <tbody id="distBody"></tbody>
+          </table></div>
+        </div>
+        <div class="sticky-save-bar">
+          <p>Allocations save automatically as you type.</p>
+          <button class="btn btn-primary btn-sm" onclick="saveDistribution()">Save Distribution</button>
+        </div>
+      </div>
+
+      <!-- ========== STOCK COUNTS ========== -->
+      <div id="panel-counts" class="panel">
+
+        <!-- Top bar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div style="font-size:15px;font-weight:600">Stock Counts</div>
+          <button class="btn btn-primary btn-sm" onclick="openNewCountSession()">+ New Count Session</button>
+        </div>
+
+        <!-- Collapsible count sessions -->
+        <div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+          <button onclick="toggleSection('countSessionsBody','countSessionsChevron')"
+            style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left">
+            <span style="font-size:13px;font-weight:600">Count Sessions</span>
+            <span id="countSessionsChevron" style="font-size:16px;transition:transform 0.2s">▾</span>
+          </button>
+          <div id="countSessionsBody" style="padding:0 8px 12px">
+            <div id="countSessionList"></div>
+          </div>
+        </div>
+
+        <!-- Low Stock Flag Checker -->
+        <div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+          <button onclick="toggleSection('lowStockBody','lowStockChevron')"
+            style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left;flex-wrap:wrap;gap:8px">
+            <span style="font-size:13px;font-weight:600">Low Stock Flag Checker</span>
+            <div style="display:flex;align-items:center;gap:10px" onclick="event.stopPropagation()">
+              <label style="margin:0;font-size:12px;color:var(--muted-foreground);white-space:nowrap">Event progress</label>
+              <div style="position:relative;display:flex;align-items:center">
+                <input type="number" id="eventProgressPct" min="0" max="100" placeholder="0"
+                  style="width:76px;padding-right:24px;text-align:right"
+                  oninput="renderCountSummary()">
+                <span style="position:absolute;right:10px;font-size:13px;color:var(--muted-foreground);pointer-events:none">%</span>
+              </div>
+              <button class="btn btn-outline btn-sm" onclick="downloadCountSummaryPDF()">&#8659; PDF</button>
+              <span id="lowStockChevron" style="font-size:16px;transition:transform 0.2s">&#9662;</span>
+            </div>
+          </button>
+          <div id="lowStockBody" style="padding-bottom:0">
+            <div style="padding:8px 20px 12px;font-size:12px;color:var(--muted-foreground)" id="lowStockSessionNote">
+              Tick count sessions above to include them in this checker.
+            </div>
+            <div class="table-wrap" style="border:none;border-top:1px solid var(--border);border-radius:0">
+              <div class="table-scroll"><table>
+                <thead>
+                  <tr>
+                    <th>Product</th><th>Category</th><th>Pack Size</th>
+                    <th>Opening Stock (Cases)</th><th>Counted (Cases)</th><th>Suggested Order</th>
+                  </tr>
+                </thead>
+                <tbody id="countSummaryBody2"></tbody>
+              </table></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <!-- ========== TOP-UPS ========== -->
+      <div id="panel-topups" class="panel">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:15px;font-weight:600">Top-Ups</div>
+            <div style="font-size:12px;color:var(--muted-foreground);margin-top:2px">Record mid-event stock deliveries. These are added to your running totals automatically.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openNewTopupSession()">+ New Top-Up</button>
+        </div>
+
+        <!-- Session list -->
+        <div id="topupSessionList" style="margin-bottom:20px"></div>
+
+        <!-- Active session entry panel -->
+        <div id="activeTopupPanel" style="display:none">
+          <div class="card" style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+              <div>
+                <div style="font-size:14px;font-weight:600" id="activeTopupTitle">Top-Up Session</div>
+                <div style="font-size:12px;color:var(--muted-foreground);margin-top:2px" id="activeTopupMeta"></div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-outline btn-sm" onclick="closeTopupSession()">✕ Close</button>
+                <button class="btn btn-primary btn-sm" onclick="saveTopup()">💾 Save</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <div class="table-scroll"><table>
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Category</th>
+                  <th>Pack Size</th>
+                  <th>Supplier</th>
+                  <th>Qty Delivered (SKUs)</th>
+                  <th>Damaged</th>
+                  <th>Invoice Price (£/SKU)</th>
+                  <th>Running Total (SKUs)</th>
+                </tr>
+              </thead>
+              <tbody id="topupTableBody"></tbody>
+            </table></div>
+          </div>
+          <div class="sticky-save-bar">
+            <p>Quantities and prices save automatically as you type.</p>
+            <button class="btn btn-primary btn-sm" onclick="saveTopup()">Save Top-Up</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== TRANSFERS ========== -->
+      <div id="panel-transfers" class="panel">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:14px">Log a Transfer</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr 1fr;gap:12px;margin-bottom:14px;align-items:end">
+            <div>
+              <label>Recipient</label>
+              <select id="tf-recipient"><option value="">— Select recipient —</option></select>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <div class="transfer-unit-toggle">
+                <button id="tf-unit-cases" class="active" onclick="setTransferUnit('cases')">Cases</button>
+                <button id="tf-unit-units" onclick="setTransferUnit('units')">Units</button>
+              </div>
+            </div>
+            <div>
+              <label>Date</label>
+              <input type="date" id="tf-date">
+            </div>
+            <div>
+              <label>Time</label>
+              <input type="time" id="tf-time">
+            </div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px">
+            <div class="table-scroll"><table style="font-size:13px">
+              <thead>
+                <tr><th style="width:50%">Product</th><th>Quantity</th><th style="width:36px"></th></tr>
+              </thead>
+              <tbody id="tf-lines-body"></tbody>
+            </table></div>
+            <div style="padding:8px 12px;border-top:1px solid var(--border)">
+              <button class="btn btn-outline btn-sm" onclick="addTransferLine()">+ Add Product</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-outline btn-sm" onclick="clearTransferForm()">Clear</button>
+            <button class="btn btn-secondary btn-sm" onclick="logTransfer(false)">Log Transfer</button>
+            <button class="btn btn-primary btn-sm" onclick="logTransfer(true)">Log & Download Delivery Note</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--card)">
+            <span style="font-size:12px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.5px">Transfer Log</span>
+            <span id="transferCount" style="font-size:12px;color:var(--muted-foreground)"></span>
+          </div>
+          <div id="transferLogBody">
+            <div class="empty-state" id="transferEmpty">
+              <div class="icon">↔️</div>
+              <p>No transfers logged yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== WASTAGE ========== -->
+      <div id="panel-wastage" class="panel">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:14px">Log Wastage</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr 1fr;gap:12px;margin-bottom:14px;align-items:end">
+            <div>
+              <label>Reason / Note</label>
+              <input type="text" id="ws-reason" placeholder="e.g. Damaged, Spilled, Expired">
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <div class="transfer-unit-toggle">
+                <button id="ws-unit-cases" class="active" onclick="setWastageUnit('cases')">Cases</button>
+                <button id="ws-unit-units" onclick="setWastageUnit('units')">Units</button>
+              </div>
+            </div>
+            <div>
+              <label>Date</label>
+              <input type="date" id="ws-date">
+            </div>
+            <div>
+              <label>Time</label>
+              <input type="time" id="ws-time">
+            </div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:10px">
+            <table style="font-size:13px">
+              <thead>
+                <tr><th style="width:55%">Product</th><th>Quantity</th><th style="width:36px"></th></tr>
+              </thead>
+              <tbody id="ws-lines-body"></tbody>
+            </table>
+            <div style="padding:8px 12px;border-top:1px solid var(--border)">
+              <button class="btn btn-outline btn-sm" onclick="addWastageLine()">+ Add Product</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-outline btn-sm" onclick="clearWastageForm()">Clear</button>
+            <button class="btn btn-primary btn-sm" onclick="logWastage()">Log Wastage</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--card)">
+            <span style="font-size:12px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.5px">Wastage Log</span>
+            <span id="wastageCount" style="font-size:12px;color:var(--muted-foreground)"></span>
+          </div>
+          <div id="wastageLogBody">
+            <div class="empty-state"><div class="icon">🗑️</div><p>No wastage logged yet.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== CLOSING STOCK ========== -->
+      <div id="panel-closing" class="panel">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">Closing Stock &amp; Financial Reconciliation</div>
+          <p style="font-size:13px;color:var(--muted-foreground);margin-top:2px">Full close count, financial reconciliation, and supplier returns.</p>
+        </div>
+        <div class="table-wrap">
+          <div class="table-scroll"><table>
+            <thead>
+              <tr>
+                <th>Product</th><th>Pack Size</th><th>Supplier</th><th>SOR %</th><th>Invoice Qty</th>
+                <th>Full Close Count</th><th>Max Returnable</th><th>Return Amount</th><th>Carried Over</th>
+              </tr>
+            </thead>
+            <tbody id="closingTableBody"></tbody>
+          </table></div>
+        </div>
+        <div class="sticky-save-bar">
+          <p>Counts save automatically as you type.</p>
+          <button class="btn btn-primary btn-sm" onclick="saveClosing()">Save Closing Stock</button>
+        </div>
+      </div>
+
+      <!-- ========== SUMMARY ========== -->
+      <div id="panel-summary" class="panel">
+        <div class="stats-row" id="summaryStats"></div>
+        <div class="summary-section">
+          <h3>Stock Movement by Product</h3>
+          <div class="table-wrap">
+            <div class="table-scroll"><table>
+              <thead>
+                <tr>
+                  <th>Product</th><th>Category</th><th>Opening</th><th>Distributed</th>
+                  <th>Transfers Out</th><th>Closing Count</th><th>Consumed</th><th>Return Amount</th>
+                </tr>
+              </thead>
+              <tbody id="summaryTableBody"></tbody>
+            </table></div>
+          </div>
+        </div>
+        <div class="summary-section">
+          <h3>Returns by Supplier</h3>
+          <div class="table-wrap">
+            <div class="table-scroll"><table>
+              <thead>
+                <tr>
+                  <th>Supplier</th><th>Total Ordered (SKUs)</th><th>Consumed (SKUs)</th>
+                  <th>Consumed Stock Cost (£)</th><th>Max Returns (SKUs)</th>
+                </tr>
+              </thead>
+              <tbody id="supplierSummaryBody"></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ========== MODALS ========== -->
+
+<!-- Product Modal -->
+<div class="modal-overlay" id="productModal">
+  <div class="modal">
+    <div class="modal-title" id="productModalTitle">Add Product</div>
+    <div class="form-row">
+      <label>Product Name</label>
+      <input type="text" id="pm-name" placeholder="e.g. Jubel Peach - 4.0%">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-row"><label>Category</label><select id="pm-cat"></select></div>
+      <div class="form-row"><label>Supplier</label><select id="pm-supplier"></select></div>
+      <div class="form-row"><label>SKU Code</label><input type="text" id="pm-sku" placeholder="Optional"></div>
+      <div class="form-row"><label>Pack Size / Format</label><input type="text" id="pm-size" placeholder="e.g. 24 x 440ml Cans"></div>
+      <div class="form-row"><label>Units per SKU</label><input type="number" id="pm-units" placeholder="24" min="1"></div>
+      <div class="form-row"><label>Qty Ordered (SKUs)</label><input type="number" id="pm-qty" placeholder="0" min="0"></div>
+      <div class="form-row"><label>Order Price (£ per SKU)</label><input type="text" id="pm-price" placeholder="e.g. 6*12 or 72.00" onblur="evalPriceInput()"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeProductModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProduct()">Save Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- Top-Up Session Modal -->
+<div class="modal-overlay" id="topupModal">
+  <div class="modal">
+    <div class="modal-title">New Top-Up Session</div>
+    <div class="form-row">
+      <label>Session Name</label>
+      <input type="text" id="tum-name" placeholder="e.g. Saturday Morning Top-Up">
+    </div>
+    <div class="form-row">
+      <label>Default Supplier <span style="font-weight:400;color:var(--muted-foreground)">(can be overridden per product)</span></label>
+      <select id="tum-supplier"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeTopupModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="startTopupSession()">Start Top-Up</button>
+    </div>
+  </div>
+</div>
+
+<!-- Count Session Modal -->
+<div class="modal-overlay" id="countModal">
+  <div class="modal">
+    <div class="modal-title">New Count Session</div>
+    <div class="form-row">
+      <label>Session Name / Date</label>
+      <input type="text" id="cm-name" placeholder="e.g. Friday Evening Count">
+    </div>
+    <div class="form-row">
+      <label>Bar to Count (or "All Bars")</label>
+      <select id="cm-bar"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeCountModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="startCountSession()">Start Count</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal" style="width:720px">
+    <div class="modal-title">📥 Import Products from Excel</div>
+    <div id="importStatus" style="font-size:13px;color:var(--muted-foreground);margin-bottom:14px"></div>
+    <div id="importPreviewWrap" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:13px;color:var(--muted-foreground)">
+          Preview — <span id="importCount" style="font-weight:600"></span> products found.
+          <span id="importDupeNote"></span>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;margin:0;cursor:pointer;font-weight:500">
+          <input type="checkbox" id="importReplace" style="width:auto">
+          Replace all existing products
+        </label>
+      </div>
+      <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius)">
+        <div class="table-scroll"><table style="font-size:12px">
+          <thead>
+            <tr>
+              <th>Product Name</th><th>Category</th><th>Supplier</th>
+              <th>Pack Size</th><th>Units/SKU</th><th>Qty Ordered</th><th>Price (£)</th><th>Arrival</th>
+            </tr>
+          </thead>
+          <tbody id="importPreviewBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeImportModal()">Cancel</button>
+      <button class="btn btn-primary" id="importConfirmBtn" onclick="confirmImport()" style="display:none">Import Products</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ========== SCRIPTS ========== -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="assets/js/app.js"></script>
+
+</body>
+</html>
