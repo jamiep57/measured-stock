@@ -118,6 +118,39 @@ Each panel is a `<div id="panel-{name}" class="panel">` in `index.html`. Only th
 
 ---
 
+## COGS (`#panel-cogs`)
+
+**Purpose:** Calculate Cost of Goods Sold from the till summary and reconcile it against physical stock movement.
+
+**How it works:**
+- Upload the Square `item-sales-summary` CSV/TSV (or `.xlsx`) using the **Import Till CSV** button. The file is parsed via SheetJS, normalised, and stored in `state.tillSales`.
+- Each till line is matched to a global `Recipe` (by `tillItem` + `tillVariation`, case-insensitive). The recipe lists the products consumed per single sale (e.g. 1 double vodka = `2/24` bottle of vodka + 1 can of Red Bull).
+- COGS per ingredient = `itemsSold × recipe.qty × (orderPrice / unitsPerSku)`.
+- The panel renders:
+  - **Stat cards** — Net Revenue, Total COGS, Gross Margin (£ + %), Unmapped Sales %.
+  - **Unmapped Till Items** — till lines with no recipe yet. A “+ Create Recipe” button opens the Recipes drawer pre-filled with the item name.
+  - **COGS by Product** — units used (till), £/unit, total COGS, physical consumed, and variance vs physical consumption. Variance is green (≤ 5%), amber (5–15%), red (> 15%).
+  - **COGS by Till Item** — items sold, net sales, COGS, gross margin (£ + %).
+  - **COGS by Supplier** — total units and COGS per supplier.
+
+**Key functions:** `importTillFile()`, `clearTillSales()`, `computeCogs()`, `renderCogs()`.
+
+---
+
+## Recipes (`#panel-recipes`)
+
+**Purpose:** Global library mapping till item names to the products and quantities they consume. Recipes are shared across every event and synced to Supabase as a reserved row in `stock_events` (`id = "__recipes__"`) — no extra schema or SQL is required.
+
+**How it works:**
+- One row per till item + variation pair.
+- Add or edit a recipe through a slide-in drawer (same component as the Product drawer).
+- Ingredient rows: pick a product from the current event, enter the quantity in **product units**. Quick-fill buttons make the common fractions one click: `1/24` (single shot), `2/24` (double shot), `1` (whole can/bottle). Math expressions are accepted in the qty field (e.g. `3/24`).
+- **Auto-create 1:1 from Till** scans the imported till data and creates a 1:1 recipe for every till item whose name matches a product exactly (case-insensitive).
+
+**Key functions:** `renderRecipes()`, `openAddRecipe()`, `openEditRecipe()`, `saveRecipe()`, `deleteRecipe()`, `autoCreateRecipesFromTill()`, `cloudPushRecipes()`.
+
+---
+
 ## Summary (`#panel-summary`)
 
 **Purpose:** End-of-event overview — consumed stock, costs, and returns by supplier.
@@ -150,5 +183,6 @@ Each panel is a `<div id="panel-{name}" class="panel">` in `index.html`. Only th
 | `#productModal` | `openAddProduct()` / `editProduct()` | Add or edit a product |
 | `#countModal` | `openNewCountSession()` | Create a new stock count session |
 | `#importModal` | Excel file selected in Products panel | Preview and confirm Excel import |
+| `#recipeModal` | `openAddRecipe()` / `openEditRecipe()` | Add or edit a recipe (drawer) |
 
 All modals use `.modal-overlay` + `.modal` classes. Show by adding class `show` to the overlay. Hide by removing `show`.

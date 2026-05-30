@@ -75,9 +75,16 @@ function getEventPairs() {
   return pairs;
 }
 
-// Top-level storage: { currentEventId, events: {id: eventObj} }
-let appData = { currentEventId: null, events: {} };
+// Top-level storage: { currentEventId, events: {id: eventObj}, recipes: [] }
+// `recipes` is a global library shared across every event, synced to Supabase as a
+// reserved row in the existing stock_events table (id = '__recipes__'), so the user
+// never needs to run any SQL.
+let appData = { currentEventId: null, events: {}, recipes: [] };
 let state = blankEvent('My First Event'); // active event — alias into appData.events[currentId]
+
+// Reserved row id used to store the global recipe library inside stock_events
+const RECIPES_ROW_ID = '__recipes__';
+function isReservedRow(id) { return typeof id === 'string' && id.startsWith('__'); }
 
 let editingProductId = null;
 let activeCountSessionId = null;
@@ -125,7 +132,7 @@ function switchModeAndPanel(mode, panel) {
     const targetEv = mode === 'kit' ? kitEv : stockEv;
     if (!targetEv) {
       if (mode === 'kit') {
-        toast('No Kit linked to this event — use Setup to add Kit', 'error');
+        toast('No Kit linked to this event — use Settings to add Kit', 'error');
       }
       return;
     }
@@ -146,7 +153,7 @@ function switchMode(mode) {
   const kitEv   = getKitEvent();
   const targetEv = mode === 'kit' ? kitEv : stockEv;
   if (!targetEv) {
-    if (mode === 'kit') toast('No Kit linked — use Setup to add Kit', 'error');
+    if (mode === 'kit') toast('No Kit linked — use Settings to add Kit', 'error');
     return;
   }
   if (targetEv.id === appData.currentEventId) return;
@@ -350,6 +357,7 @@ async function pollForChanges() {
   if (!rows) return;
 
   let anyChanged = false;
+  let recipesChanged = false;
 
   rows.forEach(row => {
     const remote = row.data;
@@ -360,6 +368,20 @@ async function pollForChanges() {
     if (serverTs === knownTs) return; // nothing changed for this event
 
     lastKnownRemoteTs[remote.id] = serverTs;
+
+    // Reserved rows (e.g. global recipes) — not real events
+    if (isReservedRow(remote.id)) {
+      if (remote.id === RECIPES_ROW_ID) {
+        const remoteSavedAt = remote._savedAt || 0;
+        const localSavedAt  = (appData._recipesSavedAt || 0);
+        if (remoteSavedAt >= localSavedAt) {
+          appData.recipes = Array.isArray(remote.recipes) ? remote.recipes : [];
+          appData._recipesSavedAt = remoteSavedAt;
+          recipesChanged = true;
+        }
+      }
+      return;
+    }
 
     if (remote.id === appData.currentEventId) {
       // Active event changed remotely — only pull if their _savedAt is newer
@@ -385,6 +407,7 @@ async function pollForChanges() {
   rows.forEach(row => {
     const remote = row.data;
     if (!remote || !remote.id) return;
+    if (isReservedRow(remote.id)) return;
     if (!appData.events[remote.id]) {
       mergeDefaults(remote);
       appData.events[remote.id] = remote;
@@ -393,13 +416,20 @@ async function pollForChanges() {
   });
 
   // Event deleted on remote (skip active event)
-  const remoteIds = new Set(rows.map(r => r.data && r.data.id).filter(Boolean));
+  const remoteIds = new Set(rows.map(r => r.data && r.data.id).filter(id => id && !isReservedRow(id)));
   Object.keys(appData.events).forEach(id => {
     if (!remoteIds.has(id) && id !== appData.currentEventId) {
       delete appData.events[id];
       anyChanged = true;
     }
   });
+
+  if (recipesChanged) {
+    localStorage.setItem('measured_stock_app', JSON.stringify(appData));
+    if (document.getElementById('recipeTableBody')) renderRecipes();
+    if (document.getElementById('panel-cogs') && document.getElementById('panel-cogs').classList.contains('active')) renderCogs();
+    toast('↓ Recipes updated from another device', 'success');
+  }
 
   if (anyChanged) {
     localStorage.setItem('measured_stock_app', JSON.stringify(appData));
@@ -423,8 +453,22 @@ async function syncOnConnect() {
   const rows = await cloudPull();
   if (!rows) return false;
 
-  if (rows.length > 0) {
-    rows.forEach(row => {
+  // Split out the reserved recipes row first
+  const recipeRow = rows.find(r => r.data && r.data.id === RECIPES_ROW_ID);
+  const eventRows = rows.filter(r => r.data && r.data.id && !isReservedRow(r.data.id));
+
+  if (recipeRow) {
+    const remoteSavedAt = (recipeRow.data._savedAt) || 0;
+    const localSavedAt  = (appData._recipesSavedAt) || 0;
+    if (remoteSavedAt >= localSavedAt) {
+      appData.recipes = Array.isArray(recipeRow.data.recipes) ? recipeRow.data.recipes : [];
+      appData._recipesSavedAt = remoteSavedAt;
+    }
+    lastKnownRemoteTs[RECIPES_ROW_ID] = recipeRow.updated_at;
+  }
+
+  if (eventRows.length > 0) {
+    eventRows.forEach(row => {
       const remote = row.data;
       if (!remote || !remote.id) return;
       mergeDefaults(remote);
@@ -447,7 +491,7 @@ async function syncOnConnect() {
     });
 
     if (!appData.events[appData.currentEventId]) {
-      const first = rows[0] && rows[0].data;
+      const first = eventRows[0] && eventRows[0].data;
       if (first) { appData.currentEventId = first.id; state = first; }
     } else {
       state = appData.events[appData.currentEventId];
@@ -461,8 +505,13 @@ async function syncOnConnect() {
   runMigration();
   state = appData.events[appData.currentEventId]; // re-point after migration
 
-  if (_localDirty || rows.length === 0) {
+  if (_localDirty || eventRows.length === 0) {
     await cloudPush(state);
+  }
+
+  // Push our local recipes back if we have any but the cloud didn't
+  if ((appData.recipes || []).length > 0 && !recipeRow) {
+    cloudPushRecipes();
   }
 
   renderAll();
@@ -635,18 +684,231 @@ function switchToMode(eventId) {
 
 
 function deleteCurrentEvent() {
-  const count = Object.keys(appData.events).length;
-  if (count <= 1) { toast('Cannot delete the only event', 'error'); return; }
-  if (!confirm(`Delete event "${state.showName}"? This cannot be undone.`)) return;
-  const deletedId = appData.currentEventId;
-  delete appData.events[deletedId];
-  const remaining = Object.keys(appData.events);
-  appData.currentEventId = remaining[0];
-  state = appData.events[appData.currentEventId];
+  const pairs = getEventPairs();
+  if (pairs.length <= 1) { toast('Cannot delete the only event', 'error'); return; }
+  const primaryEv = (state.type === 'kit' && state.linkedId && appData.events[state.linkedId])
+    ? appData.events[state.linkedId]
+    : state;
+  deleteEventPair(primaryEv.id);
+}
+
+function _pickNewCurrentEvent(excludedIds) {
+  const blocked = new Set(excludedIds || []);
+  const stockEvs = Object.values(appData.events).filter(
+    e => !blocked.has(e.id) && (e.type === 'stock' || !e.type)
+  );
+  if (stockEvs.length) return stockEvs[0];
+  const anyEv = Object.values(appData.events).find(e => !blocked.has(e.id));
+  return anyEv || null;
+}
+
+function deleteEventPair(primaryId) {
+  const primary = appData.events[primaryId];
+  if (!primary) return;
+  const ids = getPairIds(primaryId);
+  const pairs = getEventPairs();
+  if (pairs.length <= 1) { toast('Cannot delete the only event', 'error'); return; }
+
+  const niceName = (primary.showName || 'Unnamed').replace(/\s*—\s*Kit$/, '').replace(/\s*—\s*Stock$/, '');
+  if (!confirm(`Delete "${niceName}" (Stock + Kit)? This cannot be undone.`)) return;
+
+  if (appData.currentEventId === primaryId || ids.includes(appData.currentEventId)) {
+    const next = _pickNewCurrentEvent(ids);
+    if (next) {
+      appData.currentEventId = next.id;
+      state = next;
+    }
+  }
+
+  ids.forEach(id => {
+    delete appData.events[id];
+    cloudDeleteEvent(id);
+  });
+
   localStorage.setItem('measured_stock_app', JSON.stringify(appData));
-  cloudDeleteEvent(deletedId);
+  mergeDefaults(state);
   renderAll();
-  toast('Event deleted', 'success');
+  toast(`"${niceName}" deleted`, 'success');
+}
+
+function renameEventPair(primaryId) {
+  const primary = appData.events[primaryId];
+  if (!primary) return;
+  const currentName = (primary.showName || '').replace(/\s*—\s*Kit$/, '').replace(/\s*—\s*Stock$/, '');
+  const newName = prompt('Rename event:', currentName);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) { toast('Name cannot be empty', 'error'); return; }
+
+  const ids = getPairIds(primaryId);
+  ids.forEach(id => {
+    const ev = appData.events[id];
+    if (!ev) return;
+    ev.showName = ev.type === 'kit' ? trimmed + ' — Kit' : trimmed;
+    ev._savedAt = Date.now();
+    cloudUpsertEvent(ev);
+  });
+
+  if (ids.includes(appData.currentEventId)) {
+    state = appData.events[appData.currentEventId];
+    const showNameInput = document.getElementById('showName');
+    if (showNameInput) showNameInput.value = state.showName || '';
+    const display = document.getElementById('showNameDisplay');
+    if (display) display.textContent = state.showName || '—';
+  }
+  localStorage.setItem('measured_stock_app', JSON.stringify(appData));
+  renderAll();
+  toast(`Renamed to "${trimmed}"`, 'success');
+}
+
+function duplicateEventPair(primaryId) {
+  const primary = appData.events[primaryId];
+  if (!primary) return;
+  const baseName = (primary.showName || 'Event').replace(/\s*—\s*Kit$/, '').replace(/\s*—\s*Stock$/, '');
+  const suggested = baseName + ' (copy)';
+  const newName = prompt('Name the duplicated event:', suggested);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) { toast('Name cannot be empty', 'error'); return; }
+
+  const stockSrc = primary.type === 'stock' || !primary.type
+    ? primary
+    : (primary.linkedId ? appData.events[primary.linkedId] : null);
+  const kitSrc = primary.type === 'kit'
+    ? primary
+    : (primary.linkedId ? appData.events[primary.linkedId] : null);
+
+  const newStockId = uid();
+  const newKitId   = uid();
+
+  let newStock = null;
+  if (stockSrc) {
+    newStock = JSON.parse(JSON.stringify(stockSrc));
+    newStock.id = newStockId;
+    newStock.showName = trimmed;
+    newStock.linkedId = kitSrc ? newKitId : null;
+    newStock._savedAt = Date.now();
+    delete newStock._localDirty;
+    appData.events[newStockId] = newStock;
+    cloudUpsertEvent(newStock);
+  }
+
+  if (kitSrc) {
+    const newKit = JSON.parse(JSON.stringify(kitSrc));
+    newKit.id = newKitId;
+    newKit.showName = trimmed + ' — Kit';
+    newKit.linkedId = newStock ? newStockId : null;
+    newKit._savedAt = Date.now();
+    delete newKit._localDirty;
+    appData.events[newKitId] = newKit;
+    cloudUpsertEvent(newKit);
+  }
+
+  localStorage.setItem('measured_stock_app', JSON.stringify(appData));
+  renderAll();
+  toast(`Duplicated as "${trimmed}"`, 'success');
+}
+
+function switchToEventPair(primaryId) {
+  const primary = appData.events[primaryId];
+  if (!primary) return;
+  const targetId = (primary.type === 'kit' && primary.linkedId && appData.events[primary.linkedId])
+    ? primary.linkedId
+    : primaryId;
+  if (targetId === appData.currentEventId) {
+    showPanel('setup');
+    return;
+  }
+  switchEvent(targetId);
+  showPanel('setup');
+}
+
+function _fmtRelative(ts) {
+  if (!ts) return 'never saved';
+  const diff = Date.now() - ts;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + ' min ago';
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr + ' hr ago';
+  const day = Math.floor(hr / 24);
+  if (day < 30) return day + ' day' + (day === 1 ? '' : 's') + ' ago';
+  return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function _escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderEventsPage() {
+  const container = document.getElementById('eventsList');
+  if (!container) return;
+  const pairs = getEventPairs();
+  const currentId = appData.currentEventId;
+
+  if (!pairs.length) {
+    container.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--muted-foreground)">No events yet. Click <strong>New Event</strong> to get started.</div>';
+    return;
+  }
+
+  const sorted = [...pairs].sort((a, b) => {
+    const aTs = Math.max((a.stock && a.stock._savedAt) || 0, (a.kit && a.kit._savedAt) || 0);
+    const bTs = Math.max((b.stock && b.stock._savedAt) || 0, (b.kit && b.kit._savedAt) || 0);
+    return bTs - aTs;
+  });
+
+  container.innerHTML = sorted.map(({ stock, kit }) => {
+    const primary = stock || kit;
+    const primaryId = primary.id;
+    const isActive = currentId === (stock && stock.id) || currentId === (kit && kit.id);
+    const niceName = (primary.showName || 'Unnamed').replace(/\s*—\s*Kit$/, '').replace(/\s*—\s*Stock$/, '');
+    const stockProducts = stock ? (stock.products || []).length : 0;
+    const kitProducts   = kit   ? (kit.products   || []).length : 0;
+    const lastTs = Math.max((stock && stock._savedAt) || 0, (kit && kit._savedAt) || 0);
+    const lastSaved = _fmtRelative(lastTs);
+    const bars = stock ? (stock.bars || []).length : 0;
+    const counts = stock ? (stock.counts || []).length : 0;
+
+    const stockBadge = stock
+      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:9999px;background:#dbeafe;color:#1e40af;font-size:11px;font-weight:600">Stock · ' + stockProducts + '</span>'
+      : '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:9999px;background:#f4f4f5;color:#71717a;font-size:11px;font-weight:600">No Stock</span>';
+    const kitBadge = kit
+      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:9999px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:600">Kit · ' + kitProducts + '</span>'
+      : '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:9999px;background:#f4f4f5;color:#71717a;font-size:11px;font-weight:600">No Kit</span>';
+    const activeBadge = isActive
+      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:9999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:600">● Active</span>'
+      : '';
+
+    const switchBtn = isActive
+      ? '<button class="btn btn-secondary btn-sm" onclick="showPanel(\'setup\')">Open Settings</button>'
+      : '<button class="btn btn-secondary btn-sm" onclick="switchToEventPair(\'' + primaryId + '\')">Switch to</button>';
+
+    return '<div class="card" style="' + (isActive ? 'border-color:#16a34a;' : '') + '">' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">' +
+        '<div style="min-width:0;flex:1">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">' +
+            '<div style="font-size:15px;font-weight:600;color:var(--foreground)">' + _escapeHtml(niceName) + '</div>' +
+            activeBadge +
+          '</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + stockBadge + kitBadge + '</div>' +
+          '<div style="font-size:12px;color:var(--muted-foreground);display:flex;gap:14px;flex-wrap:wrap">' +
+            '<span>' + bars + ' bar' + (bars === 1 ? '' : 's') + '</span>' +
+            '<span>' + counts + ' count session' + (counts === 1 ? '' : 's') + '</span>' +
+            '<span>Last saved: ' + lastSaved + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
+          switchBtn +
+          '<button class="btn btn-outline btn-sm" onclick="renameEventPair(\'' + primaryId + '\')">Rename</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="duplicateEventPair(\'' + primaryId + '\')">Duplicate</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteEventPair(\'' + primaryId + '\')">Delete</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
 function updateShowName() {
@@ -1156,6 +1418,15 @@ function showPanel(name) {
   if (name === 'transfers')    renderTransfers();
   if (name === 'topups')       renderTopups();
   if (name === 'products')     renderProducts();
+  if (name === 'events')       renderEventsPage();
+  if (name === 'bugs')         renderBugs();
+  if (name === 'recipes')      renderRecipes();
+  if (name === 'cogs')         renderCogs();
+
+  // Update sidebar highlight for top-level (non-mode) nav items
+  document.querySelectorAll('.sidebar-nav > .nav-item:not(.nav-sub-item):not(.nav-mode-header)').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.panel === name);
+  });
 }
 
 // ============================================================
@@ -1247,15 +1518,18 @@ function renderProducts() {
     (!search || p.name.toLowerCase().includes(search)) &&
     (!catF || p.category === catF)
   ));
+  const pricingIssues = getProductsWithPricingIssues();
 
   if (!filtered.length) {
     body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">📦</div><p>No products. Add one above or load sample data.</p></div></td></tr>`;
     return;
   }
 
-  body.innerHTML = filtered.map(p => `
-    <tr id="prod-row-${p.id}">
-      <td style="font-weight:600">${p.name}</td>
+  body.innerHTML = filtered.map(p => {
+    const priceWarn = pricingIssues.get(p.id);
+    return `
+    <tr id="prod-row-${p.id}"${priceWarn ? ' class="cogs-row-warn"' : ''}>
+      <td style="font-weight:600">${p.name}${priceWarn ? `<span class="product-price-warn" title="Used in recipes — ${escapeHtml(priceWarn)}">⚠ ${escapeHtml(priceWarn)}</span>` : ''}</td>
       <td>${catBadge(p.category)}</td>
       <td style="color:var(--text-muted)">${p.supplier || '—'}</td>
       <td style="font-size:12px;color:var(--text-muted)">${p.sku || '—'}</td>
@@ -1277,11 +1551,13 @@ function renderProducts() {
         </div>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function openAddProduct() {
   editingProductId = null;
+  if (typeof _pmClearFieldErrors === 'function') _pmClearFieldErrors();
   document.getElementById('productModalTitle').textContent = 'Add Product';
   document.getElementById('pm-name').value = '';
   refreshCategoryDropdowns();
@@ -1293,13 +1569,17 @@ function openAddProduct() {
   document.getElementById('pm-price').value = '';
 
   refreshSupplierSelect();
-  document.getElementById('productModal').classList.add('show');
+  const delBtn = document.getElementById('pm-delete-btn');
+  if (delBtn) delBtn.style.display = 'none';
+  openDrawer('productModal');
+  setTimeout(() => { const n = document.getElementById('pm-name'); if (n) n.focus(); }, 220);
 }
 
 function openEditProduct(id) {
   const p = state.products.find(x => x.id === id);
   if (!p) return;
   editingProductId = id;
+  if (typeof _pmClearFieldErrors === 'function') _pmClearFieldErrors();
   document.getElementById('productModalTitle').textContent = 'Edit Product';
   document.getElementById('pm-name').value = p.name;
   refreshCategoryDropdowns(p.category);
@@ -1310,7 +1590,41 @@ function openEditProduct(id) {
   document.getElementById('pm-price').value = p.orderPrice || '';
 
   refreshSupplierSelect(p.supplier);
-  document.getElementById('productModal').classList.add('show');
+  const delBtn = document.getElementById('pm-delete-btn');
+  if (delBtn) delBtn.style.display = '';
+  openDrawer('productModal');
+  setTimeout(() => { const n = document.getElementById('pm-name'); if (n) n.focus(); }, 220);
+}
+
+function deleteProductFromDrawer() {
+  if (!editingProductId) return;
+  if (!confirm('Delete this product?')) return;
+  state.products = state.products.filter(p => p.id !== editingProductId);
+  save(); renderProducts(); closeProductModal();
+  toast('Product deleted', 'success');
+}
+
+// Generic drawer helpers — open/close any .modal-overlay.drawer by id.
+// (Backwards compatible: still toggles .show, plus enables Esc-to-close.)
+function openDrawer(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('show');
+  _bindDrawerEsc();
+}
+function closeDrawer(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('show');
+}
+let _drawerEscBound = false;
+function _bindDrawerEsc() {
+  if (_drawerEscBound) return;
+  _drawerEscBound = true;
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.modal-overlay.drawer.show').forEach(el => el.classList.remove('show'));
+  });
 }
 
 function refreshSupplierSelect(selected) {
@@ -1333,11 +1647,49 @@ function evalPriceInput() {
   }
 }
 
+function _pmClearFieldErrors() {
+  document.querySelectorAll('#productModal .field-invalid').forEach(el => el.classList.remove('field-invalid'));
+  document.querySelectorAll('#productModal .field-error-msg').forEach(el => el.remove());
+}
+
+function _pmShowFieldError(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('field-invalid');
+  const row = el.closest('.form-row') || el.parentElement;
+  if (row && !row.querySelector('.field-error-msg')) {
+    const err = document.createElement('div');
+    err.className = 'field-error-msg';
+    err.textContent = msg;
+    row.appendChild(err);
+  }
+  const clear = () => {
+    el.classList.remove('field-invalid');
+    const m = row && row.querySelector('.field-error-msg');
+    if (m) m.remove();
+    el.removeEventListener('input', clear);
+    el.removeEventListener('change', clear);
+  };
+  el.addEventListener('input', clear);
+  el.addEventListener('change', clear);
+  try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(_) {}
+  setTimeout(() => { try { el.focus(); } catch(_) {} }, 50);
+}
+
 function saveProduct() {
+  _pmClearFieldErrors();
   const name = document.getElementById('pm-name').value.trim();
-  if (!name) { toast('Product name required', 'error'); return; }
+  if (!name) {
+    toast('Product name required', 'error');
+    _pmShowFieldError('pm-name', 'Product name is required');
+    return;
+  }
   const supplierVal = document.getElementById('pm-supplier').value;
-  if (!supplierVal) { toast('Please select a supplier', 'error'); return; }
+  if (!supplierVal) {
+    toast('Please select a supplier', 'error');
+    _pmShowFieldError('pm-supplier', 'Please choose a supplier — products must belong to one.');
+    return;
+  }
 
   const p = {
     id: editingProductId || uid(),
@@ -1491,7 +1843,7 @@ function renderDistribution() {
 
   if (!products.length || !bars.length) {
     document.getElementById('distHead').innerHTML = '';
-    document.getElementById('distBody').innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">🗂</div><p>Add products and bars in Setup first.</p></div></td></tr>`;
+    document.getElementById('distBody').innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">🗂</div><p>Add products and bars in Settings first.</p></div></td></tr>`;
     return;
   }
 
@@ -2561,6 +2913,34 @@ function setTransferUnit(unit) {
   document.getElementById('tf-unit-units').classList.toggle('active', unit === 'units');
 }
 
+function openTransferDrawer() {
+  // Populate recipients, default date/time, and ensure at least one product line.
+  const recSel = document.getElementById('tf-recipient');
+  if (recSel) {
+    const cur = recSel.value;
+    recSel.innerHTML = '<option value="">— Select recipient —</option>' +
+      state.recipients.map(r => '<option value="' + r + '"' + (r === cur ? ' selected' : '') + '>' + r + '</option>').join('');
+  }
+  const now = new Date();
+  const dateEl = document.getElementById('tf-date');
+  const timeEl = document.getElementById('tf-time');
+  if (dateEl && !dateEl.value) dateEl.value = now.toISOString().slice(0, 10);
+  if (timeEl && !timeEl.value) timeEl.value = now.toTimeString().slice(0, 5);
+
+  if (!transferLines.length) {
+    transferLines = [{ lineId: uid(), productId: '', qty: '' }];
+  }
+  renderTransferLines();
+
+  const modal = document.getElementById('transferModal');
+  if (modal) modal.classList.add('show');
+}
+
+function closeTransferDrawer() {
+  const modal = document.getElementById('transferModal');
+  if (modal) modal.classList.remove('show');
+}
+
 function addTransferLine() {
   transferLines.push({ lineId: uid(), productId: '', qty: '' });
   renderTransferLines();
@@ -2763,6 +3143,7 @@ function logTransfer(downloadPDF = false) {
 
   clearTransferForm();
   renderTransfers();
+  closeTransferDrawer();
   toast(`Transfer logged — ${validLines.length} product${validLines.length !== 1 ? 's' : ''}${downloadPDF ? ' · PDF downloading' : ''}`, 'success');
 }
 
@@ -3267,7 +3648,10 @@ function renderAll() {
   renderTransfers();
   renderClosing();
   renderSummary();
+  renderRecipes();
+  renderCogs();
   renderEventSwitcher();
+  renderEventsPage();
 }
 
 function sortAllLists() {
@@ -3297,6 +3681,7 @@ function load() {
     try {
       appData = JSON.parse(raw);
       if (!appData.events) appData.events = {};
+      if (!Array.isArray(appData.recipes)) appData.recipes = [];
       if (!appData.currentEventId || !appData.events[appData.currentEventId]) {
         const first = Object.values(appData.events)[0];
         if (first) {
@@ -3320,10 +3705,11 @@ function load() {
     }
   } else {
     const e = blankEvent('My First Event');
-    appData = { currentEventId: e.id, events: { [e.id]: e } };
+    appData = { currentEventId: e.id, events: { [e.id]: e }, recipes: [] };
     state = e;
     _autoLoadSample = true;
   }
+  if (!Array.isArray(appData.recipes)) appData.recipes = [];
   setSyncStatus(hasCloud() ? 'synced' : 'offline');
 }
 
@@ -3720,7 +4106,8 @@ function downloadImportTemplate() {
 }
 // ── UI patches: active nav + topbar title ──
 const _panelTitles = {
-  setup: 'Setup',
+  events: 'Events',
+  setup: 'Settings',
   products: 'Products',
   opening: 'Opening Stock',
   distribution: 'Distribution',
@@ -3729,7 +4116,10 @@ const _panelTitles = {
   wastage: 'Wastage',
   transfers: 'Transfers',
   closing: 'Closing Stock',
+  cogs: 'COGS',
+  recipes: 'Recipes',
   summary: 'Summary',
+  bugs: 'Bug Reports',
 };
 
 const _origShowPanel = showPanel;
@@ -3772,3 +4162,1866 @@ document.addEventListener('DOMContentLoaded', () => {
     if (el && typeof state !== 'undefined') el.textContent = state.showName || '—';
   }, 200);
 });
+
+// ============================================================
+// BUG REPORTS
+// Stored app-wide (not per event) under localStorage key 'measured_stock_bugs'.
+// Shape: { items: [ { id, title, description, area, status, createdAt, resolvedAt } ] }
+// ============================================================
+const BUGS_STORAGE_KEY = 'measured_stock_bugs';
+let bugFilter = 'open';
+
+function loadBugs() {
+  try {
+    const raw = localStorage.getItem(BUGS_STORAGE_KEY);
+    if (!raw) return { items: [] };
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.items)) return { items: [] };
+    return parsed;
+  } catch (err) {
+    console.warn('loadBugs() error:', err);
+    return { items: [] };
+  }
+}
+
+function saveBugs(data) {
+  localStorage.setItem(BUGS_STORAGE_KEY, JSON.stringify(data));
+  updateBugCountBadge();
+}
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatBugDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return 'Today ' + time;
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + time;
+}
+
+function submitBug() {
+  const titleEl = document.getElementById('bug-title');
+  const areaEl  = document.getElementById('bug-area');
+  const descEl  = document.getElementById('bug-desc');
+  const title = (titleEl?.value || '').trim();
+  if (!title) {
+    toast('Please enter a bug title', 'error');
+    titleEl?.focus();
+    return;
+  }
+  const data = loadBugs();
+  data.items.unshift({
+    id: uid(),
+    title,
+    description: (descEl?.value || '').trim(),
+    area: (areaEl?.value || '').trim(),
+    status: 'open',
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+  });
+  saveBugs(data);
+  clearBugForm();
+  bugFilter = 'open';
+  syncBugFilterButtons();
+  renderBugs();
+  toast('Bug report added', 'success');
+}
+
+function clearBugForm() {
+  ['bug-title', 'bug-area', 'bug-desc'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+function setBugFilter(f) {
+  bugFilter = f;
+  syncBugFilterButtons();
+  renderBugs();
+}
+
+function syncBugFilterButtons() {
+  ['open', 'resolved', 'all'].forEach(f => {
+    const btn = document.getElementById('bug-filter-' + f);
+    if (btn) btn.classList.toggle('active', bugFilter === f);
+  });
+}
+
+function toggleBugStatus(id) {
+  const data = loadBugs();
+  const bug = data.items.find(b => b.id === id);
+  if (!bug) return;
+  if (bug.status === 'resolved') {
+    bug.status = 'open';
+    bug.resolvedAt = null;
+    toast('Bug reopened', 'success');
+  } else {
+    bug.status = 'resolved';
+    bug.resolvedAt = new Date().toISOString();
+    toast('Marked resolved', 'success');
+  }
+  saveBugs(data);
+  renderBugs();
+}
+
+function deleteBug(id) {
+  if (!confirm('Delete this bug report? This cannot be undone.')) return;
+  const data = loadBugs();
+  data.items = data.items.filter(b => b.id !== id);
+  saveBugs(data);
+  renderBugs();
+}
+
+function updateBugCountBadge() {
+  const badge = document.getElementById('bugOpenCount');
+  if (!badge) return;
+  const data = loadBugs();
+  const openCount = data.items.filter(b => b.status === 'open').length;
+  if (openCount > 0) {
+    badge.textContent = openCount;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderBugs() {
+  const list = document.getElementById('bugList');
+  const counts = document.getElementById('bugCounts');
+  if (!list) return;
+
+  const data = loadBugs();
+  const all = data.items.slice();
+  const openCount = all.filter(b => b.status === 'open').length;
+  const resolvedCount = all.filter(b => b.status === 'resolved').length;
+
+  if (counts) counts.textContent = `${openCount} open · ${resolvedCount} resolved`;
+
+  const filtered = all.filter(b => {
+    if (bugFilter === 'open') return b.status === 'open';
+    if (bugFilter === 'resolved') return b.status === 'resolved';
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'open' ? -1 : 1;
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  });
+
+  if (!filtered.length) {
+    let msg = 'No bug reports yet — use the form above to log one.';
+    if (bugFilter === 'open') msg = 'No open bug reports. Nice work!';
+    else if (bugFilter === 'resolved') msg = 'No resolved bug reports yet.';
+    list.innerHTML = `<div class="empty-state"><div class="icon">🐛</div><p>${msg}</p></div>`;
+    updateBugCountBadge();
+    return;
+  }
+
+  list.innerHTML = filtered.map(b => {
+    const isResolved = b.status === 'resolved';
+    const dotClass = isResolved ? 'bug-status-resolved' : 'bug-status-open';
+    const created = formatBugDate(b.createdAt);
+    const resolved = formatBugDate(b.resolvedAt);
+    const areaPill = b.area
+      ? `<span class="bug-area-pill">${escapeHtml(b.area)}</span>`
+      : '';
+    const meta = [
+      areaPill,
+      created ? `<span>Logged ${escapeHtml(created)}</span>` : '',
+      isResolved && resolved ? `<span>Resolved ${escapeHtml(resolved)}</span>` : '',
+    ].filter(Boolean).join('');
+    const desc = b.description
+      ? `<div class="bug-desc">${escapeHtml(b.description)}</div>`
+      : '';
+    const toggleLabel = isResolved ? 'Reopen' : '✓ Mark Resolved';
+    const toggleClass = isResolved ? 'btn-outline' : 'btn-primary';
+    return `
+      <div class="bug-row ${isResolved ? 'resolved' : ''}">
+        <div class="bug-status-dot ${dotClass}" title="${isResolved ? 'Resolved' : 'Open'}"></div>
+        <div>
+          <div class="bug-title">${escapeHtml(b.title)}</div>
+          <div class="bug-meta">${meta}</div>
+          ${desc}
+        </div>
+        <div class="bug-actions">
+          <button class="btn ${toggleClass} btn-sm" onclick="toggleBugStatus('${b.id}')">${toggleLabel}</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteBug('${b.id}')">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  updateBugCountBadge();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    syncBugFilterButtons();
+    updateBugCountBadge();
+  }, 220);
+});
+
+// ============================================================
+// ============================================================
+// RECIPES & COGS
+// ============================================================
+// Recipes are a GLOBAL library shared across every event. They live in
+// `appData.recipes` locally and sync to Supabase as one reserved row in the
+// existing `stock_events` table (id = '__recipes__'). No SQL setup needed —
+// the table already exists from cloud sync onboarding.
+//
+// `state.tillSales` is per-event — the Square till summary CSV the user imports.
+// ============================================================
+
+// ── Cloud helper: push the global recipe library ─────────────────────────
+async function cloudPushRecipes() {
+  if (!hasCloud()) return false;
+  try {
+    const now = Date.now();
+    appData._recipesSavedAt = now;
+    const payload = {
+      id:        RECIPES_ROW_ID,
+      _savedAt:  now,
+      recipes:   appData.recipes || [],
+    };
+    await supabaseFetch('/rest/v1/stock_events', {
+      method:  'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates' },
+      body:    JSON.stringify({ id: RECIPES_ROW_ID, name: '__recipes__', data: payload }),
+    });
+    return true;
+  } catch(err) {
+    console.error('[Sync] Recipe push failed:', err.message);
+    return false;
+  }
+}
+
+function saveRecipesLibrary() {
+  localStorage.setItem('measured_stock_app', JSON.stringify(appData));
+  clearTimeout(saveRecipesLibrary._timer);
+  saveRecipesLibrary._timer = setTimeout(() => cloudPushRecipes(), 800);
+}
+
+// ── Quantity input parsing (handles "1/24", "2/24", math expressions) ────
+function parseQtyExpr(raw) {
+  if (raw == null) return 0;
+  const s = String(raw).trim();
+  if (!s) return 0;
+  const n = parseFloat(s);
+  if (!isNaN(n) && String(n) === s) return n;
+  if (/^[0-9+\-*/().\s]+$/.test(s)) {
+    try {
+      const r = Function('"use strict"; return (' + s + ')')();
+      if (typeof r === 'number' && isFinite(r)) return r;
+    } catch(e) { /* fall through */ }
+  }
+  const f = parseFloat(s);
+  return isFinite(f) ? f : 0;
+}
+
+function formatQty(q) {
+  if (q == null) return '';
+  const n = Number(q);
+  if (!isFinite(n)) return '';
+  if (n === Math.round(n)) return String(n);
+  return n.toFixed(4).replace(/0+$/,'').replace(/\.$/,'');
+}
+
+// ============================================================
+// RECIPES — UI
+// ============================================================
+let editingRecipeId = null;
+
+function renderRecipes() {
+  const body = document.getElementById('recipeTableBody');
+  if (!body) return;
+  const searchEl = document.getElementById('recipeSearch');
+  const q = (searchEl ? searchEl.value : '').toLowerCase().trim();
+  const recipes = (appData.recipes || []).slice().sort((a,b) =>
+    (a.tillItem || '').localeCompare(b.tillItem || '')
+  );
+  const filtered = q
+    ? recipes.filter(r => (r.tillItem || '').toLowerCase().includes(q) ||
+                          (r.ingredients || []).some(i => (i.productName||'').toLowerCase().includes(q)))
+    : recipes;
+
+  // Sync status line
+  const ss = document.getElementById('recipeSyncStatus');
+  if (ss) {
+    const count = (appData.recipes || []).length;
+    if (!hasCloud()) {
+      ss.textContent = count + ' recipes saved locally. Connect cloud sync in Setup to share across devices.';
+    } else {
+      ss.textContent = count + ' recipes — synced globally across every event.';
+    }
+  }
+
+  if (!filtered.length) {
+    body.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">📖</div><p>${q ? 'No recipes match your search.' : 'No recipes yet. Add one to start mapping till items to ingredients.'}</p></div></td></tr>`;
+    return;
+  }
+
+  body.innerHTML = filtered.map(r => {
+    const ings = (r.ingredients || []).map(i => {
+      // Prefer the live product lookup so size stays in sync if it's edited.
+      const p = (i.productId && state.products.find(x => x.id === i.productId)) ||
+                state.products.find(x => (x.name || '').toLowerCase() === (i.productName || '').toLowerCase());
+      const sizeBit = p && p.size
+        ? ` <span style="color:var(--muted-foreground);font-weight:400">(${escapeHtml(p.size)})</span>`
+        : '';
+      return `<div><strong>${escapeHtml(i.productName || '?')}</strong>${sizeBit} · <span style="font-family:'DM Mono',monospace">${formatQty(i.qty)}</span></div>`;
+    }).join('') || '<span style="color:var(--muted-foreground)">—</span>';
+    const needsReview = /auto-mapped/i.test(r.notes || '');
+    const reviewBadge = needsReview
+      ? `<span class="review-badge" title="${escapeHtml(r.notes || '')}">REVIEW</span>`
+      : '';
+    return `
+      <tr${needsReview ? ' class="recipe-row-review"' : ''}>
+        <td style="font-weight:600">${escapeHtml(r.tillItem || '—')} ${reviewBadge}</td>
+        <td style="color:var(--muted-foreground)">${escapeHtml(r.tillVariation || 'Regular')}</td>
+        <td class="cogs-ingredients-cell">${ings}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="openEditRecipe('${r.id}')" title="Edit">⚙️</button>
+            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteRecipe('${r.id}')" title="Delete">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openAddRecipe(prefillName) {
+  editingRecipeId = null;
+  document.getElementById('recipeModalTitle').textContent = 'Add Recipe';
+  document.getElementById('rm-item').value = prefillName || '';
+  document.getElementById('rm-variation').value = 'Regular';
+  document.getElementById('rm-notes').value = '';
+  document.getElementById('rm-ingredients').innerHTML = '';
+  addIngredientRow();
+  const delBtn = document.getElementById('rm-delete-btn');
+  if (delBtn) delBtn.style.display = 'none';
+  openDrawer('recipeModal');
+  setTimeout(() => { const n = document.getElementById('rm-item'); if (n && !n.value) n.focus(); }, 220);
+}
+
+function openEditRecipe(id) {
+  const r = (appData.recipes || []).find(x => x.id === id);
+  if (!r) return;
+  editingRecipeId = id;
+  document.getElementById('recipeModalTitle').textContent = 'Edit Recipe';
+  document.getElementById('rm-item').value = r.tillItem || '';
+  document.getElementById('rm-variation').value = r.tillVariation || 'Regular';
+  document.getElementById('rm-notes').value = r.notes || '';
+  document.getElementById('rm-ingredients').innerHTML = '';
+  (r.ingredients || []).forEach(i => addIngredientRow(i.productId, i.productName, i.qty));
+  if (!(r.ingredients || []).length) addIngredientRow();
+  const delBtn = document.getElementById('rm-delete-btn');
+  if (delBtn) delBtn.style.display = '';
+  openDrawer('recipeModal');
+}
+
+function addIngredientRow(productId, productName, qty) {
+  const wrap = document.getElementById('rm-ingredients');
+  if (!wrap) return;
+  const idx = wrap.children.length;
+  const row = document.createElement('div');
+  row.className = 'ingredient-row';
+
+  // Back-compat: if we only have a productName (old recipes), resolve to the
+  // first product with that exact name so the dropdown pre-selects something.
+  let selectedId = productId || '';
+  if (!selectedId && productName) {
+    const match = state.products.find(p => (p.name || '').toLowerCase() === productName.toLowerCase());
+    if (match) selectedId = match.id;
+  }
+
+  const selectedProduct = selectedId ? state.products.find(p => p.id === selectedId) : null;
+  const selectedLabel = selectedProduct
+    ? selectedProduct.name + (selectedProduct.size ? ' — ' + selectedProduct.size : '')
+    : '';
+
+  row.innerHTML = `
+    <div class="ing-search" data-idx="${idx}">
+      <input type="hidden" class="ing-product" value="${escapeHtml(selectedId)}">
+      <input type="text" class="ing-search-input" placeholder="Search products…" autocomplete="off"
+        value="${escapeHtml(selectedLabel)}"
+        onfocus="onIngSearchFocus(this)"
+        oninput="onIngSearchInput(this)"
+        onkeydown="onIngSearchKeydown(event, this)">
+      <div class="ing-dropdown" role="listbox" hidden></div>
+    </div>
+    <input type="text" class="ing-qty" placeholder="1" value="${qty != null ? formatQty(qty) : ''}" data-idx="${idx}">
+    <div style="display:flex;gap:2px">
+      <button type="button" class="quick-btn" onclick="setIngQtySmart(this,'whole')" title="One whole can/bottle/pint (1 ÷ units per case)">1 unit</button>
+      <button type="button" class="quick-btn" onclick="setIngQtySmart(this,'shot')" title="Single shot — 1/(24 × bottles per case)">Shot</button>
+      <button type="button" class="quick-btn" onclick="setIngQtySmart(this,'double')" title="Double shot — 2/(24 × bottles per case)">Double</button>
+      <button type="button" class="quick-btn" onclick="setIngQty(this,'1')" title="One whole case (SKU)">1 case</button>
+    </div>
+    <button type="button" class="ing-remove" onclick="this.parentElement.remove()" title="Remove">×</button>
+  `;
+  wrap.appendChild(row);
+}
+
+function renderIngDropdown(searchEl, query) {
+  const dropdown = searchEl.querySelector('.ing-dropdown');
+  const hidden = searchEl.querySelector('.ing-product');
+  if (!dropdown || !hidden) return;
+  const q = (query || '').trim().toLowerCase();
+  const products = sortedProducts(state.products.filter(p => p.name));
+  const filtered = q
+    ? products.filter(p => {
+        const label = (p.name + (p.size ? ' ' + p.size : '')).toLowerCase();
+        return label.includes(q);
+      })
+    : products;
+  const max = 60;
+  const items = filtered.slice(0, max);
+  if (!items.length) {
+    dropdown.innerHTML = `<div class="ing-search-empty">No products match</div>`;
+    return;
+  }
+  const more = filtered.length > max
+    ? `<div class="ing-search-empty">…${filtered.length - max} more — keep typing</div>`
+    : '';
+  dropdown.innerHTML = items.map(p => {
+    const label = p.name + (p.size ? ' — ' + p.size : '');
+    return `<div class="ing-search-option" data-id="${escapeHtml(p.id)}" role="option" onmousedown="event.preventDefault()" onclick="onIngSearchOptionClick(this)">${escapeHtml(label)}</div>`;
+  }).join('') + more;
+
+  // Mark an option as active for keyboard nav: prefer the currently selected
+  // product, else fall back to the first item.
+  let activeIdx = items.findIndex(p => p.id === hidden.value);
+  if (activeIdx < 0) activeIdx = 0;
+  setActiveIngIdx(searchEl, activeIdx);
+}
+
+function setActiveIngIdx(searchEl, idx) {
+  const opts = searchEl.querySelectorAll('.ing-search-option');
+  opts.forEach((o, i) => o.classList.toggle('active', i === idx));
+  if (opts[idx]) opts[idx].scrollIntoView({ block: 'nearest' });
+}
+
+function moveIngActive(searchEl, dir) {
+  const opts = searchEl.querySelectorAll('.ing-search-option');
+  if (!opts.length) return;
+  let idx = -1;
+  opts.forEach((o, i) => { if (o.classList.contains('active')) idx = i; });
+  idx = (idx + dir + opts.length) % opts.length;
+  setActiveIngIdx(searchEl, idx);
+}
+
+function openIngDropdown(searchEl) {
+  // Close any other open ingredient dropdowns first.
+  document.querySelectorAll('.ing-search.open').forEach(s => {
+    if (s !== searchEl) closeIngDropdown(s);
+  });
+  const dropdown = searchEl.querySelector('.ing-dropdown');
+  const input = searchEl.querySelector('.ing-search-input');
+  if (!dropdown || !input) return;
+  renderIngDropdown(searchEl, input.value);
+  dropdown.hidden = false;
+  searchEl.classList.add('open');
+}
+
+function closeIngDropdown(searchEl) {
+  const dropdown = searchEl.querySelector('.ing-dropdown');
+  if (!dropdown) return;
+  dropdown.hidden = true;
+  searchEl.classList.remove('open');
+}
+
+function onIngSearchFocus(input) {
+  const searchEl = input.closest('.ing-search');
+  if (searchEl) {
+    input.select();
+    openIngDropdown(searchEl);
+  }
+}
+
+function onIngSearchInput(input) {
+  const searchEl = input.closest('.ing-search');
+  if (!searchEl) return;
+  // Typing invalidates any prior selection until the user picks again.
+  const hidden = searchEl.querySelector('.ing-product');
+  if (hidden) hidden.value = '';
+  openIngDropdown(searchEl);
+  renderIngDropdown(searchEl, input.value);
+}
+
+function onIngSearchKeydown(event, input) {
+  const searchEl = input.closest('.ing-search');
+  if (!searchEl) return;
+  const dropdown = searchEl.querySelector('.ing-dropdown');
+  const isOpen = dropdown && !dropdown.hidden;
+  if (event.key === 'ArrowDown') {
+    if (!isOpen) openIngDropdown(searchEl);
+    else moveIngActive(searchEl, 1);
+    event.preventDefault();
+  } else if (event.key === 'ArrowUp') {
+    if (isOpen) { moveIngActive(searchEl, -1); event.preventDefault(); }
+  } else if (event.key === 'Enter') {
+    if (isOpen) {
+      const active = searchEl.querySelector('.ing-search-option.active');
+      if (active) {
+        selectIngOption(searchEl, active.dataset.id);
+        event.preventDefault();
+      }
+    }
+  } else if (event.key === 'Escape') {
+    if (isOpen) { closeIngDropdown(searchEl); event.preventDefault(); }
+  } else if (event.key === 'Tab') {
+    closeIngDropdown(searchEl);
+  }
+}
+
+function onIngSearchOptionClick(optEl) {
+  const searchEl = optEl.closest('.ing-search');
+  if (searchEl) selectIngOption(searchEl, optEl.dataset.id);
+}
+
+function selectIngOption(searchEl, productId) {
+  const hidden = searchEl.querySelector('.ing-product');
+  const input = searchEl.querySelector('.ing-search-input');
+  const p = state.products.find(x => x.id === productId);
+  if (!p) return;
+  if (hidden) hidden.value = p.id;
+  if (input) input.value = p.name + (p.size ? ' — ' + p.size : '');
+  closeIngDropdown(searchEl);
+  // Move focus to the qty field for fast entry.
+  const row = searchEl.closest('.ingredient-row');
+  const qtyInput = row && row.querySelector('.ing-qty');
+  if (qtyInput) { qtyInput.focus(); qtyInput.select(); }
+}
+
+// Close any open ingredient dropdown when clicking/tapping outside it.
+document.addEventListener('mousedown', (e) => {
+  document.querySelectorAll('.ing-search.open').forEach(s => {
+    if (!s.contains(e.target)) {
+      const input = s.querySelector('.ing-search-input');
+      const hidden = s.querySelector('.ing-product');
+      // If the user typed but didn't pick a result, restore the previously
+      // selected product label (or clear if nothing was selected).
+      if (input && hidden) {
+        if (hidden.value) {
+          const p = state.products.find(x => x.id === hidden.value);
+          input.value = p ? (p.name + (p.size ? ' — ' + p.size : '')) : '';
+        } else {
+          input.value = '';
+        }
+      }
+      closeIngDropdown(s);
+    }
+  });
+});
+
+function setIngQty(btn, val) {
+  const row = btn.closest('.ingredient-row');
+  if (!row) return;
+  const inp = row.querySelector('.ing-qty');
+  if (inp) inp.value = val;
+}
+
+function setIngQtySmart(btn, pour) {
+  const row = btn.closest('.ingredient-row');
+  if (!row) return;
+  const inp = row.querySelector('.ing-qty');
+  const hidden = row.querySelector('.ing-product');
+  if (!inp) return;
+  const pid = hidden && hidden.value;
+  const p = pid ? state.products.find(x => x.id === pid) : null;
+  if (!p) {
+    toast('Pick a product first — qty depends on units per case', 'error');
+    return;
+  }
+  const ups = p.unitsPerSku || 1;
+  let qty = 1;
+  if (pour === 'whole')   qty = 1 / ups;
+  else if (pour === 'shot')   qty = 1 / (ups * 24);
+  else if (pour === 'double') qty = 2 / (ups * 24);
+  else if (pour === 'half')   qty = 0.5 / ups;
+  inp.value = formatQty(qty);
+}
+
+function closeRecipeDrawer() {
+  closeDrawer('recipeModal');
+}
+
+function saveRecipe() {
+  const tillItem = document.getElementById('rm-item').value.trim();
+  if (!tillItem) { toast('Till item name is required', 'error'); return; }
+  const variation = document.getElementById('rm-variation').value.trim() || 'Regular';
+  const notes = document.getElementById('rm-notes').value.trim();
+
+  const ingRows = document.querySelectorAll('#rm-ingredients .ingredient-row');
+  const ingredients = [];
+  ingRows.forEach(row => {
+    const productId = row.querySelector('.ing-product').value.trim();
+    const qty       = parseQtyExpr(row.querySelector('.ing-qty').value);
+    if (!productId || !(qty > 0)) return;
+    const p = state.products.find(x => x.id === productId);
+    if (!p) return;
+    ingredients.push({ productId: p.id, productName: p.name, qty });
+  });
+
+  if (!ingredients.length) { toast('Add at least one ingredient', 'error'); return; }
+
+  if (!Array.isArray(appData.recipes)) appData.recipes = [];
+
+  if (editingRecipeId) {
+    const i = appData.recipes.findIndex(r => r.id === editingRecipeId);
+    if (i >= 0) {
+      // If user edited a draft auto-mapped recipe and didn't touch the notes,
+      // clear the "Auto-mapped … review" tag so it stops showing the REVIEW badge.
+      const prev = appData.recipes[i];
+      let nextNotes = notes;
+      if (!nextNotes && /^auto-mapped/i.test(prev.notes || '')) nextNotes = '';
+      appData.recipes[i] = { ...prev, tillItem, tillVariation: variation, ingredients, notes: nextNotes, _unitModel: 'case' };
+    }
+  } else {
+    // Check for duplicate (same tillItem + variation) and offer to replace
+    const dup = appData.recipes.findIndex(r =>
+      (r.tillItem || '').toLowerCase() === tillItem.toLowerCase() &&
+      (r.tillVariation || 'Regular').toLowerCase() === variation.toLowerCase()
+    );
+    if (dup >= 0) {
+      if (!confirm('A recipe for "' + tillItem + '" already exists. Replace it?')) return;
+      appData.recipes[dup] = { ...appData.recipes[dup], tillItem, tillVariation: variation, ingredients, notes, _unitModel: 'case' };
+    } else {
+      appData.recipes.push({ id: uid(), tillItem, tillVariation: variation, ingredients, notes, _unitModel: 'case' });
+    }
+  }
+
+  saveRecipesLibrary();
+  renderRecipes();
+  if (document.getElementById('panel-cogs').classList.contains('active')) renderCogs();
+  closeRecipeDrawer();
+  toast(editingRecipeId ? 'Recipe updated' : 'Recipe added', 'success');
+}
+
+function deleteRecipeFromDrawer() {
+  if (!editingRecipeId) return;
+  if (!confirm('Delete this recipe?')) return;
+  appData.recipes = (appData.recipes || []).filter(r => r.id !== editingRecipeId);
+  saveRecipesLibrary();
+  renderRecipes();
+  if (document.getElementById('panel-cogs').classList.contains('active')) renderCogs();
+  closeRecipeDrawer();
+  toast('Recipe deleted', 'success');
+}
+
+function deleteRecipe(id) {
+  if (!confirm('Delete this recipe?')) return;
+  appData.recipes = (appData.recipes || []).filter(r => r.id !== id);
+  saveRecipesLibrary();
+  renderRecipes();
+  if (document.getElementById('panel-cogs').classList.contains('active')) renderCogs();
+  toast('Recipe deleted', 'success');
+}
+
+// ── Smart till-item auto-mapper ──────────────────────────────────────────
+// Given a till-item name and the current event's products, return a draft
+// recipe (ingredients + notes) or null if no decent match can be inferred.
+//
+// Handles:
+//   • Pour-size suffixes:  (Single), (Shot), (Double), (Pint), (Half Pint), (Can)
+//   • Redbull / Bull mixer combos: Vodka Redbull, Tequila Peach Bull, Rumbull, …
+//   • Compound shots:  Jagerbomb = Jagermeister + Redbull
+//   • Supplier-hint stripping:  Cazcabel, Pimentae, Hard rock
+//   • Falls back to token-overlap product search on the remaining name
+function autoMatchTillItem(tillName, products) {
+  if (!tillName) return null;
+  // Skip obvious non-ingredient lines
+  if (/^(Custom Amount|REFUSED|SOLD\b.*|Compulsory Cup|Case of water|Prosecco Glass)$/i.test(tillName.trim())) {
+    return null;
+  }
+
+  // Recipe qty is now "fraction of one CASE/SKU". Given a pour kind and the
+  // matched product's unitsPerSku, convert to a case-fraction.
+  //   1 can/bottle out of an N-pack case → 1/N
+  //   1 shot from a 24-shot bottle, in an N-bottle case → 1/(N×24)
+  function qtyFor(pour, p) {
+    const ups = (p && p.unitsPerSku) || 1;
+    if (pour === 'whole')    return 1 / ups;          // one unit (can / bottle / pint)
+    if (pour === 'half')     return 0.5 / ups;        // half pint of a draught
+    if (pour === 'shot')     return 1 / (ups * 24);   // one shot from a 24-shot bottle
+    if (pour === 'double')   return 2 / (ups * 24);
+    return 1 / ups;
+  }
+
+  let name = String(tillName).trim();
+  let pourKind = 'whole';
+  let pourLabel = 'unit';
+  const secondary = [];
+
+  // 1) Extract pour-size suffix (parenthetical at end, optionally missing close-paren)
+  let m;
+  if ((m = name.match(/\(?(double|single|shot|half\s*pint|pint|can|bottle|draught)\)?\s*$/i))) {
+    const sz = m[1].toLowerCase().replace(/\s+/g, '');
+    if      (sz === 'double')                       { pourKind = 'double'; pourLabel = 'double shot'; }
+    else if (sz === 'single' || sz === 'shot')      { pourKind = 'shot';   pourLabel = 'single shot'; }
+    else if (sz === 'halfpint')                     { pourKind = 'half';   pourLabel = 'half pint'; }
+    else if (sz === 'pint')                         { pourKind = 'whole';  pourLabel = 'pint'; }
+    else if (sz === 'can' || sz === 'bottle')       { pourKind = 'whole';  pourLabel = sz; }
+    else                                            { pourKind = 'whole';  pourLabel = sz; }
+    name = name.replace(/\(?(double|single|shot|half\s*pint|pint|can|bottle|draught)\)?\s*$/i, '').trim();
+  } else if (/\bShot\b/i.test(name)) {
+    pourKind = 'shot'; pourLabel = 'single shot';
+    name = name.replace(/\bShot\b/i, '').trim();
+  }
+
+  // 2) Strip trailing supplier hints from Square (Cazcabel, Pimentae, Hard rock, etc.)
+  name = name.replace(/\b(Cazcabel|Pimentae|Hard\s*rock)\b/gi, '').replace(/\s+/g, ' ').trim();
+
+  // Helper: token-overlap search against products. Requires ≥50% of query
+  // tokens to appear in the product name.
+  function normTokens(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+  }
+  function findBest(query) {
+    const qTokens = normTokens(query);
+    if (!qTokens.length) return null;
+    let best = null, bestScore = 0;
+    for (const p of products) {
+      if (!p.name) continue;
+      const pNorm = ' ' + p.name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ') + ' ';
+      const pCompact = pNorm.replace(/\s+/g, '');
+      let score = 0;
+      for (const tok of qTokens) {
+        const tokCompact = tok.replace(/\s+/g, '');
+        if (pNorm.includes(' ' + tok)) score += 1;        // word-prefix match
+        else if (pCompact.includes(tokCompact)) score += 1; // handles "redbull" ↔ "red bull"
+        else if (pNorm.includes(tok))  score += 0.5;      // substring match
+      }
+      const required = Math.max(1, Math.floor(qTokens.length * 0.5));
+      if (score >= required && score > bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  // 3) Special-case Jagerbomb (spirit + mixer combo)
+  if (/jagerbomb/i.test(tillName)) {
+    const jager = findBest('jagermeister');
+    const rb    = findBest('redbull');
+    const ings  = [];
+    if (jager) ings.push({ productId: jager.id, productName: jager.name, qty: qtyFor('shot', jager) });
+    if (rb)    ings.push({ productId: rb.id,    productName: rb.name,    qty: qtyFor('whole', rb) });
+    return ings.length ? { ingredients: ings, notes: 'Auto-mapped (Jagerbomb) — review' } : null;
+  }
+
+  // 4) Detect Redbull / Bull mixer
+  const bullRe = /\b(red\s*bull|redbull|rumbull|peach\s*bull|lime\s*bull|cherry\s*bull)\b/i;
+  if (bullRe.test(name)) {
+    let rbQuery = 'redbull';
+    if (/peach\s*bull|redbull\s*peach/i.test(name)) rbQuery = 'redbull peach';
+    else if (/sugar\s*free|sugarfree/i.test(name)) rbQuery = 'redbull sugarfree';
+    const rb = findBest(rbQuery) || findBest('redbull');
+    if (rb) secondary.push({ productId: rb.id, productName: rb.name, qty: qtyFor('whole', rb) });
+
+    // Remove bull tokens + flavor adjectives that belong to the redbull
+    name = name
+      .replace(/\b(red\s*bull|redbull)\b/gi, ' ')
+      .replace(/\brumbull\b/gi, ' rum ')               // "Rumbull" → "rum"
+      .replace(/\b(peach\s*bull|lime\s*bull|cherry\s*bull)\b/gi, ' ')
+      .replace(/\b(peach|tropical|cherry|citrus|zest|lime|sugarfree|sugar\s*free)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // 5) Strip generic modifier words that don't help matching
+  const cleaned = name.replace(/\bmixer\b/gi, ' ').replace(/\s+/g, ' ').trim();
+
+  // 6) Find best primary product match on what's left
+  if (!cleaned) {
+    return secondary.length ? { ingredients: secondary, notes: 'Auto-mapped (review)' } : null;
+  }
+
+  const primary = findBest(cleaned);
+  if (!primary) {
+    // No primary product — only useful if we found a mixer
+    return secondary.length ? { ingredients: secondary, notes: 'Auto-mapped (partial, primary spirit missing) — review' } : null;
+  }
+
+  const ingredients = [{ productId: primary.id, productName: primary.name, qty: qtyFor(pourKind, primary) }, ...secondary];
+  const mixerNote = secondary.length ? ' + mixer' : '';
+  return { ingredients, notes: 'Auto-mapped (' + pourLabel + mixerNote + ') — review' };
+}
+
+// Walk every till sale in the current event and create draft recipes for any
+// item that doesn't already have one. Skips items with no plausible match.
+function autoCreateRecipesFromTill(opts) {
+  opts = opts || {};
+  const sales = (state.tillSales && state.tillSales.rows) || [];
+  if (!sales.length) {
+    if (!opts.silent) toast('Import a till CSV first', 'error');
+    return { created: 0, skipped: 0, already: 0 };
+  }
+
+  const existingKeys = new Set((appData.recipes || []).map(r =>
+    ((r.tillItem || '') + '|' + (r.tillVariation || 'Regular')).toLowerCase()
+  ));
+
+  let created = 0;
+  let skipped = 0;
+  let already = 0;
+
+  sales.forEach(s => {
+    const key = ((s.name || '') + '|' + (s.variation || 'Regular')).toLowerCase();
+    if (existingKeys.has(key)) { already++; return; }
+
+    const match = autoMatchTillItem(s.name, state.products);
+    if (!match) { skipped++; return; }
+
+    appData.recipes.push({
+      id: uid(),
+      tillItem: s.name,
+      tillVariation: s.variation || 'Regular',
+      ingredients: match.ingredients,
+      notes: match.notes || 'Auto-mapped — review',
+      _unitModel: 'case',
+    });
+    existingKeys.add(key);
+    created++;
+  });
+
+  if (created) {
+    saveRecipesLibrary();
+    renderRecipes();
+    if (document.getElementById('panel-cogs').classList.contains('active')) renderCogs();
+  }
+
+  if (!opts.silent) {
+    if (!created) {
+      toast(skipped > 0 ? 'No new auto-matches (' + skipped + ' items had no recipe inference)' : 'No new auto-matches', 'success');
+    } else {
+      const note = skipped > 0 ? ', ' + skipped + ' left for manual mapping' : '';
+      toast('Created ' + created + ' draft recipe' + (created === 1 ? '' : 's') + ' — fine-tune in Recipes' + note, 'success');
+    }
+  }
+
+  return { created, skipped, already };
+}
+
+// ============================================================
+// TILL SALES — CSV / TSV import
+// ============================================================
+function importTillFile(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, { type: 'array', raw: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+
+      const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+      const colMap = {
+        name:      ['itemname','name','product','productname'],
+        variation: ['itemvariation','variation','variant'],
+        sku:       ['sku','skucode','code'],
+        category:  ['category','cat'],
+        itemsSold: ['itemssold','sold','qtysold','quantitysold','qty','count'],
+        netSales:  ['netsales','net','netsalesgbp'],
+        grossSales:['grosssales','gross','total','grosssalesgbp'],
+        refunds:   ['refunds','refund'],
+      };
+      function findCol(rowKeys, field) {
+        const variants = colMap[field];
+        for (const k of rowKeys) {
+          if (variants.includes(norm(k))) return k;
+        }
+        return null;
+      }
+      function money(v) {
+        if (v == null) return 0;
+        const s = String(v).replace(/[£$,\s]/g,'').trim();
+        const n = parseFloat(s);
+        return isFinite(n) ? n : 0;
+      }
+
+      if (!rows.length) {
+        document.getElementById('cogsImportStatus').textContent = 'No rows found in file.';
+        document.getElementById('cogsImportStatus').style.color = 'var(--danger)';
+        return;
+      }
+      const keys = Object.keys(rows[0]);
+      const nameCol = findCol(keys, 'name');
+      if (!nameCol) {
+        document.getElementById('cogsImportStatus').textContent = 'Could not find an "Item Name" column in the file.';
+        document.getElementById('cogsImportStatus').style.color = 'var(--danger)';
+        return;
+      }
+
+      const parsed = rows.map(r => {
+        const name = String(r[nameCol] || '').trim();
+        if (!name) return null;
+        return {
+          name,
+          variation: String(r[findCol(keys,'variation')] || 'Regular').trim() || 'Regular',
+          sku:       String(r[findCol(keys,'sku')] || '').trim().replace(/^"+|"+$/g,''),
+          category:  String(r[findCol(keys,'category')] || '').trim(),
+          itemsSold: parseFloat(r[findCol(keys,'itemsSold')]) || 0,
+          netSales:  money(r[findCol(keys,'netSales')]),
+          grossSales:money(r[findCol(keys,'grossSales')]),
+        };
+      }).filter(Boolean).filter(r => r.itemsSold > 0);
+
+      if (!parsed.length) {
+        document.getElementById('cogsImportStatus').textContent = 'No till lines with items sold > 0 found.';
+        document.getElementById('cogsImportStatus').style.color = 'var(--danger)';
+        return;
+      }
+
+      state.tillSales = {
+        importedAt: new Date().toISOString(),
+        fileName:   file.name,
+        rows:       parsed,
+      };
+      save();
+      renderCogs();
+      const mapResult = autoCreateRecipesFromTill({ silent: true });
+      if (mapResult.created > 0) {
+        renderCogs();
+        const manual = mapResult.skipped > 0 ? ' · ' + mapResult.skipped + ' need manual recipes' : '';
+        toast('Imported ' + parsed.length + ' till lines · auto-mapped ' + mapResult.created + ' recipes' + manual + ' — fine-tune in Recipes', 'success');
+      } else {
+        toast('Imported ' + parsed.length + ' till lines — click Auto-map Till to create draft recipes', 'success');
+      }
+    } catch(err) {
+      console.error(err);
+      document.getElementById('cogsImportStatus').textContent = 'Could not read file: ' + err.message;
+      document.getElementById('cogsImportStatus').style.color = 'var(--danger)';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function clearTillSales() {
+  if (!confirm('Remove the imported till sales for this event?')) return;
+  state.tillSales = null;
+  save();
+  renderCogs();
+  toast('Till sales cleared', 'success');
+}
+
+// ============================================================
+// MODIFIER SALES — CSV / TSV import (Square › Reports › Modifier Sales)
+// ============================================================
+// Square exports modifier reports as UTF-16 LE, tab-separated, with a £/$ in
+// the sales columns. We decode the BOM ourselves so the columns parse cleanly
+// regardless of how XLSX would otherwise misread the encoding.
+function importModifierFile(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+
+  const statusEl = document.getElementById('cogsModImportStatus');
+  const setStatus = (msg, ok) => {
+    if (!statusEl) return;
+    statusEl.textContent = msg;
+    statusEl.style.color = ok ? 'var(--muted-foreground)' : 'var(--danger)';
+  };
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const buf = ev.target.result;
+      const rows = parseModifierBuffer(buf);
+      if (!rows.length) {
+        setStatus('No modifier rows found in file.', false);
+        return;
+      }
+
+      state.modifierSales = {
+        importedAt: new Date().toISOString(),
+        fileName:   file.name,
+        rows,
+      };
+      save();
+      renderCogs();
+      toast('Imported ' + rows.length + ' modifier line' + (rows.length === 1 ? '' : 's'), 'success');
+    } catch (err) {
+      console.error(err);
+      setStatus('Could not read file: ' + err.message, false);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Decode an ArrayBuffer that may be UTF-16 LE (Square default), UTF-16 BE,
+// UTF-8 with BOM, or plain UTF-8 / ASCII. Returns parsed modifier rows.
+function parseModifierBuffer(buf) {
+  const bytes = new Uint8Array(buf);
+  let text;
+  if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+    text = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  } else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+    text = new TextDecoder('utf-16be').decode(bytes.subarray(2));
+  } else if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    text = new TextDecoder('utf-8').decode(bytes.subarray(3));
+  } else {
+    text = new TextDecoder('utf-8').decode(bytes);
+  }
+  // Strip any leftover BOM and normalise line endings
+  text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+  if (!text) return [];
+
+  // Detect delimiter — Square uses tabs but accept commas just in case
+  const firstLine = text.split('\n', 1)[0] || '';
+  const delim = firstLine.includes('\t') ? '\t' : ',';
+
+  // Lightweight CSV/TSV split that honours quoted fields
+  function splitLine(line) {
+    const out = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === delim && !inQ) {
+        out.push(cur); cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map(s => s.trim());
+  }
+
+  const lines = text.split('\n').filter(l => l.trim().length);
+  if (!lines.length) return [];
+
+  const header = splitLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const idx = (...names) => {
+    for (const n of names) {
+      const k = n.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const i = header.indexOf(k);
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const iSet      = idx('modifierset','set');
+  const iMod      = idx('modifier','name');
+  const iNetQty   = idx('netqtysold','netqty','netquantity');
+  const iNetSales = idx('netsales','net');
+  const iQty      = idx('qtysold','qty','quantitysold');
+  const iGross    = idx('grosssales','gross');
+  const iRefQty   = idx('qtyrefunded','refundedqty');
+  const iRefunds  = idx('refunds','refund');
+
+  if (iSet < 0 || iMod < 0) {
+    throw new Error('Could not find "Modifier Set" and "Modifier" columns');
+  }
+
+  const money = v => {
+    if (v == null) return 0;
+    const s = String(v).replace(/[£$,\s]/g, '').trim();
+    const n = parseFloat(s);
+    return isFinite(n) ? n : 0;
+  };
+  const num = v => {
+    if (v == null || v === '') return 0;
+    const n = parseFloat(String(v).replace(/,/g, ''));
+    return isFinite(n) ? n : 0;
+  };
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const c = splitLine(lines[i]);
+    const set = (c[iSet] || '').trim();
+    const mod = (c[iMod] || '').trim();
+    if (!set && !mod) continue;
+    const netQty = iNetQty >= 0 ? num(c[iNetQty]) : 0;
+    const qty    = iQty    >= 0 ? num(c[iQty])    : netQty;
+    if (!netQty && !qty) continue;
+    rows.push({
+      set,
+      modifier: mod,
+      netQty:     netQty || qty,
+      qty:        qty || netQty,
+      netSales:   iNetSales >= 0 ? money(c[iNetSales]) : 0,
+      grossSales: iGross    >= 0 ? money(c[iGross])    : 0,
+      qtyRefunded: iRefQty  >= 0 ? num(c[iRefQty])     : 0,
+      refunds:    iRefunds  >= 0 ? money(c[iRefunds])  : 0,
+    });
+  }
+  return rows;
+}
+
+function clearModifierSales() {
+  if (!confirm('Remove the imported modifier report for this event?')) return;
+  state.modifierSales = null;
+  save();
+  renderCogs();
+  toast('Modifier report cleared', 'success');
+}
+
+// Best-effort match a modifier name (e.g. "Coke", "Red Bull Original",
+// "Ginger Beer") to a product in the current event. Returns the product or
+// null. Mirrors the token-overlap rules used by autoMatchTillItem.
+function matchModifierToProduct(modName, products) {
+  if (!modName) return null;
+  const stop = /^(no\s+mixer|none|n\/?a|bar\s+\d+.*|main\s+bar|aggressive|intoxicated)$/i;
+  if (stop.test(modName.trim())) return null;
+
+  // Normalise: "Red Bull " → "redbull", drop punctuation
+  const cleaned = String(modName).toLowerCase()
+    .replace(/red\s*bull/g, 'redbull')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const qTokens = cleaned.split(' ').filter(t => t.length > 1);
+  if (!qTokens.length) return null;
+
+  let best = null, bestScore = 0;
+  for (const p of products) {
+    if (!p.name) continue;
+    const pNorm = ' ' + p.name.toLowerCase()
+      .replace(/red\s*bull/g, 'redbull')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ') + ' ';
+    const pCompact = pNorm.replace(/\s+/g, '');
+    let score = 0;
+    for (const tok of qTokens) {
+      if (pNorm.includes(' ' + tok)) score += 1;
+      else if (pCompact.includes(tok)) score += 1;
+      else if (pNorm.includes(tok))    score += 0.5;
+    }
+    const required = Math.max(1, Math.floor(qTokens.length * 0.5));
+    if (score >= required && score > bestScore) {
+      bestScore = score;
+      best = p;
+    }
+  }
+  return best;
+}
+
+// ============================================================
+// COGS — LEGACY RECIPE MIGRATION
+// ============================================================
+// Older recipes that used the "qty 1 = one whole can" pattern over-cost sales
+// now that qty is a fraction of one case. This helper finds ingredients where
+// qty >= 1 AND the product is a multi-unit case (unitsPerSku > 1), then
+// rewrites qty to 1/unitsPerSku so each sale consumes one can/bottle of the
+// case (i.e. preserves the original intent).
+//
+// We intentionally do NOT touch ingredients with qty < 1: those might already
+// be correct case-fractions, or might be legacy spirit shot fractions that
+// need a human eye to decide between (e.g. 1/24 on a 24-can pack is correct,
+// 1/24 on a 6-bottle spirit case is a legacy shot — only the user knows).
+function migrateLegacyRecipes() {
+  if (!Array.isArray(appData.recipes) || !appData.recipes.length) {
+    toast('No recipes to migrate', 'success');
+    return;
+  }
+  const productById = {};
+  const productByName = {};
+  (state.products || []).forEach(p => {
+    if (p.id)   productById[p.id] = p;
+    if (p.name) productByName[p.name.toLowerCase()] = p;
+  });
+
+  const changes = [];
+  (appData.recipes || []).forEach(r => {
+    (r.ingredients || []).forEach(ing => {
+      const p = (ing.productId && productById[ing.productId]) ||
+                productByName[(ing.productName || '').toLowerCase()];
+      if (!p) return;
+      const ups = p.unitsPerSku || 0;
+      if (ups > 1 && ing.qty >= 1) {
+        const before = ing.qty;
+        const after = before / ups;
+        changes.push({ recipe: r, ingredient: ing, productName: p.name, ups, before, after });
+      }
+    });
+  });
+
+  if (!changes.length) {
+    // Mark every recipe as migrated so the diagnostic stops nudging.
+    (appData.recipes || []).forEach(r => { r._unitModel = 'case'; });
+    saveRecipesLibrary();
+    if (document.getElementById('panel-cogs') && document.getElementById('panel-cogs').classList.contains('active')) renderCogs();
+    toast('No legacy recipes needed updating', 'success');
+    return;
+  }
+
+  const preview = changes.slice(0, 5).map(c =>
+    `• ${c.recipe.tillItem || '?'} — ${c.productName}: ${formatQty(c.before)} → ${formatQty(c.after)}`
+  ).join('\n');
+  const more = changes.length > 5 ? `\n…and ${changes.length - 5} more` : '';
+  const ok = confirm(
+    'Migrate ' + changes.length + ' ingredient' + (changes.length === 1 ? '' : 's') + ' to case-fraction qty?\n\n' +
+    'This divides qty by units-per-case for any ingredient set to a whole case (qty ≥ 1 on a multi-unit pack).\n\n' +
+    preview + more
+  );
+  if (!ok) return;
+
+  changes.forEach(c => { c.ingredient.qty = c.after; });
+  (appData.recipes || []).forEach(r => { r._unitModel = 'case'; });
+
+  saveRecipesLibrary();
+  renderRecipes();
+  if (document.getElementById('panel-cogs') && document.getElementById('panel-cogs').classList.contains('active')) renderCogs();
+  toast('Updated ' + changes.length + ' ingredient' + (changes.length === 1 ? '' : 's'), 'success');
+}
+
+// ============================================================
+// COGS — CORE CALCULATION
+function computeCogs(stateRef, recipes) {
+  const tillRows = (stateRef.tillSales && stateRef.tillSales.rows) || [];
+
+  // Build recipe index: lowercase "name|variation" -> recipe
+  const recipeIdx = {};
+  (recipes || []).forEach(r => {
+    const k = ((r.tillItem || '') + '|' + (r.tillVariation || 'Regular')).toLowerCase();
+    recipeIdx[k] = r;
+    // Also index by item name only (variation-agnostic fallback)
+    const k2 = (r.tillItem || '').toLowerCase() + '|*';
+    if (!recipeIdx[k2]) recipeIdx[k2] = r;
+  });
+
+  // Build product indices: by id (preferred) and by lowercase name (fallback
+  // for legacy recipes that pre-date the productId field).
+  const productById = {};
+  const productByName = {};
+  stateRef.products.forEach(p => {
+    if (p.id)   productById[p.id] = p;
+    if (p.name) productByName[p.name.toLowerCase()] = p;
+  });
+
+  function costPerUnit(p) {
+    if (!p) return 0;
+    const ups = p.unitsPerSku || 0;
+    if (!ups) return p.orderPrice || 0; // treat unitsPerSku=0 as "1 SKU = 1 unit"
+    return (p.orderPrice || 0) / ups;
+  }
+
+  function casePrice(p) {
+    return p ? (p.orderPrice || 0) : 0;
+  }
+
+  function perUnitPrice(p) {
+    if (!p) return 0;
+    const ups = p.unitsPerSku || 0;
+    return ups > 0 ? (p.orderPrice || 0) / ups : (p.orderPrice || 0);
+  }
+
+  function productCostIssue(p) {
+    if (!p) return 'missing';
+    if (!(p.orderPrice > 0)) return 'no_price';
+    return null;
+  }
+
+  // Recipe qty is now "fraction of one SKU/case" (1 = whole case, 1/24 = 1/24
+  // of the case). A qty of 1 on a multi-unit case (e.g. 24-can case) almost
+  // certainly came from the legacy "qty 1 = one whole can" model and would
+  // grossly over-cost the till line.
+  function isLegacyWholeUnitQty(qty, p) {
+    if (!p || !qty) return false;
+    const ups = p.unitsPerSku || 0;
+    return ups > 1 && qty >= 1;
+  }
+
+  // Per-till-item rollup
+  const perTillItem = [];
+  const unmapped = [];
+  const diagnostics = {
+    missingProducts: {},   // name -> { name, units }
+    zeroCostProducts: {},  // pid -> { p, issue, units }
+    lowMarginItems: [],
+    legacyQtyItems: [],    // till items with qty 1 on a multi-unit case (looks like legacy)
+  };
+
+  // Per-product aggregation
+  const perProduct = {}; // pid -> { units, cogs }
+  let totalRevenue = 0;
+  let totalCogs    = 0;
+  let unmappedRevenue = 0;
+
+  tillRows.forEach(s => {
+    totalRevenue += s.netSales || 0;
+    const k1 = ((s.name || '') + '|' + (s.variation || 'Regular')).toLowerCase();
+    const k2 = (s.name || '').toLowerCase() + '|*';
+    const recipe = recipeIdx[k1] || recipeIdx[k2];
+    if (!recipe) {
+      unmapped.push(s);
+      unmappedRevenue += s.netSales || 0;
+      perTillItem.push({
+        name: s.name, variation: s.variation, itemsSold: s.itemsSold,
+        netSales: s.netSales, cogs: null, margin: null, marginPct: null, mapped: false,
+      });
+      return;
+    }
+    let rowCogs = 0;
+    const rowIssues = [];
+    const missingNames = [];
+    const zeroCostNames = [];
+    const legacyQtyNames = [];
+    (recipe.ingredients || []).forEach(ing => {
+      const p = (ing.productId && productById[ing.productId]) ||
+                productByName[(ing.productName || '').toLowerCase()];
+      const qty = ing.qty || 0;
+      const itemsSold = s.itemsSold || 0;
+      // qty is fraction of one case/SKU. cases consumed = itemsSold × qty
+      const casesUsed = itemsSold * qty;
+      const ups = (p && p.unitsPerSku) || 1;
+      const unitsUsed = casesUsed * ups; // bottles/cans for display & variance
+      const issue = productCostIssue(p);
+      const cogs = casesUsed * casePrice(p);
+      rowCogs += cogs;
+      if (p && isLegacyWholeUnitQty(qty, p)) {
+        legacyQtyNames.push(p.name);
+      }
+      if (!p) {
+        const missingName = ing.productName || '(unnamed product)';
+        missingNames.push(missingName);
+        if (!diagnostics.missingProducts[missingName]) {
+          diagnostics.missingProducts[missingName] = { name: missingName, units: 0 };
+        }
+        diagnostics.missingProducts[missingName].units += unitsUsed;
+        const key = '__missing__:' + missingName;
+        if (!perProduct[key]) perProduct[key] = { units: 0, cogs: 0, missing: true, name: missingName };
+        perProduct[key].units += unitsUsed;
+      } else {
+        if (issue) {
+          zeroCostNames.push(p.name);
+          if (!diagnostics.zeroCostProducts[p.id]) {
+            diagnostics.zeroCostProducts[p.id] = { p, issue, units: 0 };
+          }
+          diagnostics.zeroCostProducts[p.id].units += unitsUsed;
+        }
+        if (!perProduct[p.id]) perProduct[p.id] = { units: 0, cogs: 0 };
+        perProduct[p.id].units += unitsUsed;
+        perProduct[p.id].cogs  += cogs;
+      }
+    });
+    if (missingNames.length) rowIssues.push({ type: 'missing', names: [...new Set(missingNames)] });
+    if (zeroCostNames.length) rowIssues.push({ type: 'zero_cost', names: [...new Set(zeroCostNames)] });
+    totalCogs += rowCogs;
+    const net = s.netSales || 0;
+    if (legacyQtyNames.length) {
+      rowIssues.push({ type: 'legacy_qty', names: [...new Set(legacyQtyNames)] });
+      diagnostics.legacyQtyItems.push({
+        name: s.name, variation: s.variation, netSales: net, cogs: rowCogs,
+        products: [...new Set(legacyQtyNames)],
+      });
+    }
+    const margin = net - rowCogs;
+    const marginPct = net > 0 ? (margin / net) * 100 : null;
+    if (net >= 50 && marginPct != null && marginPct > 95) {
+      rowIssues.push({ type: 'low_margin' });
+      diagnostics.lowMarginItems.push({
+        name: s.name, variation: s.variation, netSales: net, cogs: rowCogs, marginPct,
+      });
+    }
+    perTillItem.push({
+      name: s.name, variation: s.variation, itemsSold: s.itemsSold,
+      netSales: net, cogs: rowCogs, margin, marginPct, mapped: true, issues: rowIssues,
+    });
+  });
+
+  // Per-supplier rollup
+  const perSupplier = {};
+  Object.keys(perProduct).forEach(pid => {
+    if (pid.startsWith('__missing__:')) return;
+    const p = stateRef.products.find(x => x.id === pid);
+    if (!p) return;
+    const sup = p.supplier || 'Unknown';
+    if (!perSupplier[sup]) perSupplier[sup] = { units: 0, cogs: 0 };
+    perSupplier[sup].units += perProduct[pid].units;
+    perSupplier[sup].cogs  += perProduct[pid].cogs;
+  });
+
+  return {
+    perTillItem, perProduct, perSupplier, unmapped,
+    diagnostics: {
+      missingProducts: Object.values(diagnostics.missingProducts).sort((a, b) => b.units - a.units),
+      zeroCostProducts: Object.values(diagnostics.zeroCostProducts).sort((a, b) => b.units - a.units),
+      lowMarginItems: diagnostics.lowMarginItems.sort((a, b) => b.netSales - a.netSales),
+      legacyQtyItems: diagnostics.legacyQtyItems.sort((a, b) => b.netSales - a.netSales),
+    },
+    totals: {
+      revenue: totalRevenue,
+      cogs:    totalCogs,
+      margin:  totalRevenue - totalCogs,
+      marginPct: totalRevenue > 0 ? ((totalRevenue - totalCogs) / totalRevenue) * 100 : 0,
+      unmappedRevenue,
+      unmappedPct: totalRevenue > 0 ? (unmappedRevenue / totalRevenue) * 100 : 0,
+    },
+  };
+}
+
+// ============================================================
+// COGS — RENDER
+// ============================================================
+function getProductsWithPricingIssues() {
+  const recipeIds = new Set();
+  const recipeNames = new Set();
+  (appData.recipes || []).forEach(r => {
+    (r.ingredients || []).forEach(ing => {
+      if (ing.productId) recipeIds.add(ing.productId);
+      if (ing.productName) recipeNames.add(ing.productName.toLowerCase());
+    });
+  });
+  const issues = new Map();
+  (state.products || []).forEach(p => {
+    const referenced = recipeIds.has(p.id) || recipeNames.has((p.name || '').toLowerCase());
+    if (!referenced) return;
+    if (!(p.orderPrice > 0)) issues.set(p.id, 'no price');
+  });
+  return issues;
+}
+
+function cogsIssueBadges(issues) {
+  if (!issues || !issues.length) return '';
+  return issues.map(issue => {
+    if (issue.type === 'missing') {
+      return `<span class="cogs-issue-badge" title="Not found in this event: ${escapeHtml(issue.names.join(', '))}">Missing product</span>`;
+    }
+    if (issue.type === 'zero_cost') {
+      return `<span class="cogs-issue-badge" title="Zero or missing price: ${escapeHtml(issue.names.join(', '))}">No price</span>`;
+    }
+    if (issue.type === 'low_margin') {
+      return `<span class="cogs-issue-badge" title="Margin above 95% — COGS likely under-reported">Low COGS</span>`;
+    }
+    if (issue.type === 'legacy_qty') {
+      return `<span class="cogs-issue-badge" title="Qty ≥ 1 on a multi-unit case (${escapeHtml(issue.names.join(', '))}) — recipe qty is now a fraction of one case. Did you mean 1/${'<units>'}?">Legacy qty</span>`;
+    }
+    return '';
+  }).join('');
+}
+
+function renderCogsDiagnostics(report) {
+  const el = document.getElementById('cogsDiagnostics');
+  if (!el) return;
+  const d = report.diagnostics || {};
+  const missing = d.missingProducts || [];
+  const zeroCost = d.zeroCostProducts || [];
+  const lowMargin = d.lowMarginItems || [];
+  const legacyQty = d.legacyQtyItems || [];
+  const missingUnits = missing.reduce((s, x) => s + (x.units || 0), 0);
+  const lowMarginSales = lowMargin.reduce((s, x) => s + (x.netSales || 0), 0);
+  const legacyQtySales = legacyQty.reduce((s, x) => s + (x.netSales || 0), 0);
+
+  if (!missing.length && !zeroCost.length && !lowMargin.length && !legacyQty.length) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  const bullets = [];
+  if (missing.length) {
+    bullets.push(`<li><strong>${missing.length} recipe ingredient${missing.length === 1 ? '' : 's'}</strong> reference product names not found in this event (${formatQty(missingUnits)} units untracked — £0 cost applied).</li>`);
+  }
+  if (zeroCost.length) {
+    bullets.push(`<li><strong>${zeroCost.length} product${zeroCost.length === 1 ? '' : 's'}</strong> used in recipes have no order price set.</li>`);
+  }
+  if (lowMargin.length) {
+    bullets.push(`<li><strong>${lowMargin.length} mapped till item${lowMargin.length === 1 ? '' : 's'}</strong> show &gt;95% margin (£${lowMarginSales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sales) — likely missing or under-costed ingredients.</li>`);
+  }
+  if (legacyQty.length) {
+    bullets.push(`<li><strong>${legacyQty.length} recipe${legacyQty.length === 1 ? '' : 's'}</strong> use qty ≥ 1 on a multi-unit case (£${legacyQtySales.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} sales) — recipe qty is now a fraction of one case. <button class="btn btn-primary btn-sm" onclick="migrateLegacyRecipes()" style="margin-left:6px">Auto-fix legacy recipes</button></li>`);
+  }
+
+  el.style.display = '';
+  el.innerHTML = `
+    <div class="cogs-diagnostics">
+      <div class="cogs-diagnostics-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        COGS data issues
+      </div>
+      <ul>${bullets.join('')}</ul>
+      <p style="margin:8px 0 0;font-size:12px;color:var(--muted-foreground)">Check highlighted rows below. Fix product names/prices in Products, or edit recipes to match this event.</p>
+    </div>
+  `;
+}
+
+function renderCogs() {
+  const statsEl    = document.getElementById('cogsStats');
+  const prodBody   = document.getElementById('cogsProductBody');
+  const tillBody   = document.getElementById('cogsTillBody');
+  const supBody    = document.getElementById('cogsSupplierBody');
+  const unmappedSec= document.getElementById('cogsUnmappedSection');
+  const unmappedBd = document.getElementById('cogsUnmappedBody');
+  const statusEl   = document.getElementById('cogsImportStatus');
+  const modStatusEl= document.getElementById('cogsModImportStatus');
+  const clearBtn   = document.getElementById('cogsClearBtn');
+  const clearModBtn= document.getElementById('cogsClearModBtn');
+  const autoBtn    = document.getElementById('cogsAutoMapBtn');
+  if (!statsEl) return;
+
+  const hasTill = !!(state.tillSales && state.tillSales.rows && state.tillSales.rows.length);
+  const hasMod  = !!(state.modifierSales && state.modifierSales.rows && state.modifierSales.rows.length);
+
+  if (statusEl) {
+    if (hasTill) {
+      const ts = new Date(state.tillSales.importedAt);
+      const tsStr = isNaN(ts) ? '' : ts.toLocaleString('en-GB', {dateStyle:'medium', timeStyle:'short'});
+      statusEl.textContent = 'Till: ' + state.tillSales.fileName + (tsStr ? ' · imported ' + tsStr : '') + ' · ' + state.tillSales.rows.length + ' till lines';
+      statusEl.style.color = 'var(--muted-foreground)';
+    } else {
+      statusEl.textContent = 'No till data imported for this event yet. Upload your Square item sales CSV to start.';
+      statusEl.style.color = 'var(--muted-foreground)';
+    }
+  }
+  if (modStatusEl) {
+    if (hasMod) {
+      const ts = new Date(state.modifierSales.importedAt);
+      const tsStr = isNaN(ts) ? '' : ts.toLocaleString('en-GB', {dateStyle:'medium', timeStyle:'short'});
+      modStatusEl.textContent = 'Modifiers: ' + state.modifierSales.fileName + (tsStr ? ' · imported ' + tsStr : '') + ' · ' + state.modifierSales.rows.length + ' modifier lines';
+      modStatusEl.style.color = 'var(--muted-foreground)';
+    } else {
+      modStatusEl.textContent = 'Tip: Square › Reports › Modifier Sales — exports a TSV of every mixer/Red Bull/ID flag rung in. Variance vs physical stock for items that never sell standalone.';
+      modStatusEl.style.color = 'var(--muted-foreground)';
+    }
+  }
+  if (clearBtn)    clearBtn.style.display    = hasTill ? '' : 'none';
+  if (clearModBtn) clearModBtn.style.display = hasMod  ? '' : 'none';
+  if (autoBtn)     autoBtn.style.display     = hasTill ? '' : 'none';
+
+  renderModifierReport();
+
+  if (!hasTill) {
+    statsEl.innerHTML = '';
+    const diagEl = document.getElementById('cogsDiagnostics');
+    if (diagEl) { diagEl.style.display = 'none'; diagEl.innerHTML = ''; }
+    if (prodBody) prodBody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">📊</div><p>Import a till CSV to see COGS broken down by product, item, and supplier.</p></div></td></tr>`;
+    if (tillBody) tillBody.innerHTML = '';
+    if (supBody)  supBody.innerHTML = '';
+    if (unmappedSec) unmappedSec.style.display = 'none';
+    return;
+  }
+
+  const report = computeCogs(state, appData.recipes || []);
+  const t = report.totals;
+
+  renderCogsDiagnostics(report);
+
+  statsEl.innerHTML = `
+    <div class="stat-card"><div class="stat-label">Net Revenue</div><div class="stat-value">£${t.revenue.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="stat-sub">from imported till</div></div>
+    <div class="stat-card"><div class="stat-label">Total COGS</div><div class="stat-value">£${t.cogs.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="stat-sub">cost of goods sold</div></div>
+    <div class="stat-card"><div class="stat-label">Gross Margin</div><div class="stat-value">£${t.margin.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="stat-sub">${t.marginPct.toFixed(1)}% margin</div></div>
+    <div class="stat-card"><div class="stat-label">Margin %</div><div class="stat-value">${(t.cogs > 0 ? (t.margin / t.cogs) * 100 : 0).toFixed(1)}%</div><div class="stat-sub">margin as % of COGS</div></div>
+  `;
+
+  // Till-item mapping table: unmapped first (action queue), then mapped at the
+  // bottom with a ✓ Mapped tag so the user can see their progress without
+  // items vanishing the moment they finish a recipe.
+  const mappingItems = report.perTillItem || [];
+  if (mappingItems.length) {
+    unmappedSec.style.display = '';
+
+    // Recipe index for the "Edit Recipe" button on mapped rows.
+    const recipeIdx = {};
+    (appData.recipes || []).forEach(r => {
+      const k = ((r.tillItem || '') + '|' + (r.tillVariation || 'Regular')).toLowerCase();
+      recipeIdx[k] = r;
+      const k2 = (r.tillItem || '').toLowerCase() + '|*';
+      if (!recipeIdx[k2]) recipeIdx[k2] = r;
+    });
+
+    // Look up category from the original till rows (perTillItem doesn't carry it).
+    const catByName = {};
+    ((state.tillSales && state.tillSales.rows) || []).forEach(s => {
+      const key = (s.name || '').toLowerCase() + '|' + (s.variation || 'Regular').toLowerCase();
+      catByName[key] = s.category || '';
+      const altKey = (s.name || '').toLowerCase() + '|*';
+      if (!catByName[altKey]) catByName[altKey] = s.category || '';
+    });
+
+    const unmappedCount = mappingItems.filter(r => !r.mapped).length;
+    const mappedCount   = mappingItems.length - unmappedCount;
+    const titleEl = document.getElementById('cogsUnmappedTitle');
+    const subEl   = document.getElementById('cogsUnmappedSubtitle');
+    const autoBtnTop = document.getElementById('cogsUnmappedAutoBtn');
+    if (titleEl) titleEl.textContent = unmappedCount > 0
+      ? 'Till Item Mapping — ' + unmappedCount + ' to map'
+      : 'Till Item Mapping — all ' + mappedCount + ' mapped';
+    if (subEl) subEl.innerHTML = unmappedCount > 0
+      ? 'Items needing a recipe show first. Once mapped, they drop to the bottom with a <strong>Mapped</strong> tag so you can track progress.'
+      : 'Every till line has a recipe. Edit any below to fine-tune ingredients or pour sizes.';
+    if (autoBtnTop) autoBtnTop.style.display = unmappedCount > 0 ? '' : 'none';
+
+    const sorted = mappingItems.slice().sort((a, b) => {
+      if (a.mapped !== b.mapped) return a.mapped ? 1 : -1; // unmapped first
+      return (b.netSales || 0) - (a.netSales || 0);
+    });
+
+    unmappedBd.innerHTML = sorted.map(s => {
+      const catKey = (s.name || '').toLowerCase() + '|' + (s.variation || 'Regular').toLowerCase();
+      const altCatKey = (s.name || '').toLowerCase() + '|*';
+      const category = catByName[catKey] || catByName[altCatKey] || '—';
+      const sold = (s.itemsSold || 0).toLocaleString();
+      const net  = '£' + (s.netSales || 0).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+      if (s.mapped) {
+        const recipeKey = ((s.name || '') + '|' + (s.variation || 'Regular')).toLowerCase();
+        const recipeAltKey = (s.name || '').toLowerCase() + '|*';
+        const recipe = recipeIdx[recipeKey] || recipeIdx[recipeAltKey];
+        const editAction = recipe
+          ? `<button class="btn btn-secondary btn-sm" onclick="openEditRecipe(${JSON.stringify(recipe.id).replace(/"/g,'&quot;')})">Edit Recipe</button>`
+          : '<span style="font-size:11px;color:var(--muted-foreground)">—</span>';
+        return `
+          <tr style="background:#f0fdf4">
+            <td style="font-weight:500">
+              ${escapeHtml(s.name)}
+              <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;background:var(--success);color:#fff;padding:2px 7px;border-radius:3px;margin-left:6px;letter-spacing:0.4px;text-transform:uppercase;font-weight:700;vertical-align:middle">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Mapped
+              </span>
+            </td>
+            <td style="color:var(--muted-foreground)">${escapeHtml(category)}</td>
+            <td style="font-family:'DM Mono',monospace">${sold}</td>
+            <td style="font-family:'DM Mono',monospace">${net}</td>
+            <td>${editAction}</td>
+          </tr>
+        `;
+      }
+      return `
+        <tr>
+          <td style="font-weight:500">${escapeHtml(s.name)}</td>
+          <td style="color:var(--muted-foreground)">${escapeHtml(category)}</td>
+          <td style="font-family:'DM Mono',monospace">${sold}</td>
+          <td style="font-family:'DM Mono',monospace">${net}</td>
+          <td><button class="btn btn-primary btn-sm" onclick="openAddRecipe(${JSON.stringify(s.name).replace(/"/g,'&quot;')})">+ Create Recipe</button></td>
+        </tr>
+      `;
+    }).join('');
+  } else {
+    unmappedSec.style.display = 'none';
+  }
+
+  // COGS by product
+  const productRows = state.products
+    .filter(p => p.name)
+    .map(p => {
+      const r = report.perProduct[p.id] || { units: 0, cogs: 0 };
+      const physical = Math.max(0, getOpeningStock(p.id)
+        - ((state.closing[p.id] || {}).fullCount || 0)
+        - ((state.transfers || []).filter(t => t.productId === p.id).reduce((s,t) => s + (t.qty || 0), 0)));
+      const priceIssue = !(p.orderPrice > 0) && r.units > 0;
+      return { p, tillUnits: r.units, cogs: r.cogs, physical, priceIssue };
+    })
+    .filter(row => row.tillUnits > 0 || row.physical > 0)
+    .sort((a,b) => (b.cogs - a.cogs));
+
+  const missingRows = Object.entries(report.perProduct)
+    .filter(([pid, r]) => pid.startsWith('__missing__:') && r.units > 0)
+    .map(([, r]) => r)
+    .sort((a, b) => b.units - a.units);
+
+  if (!productRows.length && !missingRows.length) {
+    prodBody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">🍹</div><p>No products consumed yet — make sure your recipes reference products that exist in this event.</p></div></td></tr>`;
+  } else {
+    const productHtml = productRows.map(({p, tillUnits, cogs, physical, priceIssue}) => {
+      // tillUnits is in bottles/cans; physical is in cases — convert physical
+      // to bottles/cans for an apples-to-apples variance.
+      const ups = p.unitsPerSku || 1;
+      const physicalUnits = physical * ups;
+      const cpu = ups > 0 ? (p.orderPrice || 0) / ups : (p.orderPrice || 0);
+      const variance = physicalUnits - tillUnits;
+      const varPct = tillUnits > 0 ? (variance / tillUnits) * 100 : (physicalUnits > 0 ? 100 : 0);
+      const absPct = Math.abs(varPct);
+      const varClass = tillUnits === 0 ? '' : absPct < 5 ? 'variance-good' : absPct < 15 ? 'variance-warn' : 'variance-bad';
+      const sign = variance > 0 ? '+' : '';
+      const priceWarn = priceIssue
+        ? `<span class="cogs-issue-badge" title="Set order price on this product">No price</span>`
+        : '';
+      return `
+        <tr class="${priceIssue ? 'cogs-row-warn' : ''}">
+          <td style="font-weight:500">${escapeHtml(p.name)}${priceWarn}</td>
+          <td>${catBadge(p.category)}</td>
+          <td style="color:var(--muted-foreground);font-size:12px">${escapeHtml(p.size || '—')}</td>
+          <td style="font-family:'DM Mono',monospace">${formatQty(tillUnits)}</td>
+          <td style="font-family:'DM Mono',monospace">£${cpu.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="font-family:'DM Mono',monospace;font-weight:600">£${cogs.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="font-family:'DM Mono',monospace">${formatQty(physicalUnits)}</td>
+          <td class="${varClass}" style="font-family:'DM Mono',monospace">${sign}${formatQty(variance)}</td>
+          <td class="${varClass}" style="font-family:'DM Mono',monospace">${tillUnits === 0 ? '—' : (sign + varPct.toFixed(1) + '%')}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const missingHtml = missingRows.map(r => `
+      <tr class="cogs-row-missing">
+        <td style="font-weight:500">${escapeHtml(r.name || 'Unknown')}
+          <span class="cogs-issue-badge" title="Add a product with this exact name in Products, or edit the recipe ingredient">Not in event</span>
+        </td>
+        <td>—</td>
+        <td style="color:var(--muted-foreground);font-size:12px">—</td>
+        <td style="font-family:'DM Mono',monospace">${formatQty(r.units)}</td>
+        <td style="font-family:'DM Mono',monospace">—</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--danger)">£0.00</td>
+        <td>—</td><td>—</td><td>—</td>
+      </tr>
+    `).join('');
+
+    const totalCogs = productRows.reduce((s, r) => s + r.cogs, 0);
+    prodBody.innerHTML = productHtml + missingHtml + `
+      <tr style="border-top:2px solid var(--foreground);background:var(--secondary)">
+        <td colspan="5" style="font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:11px">Total COGS (matched products only)</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:800;font-size:15px">£${totalCogs.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        <td colspan="3"></td>
+      </tr>
+    `;
+  }
+
+  // COGS by till item
+  const tillRows = report.perTillItem.slice().sort((a,b) => (b.netSales||0) - (a.netSales||0));
+  tillBody.innerHTML = tillRows.map(r => {
+    const issueBadges = cogsIssueBadges(r.issues);
+    const rowClass = (r.issues && r.issues.length) ? 'cogs-row-warn' : '';
+    if (!r.mapped) {
+      return `
+        <tr style="opacity:0.55">
+          <td>${escapeHtml(r.name)} <span style="font-size:10px;background:var(--muted);color:var(--muted-foreground);padding:1px 6px;border-radius:3px;margin-left:4px">no recipe</span></td>
+          <td style="font-family:'DM Mono',monospace">${r.itemsSold.toLocaleString()}</td>
+          <td style="font-family:'DM Mono',monospace">£${(r.netSales||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td>—</td><td>—</td><td>—</td>
+        </tr>`;
+    }
+    return `
+      <tr class="${rowClass}">
+        <td style="font-weight:500">${escapeHtml(r.name)}${issueBadges}</td>
+        <td style="font-family:'DM Mono',monospace">${r.itemsSold.toLocaleString()}</td>
+        <td style="font-family:'DM Mono',monospace">£${(r.netSales||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        <td style="font-family:'DM Mono',monospace">£${(r.cogs||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:600">£${(r.margin||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        <td style="font-family:'DM Mono',monospace">${r.marginPct == null ? '—' : r.marginPct.toFixed(1) + '%'}</td>
+      </tr>`;
+  }).join('');
+
+  // COGS by supplier
+  const supRows = Object.entries(report.perSupplier).sort((a,b) => b[1].cogs - a[1].cogs);
+  if (!supRows.length) {
+    supBody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--muted-foreground);padding:20px">No supplier data — products in recipes must have a supplier set.</td></tr>`;
+  } else {
+    supBody.innerHTML = supRows.map(([sup, d]) => `
+      <tr>
+        <td style="font-weight:600">${escapeHtml(sup)}</td>
+        <td style="font-family:'DM Mono',monospace">${formatQty(d.units)}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:700">£${d.cogs.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      </tr>
+    `).join('') + `
+      <tr style="border-top:2px solid var(--foreground);background:var(--secondary)">
+        <td style="font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:11px">Total</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:700">${formatQty(supRows.reduce((s,[,d]) => s + d.units, 0))}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:800;font-size:15px">£${supRows.reduce((s,[,d]) => s + d.cogs, 0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      </tr>
+    `;
+  }
+}
+
+// ============================================================
+// MODIFIER REPORT — RENDER
+// ============================================================
+// Builds two views from the imported Square modifier report:
+//   1. Top-of-section chips: total qty per modifier set (Mixer, Redbull, ID…)
+//   2. Per-modifier table with auto-matched product + physical-stock variance
+//
+// Variance lets you sanity-check the bar: if you rang 2,892 cokes but only
+// 2,400 went out of the fridge, you're missing 492 cokes (or vice versa).
+function renderModifierReport() {
+  const sec        = document.getElementById('cogsModifierSection');
+  const body       = document.getElementById('cogsModifierBody');
+  const setTotals  = document.getElementById('cogsModSetTotals');
+  if (!sec || !body) return;
+
+  const hasMod = !!(state.modifierSales && state.modifierSales.rows && state.modifierSales.rows.length);
+  if (!hasMod) {
+    sec.style.display = 'none';
+    return;
+  }
+  sec.style.display = '';
+
+  const rows = state.modifierSales.rows;
+
+  // ── Per-set totals (top-right chips) ─────────────────────────────
+  const setAgg = {};
+  rows.forEach(r => {
+    const k = r.set || 'Other';
+    if (!setAgg[k]) setAgg[k] = { qty: 0, sales: 0 };
+    setAgg[k].qty   += r.netQty || 0;
+    setAgg[k].sales += r.netSales || 0;
+  });
+  const setEntries = Object.entries(setAgg).sort((a,b) => b[1].qty - a[1].qty);
+  if (setTotals) {
+    setTotals.innerHTML = setEntries.map(([name, d]) => `
+      <div style="background:var(--secondary);border:1px solid var(--border);border-radius:6px;padding:6px 10px;min-width:110px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted-foreground);font-weight:700">${escapeHtml(name)}</div>
+        <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:15px">${(d.qty||0).toLocaleString()}</div>
+        ${d.sales > 0 ? `<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted-foreground)">£${d.sales.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  // ── Per-modifier rows ────────────────────────────────────────────
+  // Sort by set then qty descending so related modifiers cluster together.
+  const sorted = rows.slice().sort((a,b) => {
+    if ((a.set||'') !== (b.set||'')) return (a.set||'').localeCompare(b.set||'');
+    return (b.netQty||0) - (a.netQty||0);
+  });
+
+  let lastSet = null;
+  body.innerHTML = sorted.map(r => {
+    const product = matchModifierToProduct(r.modifier, state.products);
+    const setLabel = (r.set || '') === lastSet
+      ? '<span style="color:var(--muted-foreground)">↳</span>'
+      : `<strong>${escapeHtml(r.set || '—')}</strong>`;
+    lastSet = r.set || '';
+
+    // Variance vs physical stock — only meaningful if we matched a product
+    let physicalCell = '—', varCell = '—', pctCell = '—', varClass = '';
+    let productLabel = '<span style="color:var(--muted-foreground);font-size:12px">— no match —</span>';
+    if (product) {
+      productLabel = `${escapeHtml(product.name)}${product.size ? ` <span style="color:var(--muted-foreground);font-size:11px">(${escapeHtml(product.size)})</span>` : ''}`;
+      const opening   = getOpeningStock(product.id);
+      const closing   = (state.closing[product.id] || {}).fullCount || 0;
+      const transfers = (state.transfers || [])
+        .filter(t => t.productId === product.id)
+        .reduce((s,t) => s + (t.qty || 0), 0);
+      const physical  = Math.max(0, opening - closing - transfers);
+      const sold      = r.netQty || 0;
+      const variance  = physical - sold;
+      const varPct    = sold > 0 ? (variance / sold) * 100 : (physical > 0 ? 100 : 0);
+      const absPct    = Math.abs(varPct);
+      varClass    = sold === 0 ? '' : absPct < 5 ? 'variance-good' : absPct < 15 ? 'variance-warn' : 'variance-bad';
+      const sign  = variance > 0 ? '+' : '';
+      physicalCell = formatQty(physical);
+      varCell      = sign + formatQty(variance);
+      pctCell      = sold === 0 ? '—' : (sign + varPct.toFixed(1) + '%');
+    }
+
+    return `
+      <tr>
+        <td>${setLabel}</td>
+        <td style="font-weight:500">${escapeHtml(r.modifier || '—')}</td>
+        <td>${productLabel}</td>
+        <td style="font-family:'DM Mono',monospace">${(r.netQty||0).toLocaleString()}</td>
+        <td style="font-family:'DM Mono',monospace">${(r.netSales||0) > 0 ? '£' + r.netSales.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+        <td style="font-family:'DM Mono',monospace">${physicalCell}</td>
+        <td class="${varClass}" style="font-family:'DM Mono',monospace">${varCell}</td>
+        <td class="${varClass}" style="font-family:'DM Mono',monospace">${pctCell}</td>
+      </tr>
+    `;
+  }).join('');
+}

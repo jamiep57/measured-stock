@@ -17,6 +17,9 @@
 .env.local
 .env.*.local
 
+# Cursor MCP config (contains personal access tokens)
+.cursor/mcp.json
+
 # Logs
 *.log
 npm-debug.log*

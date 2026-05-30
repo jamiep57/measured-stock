@@ -10,9 +10,39 @@ appData = {
   events: {
     "abc123": { ...state },   // one entry per event
     "def456": { ...state },
-  }
+  },
+  recipes: [ ...Recipe ],     // global recipe library (shared across every event)
+  _recipesSavedAt: 1717081200000, // timestamp for cloud-sync conflict resolution
 }
 ```
+
+### Global Recipes Library
+
+`appData.recipes` is a flat array of `Recipe` objects, shared by every event.
+When cloud sync is connected it syncs as a single reserved row in `stock_events`
+with `id = "__recipes__"` (no extra Supabase table required, so no SQL setup
+needed beyond the existing cloud-sync onboarding).
+
+```js
+Recipe = {
+  id:            "rec_abc",                  // string — unique recipe id
+  tillItem:      "Vodka Redbull (Double)",   // matches the "Item Name" col in Square CSV
+  tillVariation: "Regular",                  // matches the "Item Variation" col
+  _unitModel:    "case",                     // string — set on recipes using case-fraction qty
+  ingredients: [
+    { productName: "Finlandia Vodka 1L", qty: 0.0139 }, // 2/(6×24) = 2 shots from a 6-bottle case
+    { productName: "Red Bull (Can)",     qty: 0.0417 }, // 1/24 = 1 can from a 24-can case
+  ],
+  notes:         "",
+}
+```
+
+`qty` is the fraction of one **case/SKU** consumed per sale. For a 24-can case
+where one can is sold, `qty = 1/24`. For a single shot from a 6-bottle case
+with 24 shots per bottle, `qty = 1/(6 × 24) = 1/144`. A whole case is `qty = 1`.
+Recipes saved in this format carry `_unitModel: "case"`; older recipes (without
+that flag) used `qty = fraction of one bottle/can` and can be one-click migrated
+from the COGS panel.
 
 `state` is a live reference into `appData.events[currentEventId]`. Modifying `state` modifies the event directly.
 
@@ -118,6 +148,26 @@ state = {
       returnAmount:  6,   // number — SKUs being returned to supplier
       carriedOver:   0,   // number — SKUs kept for next event
     }
+  },
+
+  // ── Till Sales (per event) ────────────────────────────
+  // Populated when the user imports a Square item-sales-summary CSV/TSV.
+  // Drives the COGS panel.
+  tillSales: {
+    importedAt: "2026-05-29T15:00:00.000Z", // ISO string
+    fileName:   "item-sales-summary-2026-05-22-2026-05-24.csv",
+    rows: [
+      {
+        name:       "Vodka Redbull (Double)",
+        variation:  "Regular",
+        sku:        "024",
+        category:   "Redbull & Spirit",
+        itemsSold:  1278,
+        netSales:   13252.15,
+        grossSales: 15904.84,
+      },
+      // ...one entry per till line
+    ],
   },
 }
 ```

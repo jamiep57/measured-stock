@@ -5,6 +5,29 @@ The version number is reflected in the HTML filename and `<title>` tag.
 
 ---
 
+## v4.2
+- **COGS recipe qty is now a fraction of one case/SKU** (was previously fraction of a bottle/can). This makes the cost formula intuitive: `COGS = itemsSold × qty × orderPrice`. Selling one can from a 24-can case is `qty = 1/24`; a single shot from a 6-bottle case at 24 shots/bottle is `qty = 1/144`.
+- **Auto-fix legacy recipes** button in the COGS diagnostics banner: rewrites any ingredient set as a whole case (qty ≥ 1 on a multi-unit pack) to `1/unitsPerSku` so the original "1 whole can" intent is preserved.
+- **Recipe drawer quick-buttons** are now product-aware: `1 unit`, `Shot`, `Double`, and `1 case` compute the right case-fraction from the selected product's `unitsPerSku`.
+- **Auto-map** produces case-fractions directly (using the matched product's `unitsPerSku`), so no manual fix-up is needed.
+- COGS diagnostics: new "Legacy qty" warning for ingredients with qty ≥ 1 on a multi-unit case; "fraction qty" warning removed (pour-fractions on cases are now correct).
+- New `_unitModel: "case"` flag on saved/migrated recipes so the diagnostic stops nudging once they've been updated.
+
+## v4.1
+- **COGS panel** (`#panel-cogs`, under Stock in the sidebar)
+  - **Import Till CSV** button accepts the Square `item-sales-summary` export (CSV, TSV, or XLSX); stored per event in `state.tillSales`
+  - Maps every till line through a recipe to compute ingredient consumption and £ COGS
+  - Stat cards: Net Revenue, Total COGS, Gross Margin (£ + %), Unmapped Sales %
+  - Tables: Unmapped Till Items (with one-click "Create Recipe"), COGS by Product (with physical-stock variance and traffic-light highlighting), COGS by Till Item, COGS by Supplier
+  - Variance: compares till-implied consumption against `opening - closing - transfers` to surface over-pouring or shrinkage
+- **Recipes panel** (`#panel-recipes`, new top-level sidebar item)
+  - Global library mapping till item names to product + quantity ingredient lists
+  - Slide-in drawer with product autocomplete and quick-fill quantity buttons for `1/24`, `2/24`, and `1`
+  - Quantity input accepts fractions / math expressions (`1/24`, `2/24`, `3/24+1/48`)
+  - "Auto-create 1:1 from Till" button generates a recipe for every till item whose name exactly matches a product
+  - Stored as a reserved row in the existing `stock_events` table (`id = "__recipes__"`) — no SQL setup required, syncs across devices via the same polling pipeline as events
+- `appData.recipes` added at the top level; loads/migrates safely from old `appData` blobs
+
 ## v1.9
 - **Category badges** — blank if the product's category doesn't exactly match a name configured in Setup → Product Categories
 - Badge colour map updated to match the new canonical category names (Beer, Cider, Wine, Sparkling Wine, Spirit & Mixer, RTDs, Canned Cocktails, Hard Seltzer, Shots, Cocktails, Soft Drinks)
