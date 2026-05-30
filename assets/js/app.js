@@ -5559,14 +5559,21 @@ function computeCogs(stateRef, recipes) {
       lowMarginItems: diagnostics.lowMarginItems.sort((a, b) => b.netSales - a.netSales),
       legacyQtyItems: diagnostics.legacyQtyItems.sort((a, b) => b.netSales - a.netSales),
     },
-    totals: {
-      revenue: totalRevenue,
-      cogs:    totalCogs,
-      margin:  totalRevenue - totalCogs,
-      marginPct: totalRevenue > 0 ? ((totalRevenue - totalCogs) / totalRevenue) * 100 : 0,
-      unmappedRevenue,
-      unmappedPct: totalRevenue > 0 ? (unmappedRevenue / totalRevenue) * 100 : 0,
-    },
+    totals: (function () {
+      const mapped = perTillItem.filter(r => r.mapped && r.marginPct != null);
+      const avgMarginPct = mapped.length
+        ? mapped.reduce((s, r) => s + r.marginPct, 0) / mapped.length
+        : 0;
+      return {
+        revenue: totalRevenue,
+        cogs:    totalCogs,
+        margin:  totalRevenue - totalCogs,
+        marginPct: totalRevenue > 0 ? ((totalRevenue - totalCogs) / totalRevenue) * 100 : 0,
+        avgMarginPct,
+        unmappedRevenue,
+        unmappedPct: totalRevenue > 0 ? (unmappedRevenue / totalRevenue) * 100 : 0,
+      };
+    })(),
   };
 }
 
@@ -5720,7 +5727,7 @@ function renderCogs() {
     <div class="stat-card"><div class="stat-label">Net Revenue</div><div class="stat-value">£${t.revenue.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="stat-sub">from imported till</div></div>
     <div class="stat-card"><div class="stat-label">Total COGS</div><div class="stat-value">£${t.cogs.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="stat-sub">cost of goods sold</div></div>
     <div class="stat-card"><div class="stat-label">Gross Margin</div><div class="stat-value">£${t.margin.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="stat-sub">${t.marginPct.toFixed(1)}% margin</div></div>
-    <div class="stat-card"><div class="stat-label">Margin %</div><div class="stat-value">${(t.cogs > 0 ? (t.margin / t.cogs) * 100 : 0).toFixed(1)}%</div><div class="stat-sub">margin as % of COGS</div></div>
+    <div class="stat-card"><div class="stat-label">Avg Margin %</div><div class="stat-value">${t.avgMarginPct.toFixed(1)}%</div><div class="stat-sub">average across mapped items</div></div>
   `;
 
   // Till-item mapping table: unmapped first (action queue), then mapped at the
