@@ -3464,9 +3464,9 @@ function renderClosing() {
     const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
     const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
     const sorDisplay = sor != null ? sor + '%' : '—';
-    // Max returnable = Invoice QTY × SOR%, rounded DOWN to the nearest whole integer.
+    // Max returnable = Invoice QTY × SOR%, rounded UP to the nearest whole integer.
     const invForCalc = invoiceQty !== '' ? parseFloat(invoiceQty) : (o.deliveredQty ?? p.qtyOrdered ?? 0);
-    const maxReturn = sor != null ? Math.floor((invForCalc || 0) * sor / 100) : '—';
+    const maxReturn = sor != null ? Math.ceil((invForCalc || 0) * sor / 100) : '—';
 
     return `
       <tr>
@@ -3499,8 +3499,8 @@ function recalcClosing(id) {
 
   const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
   const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
-  // Max returnable = Invoice QTY × SOR%, rounded DOWN to the nearest whole integer.
-  const maxReturn = sor != null ? Math.floor((invoiceQty || 0) * sor / 100) : '—';
+  // Max returnable = Invoice QTY × SOR%, rounded UP to the nearest whole integer.
+  const maxReturn = sor != null ? Math.ceil((invoiceQty || 0) * sor / 100) : '—';
 
   const maxRetEl = document.getElementById('cl-maxret-' + id);
   const retEl    = document.getElementById('cl-return-'  + id);
@@ -3583,10 +3583,10 @@ function renderSummary() {
       .reduce((s, w) => s + (w.unit === 'units' && ups > 0 ? (w.qty || 0) / ups : (w.qty || 0)), 0);
     const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
     const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
-    // Return amount = Invoice QTY × SOR%, rounded down.
+    // Return amount = Invoice QTY × SOR%, rounded up.
     const o = state.opening[p.id] || {};
     const invoiceQty = o.invoiceQty != null ? o.invoiceQty : (o.deliveredQty ?? p.qtyOrdered ?? 0);
-    const returnAmt = sor != null ? Math.floor((invoiceQty || 0) * sor / 100) : 0;
+    const returnAmt = sor != null ? Math.ceil((invoiceQty || 0) * sor / 100) : 0;
     const consumed = opening - transferred - wastage - closing;
 
     totalOrdered += p.qtyOrdered || 0;
