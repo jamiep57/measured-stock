@@ -329,12 +329,39 @@ async function cloudPush(eventObj) {
     });
     _localDirty = false;
     setSyncStatus('synced');
+    triggerSyncEvent(eventObj.id);
     return true;
   } catch(err) {
     console.error('[Sync] Push failed:', err.message);
     setSyncStatus('error');
     return false;
   }
+}
+
+// Fire-and-forget POST to /api/sync-event so the server-side projection
+// to the v2 relational tables stays current. Failures are silent — the
+// /api/sync-catchup cron picks up any rows whose blob updated_at is
+// ahead of events.source_updated_at within ~5 minutes.
+//
+// Coalesces rapid successive saves of the same event into a single
+// trailing call (200ms debounce per event id) so a burst of typing
+// doesn't fan out into N rebuilds.
+const _syncTriggerTimers = {};
+function triggerSyncEvent(id) {
+  if (!id) return;
+  if (_syncTriggerTimers[id]) clearTimeout(_syncTriggerTimers[id]);
+  _syncTriggerTimers[id] = setTimeout(() => {
+    delete _syncTriggerTimers[id];
+    try {
+      fetch('/api/sync-event', {
+        method:      'POST',
+        headers:     {'Content-Type': 'application/json'},
+        body:        JSON.stringify({ event_id: id }),
+        keepalive:   true,
+        credentials: 'same-origin',
+      }).catch(() => { /* catch-up worker will retry */ });
+    } catch (_) { /* offline / aborted — catch-up worker will retry */ }
+  }, 200);
 }
 
 async function cloudPull() {
@@ -4320,6 +4347,7 @@ async function cloudPushBugs() {
       headers: { 'Prefer': 'resolution=merge-duplicates' },
       body:    JSON.stringify({ id: BUGS_ROW_ID, name: '__bugs__', data: payload }),
     });
+    triggerSyncEvent(BUGS_ROW_ID);
     return true;
   } catch (err) {
     console.error('[Sync] Bugs push failed:', err.message);
@@ -4552,6 +4580,7 @@ async function cloudPushRecipes() {
       headers: { 'Prefer': 'resolution=merge-duplicates' },
       body:    JSON.stringify({ id: RECIPES_ROW_ID, name: '__recipes__', data: payload }),
     });
+    triggerSyncEvent(RECIPES_ROW_ID);
     return true;
   } catch(err) {
     console.error('[Sync] Recipe push failed:', err.message);

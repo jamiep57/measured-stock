@@ -120,5 +120,9 @@ export default async function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/((?!api/unlock).*)'],
+  // Skip the PIN gate for:
+  //   /api/unlock        — the gate itself
+  //   /api/sync-catchup  — server-to-server cron + manual catch-ups
+  //                         (gated by CRON_SECRET inside the handler)
+  matcher: ['/((?!api/unlock|api/sync-catchup).*)'],
 };
