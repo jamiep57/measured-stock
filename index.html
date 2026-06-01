@@ -123,15 +123,30 @@
   ║        (id = "__recipes__"), so no extra SQL setup is needed —       ║
   ║        the user can do everything from inside the app.               ║
   ║                                                                      ║
+  ║  v4.2  Spreadsheet-style keyboard navigation in every table.         ║
+  ║        Arrow Up/Down jumps between the cell above/below in the       ║
+  ║        same column. Arrow Left/Right jumps to the previous/next      ║
+  ║        cell in the same row (at the edge of the value, so in-cell    ║
+  ║        text editing still works). Enter moves down one row,          ║
+  ║        Shift+Enter moves up. Date/time/select inputs keep their      ║
+  ║        native arrow behaviour; hold Alt with arrows on a select to   ║
+  ║        step out of it. Focus auto-selects the cell's value so        ║
+  ║        typing immediately replaces it.                               ║
+  ║                                                                      ║
+  ║  v4.3  Closing Stock: Return Amount now capped at the closing count  ║
+  ║        (cases). You can't quote a return larger than what's          ║
+  ║        physically on the shelf — Return Amount = min(Invoice × SOR%, ║
+  ║        Closing Count Cases). Summary panel return totals match.      ║
+  ║                                                                      ║
   ╚══════════════════════════════════════════════════════════════════════╝
 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Measured Stock System v4.1</title>
+  <title>Measured Stock System v4.3</title>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/style.css?v=20260529-1844-fielderrors">
+  <link rel="stylesheet" href="assets/css/style.css?v=20260601-1228-returncap">
 </head>
 <body>
 
@@ -143,6 +158,7 @@
       <div class="logo">
         <img src="assets/img/logo.png" alt="Measured">
       </div>
+      <span class="sidebar-version" id="appVersion" title="App version"></span>
     </div>
 
     <div class="sidebar-event">
@@ -1159,7 +1175,7 @@
 <!-- ========== SCRIPTS ========== -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="assets/js/app.js?v=20260529-1844-fielderrors"></script>
+<script src="assets/js/app.js?v=20260601-1228-returncap"></script>
 
 </body>
 </html>

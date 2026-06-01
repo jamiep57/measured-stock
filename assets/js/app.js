@@ -1,4 +1,9 @@
 // ============================================================
+// APP VERSION (single source of truth — update here on each release)
+// ============================================================
+const APP_VERSION = 'v4.3';
+
+// ============================================================
 // DATA STORE — MULTI-EVENT + CLOUD SYNC
 // ============================================================
 const DEFAULT_CATEGORIES = ['Beer','Cider','Wine','Sparkling Wine','Spirit & Mixer','RTDs','Canned Cocktails','Hard Seltzer','Shots','Cocktails','Soft Drinks'];
@@ -3467,6 +3472,10 @@ function renderClosing() {
     // Max returnable = Invoice QTY × SOR%, rounded UP to the nearest whole integer.
     const invForCalc = invoiceQty !== '' ? parseFloat(invoiceQty) : (o.deliveredQty ?? p.qtyOrdered ?? 0);
     const maxReturn = sor != null ? Math.ceil((invForCalc || 0) * sor / 100) : '—';
+    // Return amount is capped at what's physically left in the closing count —
+    // you can't return more cases than you've actually got on the shelf.
+    const closingCasesNum = closingCases !== '' ? parseFloat(closingCases) || 0 : 0;
+    const returnAmount = maxReturn === '—' ? '—' : Math.min(maxReturn, closingCasesNum);
 
     return `
       <tr>
@@ -3479,7 +3488,7 @@ function renderClosing() {
         <td><input type="number" min="0" value="${closingCases}" placeholder="" style="width:90px" id="cl-cases-${p.id}" oninput="recalcClosing('${p.id}')" onblur="flushClosing('${p.id}')"></td>
         <td><input type="number" min="0" value="${closingSingles}" placeholder="" style="width:90px" id="cl-singles-${p.id}" oninput="recalcClosing('${p.id}')" onblur="flushClosing('${p.id}')"></td>
         <td style="font-weight:700" id="cl-maxret-${p.id}">${maxReturn}</td>
-        <td style="font-weight:700" id="cl-return-${p.id}">${maxReturn !== '—' ? maxReturn : '—'}</td>
+        <td style="font-weight:700" id="cl-return-${p.id}">${returnAmount}</td>
         <td><input type="number" value="${cl.carriedOver ?? ''}" placeholder="" style="width:80px" id="cl-carry-${p.id}" oninput="recalcClosing('${p.id}')" onblur="flushClosing('${p.id}')"></td>
       </tr>
     `;
@@ -3502,16 +3511,20 @@ function recalcClosing(id) {
   // Max returnable = Invoice QTY × SOR%, rounded UP to the nearest whole integer.
   const maxReturn = sor != null ? Math.ceil((invoiceQty || 0) * sor / 100) : '—';
 
-  const maxRetEl = document.getElementById('cl-maxret-' + id);
-  const retEl    = document.getElementById('cl-return-'  + id);
-  if (maxRetEl) maxRetEl.textContent = maxReturn;
-  if (retEl)    retEl.textContent    = maxReturn;
-
   const casesEl   = document.getElementById('cl-cases-'   + id);
   const singlesEl = document.getElementById('cl-singles-' + id);
   const carryEl   = document.getElementById('cl-carry-'   + id);
   const cases   = casesEl   ? (parseFloat(casesEl.value)   || 0) : 0;
   const singles = singlesEl ? (parseFloat(singlesEl.value) || 0) : 0;
+
+  // Return amount is capped at the physical closing count (cases) — you can't
+  // return more than you actually have.
+  const returnAmount = maxReturn === '—' ? '—' : Math.min(maxReturn, cases);
+
+  const maxRetEl = document.getElementById('cl-maxret-' + id);
+  const retEl    = document.getElementById('cl-return-'  + id);
+  if (maxRetEl) maxRetEl.textContent = maxReturn;
+  if (retEl)    retEl.textContent    = returnAmount;
   const ups     = p.unitsPerSku || 1;
   state.closing[id] = {
     closingCases:   cases,
@@ -3583,10 +3596,13 @@ function renderSummary() {
       .reduce((s, w) => s + (w.unit === 'units' && ups > 0 ? (w.qty || 0) / ups : (w.qty || 0)), 0);
     const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
     const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
-    // Return amount = Invoice QTY × SOR%, rounded up.
+    // Return amount = min(Invoice QTY × SOR%, closing cases). Capped at the
+    // physical closing count so we never quote a return larger than we hold.
     const o = state.opening[p.id] || {};
     const invoiceQty = o.invoiceQty != null ? o.invoiceQty : (o.deliveredQty ?? p.qtyOrdered ?? 0);
-    const returnAmt = sor != null ? Math.ceil((invoiceQty || 0) * sor / 100) : 0;
+    const maxReturnSor = sor != null ? Math.ceil((invoiceQty || 0) * sor / 100) : 0;
+    const closingCasesForReturn = cl.closingCases ?? cl.fullCount ?? 0;
+    const returnAmt = sor != null ? Math.min(maxReturnSor, closingCasesForReturn) : 0;
     const consumed = opening - transferred - wastage - closing;
 
     totalOrdered += p.qtyOrdered || 0;
@@ -3892,6 +3908,13 @@ save(); // persist the sorted order so it survives next load
 if (_autoLoadSample) loadSampleData(true);
 else renderAll();
 initPillDelegation();
+applyAppVersion();
+
+function applyAppVersion() {
+  const el = document.getElementById('appVersion');
+  if (el) el.textContent = APP_VERSION;
+  document.title = `Measured Stock System ${APP_VERSION}`;
+}
 
 // Defer cloud init until all scripts have loaded
 window.addEventListener('load', () => {
@@ -6162,3 +6185,174 @@ function renderModifierReport() {
     `;
   }).join('');
 }
+
+// ============================================================
+// SPREADSHEET-STYLE KEYBOARD NAVIGATION
+// ------------------------------------------------------------
+// Within any <table>, treat input/select cells like spreadsheet
+// cells:
+//   ArrowUp / ArrowDown  → move to the cell above / below in the
+//                          same column (skips rows with no input
+//                          in that column).
+//   ArrowLeft / ArrowRight → move to the previous / next focusable
+//                          cell in the same row. For text inputs
+//                          this only fires when the caret is at
+//                          the start (left) or end (right) of the
+//                          value, so in-cell text editing still
+//                          works normally.
+//   Enter                → move down one row, same column.
+//   Shift+Enter          → move up one row, same column.
+//   Tab / Shift+Tab      → native browser behaviour (untouched).
+//
+// Date/time/file/checkbox/radio inputs keep their native arrow-key
+// behaviour. <select> keeps native up/down for choosing an option
+// (use Alt+Up/Down to step between cells from a select).
+// ============================================================
+(function setupSpreadsheetNav() {
+  const NAV_SELECTOR = [
+    'input:not([type="date"])',
+    ':not([type="time"])',
+    ':not([type="datetime-local"])',
+    ':not([type="file"])',
+    ':not([type="checkbox"])',
+    ':not([type="radio"])',
+    ':not([type="color"])',
+    ':not([type="range"])',
+    ':not([disabled])',
+    ':not([readonly])'
+  ].join('') + ', select:not([disabled])';
+
+  function isTextLikeInput(el) {
+    if (!el || el.tagName !== 'INPUT') return false;
+    const t = (el.type || 'text').toLowerCase();
+    return t === 'text' || t === 'number' || t === 'search' || t === 'tel' || t === 'url' || t === 'email' || t === 'password' || t === '';
+  }
+
+  function caretAtStart(el) {
+    if (!isTextLikeInput(el)) return true;
+    try {
+      if (typeof el.selectionStart !== 'number') return true;
+      return el.selectionStart === 0 && el.selectionEnd === 0;
+    } catch (_) { return true; }
+  }
+
+  function caretAtEnd(el) {
+    if (!isTextLikeInput(el)) return true;
+    try {
+      if (typeof el.selectionStart !== 'number') return true;
+      const len = (el.value || '').length;
+      return el.selectionStart === len && el.selectionEnd === len;
+    } catch (_) { return true; }
+  }
+
+  function getCellInfo(el) {
+    const cell = el.closest('td, th');
+    if (!cell) return null;
+    const row = cell.parentElement;
+    if (!row || row.tagName !== 'TR') return null;
+    const cells = Array.from(row.children);
+    return { row, cell, colIndex: cells.indexOf(cell) };
+  }
+
+  function focusableIn(cell) {
+    if (!cell) return null;
+    const list = cell.querySelectorAll(NAV_SELECTOR);
+    for (const el of list) {
+      // Skip hidden elements (display:none, visibility:hidden, zero size)
+      if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') continue;
+      return el;
+    }
+    return null;
+  }
+
+  function findInColumn(startRow, colIndex, direction) {
+    let row = startRow;
+    // Walk row-by-row in the same parent (tbody/thead/tfoot)
+    while (true) {
+      row = direction > 0 ? row.nextElementSibling : row.previousElementSibling;
+      if (!row) return null;
+      if (row.tagName !== 'TR') continue;
+      const cell = row.children[colIndex];
+      const target = focusableIn(cell);
+      if (target) return target;
+    }
+  }
+
+  function findInRow(row, startCol, direction) {
+    const cells = Array.from(row.children);
+    let i = startCol + direction;
+    while (i >= 0 && i < cells.length) {
+      const target = focusableIn(cells[i]);
+      if (target) return target;
+      i += direction;
+    }
+    return null;
+  }
+
+  function focusAndSelect(el) {
+    if (!el) return;
+    el.focus();
+    if (isTextLikeInput(el)) {
+      try { el.select(); } catch (_) {}
+    }
+    const cell = el.closest('td, th');
+    if (cell && cell.scrollIntoView) {
+      cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }
+
+  document.addEventListener('keydown', function (e) {
+    const el = e.target;
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'SELECT')) return;
+    if (el.tagName === 'INPUT') {
+      const t = (el.type || '').toLowerCase();
+      if (t === 'date' || t === 'time' || t === 'datetime-local' || t === 'file' || t === 'checkbox' || t === 'radio' || t === 'color' || t === 'range') return;
+    }
+    // Ignore modifier combos we don't handle (Ctrl/Cmd+arrow used by OS for word/line jumps).
+    if (e.ctrlKey || e.metaKey) return;
+
+    const info = getCellInfo(el);
+    if (!info) return;
+
+    const key = e.key;
+
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      // For <select>, only nav cells if Alt is held; otherwise native option step.
+      if (el.tagName === 'SELECT' && !e.altKey) return;
+      const target = findInColumn(info.row, info.colIndex, key === 'ArrowDown' ? 1 : -1);
+      if (target) {
+        e.preventDefault();
+        focusAndSelect(target);
+      }
+      return;
+    }
+
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+      const direction = key === 'ArrowRight' ? 1 : -1;
+      // Inside a text-like input, only jump cells when caret is at the edge.
+      if (isTextLikeInput(el)) {
+        if (direction < 0 && !caretAtStart(el)) return;
+        if (direction > 0 && !caretAtEnd(el)) return;
+      }
+      const target = findInRow(info.row, info.colIndex, direction);
+      if (target) {
+        e.preventDefault();
+        focusAndSelect(target);
+      }
+      return;
+    }
+
+    if (key === 'Enter') {
+      // Don't hijack Enter inside selects (it confirms the option) or when
+      // the input lives inside a form that wants Enter to submit. Tables
+      // here are autosave so Enter = move down is the safer default.
+      if (el.tagName === 'SELECT') return;
+      const target = findInColumn(info.row, info.colIndex, e.shiftKey ? -1 : 1);
+      if (target) {
+        e.preventDefault();
+        focusAndSelect(target);
+      }
+      return;
+    }
+  }, false);
+})();
