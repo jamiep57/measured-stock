@@ -409,44 +409,13 @@
           <!-- Cloud Sync -->
           <div class="card" id="cloudCard" style="grid-column:1/-1">
             <div class="card-title" style="margin-bottom:6px">☁ Cloud Sync (Multi-Device)</div>
-            <p style="font-size:12px;color:var(--muted-foreground);margin-bottom:16px;line-height:1.6">
-              Connect to <strong>Supabase</strong> for real-time sync across all devices.
+            <p style="font-size:12px;color:var(--muted-foreground);margin-bottom:14px;line-height:1.6">
+              Cloud sync is <strong>built in</strong> and always on. Every change you make is saved to the cloud and appears on your other devices within a few seconds — no setup required.
             </p>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div class="form-row">
-                <label>Supabase Project URL</label>
-                <input type="text" id="cloudUrl" placeholder="https://xxxxxxxxxxxx.supabase.co" oninput="previewCloudConfig()">
-              </div>
-              <div class="form-row">
-                <label>Supabase Anon Key</label>
-                <input type="text" id="cloudKey" placeholder="eyJhbGciOi..." oninput="previewCloudConfig()">
-              </div>
-            </div>
-            <div class="btn-row" style="margin-top:8px">
-              <button class="btn btn-primary btn-sm" onclick="connectCloud()">Connect & Sync</button>
-              <button class="btn btn-outline btn-sm" onclick="testCloud()">Test Connection</button>
-              <button class="btn btn-danger btn-sm" onclick="disconnectCloud()" id="disconnectBtn" style="display:none">Disconnect</button>
+            <div class="btn-row" style="margin-top:4px">
+              <button class="btn btn-outline btn-sm" onclick="forceResync()">↻ Force resync</button>
             </div>
             <div id="cloudStatusMsg" style="font-size:12px;margin-top:10px;color:var(--muted-foreground)"></div>
-            <details style="margin-top:16px">
-              <summary>Settings Instructions (5 minutes)</summary>
-              <div style="font-size:12px;color:var(--muted-foreground);margin-top:10px;line-height:1.8;background:var(--muted);padding:14px;border-radius:var(--radius);border:1px solid var(--border)">
-                <strong>1.</strong> Go to <a href="https://supabase.com" target="_blank" style="color:var(--foreground)">supabase.com</a> → New Project<br>
-                <strong>2.</strong> Go to <strong>SQL Editor</strong> and run:<br>
-                <pre id="sqlSnippet" style="background:var(--foreground);color:#d4d4d8;padding:10px;border-radius:var(--radius);font-size:11px;margin:8px 0;font-family:monospace;overflow-x:auto">create table if not exists stock_events (
-  id text primary key,
-  name text,
-  data jsonb,
-  updated_at timestamptz default now()
-);
-alter table stock_events enable row level security;
-create policy "anon read write" on stock_events
-  for all using (true) with check (true);</pre>
-                <button class="btn btn-outline btn-sm" onclick="copySQL()">Copy SQL</button><br><br>
-                <strong>3.</strong> Project Settings → API → copy URL and anon key above<br>
-                <strong>4.</strong> Click <strong>Connect & Sync</strong>
-              </div>
-            </details>
           </div>
         </div>
       </div>
@@ -472,7 +441,7 @@ create policy "anon read write" on stock_events
         <div class="card" style="margin-bottom:14px">
           <div class="card-title" style="margin-bottom:6px">Report a Bug</div>
           <p style="font-size:12px;color:var(--muted-foreground);margin-bottom:14px">
-            Found something broken or weird? Log it here. Bug reports are stored locally on this device.
+            Found something broken or weird? Log it here. Bug reports sync to the cloud when connected, and are saved locally otherwise.
           </p>
           <div style="display:grid;grid-template-columns:1fr 220px;gap:12px">
             <div class="form-row" style="margin-bottom:0">
@@ -768,13 +737,15 @@ create policy "anon read write" on stock_events
       <div id="panel-closing" class="panel">
         <div class="card" style="margin-bottom:14px">
           <div class="card-title">Closing Stock &amp; Financial Reconciliation</div>
-          <p style="font-size:13px;color:var(--muted-foreground);margin-top:2px">Full close count, financial reconciliation, and supplier returns.</p>
+          <p style="font-size:13px;color:var(--muted-foreground);margin-top:2px">Full close count, financial reconciliation, and supplier returns. Click <strong>Product</strong> or <strong>Category</strong> headers to sort.</p>
         </div>
         <div class="table-wrap">
           <div class="table-scroll"><table>
             <thead>
               <tr>
-                <th>Product</th><th>Category</th><th>Pack Size</th><th>Supplier</th><th>SOR %</th><th>Invoice Qty</th>
+                <th class="closing-sort-th" data-sort="name" onclick="setClosingSort('name')" style="cursor:pointer;user-select:none">Product <span class="closing-sort-arrow" id="closingSortArrow-name"></span></th>
+                <th class="closing-sort-th" data-sort="category" onclick="setClosingSort('category')" style="cursor:pointer;user-select:none">Category <span class="closing-sort-arrow" id="closingSortArrow-category"></span></th>
+                <th>Pack Size</th><th>Supplier</th><th>SOR %</th><th>Invoice Qty</th>
                 <th>Closing Count (Cases)</th><th>Closing Count (Singles)</th><th>Max Returnable</th><th>Return Amount</th><th>Carried Over</th>
               </tr>
             </thead>
