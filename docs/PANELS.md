@@ -106,13 +106,13 @@ Each panel is a `<div id="panel-{name}" class="panel">` in `index.html`. Only th
 
 **Purpose:** Record the final stock count at the end of the event and calculate supplier returns.
 
-**Columns:** Product, Supplier, SOR%, Invoice Qty, Full Close Count, Max Returnable (Invoice × SOR%), Return Amount, Carried Over
+**Columns:** Product, Category, Pack Size, Supplier, SOR%, Invoice Qty, Closing Count (Cases), Closing Count (Singles), Max Returnable (Invoice Qty × SOR%, floored), Return Amount, Carried Over
 
 **How it works:**
-- `closeCount` = physical count of remaining stock
-- `maxReturnable = invoiceQty × (sor / 100)` — capped return limit
-- `returnAmount` = user enters how many to actually return (capped at maxReturnable)
-- `carriedOver = closeCount - returnAmount`
+- `closingCases` / `closingSingles` = physical count of remaining stock (entered separately; total in cases = `cases + singles / unitsPerSku`)
+- `maxReturnable = Math.floor(invoiceQty × sor / 100)` — read-only, rounded down to nearest whole integer
+- `returnAmount` mirrors `maxReturnable`
+- `carriedOver` = user-entered carry-over stock
 
 **Key functions:** `renderClosing()`, `saveClosing()`
 
@@ -165,8 +165,9 @@ Each panel is a `<div id="panel-{name}" class="panel">` in `index.html`. Only th
 
 **Stock Movement table:**
 - One row per product
-- Columns: Opening, Distributed, Transfers Out, Closing Count, Consumed, Return Amount
-- `consumed = openingStock - closingCount - transfersOut`
+- Columns: Opening, Transfers Out, Wastage, Closing Count, Consumed, Return Amount
+- `consumed = openingStock - transfersOut - wastage - closingCount`
+- Transfers and wastage are normalised to cases (entries logged in units are divided by `unitsPerSku`)
 
 **Returns by Supplier table:**
 - Aggregated by supplier

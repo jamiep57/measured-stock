@@ -3364,7 +3364,7 @@ function renderClosing() {
   const products = [...state.products.filter(p => p.name)].sort((a,b) => (a.name||'').localeCompare(b.name||''));
 
   if (!products.length) {
-    body.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="icon">📊</div><p>Add products first.</p></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="icon">📊</div><p>Add products first.</p></div></td></tr>`;
     return;
   }
 
@@ -3373,11 +3373,14 @@ function renderClosing() {
     // Invoice qty now entered here on the financial reconciliation section
     const invoiceQty = o.invoiceQty != null ? o.invoiceQty : '';
     const cl = state.closing[p.id] || {};
+    const closingCases = cl.closingCases ?? cl.fullCount ?? '';
+    const closingSingles = cl.closingSingles ?? '';
     const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
     const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
     const sorDisplay = sor != null ? sor + '%' : '—';
-    const invForCalc = o.invoiceQty != null ? o.invoiceQty : (o.deliveredQty ?? p.qtyOrdered ?? 0);
-    const maxReturn = sor != null ? Math.round(invForCalc * sor / 100 * 10) / 10 : '—';
+    // Max returnable = Invoice QTY × SOR%, rounded DOWN to the nearest whole integer.
+    const invForCalc = invoiceQty !== '' ? parseFloat(invoiceQty) : (o.deliveredQty ?? p.qtyOrdered ?? 0);
+    const maxReturn = sor != null ? Math.floor((invForCalc || 0) * sor / 100) : '—';
 
     return `
       <tr>
@@ -3387,7 +3390,8 @@ function renderClosing() {
         <td style="color:var(--muted-foreground)">${p.supplier || '—'}</td>
         <td style="font-weight:600">${sorDisplay}</td>
         <td><input type="text" value="${invoiceQty}" placeholder="" style="width:90px" id="cl-inv-${p.id}" onblur="evalMathInput(this)" onchange="recalcClosing('${p.id}')"></td>
-        <td><input type="number" value="${cl.fullCount ?? ''}" placeholder="" style="width:90px" id="cl-full-${p.id}" onchange="recalcClosing('${p.id}')"></td>
+        <td><input type="number" min="0" value="${closingCases}" placeholder="" style="width:90px" id="cl-cases-${p.id}" onchange="recalcClosing('${p.id}')"></td>
+        <td><input type="number" min="0" value="${closingSingles}" placeholder="" style="width:90px" id="cl-singles-${p.id}" onchange="recalcClosing('${p.id}')"></td>
         <td style="font-weight:700" id="cl-maxret-${p.id}">${maxReturn}</td>
         <td style="font-weight:700" id="cl-return-${p.id}">${maxReturn !== '—' ? maxReturn : '—'}</td>
         <td><input type="number" value="${cl.carriedOver ?? ''}" placeholder="" style="width:80px" id="cl-carry-${p.id}" onchange="recalcClosing('${p.id}')"></td>
@@ -3400,7 +3404,7 @@ function recalcClosing(id) {
   const p = state.products.find(x => x.id === id);
   const invEl  = document.getElementById('cl-inv-'  + id);
   const invRaw = invEl ? invEl.value.trim() : '';
-  const invoiceQty = invRaw !== '' ? parseFloat(invRaw) : (state.opening[id]?.deliveredQty ?? p.qtyOrdered ?? 0);
+  const invoiceQty = invRaw !== '' ? parseFloat(invRaw) : (state.opening[id]?.invoiceQty ?? state.opening[id]?.deliveredQty ?? p.qtyOrdered ?? 0);
 
   // Persist invoice qty back to opening state so other tabs can use it
   if (!state.opening[id]) state.opening[id] = {};
@@ -3408,29 +3412,43 @@ function recalcClosing(id) {
 
   const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
   const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
-  const maxReturn = sor != null ? Math.round(invoiceQty * sor / 100 * 10) / 10 : '—';
+  // Max returnable = Invoice QTY × SOR%, rounded DOWN to the nearest whole integer.
+  const maxReturn = sor != null ? Math.floor((invoiceQty || 0) * sor / 100) : '—';
 
   const maxRetEl = document.getElementById('cl-maxret-' + id);
   const retEl    = document.getElementById('cl-return-'  + id);
   if (maxRetEl) maxRetEl.textContent = maxReturn;
   if (retEl)    retEl.textContent    = maxReturn;
 
-  const fullEl  = document.getElementById('cl-full-'  + id);
-  const carryEl = document.getElementById('cl-carry-' + id);
+  const casesEl   = document.getElementById('cl-cases-'   + id);
+  const singlesEl = document.getElementById('cl-singles-' + id);
+  const carryEl   = document.getElementById('cl-carry-'   + id);
+  const cases   = casesEl   ? (parseFloat(casesEl.value)   || 0) : 0;
+  const singles = singlesEl ? (parseFloat(singlesEl.value) || 0) : 0;
+  const ups     = p.unitsPerSku || 1;
   state.closing[id] = {
-    fullCount:   fullEl  ? (parseFloat(fullEl.value)  || 0) : 0,
-    carriedOver: carryEl ? (parseFloat(carryEl.value) || 0) : 0,
+    closingCases:   cases,
+    closingSingles: singles,
+    // fullCount kept for back-compat: total closing stock expressed in cases.
+    fullCount:      cases + (ups > 0 ? singles / ups : 0),
+    carriedOver:    carryEl ? (parseFloat(carryEl.value) || 0) : 0,
   };
   save();
 }
 
 function saveClosing() {
   state.products.forEach(p => {
-    const fullEl = document.getElementById('cl-full-' + p.id);
-    const carryEl = document.getElementById('cl-carry-' + p.id);
+    const casesEl   = document.getElementById('cl-cases-'   + p.id);
+    const singlesEl = document.getElementById('cl-singles-' + p.id);
+    const carryEl   = document.getElementById('cl-carry-'   + p.id);
+    const cases   = casesEl   ? (parseFloat(casesEl.value)   || 0) : 0;
+    const singles = singlesEl ? (parseFloat(singlesEl.value) || 0) : 0;
+    const ups     = p.unitsPerSku || 1;
     state.closing[p.id] = {
-      fullCount: fullEl ? (parseFloat(fullEl.value) || 0) : 0,
-      carriedOver: carryEl ? (parseFloat(carryEl.value) || 0) : 0,
+      closingCases:   cases,
+      closingSingles: singles,
+      fullCount:      cases + (ups > 0 ? singles / ups : 0),
+      carriedOver:    carryEl ? (parseFloat(carryEl.value) || 0) : 0,
     };
   });
   save();
@@ -3447,17 +3465,23 @@ function renderSummary() {
 
   const rows = products.map(p => {
     const opening = getOpeningStock(p.id);
-    const o = state.opening[p.id] || {};
-    const invoiceQty = o.invoiceQty != null ? o.invoiceQty : (o.deliveredQty ?? p.qtyOrdered ?? 0);
     const cl = state.closing[p.id] || {};
     const closing = cl.fullCount ?? 0;
-    const transferred = (state.transfers || []).filter(t => t.productId === p.id).reduce((s, t) => s + (t.qty || 0), 0);
-    const dist = state.distribution[p.id] || {};
-    const distributed = state.bars.reduce((s, b) => s + (dist[b] || 0), 0);
+    const ups = p.unitsPerSku || 1;
+    // Transfers and wastage may be logged in either cases or units — convert to cases.
+    const transferred = (state.transfers || [])
+      .filter(t => t.productId === p.id)
+      .reduce((s, t) => s + (t.unit === 'units' && ups > 0 ? (t.qty || 0) / ups : (t.qty || 0)), 0);
+    const wastage = (state.wastage || [])
+      .filter(w => w.productId === p.id)
+      .reduce((s, w) => s + (w.unit === 'units' && ups > 0 ? (w.qty || 0) / ups : (w.qty || 0)), 0);
     const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
     const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
-    const returnAmt = sor != null ? Math.round(invoiceQty * sor / 100 * 10) / 10 : 0;
-    const consumed = opening - closing - transferred;
+    // Return amount = Invoice QTY × SOR%, rounded down.
+    const o = state.opening[p.id] || {};
+    const invoiceQty = o.invoiceQty != null ? o.invoiceQty : (o.deliveredQty ?? p.qtyOrdered ?? 0);
+    const returnAmt = sor != null ? Math.floor((invoiceQty || 0) * sor / 100) : 0;
+    const consumed = opening - transferred - wastage - closing;
 
     totalOrdered += p.qtyOrdered || 0;
     totalOpening += opening;
@@ -3465,7 +3489,7 @@ function renderSummary() {
     totalReturn   += typeof returnAmt === 'number' ? returnAmt : 0;
     totalCost     += Math.max(0, consumed) * (p.orderPrice || 0);
 
-    return {p, opening, closing, distributed, transferred, consumed, returnAmt};
+    return {p, opening, closing, transferred, wastage, consumed, returnAmt};
   });
 
   document.getElementById('summaryStats').innerHTML = `
@@ -3476,8 +3500,12 @@ function renderSummary() {
     <div class="stat-card"><div class="stat-label">Total Returns</div><div class="stat-value">${totalReturn.toLocaleString()}</div><div class="stat-sub">units to return</div></div>
   `;
 
+  const fmt = (n) => {
+    const v = Number(n) || 0;
+    return Number.isInteger(v) ? v.toString() : v.toFixed(2).replace(/\.?0+$/, '');
+  };
   let lastCat = '';
-  document.getElementById('summaryTableBody').innerHTML = rows.map(({p, opening, closing, distributed, transferred, consumed, returnAmt}) => {
+  document.getElementById('summaryTableBody').innerHTML = rows.map(({p, opening, closing, transferred, wastage, consumed, returnAmt}) => {
     let catRow = '';
     if (p.category !== lastCat) {
       lastCat = p.category;
@@ -3487,11 +3515,11 @@ function renderSummary() {
       <tr>
         <td style="font-weight:500">${p.name}</td>
         <td>${catBadge(p.category)}</td>
-        <td style="font-family:'DM Mono',monospace">${opening}</td>
-        <td style="font-family:'DM Mono',monospace">${distributed}</td>
-        <td style="font-family:'DM Mono',monospace">${transferred}</td>
-        <td style="font-family:'DM Mono',monospace">${closing}</td>
-        <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--accent3)">${Math.max(0,consumed)}</td>
+        <td style="font-family:'DM Mono',monospace">${fmt(opening)}</td>
+        <td style="font-family:'DM Mono',monospace">${fmt(transferred)}</td>
+        <td style="font-family:'DM Mono',monospace">${fmt(wastage)}</td>
+        <td style="font-family:'DM Mono',monospace">${fmt(closing)}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--accent3)">${fmt(Math.max(0,consumed))}</td>
         <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--accent2)">${returnAmt}</td>
       </tr>
     `;
