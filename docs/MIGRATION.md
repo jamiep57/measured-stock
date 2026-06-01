@@ -219,12 +219,14 @@ After the deploy:
 - The `*/5 * * * *` cron is registered with Vercel (Hobby plan = once a
   day; Pro plan = every 5 minutes).
 
-Note: on Vercel Hobby/Free, cron runs at most once per day. The
-fire-and-forget trigger on every save means v2 stays fresh in real
-time anyway — cron is just a safety net. If you want sub-day catch-up
-on Hobby, schedule [cron-job.org](https://cron-job.org) or a GitHub
-Actions workflow to hit `/api/sync-catchup` every 5 minutes (pass the
-`Authorization: Bearer <CRON_SECRET>` header).
+Note: on Vercel Hobby/Free, cron must run at most once per day —
+`vercel.json` ships with `0 3 * * *` (03:00 UTC nightly) to satisfy
+that limit. The fire-and-forget trigger on every save means v2 stays
+fresh in real time anyway; cron is just a safety net for missed
+syncs. Upgrade to Pro to change the schedule to e.g. `*/5 * * * *`
+(every 5 minutes), or schedule [cron-job.org](https://cron-job.org)
+or a GitHub Actions workflow to hit `/api/sync-catchup` with the
+`Authorization: Bearer <CRON_SECRET>` header on the cadence you want.
 
 ### Phase 7 — Backfill PROD
 
