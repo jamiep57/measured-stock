@@ -22,7 +22,11 @@ import sb from '../lib/supabase-admin.js';
 
 const DEFAULT_SCOPE = 'mo95nl29jb46o,mpbb01nnvy0t7,__recipes__,__bugs__';
 
-function getScope() {
+async function resolveScope() {
+  if (process.env.SYNC_ALL === 'true') {
+    const rows = await sb.get('stock_events', '?select=id&order=id');
+    return rows.map(r => r.id);
+  }
   return (process.env.SYNC_SCOPE || DEFAULT_SCOPE)
     .split(',').map(s => s.trim()).filter(Boolean);
 }
@@ -61,14 +65,16 @@ export default async function handler(req, res) {
     return;
   }
 
-  const scope = getScope();
+  const scope = await resolveScope();
   const results = [];
 
   // Pull blob updated_at for in-scope rows
-  const blobRows = await sb.get(
-    'stock_events',
-    `?id=in.(${scope.map(enc).join(',')})&select=id,updated_at`
-  );
+  const blobRows = process.env.SYNC_ALL === 'true'
+    ? await sb.get('stock_events', '?select=id,updated_at&order=id')
+    : await sb.get(
+        'stock_events',
+        `?id=in.(${scope.map(enc).join(',')})&select=id,updated_at`
+      );
   const blobByLegacy = {};
   for (const r of blobRows) blobByLegacy[r.id] = r.updated_at;
 
