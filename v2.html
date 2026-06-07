@@ -5,14 +5,14 @@
   Reads/writes the v2 relational tables via assets/js/db.js. Event-scoped
   data is v2-owned as of the 2026-06-08 cutover — lib/sync-engine.js no
   longer deletes or overwrites existing rows from the blob (seed-only).
-  Intentionally separate from index.html until go-live routing is switched.
+  Served at / via vercel.json rewrite. Legacy blob app remains at /legacy.
   CRUD uses the reusable right-side Drawer (default pattern for the app).
 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Measured Stock — v2 (relational sandbox)</title>
+  <title>Measured Stock</title>
   <link rel="icon" type="image/png" href="assets/img/favicon.png?v=2">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
@@ -741,9 +741,9 @@
         <span class="nav-status-dot" title="Built — panel is functional"></span>
       </button>
 
-      <a class="nav-item" href="index.html" title="Back to the live blob app">
-        <i class="ph ph-arrow-left nav-icon"></i>
-        <span class="nav-label">Live app</span>
+      <a class="nav-item" href="/legacy" title="Legacy blob app (rollback only)">
+        <i class="ph ph-archive nav-icon"></i>
+        <span class="nav-label">Legacy app</span>
       </a>
       <a class="nav-item" href="/mobile" title="Open the staff mobile view (deliveries & counts)">
         <i class="ph ph-device-mobile nav-icon"></i>
@@ -1572,7 +1572,7 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="assets/js/db.js?v=20260608-0100-cutover"></script>
+<script src="assets/js/db.js?v=20260608-0200-golive"></script>
 <script>
   // ---------- state ----------
   const PROD_DB_REF = 'qqdvzcaukstfdixnfuqq';

@@ -2,8 +2,16 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/v2.html"
+    },
+    {
       "source": "/mobile",
       "destination": "/mobile.html"
+    },
+    {
+      "source": "/legacy",
+      "destination": "/index.html"
     }
   ],
   "crons": [
