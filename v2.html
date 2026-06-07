@@ -665,7 +665,7 @@
           <i class="ph ph-gear-six"></i>
         </button>
       </div>
-      <button class="sidebar-new-btn" type="button" disabled title="New events still created in the live app">+ New Event</button>
+      <button class="sidebar-new-btn" type="button" onclick="openNewEventModal()" title="Create a new event">+ New Event</button>
     </div>
 
     <nav class="sidebar-nav">
@@ -1568,7 +1568,7 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="assets/js/db.js?v=20260608-0210-sidebar"></script>
+<script src="assets/js/db.js?v=20260608-0220-new-event"></script>
 <script>
   // ---------- state ----------
   const PROD_DB_REF = 'qqdvzcaukstfdixnfuqq';
@@ -1709,6 +1709,45 @@
     if (!wrap || !trigger) return;
     const open = wrap.classList.toggle('open');
     trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function openNewEventModal() {
+    Drawer.open({
+      title: 'New event',
+      saveLabel: 'Create event',
+      fields: [
+        { key: 'name', label: 'Event name', type: 'text', full: true, required: true, placeholder: 'e.g. Highlights 2026' },
+        { key: 'status', label: 'Status', type: 'select', full: true,
+          options: [
+            { value: 'draft', label: 'Draft' },
+            { value: 'active', label: 'Active' },
+            { value: 'closing', label: 'Closing' },
+            { value: 'reconciled', label: 'Reconciled' },
+            { value: 'archived', label: 'Archived' },
+          ] },
+        { key: 'start_date', label: 'Start date on site', type: 'date' },
+        { key: 'end_date', label: 'End date on site', type: 'date' },
+        { key: 'venue', label: 'Venue address', type: 'textarea', full: true, placeholder: 'Street, building, city…' },
+        { key: 'venue_postcode', label: 'Postcode', type: 'text', placeholder: 'e.g. CT9 1XJ' },
+      ],
+      values: { status: 'active' },
+      onSave: async (v) => {
+        const name = (v.name || '').trim();
+        if (!name) throw new Error('Event name is required.');
+        const created = await DB.events.create({
+          name,
+          status: v.status || 'active',
+          start_date: v.start_date || null,
+          end_date: v.end_date || null,
+          venue: v.venue || null,
+          venue_postcode: v.venue_postcode || null,
+        });
+        await loadEventList();
+        $('eventPick').value = created.id;
+        switchEvent(created.id);
+        showPanel('setup');
+      },
+    });
   }
 
   function switchEvent(id) {
