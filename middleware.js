@@ -95,6 +95,19 @@ function loginPage(error) {
 </html>`;
 }
 
+// Paths a "staff" session may reach. Everything else is admin-only.
+// Staff get the mobile view plus the shared static assets it needs.
+function isStaffAllowed(pathname) {
+  return (
+    pathname === '/mobile' ||
+    pathname === '/mobile.html' ||
+    pathname.startsWith('/mobile/') ||
+    pathname.startsWith('/assets/') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/api/logout'
+  );
+}
+
 export default async function middleware(request) {
   const secret = process.env.COOKIE_SECRET;
   if (!secret) {
@@ -104,12 +117,18 @@ export default async function middleware(request) {
     });
   }
 
+  const url = new URL(request.url);
   const cookie = getAuthCookie(request.headers.get('cookie'));
-  if (cookie && (await verifyAuthToken(secret, cookie))) {
-    return;
+  const session = cookie ? await verifyAuthToken(secret, cookie) : null;
+
+  if (session) {
+    // Admins go anywhere; staff are confined to the mobile view.
+    if (session.role === 'admin' || isStaffAllowed(url.pathname)) {
+      return;
+    }
+    return Response.redirect(new URL('/mobile', request.url), 302);
   }
 
-  const url = new URL(request.url);
   return new Response(loginPage(url.searchParams.get('error')), {
     status: 401,
     headers: {

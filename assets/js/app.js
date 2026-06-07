@@ -262,10 +262,12 @@ function loadCloudConfig() {
   // every device, with no "Disconnect & reconnect" dance.
   if (BUILTIN_CLOUD_CONFIG.url && BUILTIN_CLOUD_CONFIG.key) {
     cloudConfig = { url: BUILTIN_CLOUD_CONFIG.url.replace(/\/$/, ''), key: BUILTIN_CLOUD_CONFIG.key };
+    syncDbConfig();
     return;
   }
   const raw = localStorage.getItem('measured_stock_cloud');
   if (raw) { try { cloudConfig = JSON.parse(raw); } catch(e) {} }
+  syncDbConfig();
 }
 
 function saveCloudConfig() {
@@ -276,6 +278,19 @@ function saveCloudConfig() {
 
 function hasCloud() {
   return !!(cloudConfig.url && cloudConfig.key);
+}
+
+// Share the active cloud config with the v2 relational data layer (db.js)
+// so both paths use one source of truth. Safe no-op if db.js isn't loaded.
+function syncDbConfig() {
+  try {
+    if (global_DB() && cloudConfig.url && cloudConfig.key) {
+      window.DB.configure({ url: cloudConfig.url, key: cloudConfig.key });
+    }
+  } catch (_) { /* db.js falls back to its builtin config */ }
+}
+function global_DB() {
+  return typeof window !== 'undefined' && window.DB;
 }
 
 function setSyncStatus(status) {

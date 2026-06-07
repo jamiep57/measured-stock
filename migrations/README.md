@@ -18,6 +18,7 @@ re-running the same file is safe.
 | `004_rls_policies.sql` | Open RLS policies on new tables that match `stock_events` permissions (so anon key keeps working from the browser; service role bypasses) | dev first, then prod |
 | `005_fix_products_units_per_case.sql` | `products.units_per_case` → `numeric` (V4 allows fractional `unitsPerSku`, e.g. 52.8) | dev/prod if 001 already ran with `integer` |
 | `006_fix_event_products_already_in_stock.sql` | `event_products.already_in_stock` → `numeric` (e.g. 5.8) | dev/prod if 002 already ran with `integer` |
+| `014_cutover_event_children.sql` | Documents event-children cutover; repairs inflated `close_count` from old sync formula | prod after deploying cutover sync-engine |
 
 ## Safety notes
 

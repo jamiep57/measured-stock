@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<!--
+  mobile.html — Staff "on the go" view
+  =====================================================================
+  A lightweight, mobile-first companion to the v2 dashboard. Staff use
+  this to (1) log deliveries and (2) run stock counts from a phone.
+
+  It reuses the same data layer (assets/js/db.js → window.DB) and the
+  same Supabase relational tables as v2.html, so everything written here
+  shows up in the admin dashboard immediately.
+
+  Auth: sits behind the shared PIN gate (middleware.js). The staff PIN
+  unlocks only this page; the admin PIN unlocks everything.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#18181b">
+  <title>Measured Stock — On the go</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png?v=2">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+  <style>
+    :root {
+      --background:#fafafa; --foreground:#09090b; --card:#ffffff;
+      --primary:#18181b; --primary-foreground:#fafafa;
+      --secondary:#f4f4f5; --muted:#f4f4f5; --muted-foreground:#71717a;
+      --border:#e4e4e7; --input:#e4e4e7; --ring:#18181b;
+      --radius:0.5rem;
+      --beer:#92400e; --cider:#3f6212; --wine:#7c3aed; --rtd:#1d4ed8;
+      --softs:#0f766e; --spirits:#dc2626; --success:#16a34a; --danger:#dc2626; --warning:#b45309;
+      --header-h:104px; --nav-h:64px;
+      --safe-top:env(safe-area-inset-top,0px);
+      --safe-bottom:env(safe-area-inset-bottom,0px);
+    }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html, body { margin:0; padding:0; }
+    body {
+      font-family:'Outfit',system-ui,sans-serif; color:var(--foreground);
+      background:var(--background); font-size:15px; line-height:1.5;
+      -webkit-font-smoothing:antialiased;
+    }
+    button { font-family:inherit; }
+    input, select, textarea { font-family:inherit; font-size:16px; } /* 16px avoids iOS zoom */
+
+    /* ---------- App frame ---------- */
+    .app { min-height:100vh; min-height:100dvh; display:flex; flex-direction:column; }
+
+    .topbar {
+      position:fixed; top:0; left:0; right:0; z-index:40;
+      background:var(--card); border-bottom:1px solid var(--border);
+      padding:calc(10px + var(--safe-top)) 14px 10px;
+    }
+    .topbar-row { display:flex; align-items:center; gap:10px; }
+    .brand { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; flex:1; min-width:0; }
+    .brand img { height:22px; width:auto; }
+    .brand .role-tag {
+      font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+      padding:2px 7px; border-radius:999px; background:var(--secondary); color:var(--muted-foreground);
+    }
+    .icon-btn {
+      flex-shrink:0; width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center;
+      background:var(--secondary); border:1px solid var(--border); border-radius:var(--radius);
+      color:var(--foreground); font-size:18px; cursor:pointer;
+    }
+    .event-select-wrap { margin-top:10px; position:relative; }
+    .event-select-wrap .ph-caret-down {
+      position:absolute; right:12px; top:50%; transform:translateY(-50%);
+      pointer-events:none; color:var(--muted-foreground); font-size:14px;
+    }
+    .event-select-wrap > i.ph-storefront {
+      position:absolute; left:12px; top:50%; transform:translateY(-50%);
+      pointer-events:none; color:var(--muted-foreground); font-size:16px;
+    }
+    select#eventPick {
+      width:100%; appearance:none; -webkit-appearance:none;
+      background:var(--secondary); border:1px solid var(--border); border-radius:var(--radius);
+      color:var(--foreground); font-weight:600; padding:12px 34px 12px 36px; outline:none;
+    }
+
+    .content {
+      flex:1; padding:calc(var(--header-h) + var(--safe-top)) 14px calc(var(--nav-h) + var(--safe-bottom) + 16px);
+    }
+
+    /* ---------- Bottom nav ---------- */
+    .bottomnav {
+      position:fixed; bottom:0; left:0; right:0; z-index:40;
+      background:var(--card); border-top:1px solid var(--border);
+      display:flex; padding-bottom:var(--safe-bottom);
+    }
+    .navbtn {
+      flex:1; border:none; background:none; padding:9px 4px; cursor:pointer;
+      display:flex; flex-direction:column; align-items:center; gap:3px;
+      color:var(--muted-foreground); font-size:11px; font-weight:600;
+    }
+    .navbtn i { font-size:22px; }
+    .navbtn.active { color:var(--primary); }
+
+    /* ---------- Generic ---------- */
+    .view { display:none; }
+    .view.active { display:block; }
+    .muted { color:var(--muted-foreground); }
+    .empty {
+      text-align:center; padding:48px 20px; color:var(--muted-foreground);
+    }
+    .empty i { font-size:42px; opacity:.5; display:block; margin-bottom:10px; }
+    .empty p { margin:0; font-size:14px; }
+
+    .stats { display:flex; gap:8px; margin-bottom:14px; }
+    .stat {
+      flex:1; background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+      padding:10px 12px; text-align:center;
+    }
+    .stat-val { font-size:20px; font-weight:800; line-height:1.1; }
+    .stat-lbl { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); margin-top:3px; }
+
+    .btn {
+      display:inline-flex; align-items:center; justify-content:center; gap:7px;
+      border:1px solid var(--border); background:var(--card); color:var(--foreground);
+      border-radius:var(--radius); padding:12px 16px; font-size:15px; font-weight:600; cursor:pointer;
+    }
+    .btn:active { transform:scale(.98); }
+    .btn-primary { background:var(--primary); color:var(--primary-foreground); border-color:var(--primary); }
+    .btn-danger { background:#fff; color:var(--danger); border-color:#fecaca; }
+    .btn-block { width:100%; }
+    .btn-lg { padding:15px 18px; font-size:16px; }
+    .btn-sm { padding:8px 11px; font-size:13px; }
+    .btn:disabled { opacity:.5; }
+
+    .fab-spacer { height:8px; }
+
+    /* ---------- Cards / lists ---------- */
+    .card {
+      background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+      padding:14px; margin-bottom:10px;
+    }
+    .card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .card-title { font-weight:700; font-size:15px; }
+    .card-meta { font-size:12px; color:var(--muted-foreground); margin-top:2px; }
+    .card-actions { display:flex; gap:6px; flex-shrink:0; }
+    .row-line {
+      display:flex; justify-content:space-between; gap:10px; padding:7px 0;
+      border-top:1px solid var(--border); font-size:14px;
+    }
+    .row-line:first-child { border-top:none; }
+    .badge-dmg {
+      font-size:11px; font-weight:600; color:#b91c1c; background:#fef2f2;
+      border:1px solid #fecaca; border-radius:999px; padding:1px 7px; margin-left:6px;
+    }
+    .cat-head {
+      font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--muted-foreground); padding:14px 2px 6px;
+    }
+    .badge {
+      font-size:11px; font-weight:600; padding:1px 7px; border-radius:999px;
+      background:var(--secondary); color:var(--muted-foreground);
+    }
+    .badge-beer{background:#fef3c7;color:#92400e}.badge-cider{background:#ecfccb;color:#3f6212}
+    .badge-wine{background:#f3e8ff;color:#7c3aed}.badge-rtd{background:#dbeafe;color:#1d4ed8}
+    .badge-softs{background:#ccfbf1;color:#0f766e}.badge-spirits{background:#fee2e2;color:#dc2626}
+
+    .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .thumb {
+      width:62px; height:62px; border-radius:var(--radius); overflow:hidden; position:relative;
+      border:1px solid var(--border); background:var(--secondary);
+    }
+    .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .thumb-x {
+      position:absolute; top:2px; right:2px; width:20px; height:20px; border:none; border-radius:50%;
+      background:rgba(0,0,0,.6); color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    }
+    .thumb-new { position:absolute; bottom:0; left:0; right:0; font-size:9px; text-align:center; background:var(--success); color:#fff; font-weight:700; }
+
+    /* ---------- Sheet (full-screen form) ---------- */
+    .sheet {
+      position:fixed; inset:0; z-index:60; background:var(--background);
+      transform:translateY(100%); transition:transform .25s ease; display:flex; flex-direction:column;
+      visibility:hidden;
+    }
+    .sheet.open { transform:translateY(0); visibility:visible; }
+    .sheet-head {
+      display:flex; align-items:center; gap:10px; padding:calc(12px + var(--safe-top)) 14px 12px;
+      border-bottom:1px solid var(--border); background:var(--card);
+    }
+    .sheet-title { font-weight:700; font-size:16px; flex:1; }
+    .sheet-body { flex:1; overflow-y:auto; padding:16px 14px calc(20px + var(--safe-bottom)); -webkit-overflow-scrolling:touch; }
+    .sheet-foot {
+      padding:12px 14px calc(12px + var(--safe-bottom)); border-top:1px solid var(--border); background:var(--card);
+      display:flex; gap:10px;
+    }
+
+    .field { margin-bottom:14px; }
+    .field label { display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
+    .field input, .field select, .field textarea {
+      width:100%; background:var(--card); border:1px solid var(--input); border-radius:var(--radius);
+      padding:11px 12px; outline:none; color:var(--foreground);
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color:var(--ring); }
+    .field textarea { resize:vertical; min-height:64px; }
+    .field-row { display:flex; gap:10px; }
+    .field-row .field { flex:1; }
+    .err { color:var(--danger); font-size:13px; min-height:18px; margin-bottom:6px; }
+
+    /* delivery line item editor */
+    .line-item {
+      display:grid; grid-template-columns:1fr 70px 70px 34px; gap:7px; align-items:center; margin-bottom:8px;
+    }
+    .line-item select, .line-item input {
+      width:100%; background:var(--card); border:1px solid var(--input); border-radius:var(--radius);
+      padding:9px 8px; outline:none; font-size:14px;
+    }
+    .line-item .lx {
+      border:1px solid #fecaca; background:#fff; color:var(--danger); border-radius:var(--radius);
+      height:38px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    }
+    .line-head { display:grid; grid-template-columns:1fr 70px 70px 34px; gap:7px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--muted-foreground); margin-bottom:6px; }
+
+    .photo-group { margin-bottom:14px; }
+    .photo-group-label { font-size:13px; font-weight:600; margin-bottom:7px; }
+    .photo-add {
+      width:62px; height:62px; border:1.5px dashed var(--border); border-radius:var(--radius);
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+      color:var(--muted-foreground); font-size:10px; cursor:pointer; background:var(--secondary);
+    }
+    .photo-add i { font-size:20px; }
+    .photo-add input { display:none; }
+
+    /* ---------- Stock count ---------- */
+    .count-session {
+      display:flex; align-items:center; gap:12px; background:var(--card);
+      border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; margin-bottom:10px;
+    }
+    .count-session-ic {
+      width:40px; height:40px; flex-shrink:0; border-radius:var(--radius); background:var(--secondary);
+      display:flex; align-items:center; justify-content:center; font-size:20px; color:var(--muted-foreground);
+    }
+    .count-session-body { flex:1; min-width:0; }
+    .count-session-name { font-weight:700; font-size:15px; }
+    .count-session-meta { font-size:12px; color:var(--muted-foreground); margin-top:2px; display:flex; gap:8px; flex-wrap:wrap; }
+
+    .count-bar { position:sticky; top:0; z-index:5; background:var(--background); padding-bottom:8px; }
+    .count-search {
+      width:100%; background:var(--card); border:1px solid var(--input); border-radius:var(--radius);
+      padding:11px 12px 11px 36px; outline:none;
+    }
+    .count-search-wrap { position:relative; margin-bottom:10px; }
+    .count-search-wrap i { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted-foreground); }
+    .chips { display:flex; gap:7px; overflow-x:auto; padding-bottom:6px; margin-bottom:6px; -webkit-overflow-scrolling:touch; }
+    .chip {
+      flex-shrink:0; padding:7px 13px; border-radius:999px; border:1px solid var(--border);
+      background:var(--card); font-size:13px; font-weight:600; color:var(--muted-foreground); cursor:pointer; white-space:nowrap;
+    }
+    .chip.active { background:var(--primary); color:var(--primary-foreground); border-color:var(--primary); }
+    .progress { height:7px; background:var(--secondary); border-radius:999px; overflow:hidden; margin:8px 0 4px; }
+    .progress-fill { height:100%; background:var(--success); width:0%; transition:width .2s ease; }
+    .progress-meta { display:flex; justify-content:space-between; font-size:12px; color:var(--muted-foreground); margin-bottom:12px; }
+
+    .count-item {
+      background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+      padding:11px 12px; margin-bottom:8px; display:flex; align-items:center; gap:10px;
+    }
+    .count-item.counted { border-color:#bbf7d0; background:#f0fdf4; }
+    .count-item-info { flex:1; min-width:0; }
+    .count-item-name { font-weight:600; font-size:14px; }
+    .count-item-sub { font-size:11px; color:var(--muted-foreground); margin-top:1px; }
+    .count-inputs { display:flex; gap:7px; flex-shrink:0; }
+    .count-inputs .cell { width:60px; }
+    .count-inputs .cell label { display:block; font-size:9px; font-weight:700; text-transform:uppercase; color:var(--muted-foreground); text-align:center; margin-bottom:2px; }
+    .count-inputs input {
+      width:100%; text-align:center; border:1px solid var(--input); border-radius:var(--radius);
+      padding:9px 4px; outline:none; font-weight:600;
+    }
+    .count-inputs input:focus { border-color:var(--ring); }
+
+    /* ---------- Toast / lightbox ---------- */
+    .toast {
+      position:fixed; left:50%; bottom:calc(var(--nav-h) + var(--safe-bottom) + 16px); transform:translateX(-50%) translateY(20px);
+      background:var(--primary); color:var(--primary-foreground); padding:11px 18px; border-radius:999px;
+      font-size:14px; font-weight:600; z-index:80; opacity:0; transition:all .25s ease; pointer-events:none; max-width:90vw;
+    }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+    .toast.err { background:var(--danger); }
+    .lightbox {
+      position:fixed; inset:0; z-index:90; background:rgba(0,0,0,.9); display:none; align-items:center; justify-content:center; padding:20px;
+    }
+    .lightbox.show { display:flex; }
+    .lightbox img { max-width:100%; max-height:100%; border-radius:8px; }
+
+    .boot-msg { padding:60px 20px; text-align:center; color:var(--muted-foreground); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="topbar-row">
+        <div class="brand">
+          <i class="ph-bold ph-package" style="font-size:20px"></i>
+          <span>Measured Stock</span>
+          <span class="role-tag">Staff</span>
+        </div>
+        <button class="icon-btn" onclick="reloadCurrent()" title="Refresh" aria-label="Refresh"><i class="ph ph-arrow-clockwise"></i></button>
+        <button class="icon-btn" onclick="signOut()" title="Sign out" aria-label="Sign out"><i class="ph ph-sign-out"></i></button>
+      </div>
+      <div class="event-select-wrap">
+        <i class="ph ph-storefront"></i>
+        <select id="eventPick" onchange="onEventChange(this.value)">
+          <option value="">Select an event…</option>
+        </select>
+        <i class="ph ph-caret-down"></i>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- ============ DELIVERIES ============ -->
+      <section class="view active" id="view-deliveries">
+        <div id="delNoEvent" class="empty"><i class="ph ph-storefront"></i><p>Pick an event above to log deliveries.</p></div>
+        <div id="delContent" style="display:none">
+          <div class="stats">
+            <div class="stat"><div class="stat-val" id="delStatCount">0</div><div class="stat-lbl">Deliveries</div></div>
+            <div class="stat"><div class="stat-val" id="delStatCases">0</div><div class="stat-lbl">Cases</div></div>
+            <div class="stat"><div class="stat-val" id="delStatDmg">0</div><div class="stat-lbl">Unusable</div></div>
+          </div>
+          <button class="btn btn-primary btn-block btn-lg" onclick="openDeliveryForm()"><i class="ph-bold ph-plus"></i> Log a delivery</button>
+          <div class="fab-spacer"></div>
+          <div id="delList"></div>
+        </div>
+      </section>
+
+      <!-- ============ STOCK COUNT ============ -->
+      <section class="view" id="view-counts">
+        <div id="cntNoEvent" class="empty"><i class="ph ph-storefront"></i><p>Pick an event above to start counting.</p></div>
+
+        <!-- sessions list -->
+        <div id="cntSessions" style="display:none">
+          <button class="btn btn-primary btn-block btn-lg" onclick="openNewCountSheet()"><i class="ph-bold ph-plus"></i> New count session</button>
+          <div class="fab-spacer"></div>
+          <div id="cntSessionList"></div>
+        </div>
+
+        <!-- active counting -->
+        <div id="cntActive" style="display:none">
+          <button class="btn btn-sm" onclick="closeActiveCount()" style="margin-bottom:12px"><i class="ph ph-arrow-left"></i> All sessions</button>
+          <div style="font-weight:800;font-size:18px" id="cntActiveTitle">Session</div>
+          <div class="muted" style="font-size:13px;margin-bottom:12px" id="cntActiveMeta"></div>
+
+          <div class="count-bar">
+            <div class="count-search-wrap">
+              <i class="ph ph-magnifying-glass"></i>
+              <input class="count-search" id="cntSearch" placeholder="Search products…" oninput="filterCountItems()">
+            </div>
+            <div class="chips" id="cntBarChips"></div>
+            <div class="progress"><div class="progress-fill" id="cntProgressFill"></div></div>
+            <div class="progress-meta">
+              <span id="cntProgressVal">0/0 counted</span>
+              <span><b id="cntCasesVal">0</b> cases · <b id="cntSinglesVal">0</b> singles</span>
+            </div>
+          </div>
+          <div id="cntItemList"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom nav -->
+    <nav class="bottomnav">
+      <button class="navbtn active" id="nav-deliveries" onclick="switchTab('deliveries')">
+        <i class="ph ph-shipping-container"></i><span>Deliveries</span>
+      </button>
+      <button class="navbtn" id="nav-counts" onclick="switchTab('counts')">
+        <i class="ph ph-clipboard-text"></i><span>Stock Count</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ============ DELIVERY FORM SHEET ============ -->
+  <div class="sheet" id="deliverySheet">
+    <div class="sheet-head">
+      <button class="icon-btn" onclick="closeDeliveryForm()" aria-label="Close"><i class="ph ph-x"></i></button>
+      <div class="sheet-title" id="deliverySheetTitle">Log a delivery</div>
+    </div>
+    <div class="sheet-body">
+      <div class="err" id="dfErr"></div>
+      <div class="field-row">
+        <div class="field">
+          <label>Date &amp; time</label>
+          <input type="datetime-local" id="dfDate">
+        </div>
+      </div>
+      <div class="field">
+        <label>Supplier</label>
+        <select id="dfSupplier"><option value="">— Optional —</option></select>
+      </div>
+      <div class="field">
+        <label>Reference / invoice no.</label>
+        <input type="text" id="dfReference" placeholder="Optional">
+      </div>
+
+      <div class="field">
+        <label>Products</label>
+        <div class="line-head"><span>Product</span><span style="text-align:center">Cases</span><span style="text-align:center">Damaged</span><span></span></div>
+        <div id="dfLines"></div>
+        <button class="btn btn-sm" onclick="addDeliveryLine()" style="margin-top:4px"><i class="ph ph-plus"></i> Add product</button>
+      </div>
+
+      <div class="photo-group">
+        <div class="photo-group-label">Delivery note</div>
+        <div class="thumbs" id="dfNotePreview"></div>
+        <label class="photo-add" id="dfNoteAdd"><i class="ph ph-camera"></i>Note<input type="file" accept="image/*" capture="environment" onchange="onDelNoteFile(event)"></label>
+      </div>
+      <div class="photo-group">
+        <div class="photo-group-label">Photos</div>
+        <div class="thumbs" id="dfPhotosPreview"></div>
+        <label class="photo-add"><i class="ph ph-camera"></i>Add<input type="file" accept="image/*" capture="environment" multiple onchange="onDelPhotosFile(event)"></label>
+      </div>
+      <div class="photo-group">
+        <div class="photo-group-label">Damages</div>
+        <div class="thumbs" id="dfDamagesPreview"></div>
+        <label class="photo-add"><i class="ph ph-camera"></i>Add<input type="file" accept="image/*" capture="environment" multiple onchange="onDelDamagesFile(event)"></label>
+      </div>
+
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="dfNotes" placeholder="Anything worth recording…"></textarea>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-block" onclick="closeDeliveryForm()">Cancel</button>
+      <button class="btn btn-primary btn-block" id="dfSaveBtn" onclick="saveDelivery()">Save delivery</button>
+    </div>
+  </div>
+
+  <!-- ============ NEW COUNT SESSION SHEET ============ -->
+  <div class="sheet" id="countSheet">
+    <div class="sheet-head">
+      <button class="icon-btn" onclick="closeNewCountSheet()" aria-label="Close"><i class="ph ph-x"></i></button>
+      <div class="sheet-title">New count session</div>
+    </div>
+    <div class="sheet-body">
+      <div class="err" id="ncErr"></div>
+      <div class="field">
+        <label>Session name</label>
+        <input type="text" id="ncName" placeholder="e.g. Friday close">
+      </div>
+      <div class="field">
+        <label>Bar</label>
+        <select id="ncBar"><option value="">All bars</option></select>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-block" onclick="closeNewCountSheet()">Cancel</button>
+      <button class="btn btn-primary btn-block" id="ncSaveBtn" onclick="createCountSession()">Create &amp; count</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightboxImg" alt=""></div>
+
+  <script src="assets/js/db.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+    const DELIVERY_BUCKET = 'delivery-photos';
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+    function colourKey(name) {
+      const k = String(name || '').toLowerCase();
+      if (k.includes('beer')) return 'beer';
+      if (k.includes('cider')) return 'cider';
+      if (k.includes('wine')) return 'wine';
+      if (k.includes('spirit')) return 'spirits';
+      if (k.includes('soft') || k.includes('seltzer') || k.includes('water')) return 'softs';
+      return 'rtd';
+    }
+    function isBoneYard(bar) {
+      if (!bar || !bar.name) return false;
+      return bar.name.toLowerCase().replace(/[^a-z]/g, '') === 'boneyard';
+    }
+    let _toastTimer;
+    function toast(msg, isErr) {
+      const el = $('toast');
+      el.textContent = msg;
+      el.className = 'toast show' + (isErr ? ' err' : '');
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => { el.className = 'toast' + (isErr ? ' err' : ''); }, 2600);
+    }
+    function nowLocalInput() {
+      const now = new Date();
+      return new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+    function fmtDateTime(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+    function readFileAsDataURL(file) {
+      return new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = () => rej(fr.error);
+        fr.readAsDataURL(file);
+      });
+    }
+    function rid(p) { return (p || 'x') + Math.random().toString(36).slice(2, 8); }
+
+    // ---------- shared state ----------
+    let _eventId = '';
+    let _event = null;       // DB.events.getFull(id)
+    let _suppliers = [];
+    let _tab = 'deliveries';
+
+    function productNameById(pid) {
+      const eps = (_event && _event.event_products) || [];
+      const ep = eps.find((x) => x.product_id === pid);
+      return (ep && ep.product && ep.product.name) || '(unknown)';
+    }
+    function eventBars() {
+      return ((_event && _event.bars) || []).filter((b) => !isBoneYard(b));
+    }
+
+    // =====================================================================
+    // Boot + event selection
+    // =====================================================================
+    async function boot() {
+      if (typeof DB === 'undefined') { toast('db.js failed to load', true); return; }
+      try {
+        const [events, blobs] = await Promise.all([
+          DB.events.list('?select=id,name,legacy_id,status&order=created_at.desc'),
+          DB.select('stock_events', '?select=id&order=name'),
+        ]);
+        const blobIds = new Set((blobs || []).map((b) => b.id));
+        const live = (events || []).filter((e) => !e.legacy_id || blobIds.has(e.legacy_id));
+        const remembered = localStorage.getItem('v2_event') || '';
+        $('eventPick').innerHTML = '<option value="">Select an event…</option>' +
+          live.map((e) => '<option value="' + e.id + '">' + escapeHtml(e.name) + '</option>').join('');
+        if (remembered && live.some((e) => e.id === remembered)) {
+          $('eventPick').value = remembered;
+          await onEventChange(remembered);
+        }
+      } catch (err) {
+        console.error('boot', err);
+        toast(err.message || 'Failed to load events', true);
+      }
+    }
+
+    async function onEventChange(id) {
+      _eventId = id;
+      try { id ? localStorage.setItem('v2_event', id) : localStorage.removeItem('v2_event'); } catch (e) {}
+      _event = null;
+      if (id) {
+        try {
+          const [ev, suppliers] = await Promise.all([
+            DB.events.getFull(id),
+            _suppliers.length ? Promise.resolve(_suppliers) : DB.suppliers.list(),
+          ]);
+          _event = ev;
+          _suppliers = suppliers || [];
+        } catch (err) {
+          console.error('onEventChange', err);
+          toast(err.message || 'Failed to load event', true);
+        }
+      }
+      reloadCurrent();
+    }
+
+    function reloadCurrent() {
+      if (_tab === 'deliveries') loadDeliveries();
+      else loadCounts();
+    }
+
+    function switchTab(tab) {
+      _tab = tab;
+      document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + tab));
+      $('nav-deliveries').classList.toggle('active', tab === 'deliveries');
+      $('nav-counts').classList.toggle('active', tab === 'counts');
+      reloadCurrent();
+    }
+
+    function signOut() {
+      if (!confirm('Sign out of this device?')) return;
+      fetch('/api/logout', { method: 'POST' })
+        .catch(() => {})
+        .finally(() => { window.location.href = '/mobile'; });
+    }
+
+    // =====================================================================
+    // DELIVERIES
+    // =====================================================================
+    let _deliveries = [];
+    let _delEditingId = null;
+    let _delLines = [];
+    let _delNote = null;        // {file?,dataUrl?,url?}
+    let _delPhotos = [];        // [{id,file?,dataUrl?,url?}]
+    let _delDamages = [];
+
+    const delLineSum = (lines) => (lines || []).reduce((s, l) => s + (Number(l.qty) || 0), 0);
+    const delDmgSum = (lines) => (lines || []).reduce((s, l) => s + (Number(l.damaged_qty) || 0), 0);
+
+    async function loadDeliveries() {
+      const has = !!_eventId;
+      $('delNoEvent').style.display = has ? 'none' : '';
+      $('delContent').style.display = has ? '' : 'none';
+      if (!has) return;
+      try {
+        const rows = await DB.deliveries.forEvent(_eventId);
+        _deliveries = (rows || []).slice().sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at));
+        renderDeliveries();
+      } catch (err) {
+        console.error('loadDeliveries', err);
+        $('delList').innerHTML = '<div class="empty"><i class="ph ph-warning"></i><p>' + escapeHtml(err.message) + '</p></div>';
+      }
+    }
+
+    function renderDeliveries() {
+      $('delStatCount').textContent = _deliveries.length;
+      $('delStatCases').textContent = round1(_deliveries.reduce((s, d) => s + delLineSum(d.lines), 0));
+      $('delStatDmg').textContent = round1(_deliveries.reduce((s, d) => s + delDmgSum(d.lines), 0));
+      const list = $('delList');
+      if (!_deliveries.length) {
+        list.innerHTML = '<div class="empty"><i class="ph ph-shipping-container"></i><p>No deliveries logged yet.</p></div>';
+        return;
+      }
+      list.innerHTML = _deliveries.map((d) => {
+        const lines = d.lines || [];
+        const total = round1(delLineSum(lines));
+        const dmg = round1(delDmgSum(lines));
+        const sup = (d.supplier && d.supplier.name) || 'No supplier';
+        const ref = d.reference ? ' · ' + escapeHtml(d.reference) : '';
+        const dmgMeta = dmg > 0 ? ' · <span style="color:#b91c1c;font-weight:600">' + dmg + ' unusable</span>' : '';
+        const itemRows = lines.length
+          ? lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
+              const ld = Number(l.damaged_qty) || 0;
+              const dmgTag = ld > 0 ? '<span class="badge-dmg">' + round1(ld) + ' unusable</span>' : '';
+              return '<div class="row-line"><span>' + escapeHtml(productNameById(l.product_id)) + dmgTag + '</span><span style="font-weight:700;white-space:nowrap">' + round1(l.qty) + '</span></div>';
+            }).join('')
+          : '<div class="muted" style="font-size:13px">No line items</div>';
+        const photo = (url) => '<div class="thumb" onclick="event.stopPropagation();openLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt=""></div>';
+        const allPhotos = []
+          .concat(d.delivery_note_url ? [d.delivery_note_url] : [])
+          .concat(d.photo_urls || [])
+          .concat(d.damages_photo_urls || []);
+        const photosBlock = allPhotos.length ? '<div class="thumbs">' + allPhotos.map(photo).join('') + '</div>' : '';
+        const notes = d.notes ? '<div class="muted" style="font-size:13px;margin-top:8px;font-style:italic">' + escapeHtml(d.notes) + '</div>' : '';
+        return '<div class="card">' +
+          '<div class="card-head">' +
+            '<div style="min-width:0"><div class="card-title">' + escapeHtml(sup) + '</div>' +
+            '<div class="card-meta">' + fmtDateTime(d.delivered_at) + ' · ' + total + ' cases' + ref + dmgMeta + '</div></div>' +
+            '<div class="card-actions">' +
+              '<button class="btn btn-sm" onclick="editDelivery(\'' + d.id + '\')" aria-label="Edit"><i class="ph ph-pencil-simple"></i></button>' +
+              '<button class="btn btn-sm btn-danger" onclick="deleteDelivery(\'' + d.id + '\')" aria-label="Delete"><i class="ph ph-trash"></i></button>' +
+            '</div>' +
+          '</div>' +
+          '<div style="margin-top:10px;padding-top:4px;border-top:1px solid var(--border)">' + itemRows + '</div>' +
+          notes + photosBlock +
+        '</div>';
+      }).join('');
+    }
+
+    function deliveryProductOptions() {
+      const eps = (_event && _event.event_products) || [];
+      return eps
+        .map((ep) => ({ id: ep.product_id, name: (ep.product && ep.product.name) || productNameById(ep.product_id) }))
+        .filter((o) => o.name && o.name !== '(unknown)')
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function renderDeliverySupplierSelect() {
+      const sel = $('dfSupplier');
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— Optional —</option>' +
+        _suppliers.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          .map((s) => '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>').join('');
+      if (cur) sel.value = cur;
+    }
+
+    function renderDeliveryLines() {
+      const body = $('dfLines');
+      const options = deliveryProductOptions();
+      if (!options.length) {
+        body.innerHTML = '<div class="muted" style="font-size:13px;padding:6px 0">Add products to this event in the dashboard first.</div>';
+        return;
+      }
+      body.innerHTML = _delLines.map((line) =>
+        '<div class="line-item">' +
+        '<select onchange="updateDeliveryLine(\'' + line.lineId + '\',\'productId\',this.value)">' +
+          '<option value="">Product…</option>' +
+          options.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>').join('') +
+        '</select>' +
+        '<input type="number" inputmode="decimal" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)">' +
+        '<input type="number" inputmode="decimal" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)">' +
+        '<div class="lx" onclick="removeDeliveryLine(\'' + line.lineId + '\')"><i class="ph ph-x"></i></div>' +
+        '</div>'
+      ).join('');
+    }
+    function addDeliveryLine() { _delLines.push({ lineId: rid('l'), productId: '', qty: '', damagedQty: '' }); renderDeliveryLines(); }
+    function removeDeliveryLine(id) { _delLines = _delLines.filter((l) => l.lineId !== id); if (!_delLines.length) addDeliveryLine(); else renderDeliveryLines(); }
+    function updateDeliveryLine(id, field, val) { const l = _delLines.find((x) => x.lineId === id); if (l) l[field] = val; }
+
+    function renderThumbs(elId, items, removeFn) {
+      $(elId).innerHTML = items.map((p) => {
+        const src = p.dataUrl || p.url;
+        const isNew = !!p.file;
+        return '<div class="thumb" onclick="openLightbox(\'' + encodeURI(src) + '\')"><img src="' + escapeHtml(src) + '" alt="">' +
+          (isNew ? '<div class="thumb-new">New</div>' : '') +
+          (removeFn ? '<button type="button" class="thumb-x" onclick="event.stopPropagation();' + removeFn + '(\'' + (p.id || '') + '\')"><i class="ph ph-x"></i></button>' : '') +
+        '</div>';
+      }).join('');
+    }
+    function renderDelNote() {
+      $('dfNoteAdd').style.display = _delNote ? 'none' : '';
+      renderThumbs('dfNotePreview', _delNote ? [Object.assign({ id: 'note' }, _delNote)] : [], 'clearDelNote');
+    }
+    function clearDelNote() { _delNote = null; renderDelNote(); }
+    function renderDelPhotos() { renderThumbs('dfPhotosPreview', _delPhotos, 'removeDelPhoto'); }
+    function removeDelPhoto(id) { _delPhotos = _delPhotos.filter((p) => p.id !== id); renderDelPhotos(); }
+    function renderDelDamages() { renderThumbs('dfDamagesPreview', _delDamages, 'removeDelDamage'); }
+    function removeDelDamage(id) { _delDamages = _delDamages.filter((p) => p.id !== id); renderDelDamages(); }
+
+    async function onDelNoteFile(e) {
+      const file = e.target.files && e.target.files[0]; e.target.value = '';
+      if (!file || !file.type.startsWith('image/')) return;
+      _delNote = { file, dataUrl: await readFileAsDataURL(file) };
+      renderDelNote();
+    }
+    async function onDelPhotosFile(e) {
+      const files = Array.from(e.target.files || []); e.target.value = '';
+      for (const file of files) { if (!file.type.startsWith('image/')) continue; _delPhotos.push({ id: rid('p'), file, dataUrl: await readFileAsDataURL(file) }); }
+      renderDelPhotos();
+    }
+    async function onDelDamagesFile(e) {
+      const files = Array.from(e.target.files || []); e.target.value = '';
+      for (const file of files) { if (!file.type.startsWith('image/')) continue; _delDamages.push({ id: rid('d'), file, dataUrl: await readFileAsDataURL(file) }); }
+      renderDelDamages();
+    }
+
+    function clearDeliveryForm() {
+      _delEditingId = null;
+      _delLines = [{ lineId: rid('l'), productId: '', qty: '', damagedQty: '' }];
+      _delNote = null; _delPhotos = []; _delDamages = [];
+      $('dfDate').value = nowLocalInput();
+      $('dfSupplier').value = ''; $('dfReference').value = ''; $('dfNotes').value = '';
+      $('dfErr').textContent = '';
+      $('deliverySheetTitle').textContent = 'Log a delivery';
+      $('dfSaveBtn').textContent = 'Save delivery';
+    }
+
+    function openDeliveryForm() {
+      if (!_eventId) { toast('Pick an event first', true); return; }
+      if (!_delEditingId) clearDeliveryForm();
+      renderDeliverySupplierSelect();
+      renderDeliveryLines(); renderDelNote(); renderDelPhotos(); renderDelDamages();
+      $('deliverySheet').classList.add('open');
+    }
+    function closeDeliveryForm() { $('deliverySheet').classList.remove('open'); _delEditingId = null; }
+
+    function editDelivery(id) {
+      const d = _deliveries.find((x) => x.id === id);
+      if (!d) return;
+      _delEditingId = id;
+      const lines = d.lines || [];
+      _delLines = lines.length
+        ? lines.map((l) => ({ lineId: rid('l'), productId: l.product_id, qty: String(l.qty ?? ''), damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' }))
+        : [{ lineId: rid('l'), productId: '', qty: '', damagedQty: '' }];
+      _delNote = d.delivery_note_url ? { url: d.delivery_note_url } : null;
+      _delPhotos = (d.photo_urls || []).map((u) => ({ id: rid('p'), url: u }));
+      _delDamages = (d.damages_photo_urls || []).map((u) => ({ id: rid('d'), url: u }));
+      renderDeliverySupplierSelect();
+      if (d.delivered_at) { const dt = new Date(d.delivered_at); $('dfDate').value = new Date(dt - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
+      $('dfSupplier').value = d.supplier_id || '';
+      $('dfReference').value = d.reference || '';
+      $('dfNotes').value = d.notes || '';
+      $('dfErr').textContent = '';
+      $('deliverySheetTitle').textContent = 'Edit delivery';
+      $('dfSaveBtn').textContent = 'Update delivery';
+      renderDeliveryLines(); renderDelNote(); renderDelPhotos(); renderDelDamages();
+      $('deliverySheet').classList.add('open');
+    }
+
+    function delStoragePath(deliveryId, label, file) {
+      const ext = ((file.name && file.name.split('.').pop()) || (file.type && file.type.split('/').pop()) || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      return _eventId + '/' + deliveryId + '/' + label + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '.' + ext;
+    }
+    async function uploadIfNeeded(item, deliveryId, label) {
+      if (item.url && !item.file) return item.url;
+      if (item.file) return DB.uploadImage(DELIVERY_BUCKET, delStoragePath(deliveryId, label, item.file), item.file);
+      return null;
+    }
+
+    async function saveDelivery() {
+      if (!_eventId) { toast('Pick an event first', true); return; }
+      const valid = _delLines
+        .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
+        .map((l) => ({ product_id: l.productId, qty: round1(l.qty), damaged_qty: round1(l.damagedQty) }));
+      if (!valid.length) { $('dfErr').textContent = 'Add at least one product with a quantity.'; return; }
+
+      const btn = $('dfSaveBtn');
+      const prev = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Saving…'; $('dfErr').textContent = '';
+      const isEdit = !!_delEditingId;
+      try {
+        const head = {
+          event_id: _eventId,
+          supplier_id: $('dfSupplier').value || null,
+          delivered_at: $('dfDate').value ? new Date($('dfDate').value).toISOString() : new Date().toISOString(),
+          reference: ($('dfReference').value || '').trim() || null,
+          notes: ($('dfNotes').value || '').trim() || null,
+        };
+        let deliveryId = _delEditingId;
+        if (isEdit) await DB.deliveries.update(deliveryId, head);
+        else { const created = await DB.deliveries.create(head); deliveryId = created.id; }
+
+        try {
+          const noteUrl = _delNote ? await uploadIfNeeded(_delNote, deliveryId, 'note') : null;
+          const photoUrls = [];
+          for (let i = 0; i < _delPhotos.length; i++) { const u = await uploadIfNeeded(_delPhotos[i], deliveryId, 'photo-' + i); if (u) photoUrls.push(u); }
+          const dmgUrls = [];
+          for (let i = 0; i < _delDamages.length; i++) { const u = await uploadIfNeeded(_delDamages[i], deliveryId, 'damage-' + i); if (u) dmgUrls.push(u); }
+          await DB.deliveries.update(deliveryId, { delivery_note_url: noteUrl, photo_urls: photoUrls, damages_photo_urls: dmgUrls });
+        } catch (photoErr) {
+          console.warn('photos failed', photoErr);
+          $('dfErr').textContent = 'Saved, but photo upload failed.';
+        }
+
+        if (isEdit) await DB.deliveries.clearLines(deliveryId);
+        await DB.deliveries.addLines(valid.map((v) => ({ delivery_id: deliveryId, product_id: v.product_id, qty: v.qty, damaged_qty: v.damaged_qty })));
+
+        await loadDeliveries();
+        if (!$('dfErr').textContent) { closeDeliveryForm(); toast(isEdit ? 'Delivery updated' : 'Delivery logged'); }
+      } catch (err) {
+        console.error('saveDelivery', err);
+        $('dfErr').textContent = err.message || 'Failed to save delivery';
+      } finally {
+        btn.disabled = false; btn.textContent = prev;
+      }
+    }
+
+    async function deleteDelivery(id) {
+      if (!confirm('Delete this delivery? This cannot be undone.')) return;
+      try {
+        await DB.deliveries.clearLines(id);
+        await DB.deliveries.remove(id);
+        await loadDeliveries();
+        toast('Delivery deleted');
+      } catch (err) { console.error(err); toast('Failed to delete: ' + (err.message || err), true); }
+    }
+
+    // =====================================================================
+    // STOCK COUNT
+    // =====================================================================
+    let _counts = [];
+    let _activeCountId = null;
+    let _activeCountBar = null;
+    let _activeLines = [];
+    let _countTimers = {};
+
+    function barNameById(barId) {
+      const b = ((_event && _event.bars) || []).find((x) => x.id === barId);
+      return (b && b.name) || '—';
+    }
+
+    async function loadCounts() {
+      const has = !!_eventId;
+      $('cntNoEvent').style.display = has ? 'none' : '';
+      $('cntSessions').style.display = (has && !_activeCountId) ? '' : 'none';
+      $('cntActive').style.display = (has && _activeCountId) ? '' : 'none';
+      if (!has) return;
+      if (_activeCountId) { renderCountItems(); return; }
+      try {
+        _counts = (await DB.stockCounts.forEvent(_eventId)) || [];
+        renderCountSessions();
+      } catch (err) {
+        console.error('loadCounts', err);
+        $('cntSessionList').innerHTML = '<div class="empty"><i class="ph ph-warning"></i><p>' + escapeHtml(err.message) + '</p></div>';
+      }
+    }
+
+    function renderCountSessions() {
+      const list = $('cntSessionList');
+      if (!_counts.length) {
+        list.innerHTML = '<div class="empty"><i class="ph ph-list-numbers"></i><p>No count sessions yet. Create one to start.</p></div>';
+        return;
+      }
+      list.innerHTML = _counts.map((c) => {
+        const bar = c.bar_id ? barNameById(c.bar_id) : 'All bars';
+        return '<div class="count-session" onclick="activateCount(\'' + c.id + '\')">' +
+          '<div class="count-session-ic"><i class="ph ph-clipboard-text"></i></div>' +
+          '<div class="count-session-body">' +
+            '<div class="count-session-name">' + escapeHtml(c.name) + '</div>' +
+            '<div class="count-session-meta"><span><i class="ph ph-storefront"></i> ' + escapeHtml(bar) + '</span><span><i class="ph ph-clock"></i> ' + fmtDateTime(c.counted_at) + '</span></div>' +
+          '</div>' +
+          '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteCount(\'' + c.id + '\')" aria-label="Delete"><i class="ph ph-trash"></i></button>' +
+        '</div>';
+      }).join('');
+    }
+
+    function openNewCountSheet() {
+      if (!_eventId) { toast('Pick an event first', true); return; }
+      $('ncErr').textContent = '';
+      $('ncName').value = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+      const bars = eventBars();
+      $('ncBar').innerHTML = '<option value="">All bars</option>' +
+        bars.map((b) => '<option value="' + b.id + '">' + escapeHtml(b.name) + '</option>').join('');
+      $('countSheet').classList.add('open');
+    }
+    function closeNewCountSheet() { $('countSheet').classList.remove('open'); }
+
+    async function createCountSession() {
+      const name = ($('ncName').value || '').trim();
+      if (!name) { $('ncErr').textContent = 'Give the session a name.'; return; }
+      const btn = $('ncSaveBtn'); const prev = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        const row = await DB.stockCounts.create({ event_id: _eventId, bar_id: $('ncBar').value || null, name, counted_at: new Date().toISOString() });
+        _counts.push(row);
+        closeNewCountSheet();
+        activateCount(row.id);
+      } catch (err) {
+        console.error(err); $('ncErr').textContent = err.message || 'Failed to create session';
+      } finally { btn.disabled = false; btn.textContent = prev; }
+    }
+
+    async function deleteCount(id) {
+      if (!confirm('Delete this count session and all its lines?')) return;
+      try {
+        await DB.stockCounts.clearLines(id);
+        await DB.stockCounts.remove(id);
+        _counts = _counts.filter((c) => c.id !== id);
+        renderCountSessions();
+        toast('Session deleted');
+      } catch (err) { console.error(err); toast('Failed to delete: ' + (err.message || err), true); }
+    }
+
+    async function activateCount(id) {
+      const session = _counts.find((c) => c.id === id);
+      if (!session) return;
+      _activeCountId = id;
+      const bars = eventBars();
+      _activeCountBar = session.bar_id || (bars[0] && bars[0].id) || null;
+      try { _activeLines = (await DB.stockCounts.lines(id)) || []; }
+      catch (err) { console.error(err); _activeLines = []; }
+      $('cntSessions').style.display = 'none';
+      $('cntActive').style.display = '';
+      $('cntSearch').value = '';
+      $('cntActiveTitle').textContent = session.name;
+      $('cntActiveMeta').textContent = (session.bar_id ? barNameById(session.bar_id) : 'All bars') + ' · ' + fmtDateTime(session.counted_at);
+      const chips = $('cntBarChips');
+      if (session.bar_id) {
+        chips.style.display = 'none'; chips.innerHTML = '';
+      } else {
+        chips.style.display = '';
+        chips.innerHTML = bars.map((b) => '<span class="chip ' + (b.id === _activeCountBar ? 'active' : '') + '" data-bar="' + b.id + '" onclick="switchCountBar(\'' + b.id + '\')">' + escapeHtml(b.name) + '</span>').join('');
+      }
+      renderCountItems();
+    }
+
+    function closeActiveCount() {
+      _activeCountId = null; _activeCountBar = null; _activeLines = [];
+      $('cntActive').style.display = 'none';
+      $('cntSessions').style.display = '';
+      renderCountSessions();
+    }
+
+    function switchCountBar(barId) {
+      _activeCountBar = barId;
+      document.querySelectorAll('#cntBarChips .chip').forEach((c) => c.classList.toggle('active', c.dataset.bar === barId));
+      renderCountItems();
+    }
+
+    function renderCountItems() {
+      const session = _counts.find((c) => c.id === _activeCountId);
+      if (!session) return;
+      const barId = _activeCountBar || session.bar_id;
+      const eps = ((_event && _event.event_products) || []).filter((ep) => ep.product && ep.product.name);
+      const grouped = {};
+      eps.forEach((ep) => {
+        const cat = (ep.product.category && ep.product.category.name) || 'Uncategorised';
+        (grouped[cat] = grouped[cat] || []).push(ep);
+      });
+      let html = '';
+      Object.keys(grouped).sort().forEach((cat) => {
+        html += '<div class="cat-head" data-cat="' + escapeHtml(cat) + '">' + escapeHtml(cat) + '</div>';
+        grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
+          const pid = ep.product_id;
+          const line = _activeLines.find((l) => l.product_id === pid && l.bar_id === barId);
+          const counted = !!(line && ((line.cases != null && line.cases !== 0) || (line.singles != null && line.singles !== 0)));
+          html += '<div class="count-item' + (counted ? ' counted' : '') + '" data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '">' +
+            '<div class="count-item-info">' +
+              '<div class="count-item-name">' + escapeHtml(ep.product.name) + '</div>' +
+              '<div class="count-item-sub">' + escapeHtml(ep.product.case_size || '—') + '</div>' +
+            '</div>' +
+            '<div class="count-inputs">' +
+              '<div class="cell"><label>Cases</label><input type="text" inputmode="decimal" class="cnt-cases" id="cnt-cases-' + pid + '" value="' + (line && line.cases != null ? line.cases : '') + '" placeholder="0" onblur="evalMath(this);persistCount(\'' + pid + '\')" oninput="liveCountStats()"></div>' +
+              '<div class="cell"><label>Singles</label><input type="text" inputmode="decimal" class="cnt-singles" id="cnt-singles-' + pid + '" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" onblur="evalMath(this);persistCount(\'' + pid + '\')" oninput="liveCountStats()"></div>' +
+            '</div>' +
+          '</div>';
+        });
+      });
+      $('cntItemList').innerHTML = html || '<div class="empty"><i class="ph ph-package"></i><p>No products on this event yet.</p></div>';
+      liveCountStats();
+      filterCountItems();
+    }
+
+    function liveCountStats() {
+      const items = document.querySelectorAll('#cntItemList .count-item');
+      let total = 0, counted = 0, cases = 0, singles = 0;
+      items.forEach((el) => {
+        total++;
+        const c = parseFloat((el.querySelector('.cnt-cases') || {}).value) || 0;
+        const s = parseFloat((el.querySelector('.cnt-singles') || {}).value) || 0;
+        const isC = !!(c || s);
+        if (isC) counted++;
+        el.classList.toggle('counted', isC);
+        cases += c; singles += s;
+      });
+      $('cntProgressVal').textContent = counted + '/' + total + ' counted';
+      $('cntCasesVal').textContent = Math.round(cases * 100) / 100;
+      $('cntSinglesVal').textContent = Math.round(singles * 100) / 100;
+      $('cntProgressFill').style.width = (total ? Math.round((counted / total) * 100) : 0) + '%';
+    }
+
+    function filterCountItems() {
+      const q = ($('cntSearch').value || '').trim().toLowerCase();
+      const list = $('cntItemList');
+      let catEl = null, visible = 0;
+      Array.from(list.children).forEach((el) => {
+        if (el.classList.contains('cat-head')) {
+          if (catEl) catEl.style.display = visible ? '' : 'none';
+          catEl = el; visible = 0; return;
+        }
+        const name = el.getAttribute('data-name') || '';
+        const show = !q || name.indexOf(q) !== -1;
+        el.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+      if (catEl) catEl.style.display = visible ? '' : 'none';
+    }
+
+    function evalMath(el) {
+      const raw = (el.value || '').trim();
+      if (!raw || /^[0-9.]+$/.test(raw)) return;
+      if (!/^[0-9+\-*/.()\s]+$/.test(raw)) return;
+      try {
+        const val = Function('"use strict";return (' + raw + ')')();
+        if (typeof val === 'number' && isFinite(val)) el.value = Math.round(val * 100) / 100;
+      } catch (e) {}
+    }
+
+    function persistCount(pid) {
+      clearTimeout(_countTimers[pid]);
+      _countTimers[pid] = setTimeout(() => doPersistCount(pid), 350);
+    }
+    async function doPersistCount(pid) {
+      const session = _counts.find((c) => c.id === _activeCountId);
+      if (!session) return;
+      const barId = _activeCountBar || session.bar_id;
+      const cases = parseFloat(($('cnt-cases-' + pid) || {}).value) || 0;
+      const singles = parseFloat(($('cnt-singles-' + pid) || {}).value) || 0;
+      let line = _activeLines.find((l) => l.product_id === pid && l.bar_id === barId);
+      try {
+        if (cases || singles) {
+          if (!line) {
+            line = await DB.stockCounts.addLines([{ count_id: _activeCountId, product_id: pid, bar_id: barId, cases, singles }]).then((r) => r[0]);
+            _activeLines.push(line);
+          } else {
+            line.cases = cases; line.singles = singles;
+            await DB.update('stock_count_lines', 'id=eq.' + DB._.enc(line.id), { cases, singles });
+          }
+        } else if (line) {
+          await DB.remove('stock_count_lines', 'id=eq.' + DB._.enc(line.id));
+          _activeLines.splice(_activeLines.indexOf(line), 1);
+        }
+      } catch (err) { console.warn('persistCount', err); toast('Save failed — check connection', true); }
+    }
+
+    // ---------- lightbox ----------
+    function openLightbox(src) { $('lightboxImg').src = decodeURI(src); $('lightbox').classList.add('show'); }
+    function closeLightbox() { $('lightbox').classList.remove('show'); }
+
+    // ---------- expose handlers used by inline onclick ----------
+    Object.assign(window, {
+      onEventChange, reloadCurrent, switchTab, signOut,
+      openDeliveryForm, closeDeliveryForm, saveDelivery, editDelivery, deleteDelivery,
+      addDeliveryLine, removeDeliveryLine, updateDeliveryLine,
+      onDelNoteFile, onDelPhotosFile, onDelDamagesFile, clearDelNote, removeDelPhoto, removeDelDamage,
+      openNewCountSheet, closeNewCountSheet, createCountSession, deleteCount,
+      activateCount, closeActiveCount, switchCountBar, filterCountItems, evalMath, persistCount, liveCountStats,
+      openLightbox, closeLightbox,
+    });
+
+    boot();
+  })();
+  </script>
+</body>
+</html>

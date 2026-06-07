@@ -31,9 +31,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const pin = process.env.STOCK_PIN?.trim();
+  const adminPin = process.env.STOCK_PIN?.trim();
+  const staffPin = process.env.STOCK_PIN_STAFF?.trim();
   const secret = process.env.COOKIE_SECRET?.trim();
-  if (!pin || !secret) {
+  if (!adminPin || !secret) {
     res.status(503).end('Not configured');
     return;
   }
@@ -54,15 +55,26 @@ export default async function handler(req, res) {
     return;
   }
 
-  const a = Buffer.from(submitted);
-  const b = Buffer.from(pin);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+  // Admin PIN is checked first so it always wins if the two ever collide.
+  const matches = (pin) => {
+    if (!pin) return false;
+    const a = Buffer.from(submitted);
+    const b = Buffer.from(pin);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+
+  /** @type {'admin' | 'staff' | null} */
+  let role = null;
+  if (matches(adminPin)) role = 'admin';
+  else if (matches(staffPin)) role = 'staff';
+
+  if (!role) {
     res.writeHead(302, { Location: '/?error=invalid' });
     res.end();
     return;
   }
 
-  const token = await createAuthToken(secret);
+  const token = await createAuthToken(secret, role);
   const secure =
     process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
   const secureFlag = secure ? ' Secure;' : '';
@@ -70,6 +82,7 @@ export default async function handler(req, res) {
     'Set-Cookie',
     `${COOKIE_NAME}=${token}; Path=/; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=${MAX_AGE}`
   );
-  res.writeHead(302, { Location: '/' });
+  // Staff land on the mobile view; admins on the full dashboard.
+  res.writeHead(302, { Location: role === 'staff' ? '/mobile' : '/' });
   res.end();
 }
