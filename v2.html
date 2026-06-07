@@ -102,6 +102,8 @@
       margin-left:auto; width:8px; height:8px; border-radius:50%; background:#22c55e;
       box-shadow:0 0 0 2px rgba(34,197,94,.2); flex-shrink:0;
     }
+    .nav-status-dot:not(#bugOpenDot) { display:none; }
+    .feature-dot { display:none; }
     .sidebar-nav-divider { height:1px; margin:8px 10px; background:var(--border); }
     .nav-item-bottom { margin-top:auto; }
     .sidebar-submenu { display:flex; flex-direction:column; gap:1px; }
@@ -1568,7 +1570,7 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="assets/js/db.js?v=20260608-0220-new-event"></script>
+<script src="assets/js/db.js?v=20260608-0230-no-dots"></script>
 <script>
   // ---------- state ----------
   const PROD_DB_REF = 'qqdvzcaukstfdixnfuqq';
