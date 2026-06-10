@@ -31,7 +31,11 @@
       --radius:0.5rem;
       --beer:#92400e; --cider:#3f6212; --wine:#7c3aed; --rtd:#1d4ed8;
       --softs:#0f766e; --spirits:#dc2626; --success:#16a34a; --danger:#dc2626; --warning:#b45309;
-      --header-h:104px; --nav-h:64px;
+      /* header-h / nav-h are measured at runtime (syncChromeSizes); these are
+         generous fallbacks used before the first measurement so the fixed
+         topbar / bottom nav never overlap the scrollable content. */
+      --header-h:128px; --nav-h:68px;
+      --gutter:18px;
       --safe-top:env(safe-area-inset-top,0px);
       --safe-bottom:env(safe-area-inset-bottom,0px);
     }
@@ -51,7 +55,7 @@
     .topbar {
       position:fixed; top:0; left:0; right:0; z-index:40;
       background:var(--card); border-bottom:1px solid var(--border);
-      padding:calc(10px + var(--safe-top)) 14px 10px;
+      padding:calc(10px + var(--safe-top)) var(--gutter) 10px;
     }
     .topbar-row { display:flex; align-items:center; gap:10px; }
     .brand { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; flex:1; min-width:0; }
@@ -80,8 +84,11 @@
       color:var(--foreground); font-weight:600; padding:12px 34px 12px 36px; outline:none;
     }
 
+    /* --header-h / --nav-h already include the safe-area insets once measured
+       (offsetHeight covers the topbar/nav padding), so we don't add them again
+       here — doing so would leave a large empty gap. */
     .content {
-      flex:1; padding:calc(var(--header-h) + var(--safe-top)) 14px calc(var(--nav-h) + var(--safe-bottom) + 16px);
+      flex:1; padding:var(--header-h) var(--gutter) calc(var(--nav-h) + 16px);
     }
 
     /* ---------- Bottom nav ---------- */
