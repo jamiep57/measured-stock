@@ -19,6 +19,14 @@
   <meta name="theme-color" content="#18181b">
   <title>Measured Stock — On the go</title>
   <link rel="icon" type="image/png" href="assets/img/favicon.png?v=2">
+
+  <!-- PWA: installable home-screen app -->
+  <link rel="manifest" href="/assets/manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Stock">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
@@ -188,13 +196,13 @@
     }
     .sheet.open { transform:translateY(0); visibility:visible; }
     .sheet-head {
-      display:flex; align-items:center; gap:10px; padding:calc(12px + var(--safe-top)) 14px 12px;
+      display:flex; align-items:center; gap:10px; padding:calc(12px + var(--safe-top)) var(--gutter) 12px;
       border-bottom:1px solid var(--border); background:var(--card);
     }
     .sheet-title { font-weight:700; font-size:16px; flex:1; }
-    .sheet-body { flex:1; overflow-y:auto; padding:16px 14px calc(20px + var(--safe-bottom)); -webkit-overflow-scrolling:touch; }
+    .sheet-body { flex:1; overflow-y:auto; padding:16px var(--gutter) calc(20px + var(--safe-bottom)); -webkit-overflow-scrolling:touch; }
     .sheet-foot {
-      padding:12px 14px calc(12px + var(--safe-bottom)); border-top:1px solid var(--border); background:var(--card);
+      padding:12px var(--gutter) calc(12px + var(--safe-bottom)); border-top:1px solid var(--border); background:var(--card);
       display:flex; gap:10px;
     }
 
@@ -283,7 +291,7 @@
 
     /* ---------- Toast / lightbox ---------- */
     .toast {
-      position:fixed; left:50%; bottom:calc(var(--nav-h) + var(--safe-bottom) + 16px); transform:translateX(-50%) translateY(20px);
+      position:fixed; left:50%; bottom:calc(var(--nav-h) + 16px); transform:translateX(-50%) translateY(20px);
       background:var(--primary); color:var(--primary-foreground); padding:11px 18px; border-radius:999px;
       font-size:14px; font-weight:600; z-index:80; opacity:0; transition:all .25s ease; pointer-events:none; max-width:90vw;
     }
@@ -559,6 +567,16 @@
   <div class="toast" id="toast"></div>
   <div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightboxImg" alt=""></div>
 
+  <script>
+  // PWA service worker — scoped to /mobile so it leaves the admin app alone.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker
+        .register('/assets/js/sw.js', { scope: '/mobile' })
+        .catch(function (err) { console.warn('SW registration failed', err); });
+    });
+  }
+  </script>
   <script src="assets/js/db.js"></script>
   <script>
   (function () {
@@ -630,6 +648,17 @@
     }
     function eventBars() {
       return ((_event && _event.bars) || []).filter((b) => !isBoneYard(b));
+    }
+
+    // Keep the scrollable content clear of the fixed topbar / bottom nav.
+    // The topbar height varies with the device safe-area inset and the event
+    // selector, so measure it rather than hard-coding a value.
+    function syncChromeSizes() {
+      const root = document.documentElement;
+      const tb = document.querySelector('.topbar');
+      const nav = document.querySelector('.bottomnav');
+      if (tb) root.style.setProperty('--header-h', tb.offsetHeight + 'px');
+      if (nav) root.style.setProperty('--nav-h', nav.offsetHeight + 'px');
     }
 
     // =====================================================================
@@ -1391,6 +1420,17 @@
       openBugForm, closeBugForm, saveBug, deleteBug, toggleBugStatus, setBugFilter, setBugTypeFilter,
       openLightbox, closeLightbox,
     });
+
+    // Measure the fixed chrome now and whenever the layout could shift.
+    syncChromeSizes();
+    window.addEventListener('resize', syncChromeSizes);
+    window.addEventListener('orientationchange', () => setTimeout(syncChromeSizes, 200));
+    window.addEventListener('load', syncChromeSizes);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncChromeSizes).catch(() => {});
+    if (window.ResizeObserver) {
+      const tb = document.querySelector('.topbar');
+      if (tb) new ResizeObserver(syncChromeSizes).observe(tb);
+    }
 
     boot();
     // Prime the nav badge so staff see open reports without opening the tab.
