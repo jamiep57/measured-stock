@@ -249,6 +249,17 @@
       bySupplier(supplierId) {
         return select('products', '?supplier_id=eq.' + enc(supplierId) + '&select=*&order=name');
       },
+      // Fold one or more duplicate products into a single keeper. Re-points
+      // every child table (event_products, distribution, deliveries, …),
+      // summing quantities on unique-constraint collisions, then deletes the
+      // duplicate product rows. Atomic — runs in the merge_products() RPC
+      // (migration 015). Returns { kept, merged }.
+      merge(keepId, dupIds) {
+        return rpc('merge_products', {
+          p_keep: keepId,
+          p_dups: Array.isArray(dupIds) ? dupIds : [dupIds],
+        });
+      },
       normalise(input) {
         // Map a UI product object to the products table shape.
         return {
