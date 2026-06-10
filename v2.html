@@ -990,7 +990,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Opening Stock <span class="feature-dot green" title="Active — saves to the v2 tables"></span></div>
-      <p class="page-subtitle">Record what was actually delivered vs ordered. <strong>Variance</strong> = Delivered − Ordered. <strong>Opening stock</strong> = Delivered − Damaged.</p>
+      <p class="page-subtitle">Counts come straight from the Deliveries tab. <strong>Variance</strong> = Counted in − Ordered. <strong>Opening stock</strong> = Counted in − Damaged.</p>
     </div>
     <button class="btn btn-primary btn-sm" id="openingSaveBtn" onclick="saveOpening()"><i class="ph ph-check btn-leading-icon"></i> Save opening stock</button>
   </div>
@@ -1003,7 +1003,7 @@
           <th>Pack size</th>
           <th>Qty ordered</th>
           <th>Invoice qty</th>
-          <th>Delivered qty</th>
+          <th>Counted in</th>
           <th>Variance</th>
           <th>Damaged (unusable)</th>
           <th>Opening stock</th>
@@ -1011,7 +1011,7 @@
         <tbody id="openingTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Deliveries logged on the Deliveries tab also add to delivered qty. Damaged cases are subtracted from opening stock automatically.</p>
+    <p class="df-hint" style="margin-top:10px"><strong>Counted in</strong> is the total cases logged across all deliveries on the Deliveries tab. Counts auto-save as you type. Damaged cases are subtracted from opening stock automatically.</p>
   </div>
 </div>
 <!-- ===================== DISTRIBUTION ===================== -->
@@ -1416,7 +1416,7 @@
     <div class="df-field">
       <label>Delivery note photo</label>
       <div class="delivery-upload">
-        <input type="file" id="df-note-file" accept="image/*" capture="environment" style="display:none" onchange="onDeliveryNoteFile(event)">
+        <input type="file" id="df-note-file" accept="image/*" style="display:none" onchange="onDeliveryNoteFile(event)">
         <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('df-note-file').click()"><i class="ph ph-camera btn-leading-icon"></i> Upload delivery note</button>
         <div id="df-note-preview" class="delivery-thumb-row"></div>
       </div>
@@ -1424,7 +1424,7 @@
     <div class="df-field">
       <label>Photos of the delivery</label>
       <div class="delivery-upload">
-        <input type="file" id="df-photos-file" accept="image/*" capture="environment" multiple style="display:none" onchange="onDeliveryPhotosFile(event)">
+        <input type="file" id="df-photos-file" accept="image/*" multiple style="display:none" onchange="onDeliveryPhotosFile(event)">
         <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('df-photos-file').click()"><i class="ph ph-images btn-leading-icon"></i> Add photos</button>
         <div id="df-photos-preview" class="delivery-thumb-row"></div>
       </div>
@@ -1432,7 +1432,7 @@
     <div class="df-field">
       <label>Damages photos</label>
       <div class="delivery-upload">
-        <input type="file" id="df-damages-file" accept="image/*" capture="environment" multiple style="display:none" onchange="onDeliveryDamagesFile(event)">
+        <input type="file" id="df-damages-file" accept="image/*" multiple style="display:none" onchange="onDeliveryDamagesFile(event)">
         <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('df-damages-file').click()"><i class="ph ph-warning btn-leading-icon"></i> Add damages photos</button>
         <div id="df-damages-preview" class="delivery-thumb-row"></div>
       </div>
@@ -2826,6 +2826,34 @@
   function delLineSum(lines) { return (lines || []).reduce((s, l) => s + (Number(l.qty) || 0), 0); }
   function delDamagedSum(lines) { return (lines || []).reduce((s, l) => s + (Number(l.damaged_qty) || 0), 0); }
 
+  // Deliveries are now the source of truth for delivered qty. Recompute the
+  // per-product totals from every logged delivery and persist them onto
+  // event_products so Opening Stock, Distribution, Stock Levels and Summary
+  // all stay in sync.
+  async function syncDeliveredFromDeliveries() {
+    if (!_currentEvent) return;
+    const map = {};
+    _deliveries.forEach((d) => (d.lines || []).forEach((l) => {
+      if (!l.product_id) return;
+      map[l.product_id] = (map[l.product_id] || 0) + (Number(l.qty) || 0);
+    }));
+    _openingCountedIn = map;
+    const eps = _currentEvent.event_products || [];
+    const updates = [];
+    eps.forEach((ep) => {
+      const counted = round1(map[ep.product_id] || 0);
+      const cur = ep.delivered_qty != null ? round1(ep.delivered_qty) : null;
+      if (cur !== counted) {
+        ep.delivered_qty = counted;
+        updates.push(
+          DB.eventProducts.setForEvent(_currentEvent.id, ep.product_id, { delivered_qty: counted })
+            .catch((e) => console.warn('syncDeliveredFromDeliveries', e))
+        );
+      }
+    });
+    if (updates.length) await Promise.allSettled(updates);
+  }
+
   function renderDeliveries() {
     const totalCases = round1(_deliveries.reduce((s, d) => s + delLineSum(d.lines), 0));
     const totalDmg = round1(_deliveries.reduce((s, d) => s + delDamagedSum(d.lines), 0));
@@ -3096,6 +3124,7 @@
       await DB.deliveries.addLines(valid.map((v) => ({ delivery_id: deliveryId, product_id: v.product_id, qty: v.qty, damaged_qty: v.damaged_qty })));
 
       await loadDeliveries();
+      await syncDeliveredFromDeliveries();
       if (!$('df-err').textContent) closeDeliveryForm();
     } catch (err) {
       console.error('saveDelivery', err);
@@ -3111,6 +3140,7 @@
       await DB.deliveries.clearLines(id);
       await DB.deliveries.remove(id);
       await loadDeliveries();
+      await syncDeliveredFromDeliveries();
     } catch (err) {
       console.error('deleteDelivery', err);
       alert('Failed to delete delivery: ' + err.message);
@@ -3128,6 +3158,23 @@
 
   // ===================== OPENING STOCK =====================
   let _openingTimers = {};
+  let _openingCountedIn = {}; // product_id -> total cases logged via the Deliveries tab
+
+  async function loadOpeningCountedIn(eventId) {
+    _openingCountedIn = {};
+    try {
+      const rows = (await DB.deliveries.forEvent(eventId)) || [];
+      rows.forEach((d) => {
+        (d.lines || []).forEach((l) => {
+          const pid = l.product_id;
+          if (!pid) return;
+          _openingCountedIn[pid] = (_openingCountedIn[pid] || 0) + (Number(l.qty) || 0);
+        });
+      });
+    } catch (err) {
+      console.warn('loadOpeningCountedIn', err);
+    }
+  }
 
   async function loadOpening() {
     const id = $('eventPick').value;
@@ -3139,6 +3186,7 @@
       if (!_currentEvent || _currentEvent.id !== id) {
         _currentEvent = await DB.events.getFull(id);
       }
+      await loadOpeningCountedIn(id);
       renderOpening();
     } catch (err) {
       console.error('loadOpening', err);
@@ -3169,23 +3217,22 @@
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const p = ep.product || {};
-        const del = ep.delivered_qty != null ? ep.delivered_qty : '';
         const inv = ep.invoice_qty != null ? ep.invoice_qty : '';
         const dmg = ep.damaged_qty ?? 0;
-        const delCalc = ep.delivered_qty != null ? Number(ep.delivered_qty) : null;
-        const opening = delCalc != null ? round1(delCalc - Number(dmg || 0)) : null;
-        const variance = delCalc != null ? round1(delCalc - (Number(ep.qty_ordered) || 0)) : null;
+        const countedIn = round1(_openingCountedIn[pid] || 0);
+        const opening = round1(countedIn - Number(dmg || 0));
+        const variance = round1(countedIn - (Number(ep.qty_ordered) || 0));
         const vc = variance > 0 ? 'pos' : variance < 0 ? 'neg' : 'zero';
-        const vt = variance != null ? ((variance > 0 ? '+' : '') + variance) : '—';
+        const vt = (variance > 0 ? '+' : '') + variance;
         html += '<tr>' +
           '<td>' + escapeHtml(p.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(p.case_size || '—') + '</td>' +
           '<td style="font-weight:600">' + round1(ep.qty_ordered || 0) + '</td>' +
           '<td><input type="text" value="' + escapeHtml(inv) + '" placeholder="0" id="o-inv-' + pid + '" onblur="evalMathInput(this)" oninput="recalcOpeningRow(\'' + pid + '\')"></td>' +
-          '<td><input type="text" value="' + escapeHtml(del) + '" placeholder="0" id="o-del-' + pid + '" onblur="evalMathInput(this)" oninput="recalcOpeningRow(\'' + pid + '\')"></td>' +
+          '<td style="font-weight:600" title="Total cases logged on the Deliveries tab" id="o-cin-' + pid + '">' + countedIn + '</td>' +
           '<td><span class="' + vc + '" id="o-var-' + pid + '" style="font-weight:700">' + vt + '</span></td>' +
           '<td><input type="text" value="' + (dmg ? escapeHtml(dmg) : '') + '" placeholder="0" id="o-dmg-' + pid + '" onblur="evalMathInput(this)" oninput="recalcOpeningRow(\'' + pid + '\')"></td>' +
-          '<td style="font-weight:700" id="o-open-' + pid + '">' + (opening != null ? opening : '—') + '</td>' +
+          '<td style="font-weight:700" id="o-open-' + pid + '">' + opening + '</td>' +
         '</tr>';
       });
     });
@@ -3197,29 +3244,20 @@
     const ep = eps.find((x) => x.product_id === productId);
     if (!ep) return;
     const invEl = $('o-inv-' + productId);
-    const delEl = $('o-del-' + productId);
     const dmgEl = $('o-dmg-' + productId);
-    const delRaw = delEl ? delEl.value.trim() : '';
-    const del = delRaw !== '' ? parseFloat(delRaw) : null;
     const dmg = dmgEl ? (parseFloat(dmgEl.value) || 0) : 0;
+    const countedIn = round1(_openingCountedIn[productId] || 0);
     const varEl = $('o-var-' + productId);
     const openEl = $('o-open-' + productId);
-    if (del != null && !isNaN(del)) {
-      const v = round1(del - (Number(ep.qty_ordered) || 0));
-      if (varEl) { varEl.textContent = (v > 0 ? '+' : '') + v; varEl.className = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'; }
-      if (openEl) openEl.textContent = round1(del - dmg);
-    } else {
-      if (varEl) { varEl.textContent = '—'; varEl.className = 'zero'; }
-      if (openEl) openEl.textContent = '—';
-    }
+    const v = round1(countedIn - (Number(ep.qty_ordered) || 0));
+    if (varEl) { varEl.textContent = (v > 0 ? '+' : '') + v; varEl.className = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'; }
+    if (openEl) openEl.textContent = round1(countedIn - dmg);
     ep.invoice_qty = invEl && invEl.value !== '' ? (parseFloat(invEl.value) ?? null) : null;
-    ep.delivered_qty = delRaw !== '' && !isNaN(del) ? del : null;
     ep.damaged_qty = dmg;
     clearTimeout(_openingTimers[productId]);
     _openingTimers[productId] = setTimeout(() => {
       DB.eventProducts.setForEvent(_currentEvent.id, productId, {
         invoice_qty: ep.invoice_qty,
-        delivered_qty: ep.delivered_qty,
         damaged_qty: ep.damaged_qty,
       }).catch((e) => console.warn('recalcOpeningRow save', e));
     }, 800);
@@ -3236,13 +3274,11 @@
       const eps = (_currentEvent.event_products || []).filter((ep) => $('o-inv-' + ep.product_id));
       const rows = eps.map((ep) => {
         const invEl = $('o-inv-' + ep.product_id);
-        const delEl = $('o-del-' + ep.product_id);
         const dmgEl = $('o-dmg-' + ep.product_id);
         const patch = {
           event_id: _currentEvent.id,
           product_id: ep.product_id,
           invoice_qty: invEl && invEl.value !== '' ? parseFloat(invEl.value) : null,
-          delivered_qty: delEl && delEl.value !== '' ? parseFloat(delEl.value) : null,
           damaged_qty: dmgEl ? (parseFloat(dmgEl.value) || 0) : 0,
         };
         Object.assign(ep, patch);
