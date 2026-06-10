@@ -289,6 +289,31 @@
     .lightbox img { max-width:100%; max-height:100%; border-radius:8px; }
 
     .boot-msg { padding:60px 20px; text-align:center; color:var(--muted-foreground); }
+
+    /* ---------- Bug / feature reports ---------- */
+    .navbtn { position:relative; }
+    .nav-dot {
+      position:absolute; top:6px; left:calc(50% + 9px); width:8px; height:8px; border-radius:50%;
+      background:#f59e0b; box-shadow:0 0 0 2px var(--card);
+    }
+    .bug-card { position:relative; }
+    .bug-card.resolved { opacity:.62; }
+    .bug-card.resolved .card-title { text-decoration:line-through; }
+    .bug-pills { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .bug-pill {
+      display:inline-flex; align-items:center; font-size:11px; font-weight:600; padding:2px 9px;
+      border-radius:999px; border:1px solid var(--border); background:var(--secondary); color:var(--muted-foreground);
+    }
+    .bug-pill.type-bug { background:#fef2f2; color:var(--spirits); border-color:#fecaca; }
+    .bug-pill.type-feature { background:#eff6ff; color:var(--rtd); border-color:#bfdbfe; }
+    .bug-pill.dot-open::before, .bug-pill.dot-resolved::before {
+      content:''; width:7px; height:7px; border-radius:50%; margin-right:5px;
+    }
+    .bug-pill.dot-open::before { background:#f59e0b; }
+    .bug-pill.dot-resolved::before { background:#22c55e; }
+    .bug-desc { margin-top:9px; font-size:13px; white-space:pre-wrap; word-break:break-word; }
+    .bug-card-actions { display:flex; gap:8px; margin-top:12px; }
+    .bug-card-actions .btn { flex:1; }
   </style>
 </head>
 <body>
@@ -361,6 +386,28 @@
           <div id="cntItemList"></div>
         </div>
       </section>
+
+      <!-- ============ BUG / FEATURE REPORTS ============ -->
+      <section class="view" id="view-bugs">
+        <div class="stats">
+          <div class="stat"><div class="stat-val" id="bugStatOpen">0</div><div class="stat-lbl">Open</div></div>
+          <div class="stat"><div class="stat-val" id="bugStatResolved">0</div><div class="stat-lbl">Resolved</div></div>
+          <div class="stat"><div class="stat-val" id="bugStatTotal">0</div><div class="stat-lbl">Total</div></div>
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" onclick="openBugForm()"><i class="ph-bold ph-plus"></i> New report</button>
+        <div class="fab-spacer"></div>
+        <div class="chips" id="bugStatusChips">
+          <span class="chip active" data-f="open" onclick="setBugFilter('open')">Open</span>
+          <span class="chip" data-f="resolved" onclick="setBugFilter('resolved')">Resolved</span>
+          <span class="chip" data-f="all" onclick="setBugFilter('all')">All</span>
+        </div>
+        <div class="chips" id="bugTypeChips">
+          <span class="chip active" data-t="all" onclick="setBugTypeFilter('all')">Everything</span>
+          <span class="chip" data-t="bug" onclick="setBugTypeFilter('bug')">Bugs</span>
+          <span class="chip" data-t="feature" onclick="setBugTypeFilter('feature')">Features</span>
+        </div>
+        <div id="bugList"></div>
+      </section>
     </main>
 
     <!-- Bottom nav -->
@@ -370,6 +417,10 @@
       </button>
       <button class="navbtn" id="nav-counts" onclick="switchTab('counts')">
         <i class="ph ph-clipboard-text"></i><span>Stock Count</span>
+      </button>
+      <button class="navbtn" id="nav-bugs" onclick="switchTab('bugs')">
+        <i class="ph ph-bug"></i><span>Reports</span>
+        <span class="nav-dot" id="bugNavDot" style="display:none"></span>
       </button>
     </nav>
   </div>
@@ -451,6 +502,52 @@
     <div class="sheet-foot">
       <button class="btn btn-block" onclick="closeNewCountSheet()">Cancel</button>
       <button class="btn btn-primary btn-block" id="ncSaveBtn" onclick="createCountSession()">Create &amp; count</button>
+    </div>
+  </div>
+
+  <!-- ============ BUG / FEATURE REPORT SHEET ============ -->
+  <div class="sheet" id="bugSheet">
+    <div class="sheet-head">
+      <button class="icon-btn" onclick="closeBugForm()" aria-label="Close"><i class="ph ph-x"></i></button>
+      <div class="sheet-title" id="bugSheetTitle">New report</div>
+    </div>
+    <div class="sheet-body">
+      <div class="err" id="bugErr"></div>
+      <div class="field">
+        <label>Type</label>
+        <select id="bugType">
+          <option value="bug">Bug — something's broken</option>
+          <option value="feature">Feature request — something new</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Title</label>
+        <input type="text" id="bugTitle" placeholder="e.g. Count total wrong when SOR % blank">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Area / Page</label>
+          <input type="text" id="bugArea" placeholder="Optional">
+        </div>
+        <div class="field">
+          <label>Severity</label>
+          <select id="bugSeverity">
+            <option value="">— None —</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Details</label>
+        <textarea id="bugDesc" placeholder="Steps to reproduce, what happened vs what you expected…"></textarea>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn btn-danger btn-block" id="bugDeleteBtn" onclick="deleteBug()" style="display:none">Delete</button>
+      <button class="btn btn-block" onclick="closeBugForm()">Cancel</button>
+      <button class="btn btn-primary btn-block" id="bugSaveBtn" onclick="saveBug()">Add report</button>
     </div>
   </div>
 
@@ -577,7 +674,8 @@
 
     function reloadCurrent() {
       if (_tab === 'deliveries') loadDeliveries();
-      else loadCounts();
+      else if (_tab === 'counts') loadCounts();
+      else if (_tab === 'bugs') loadBugs();
     }
 
     function switchTab(tab) {
@@ -585,6 +683,7 @@
       document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + tab));
       $('nav-deliveries').classList.toggle('active', tab === 'deliveries');
       $('nav-counts').classList.toggle('active', tab === 'counts');
+      $('nav-bugs').classList.toggle('active', tab === 'bugs');
       reloadCurrent();
     }
 
@@ -1100,6 +1199,178 @@
       } catch (err) { console.warn('persistCount', err); toast('Save failed — check connection', true); }
     }
 
+    // =====================================================================
+    // BUG / FEATURE REPORTS  (global, not event-scoped — DB.bugs)
+    // =====================================================================
+    // The `type` column (bug vs feature) is added by migration 012. Writes
+    // fall back to omitting it if that migration hasn't been applied yet.
+    let _bugs = [];
+    let _bugFilter = 'open';      // open | resolved | all
+    let _bugTypeFilter = 'all';   // all | bug | feature
+    let _bugEditingId = null;
+
+    function bugIsResolved(b) { return b.status === 'resolved' || b.status === 'wontfix'; }
+    function isMissingTypeColErr(err) {
+      const m = (err && err.message) || '';
+      return m.includes('PGRST204') && m.includes("'type'");
+    }
+
+    function updateBugNavDot() {
+      const dot = $('bugNavDot');
+      if (!dot) return;
+      const open = _bugs.filter((b) => !bugIsResolved(b)).length;
+      dot.style.display = open > 0 ? '' : 'none';
+    }
+
+    async function loadBugs() {
+      try {
+        _bugs = (await DB.bugs.list()) || [];
+        syncBugChips();
+        renderBugs();
+      } catch (err) {
+        console.error('loadBugs', err);
+        $('bugList').innerHTML = '<div class="empty"><i class="ph ph-warning"></i><p>' + escapeHtml(err.message) + '</p></div>';
+      }
+    }
+
+    function setBugFilter(f) { _bugFilter = f; syncBugChips(); renderBugs(); }
+    function setBugTypeFilter(f) { _bugTypeFilter = f; syncBugChips(); renderBugs(); }
+
+    function syncBugChips() {
+      document.querySelectorAll('#bugStatusChips .chip').forEach((c) => c.classList.toggle('active', c.dataset.f === _bugFilter));
+      document.querySelectorAll('#bugTypeChips .chip').forEach((c) => c.classList.toggle('active', c.dataset.t === _bugTypeFilter));
+    }
+
+    function renderBugs() {
+      const all = _bugs.slice();
+      const open = all.filter((b) => !bugIsResolved(b)).length;
+      $('bugStatOpen').textContent = open;
+      $('bugStatResolved').textContent = all.length - open;
+      $('bugStatTotal').textContent = all.length;
+      updateBugNavDot();
+
+      let rows = all.filter((b) => {
+        if (_bugFilter === 'open') return !bugIsResolved(b);
+        if (_bugFilter === 'resolved') return bugIsResolved(b);
+        return true;
+      });
+      if (_bugTypeFilter !== 'all') rows = rows.filter((b) => (b.type || 'bug') === _bugTypeFilter);
+      rows.sort((a, b) => {
+        const ar = bugIsResolved(a), br = bugIsResolved(b);
+        if (ar !== br) return ar ? 1 : -1;
+        return (b.created_at || '').localeCompare(a.created_at || '');
+      });
+
+      const box = $('bugList');
+      if (!rows.length) {
+        let msg = 'No reports yet — log the first one with "New report".';
+        if (_bugFilter === 'open') msg = 'Nothing open right now. Nice work!';
+        else if (_bugFilter === 'resolved') msg = 'No resolved reports yet.';
+        box.innerHTML = '<div class="empty"><i class="ph ph-bug"></i><p>' + msg + '</p></div>';
+        return;
+      }
+
+      box.innerHTML = rows.map((b) => {
+        const resolved = bugIsResolved(b);
+        const type = b.type === 'feature' ? 'feature' : 'bug';
+        const pills = [
+          '<span class="bug-pill dot-' + (resolved ? 'resolved' : 'open') + '">' + (resolved ? 'Resolved' : 'Open') + '</span>',
+          '<span class="bug-pill type-' + type + '">' + (type === 'feature' ? 'Feature' : 'Bug') + '</span>',
+          b.severity ? '<span class="bug-pill">' + escapeHtml(b.severity) + '</span>' : '',
+          b.area ? '<span class="bug-pill">' + escapeHtml(b.area) + '</span>' : '',
+        ].filter(Boolean).join('');
+        const desc = b.description ? '<div class="bug-desc">' + escapeHtml(b.description) + '</div>' : '';
+        const toggleLabel = resolved ? '<i class="ph ph-arrow-counter-clockwise"></i> Reopen' : '<i class="ph ph-check"></i> Resolve';
+        return '<div class="card bug-card' + (resolved ? ' resolved' : '') + '">' +
+          '<div class="card-head"><div style="min-width:0">' +
+            '<div class="card-title">' + escapeHtml(b.title) + '</div>' +
+            '<div class="card-meta">Logged ' + fmtDateTime(b.created_at) + '</div>' +
+          '</div></div>' +
+          '<div class="bug-pills">' + pills + '</div>' + desc +
+          '<div class="bug-card-actions">' +
+            '<button class="btn btn-sm ' + (resolved ? '' : 'btn-primary') + '" onclick="toggleBugStatus(\'' + b.id + '\')">' + toggleLabel + '</button>' +
+            '<button class="btn btn-sm" onclick="openBugForm(\'' + b.id + '\')"><i class="ph ph-pencil-simple"></i> Edit</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    async function toggleBugStatus(id) {
+      const b = _bugs.find((x) => x.id === id);
+      if (!b) return;
+      try {
+        const patch = bugIsResolved(b)
+          ? { status: 'open', resolved_at: null }
+          : { status: 'resolved', resolved_at: new Date().toISOString() };
+        await DB.bugs.update(id, patch);
+        await loadBugs();
+        toast(bugIsResolved(b) ? 'Reopened' : 'Marked resolved');
+      } catch (err) {
+        console.error(err);
+        toast('Could not update: ' + (err.message || err), true);
+      }
+    }
+
+    function openBugForm(id) {
+      const b = id ? _bugs.find((x) => x.id === id) : null;
+      _bugEditingId = b ? b.id : null;
+      $('bugErr').textContent = '';
+      $('bugType').value = (b && b.type) || 'bug';
+      $('bugTitle').value = (b && b.title) || '';
+      $('bugArea').value = (b && b.area) || '';
+      $('bugSeverity').value = (b && b.severity) || '';
+      $('bugDesc').value = (b && b.description) || '';
+      $('bugSheetTitle').textContent = b ? 'Edit report' : 'New report';
+      $('bugSaveBtn').textContent = b ? 'Save' : 'Add report';
+      $('bugDeleteBtn').style.display = b ? '' : 'none';
+      $('bugSheet').classList.add('open');
+    }
+    function closeBugForm() { $('bugSheet').classList.remove('open'); _bugEditingId = null; }
+
+    async function saveBug() {
+      const title = ($('bugTitle').value || '').trim();
+      if (!title) { $('bugErr').textContent = 'Give the report a title.'; return; }
+      const btn = $('bugSaveBtn'); const prev = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Saving…'; $('bugErr').textContent = '';
+      const isEdit = !!_bugEditingId;
+      const patch = {
+        type: $('bugType').value || 'bug',
+        title,
+        area: ($('bugArea').value || '').trim() || null,
+        severity: $('bugSeverity').value || null,
+        description: ($('bugDesc').value || '').trim() || null,
+      };
+      const body = isEdit ? patch : Object.assign({ status: 'open' }, patch);
+      const run = (b) => (isEdit ? DB.bugs.update(_bugEditingId, b) : DB.bugs.create(b));
+      try {
+        try {
+          await run(body);
+        } catch (err) {
+          if (isMissingTypeColErr(err)) { const { type, ...rest } = body; await run(rest); }
+          else throw err;
+        }
+        await loadBugs();
+        closeBugForm();
+        toast(isEdit ? 'Report updated' : 'Report added');
+      } catch (err) {
+        console.error('saveBug', err);
+        $('bugErr').textContent = err.message || 'Failed to save report';
+      } finally {
+        btn.disabled = false; btn.textContent = prev;
+      }
+    }
+
+    async function deleteBug() {
+      if (!_bugEditingId) return;
+      if (!confirm('Delete this report? This cannot be undone.')) return;
+      try {
+        await DB.bugs.remove(_bugEditingId);
+        await loadBugs();
+        closeBugForm();
+        toast('Report deleted');
+      } catch (err) { console.error(err); toast('Failed to delete: ' + (err.message || err), true); }
+    }
+
     // ---------- lightbox ----------
     function openLightbox(src) { $('lightboxImg').src = decodeURI(src); $('lightbox').classList.add('show'); }
     function closeLightbox() { $('lightbox').classList.remove('show'); }
@@ -1112,10 +1383,13 @@
       onDelNoteFile, onDelPhotosFile, onDelDamagesFile, clearDelNote, removeDelPhoto, removeDelDamage,
       openNewCountSheet, closeNewCountSheet, createCountSession, deleteCount,
       activateCount, closeActiveCount, switchCountBar, filterCountItems, evalMath, persistCount, liveCountStats,
+      openBugForm, closeBugForm, saveBug, deleteBug, toggleBugStatus, setBugFilter, setBugTypeFilter,
       openLightbox, closeLightbox,
     });
 
     boot();
+    // Prime the nav badge so staff see open reports without opening the tab.
+    DB.bugs.list().then((rows) => { _bugs = rows || []; updateBugNavDot(); }).catch(() => {});
   })();
   </script>
 </body>
