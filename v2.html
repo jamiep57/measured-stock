@@ -345,13 +345,27 @@
     .supplier-products-table th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; background:var(--muted); position:static; }
     .supplier-products-empty { padding:16px; color:var(--muted-foreground); font-size:12px; text-align:center; background:var(--muted); border-radius:var(--radius); }
     @media (max-width:900px) { .suppliers-layout { grid-template-columns:1fr; } .supplier-list-card { max-height:320px; } .readonly-grid { grid-template-columns:1fr; } }
-    .delivery-log-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); }
-    .delivery-log-card .empty-state { padding:48px 20px; }
-    .delivery-log-item { display:block; padding:16px 18px; border-bottom:1px solid var(--border); font-size:13px; transition:background .1s; }
-    .delivery-log-item:last-child { border-bottom:none; }
-    .delivery-log-item:hover { background:var(--muted); }
-    .delivery-log-line { display:flex; justify-content:space-between; padding:4px 0; font-size:13px; }
+    .delivery-log-list { display:flex; flex-direction:column; gap:14px; }
+    .delivery-log-list > .empty-state { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:48px 20px; }
+    .delivery-log-item { display:block; background:var(--card); border:1px solid var(--border); border-radius:calc(var(--radius) + 4px);
+      font-size:13px; overflow:hidden; box-shadow:0 1px 2px rgba(9,9,11,.04); transition:box-shadow .12s, border-color .12s; }
+    .delivery-log-item:hover { box-shadow:0 4px 14px rgba(9,9,11,.08); border-color:#d4d4d8; }
+    /* supplier header strip — distinct from the product list below */
+    .delivery-log-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;
+      padding:14px 18px; background:var(--secondary); border-bottom:1px solid var(--border); }
+    .delivery-log-head-main { display:flex; align-items:center; gap:12px; min-width:0; }
+    .delivery-log-supplier-icon { width:36px; height:36px; flex-shrink:0; border-radius:50%; background:var(--primary);
+      color:var(--primary-foreground); display:inline-flex; align-items:center; justify-content:center; font-size:18px; }
+    .delivery-log-supplier { font-weight:700; font-size:15px; letter-spacing:-0.2px; color:var(--foreground);
+      display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+    .delivery-log-ref { font-size:11px; font-weight:600; color:var(--muted-foreground); background:var(--card);
+      border:1px solid var(--border); border-radius:999px; padding:1px 8px; }
+    .delivery-log-sub { font-size:11px; color:var(--muted-foreground); margin-top:2px; }
+    .delivery-log-actions { display:flex; gap:6px; flex-shrink:0; }
+    .delivery-log-body { padding:6px 18px 14px; }
+    .delivery-log-line { display:flex; justify-content:space-between; gap:10px; padding:7px 0; font-size:13px; }
     .delivery-log-line:not(:last-child) { border-bottom:1px dashed var(--border); }
+    .delivery-log-extra { padding:0 18px 14px; }
     /* ── transfers ── */
     .transfer-log-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); }
     .transfer-log-card .empty-state { padding:48px 20px; }
@@ -642,6 +656,43 @@
       border-radius:var(--radius); background:var(--background); color:var(--foreground); width:100%;
     }
     .field textarea { resize:vertical; min-height:70px; }
+    /* =================== library merge mode =================== */
+    #libTable .lib-sel-col { display:none; }
+    #libTable.merge-mode .lib-sel-col { display:table-cell; width:34px; text-align:center; }
+    #libTable.merge-mode tbody tr.lib-selected { background:var(--secondary); }
+    #libTable .lib-sel-col input { width:16px; height:16px; cursor:pointer; }
+    .merge-bar {
+      display:none; align-items:center; gap:10px; flex-wrap:wrap;
+      margin-left:auto; padding:6px 10px; border-radius:var(--radius);
+      background:var(--secondary); border:1px solid var(--border);
+    }
+    .merge-bar.open { display:flex; }
+    .merge-bar .merge-count { font-size:13px; font-weight:600; }
+    .merge-modal-card {
+      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) scale(.98);
+      width:calc(100% - 32px); max-width:520px; max-height:calc(100vh - 64px);
+      background:var(--background); border:1px solid var(--border); border-radius:12px;
+      box-shadow:0 24px 64px rgba(0,0,0,.28); z-index:60; display:flex; flex-direction:column;
+      opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease;
+    }
+    .merge-modal-card.open { opacity:1; pointer-events:auto; transform:translate(-50%,-50%) scale(1); }
+    .merge-modal-card .mm-head { padding:16px 20px; border-bottom:1px solid var(--border); }
+    .merge-modal-card .mm-head h2 { margin:0 0 3px; font-size:15px; font-weight:700; }
+    .merge-modal-card .mm-head p { margin:0; font-size:12px; color:var(--muted-foreground); }
+    .merge-modal-card .mm-body { padding:8px 12px; overflow:auto; flex:1; }
+    .merge-modal-card .mm-foot {
+      display:flex; gap:10px; align-items:center; padding:14px 20px; border-top:1px solid var(--border);
+    }
+    .merge-modal-card .mm-foot .err { margin-right:auto; color:var(--danger); font-size:12px; }
+    .mm-opt {
+      display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:var(--radius);
+      cursor:pointer; border:1px solid transparent;
+    }
+    .mm-opt:hover { background:var(--secondary); }
+    .mm-opt.chosen { border-color:var(--primary); background:var(--secondary); }
+    .mm-opt input { margin-top:3px; }
+    .mm-opt .mm-name { font-weight:600; font-size:13px; }
+    .mm-opt .mm-meta { font-size:12px; color:var(--muted-foreground); margin-top:2px; }
   </style>
 </head>
 <body>
@@ -885,11 +936,19 @@
     <select id="libCategory" onchange="renderLibrary()"><option value="">All categories</option></select>
     <select id="libSupplier" onchange="renderLibrary()"><option value="">All suppliers</option></select>
     <button class="btn btn-primary" onclick="openProductModal()">+ New product</button>
+    <button class="btn" id="libMergeToggle" onclick="toggleLibMergeMode()">Merge duplicates</button>
     <span class="count" id="libCount"></span>
+    <div class="merge-bar" id="libMergeBar">
+      <span class="merge-count" id="libMergeCount">0 selected</span>
+      <button class="btn btn-sm" onclick="autoSelectDuplicates()" title="Tick every product whose name matches another">Auto-select duplicates</button>
+      <button class="btn btn-primary btn-sm" id="libMergeBtn" onclick="openMergeDialog()" disabled>Merge selected…</button>
+      <button class="btn btn-sm" onclick="toggleLibMergeMode()">Cancel</button>
+    </div>
   </div>
   <table id="libTable">
     <thead>
       <tr>
+        <th class="lib-sel-col"></th>
         <th data-sort="name">Product <span class="arrow"></span></th>
         <th data-sort="category">Category <span class="arrow"></span></th>
         <th data-sort="supplier">Supplier <span class="arrow"></span></th>
@@ -903,6 +962,21 @@
     <tbody id="libBody"></tbody>
   </table>
   <div class="empty" id="libEmpty" style="display:none">No products match.</div>
+</div>
+
+<!-- ===================== MERGE DUPLICATES MODAL ===================== -->
+<div class="drawer-backdrop" id="mergeBackdrop" onclick="closeMergeDialog()"></div>
+<div class="merge-modal-card" id="mergeModal" role="dialog" aria-modal="true" aria-labelledby="mergeTitle">
+  <div class="mm-head">
+    <h2 id="mergeTitle">Merge products</h2>
+    <p>Choose the product to keep. The others are merged into it — every event, delivery, distribution and stock record is re-pointed (quantities are added together) and the duplicates are deleted. This cannot be undone.</p>
+  </div>
+  <div class="mm-body" id="mergeBody"></div>
+  <div class="mm-foot">
+    <span class="err" id="mergeErr"></span>
+    <button class="btn" onclick="closeMergeDialog()" id="mergeCancelBtn">Cancel</button>
+    <button class="btn btn-primary" id="mergeConfirmBtn" onclick="confirmMerge()">Merge</button>
+  </div>
 </div>
 
 <!-- ===================== PRODUCTS (event) ===================== -->
@@ -982,7 +1056,7 @@
       <div class="stat-card"><div class="stat-label">Cases received</div><div class="stat-value" id="del-stat-cases">0</div><div class="stat-sub">Sum of line qtys</div></div>
       <div class="stat-card"><div class="stat-label">Unusable cases</div><div class="stat-value" id="del-stat-damaged">0</div><div class="stat-sub">Flagged on delivery</div></div>
     </div>
-    <div class="delivery-log-card"><div id="deliveryLogBody"></div></div>
+    <div id="deliveryLogBody" class="delivery-log-list"></div>
   </div>
 </div>
 <!-- ===================== OPENING STOCK ===================== -->
@@ -1826,19 +1900,156 @@
     });
     $('libCount').textContent = rows.length + ' of ' + _products.length;
     $('libEmpty').style.display = rows.length ? 'none' : '';
-    $('libBody').innerHTML = rows.map((p) => (
-      '<tr>' +
-      '<td>' + escapeHtml(p.name) + '</td>' +
-      '<td>' + catBadge(p.category) + '</td>' +
-      '<td>' + escapeHtml((p.supplier && p.supplier.name) || '') + '</td>' +
-      '<td>' + escapeHtml(p.case_size || '') + '</td>' +
-      '<td class="num">' + num(p.units_per_case) + '</td>' +
-      '<td class="num">' + money(p.case_price) + '</td>' +
-      '<td class="num">' + money(p.unit_price) + '</td>' +
-      '<td class="act"><button class="btn btn-sm" onclick="openProductModal(\'' + p.id + '\')">Edit</button></td>' +
-      '</tr>'
-    )).join('');
+    $('libBody').innerHTML = rows.map((p) => {
+      const sel = _libSelected.has(p.id);
+      return (
+        '<tr class="' + (sel ? 'lib-selected' : '') + '">' +
+        '<td class="lib-sel-col"><input type="checkbox" ' + (sel ? 'checked ' : '') +
+          'onclick="toggleLibRowSel(\'' + p.id + '\', this.checked)"></td>' +
+        '<td>' + escapeHtml(p.name) + '</td>' +
+        '<td>' + catBadge(p.category) + '</td>' +
+        '<td>' + escapeHtml((p.supplier && p.supplier.name) || '') + '</td>' +
+        '<td>' + escapeHtml(p.case_size || '') + '</td>' +
+        '<td class="num">' + num(p.units_per_case) + '</td>' +
+        '<td class="num">' + money(p.case_price) + '</td>' +
+        '<td class="num">' + money(p.unit_price) + '</td>' +
+        '<td class="act"><button class="btn btn-sm" onclick="openProductModal(\'' + p.id + '\')">Edit</button></td>' +
+        '</tr>'
+      );
+    }).join('');
   }
+
+  // ---------- library: merge duplicates ----------
+  let _libMergeMode = false;
+  const _libSelected = new Set();
+
+  // Normalised key for "same product" detection: lowercase, collapse
+  // whitespace, drop punctuation so "Brothers Apple – 4.4%" ≈
+  // "brothers apple 44".
+  function libNameKey(p) {
+    return String((p && p.name) || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function toggleLibMergeMode() {
+    _libMergeMode = !_libMergeMode;
+    _libSelected.clear();
+    $('libTable').classList.toggle('merge-mode', _libMergeMode);
+    $('libMergeBar').classList.toggle('open', _libMergeMode);
+    $('libMergeToggle').classList.toggle('btn-primary', _libMergeMode);
+    $('libMergeToggle').textContent = _libMergeMode ? 'Exit merge mode' : 'Merge duplicates';
+    updateMergeBar();
+    renderLibrary();
+  }
+
+  function toggleLibRowSel(id, checked) {
+    if (checked) _libSelected.add(id); else _libSelected.delete(id);
+    const tr = document.querySelector('#libBody input[onclick*="' + id + '"]');
+    if (tr) { const row = tr.closest('tr'); if (row) row.classList.toggle('lib-selected', checked); }
+    updateMergeBar();
+  }
+
+  function updateMergeBar() {
+    const n = _libSelected.size;
+    $('libMergeCount').textContent = n + ' selected';
+    $('libMergeBtn').disabled = n < 2;
+  }
+
+  // Tick every product that shares a normalised name with at least one
+  // other product (i.e. the likely duplicates).
+  function autoSelectDuplicates() {
+    const groups = {};
+    _products.forEach((p) => {
+      const k = libNameKey(p);
+      if (!k) return;
+      (groups[k] = groups[k] || []).push(p.id);
+    });
+    _libSelected.clear();
+    Object.values(groups).forEach((ids) => {
+      if (ids.length > 1) ids.forEach((id) => _libSelected.add(id));
+    });
+    updateMergeBar();
+    renderLibrary();
+    if (_libSelected.size === 0) alert('No duplicate names found.');
+  }
+
+  let _mergeKeepId = null;
+
+  function openMergeDialog() {
+    const chosen = _products.filter((p) => _libSelected.has(p.id));
+    if (chosen.length < 2) return;
+    // Default keeper: the most "complete" record (most filled fields),
+    // tie-broken by oldest created_at.
+    const score = (p) => ['supplier_id', 'category_id', 'case_size', 'units_per_case', 'case_price', 'unit_price', 'sku', 'abv']
+      .reduce((s, k) => s + (p[k] != null && p[k] !== '' ? 1 : 0), 0);
+    const sorted = chosen.slice().sort((a, b) =>
+      score(b) - score(a) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    _mergeKeepId = sorted[0].id;
+    $('mergeErr').textContent = '';
+    $('mergeBody').innerHTML = sorted.map((p) => {
+      const meta = [
+        p.category && p.category.name,
+        p.supplier && p.supplier.name,
+        p.case_size,
+        p.case_price != null ? money(p.case_price) : null,
+      ].filter(Boolean).join(' · ');
+      return (
+        '<label class="mm-opt ' + (p.id === _mergeKeepId ? 'chosen' : '') + '" data-id="' + p.id + '">' +
+        '<input type="radio" name="mergeKeep" value="' + p.id + '"' + (p.id === _mergeKeepId ? ' checked' : '') +
+          ' onchange="setMergeKeep(\'' + p.id + '\')">' +
+        '<span><span class="mm-name">' + escapeHtml(p.name) + '</span>' +
+        (meta ? '<span class="mm-meta">' + escapeHtml(meta) + '</span>' : '') + '</span>' +
+        '</label>'
+      );
+    }).join('');
+    $('mergeConfirmBtn').disabled = false;
+    $('mergeConfirmBtn').textContent = 'Merge ' + chosen.length + ' into 1';
+    $('mergeBackdrop').classList.add('open');
+    $('mergeModal').classList.add('open');
+  }
+
+  function setMergeKeep(id) {
+    _mergeKeepId = id;
+    document.querySelectorAll('#mergeBody .mm-opt').forEach((el) => {
+      el.classList.toggle('chosen', el.getAttribute('data-id') === id);
+    });
+  }
+
+  function closeMergeDialog() {
+    $('mergeBackdrop').classList.remove('open');
+    $('mergeModal').classList.remove('open');
+  }
+
+  async function confirmMerge() {
+    if (!_mergeKeepId) return;
+    const dupIds = [..._libSelected].filter((id) => id !== _mergeKeepId);
+    if (!dupIds.length) { $('mergeErr').textContent = 'Pick at least one other product to merge in.'; return; }
+    const btn = $('mergeConfirmBtn');
+    const cancel = $('mergeCancelBtn');
+    btn.disabled = true; cancel.disabled = true;
+    btn.textContent = 'Merging…';
+    $('mergeErr').textContent = '';
+    try {
+      const res = await DB.products.merge(_mergeKeepId, dupIds);
+      const merged = (res && res.merged != null) ? res.merged : dupIds.length;
+      closeMergeDialog();
+      _libSelected.clear();
+      toggleLibMergeMode(); // exit merge mode
+      await loadLibrary();
+      setStatus('✓ merged ' + merged + ' duplicate' + (merged === 1 ? '' : 's'), 'ok');
+    } catch (err) {
+      $('mergeErr').textContent = err.message || String(err);
+      console.error(err);
+      btn.disabled = false; cancel.disabled = false;
+      btn.textContent = 'Merge';
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('mergeModal').classList.contains('open')) closeMergeDialog();
+  });
 
   // =====================================================================
   // Drawer — reusable right-side CRUD form. Default pattern for the app.
@@ -2874,7 +3085,8 @@
       const total = round1(delLineSum(lines));
       const dmgTot = round1(delDamagedSum(lines));
       const supName = (d.supplier && d.supplier.name) || 'No supplier';
-      const ref = d.reference ? '<span style="font-size:11px;color:var(--muted-foreground);margin-left:8px">' + escapeHtml(d.reference) + '</span>' : '';
+      const initial = escapeHtml((supName.trim()[0] || '?').toUpperCase());
+      const ref = d.reference ? '<span class="delivery-log-ref">' + escapeHtml(d.reference) + '</span>' : '';
       const notes = d.notes ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px;font-style:italic">' + escapeHtml(d.notes) + '</div>' : '';
       const itemRows = lines.length
         ? lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
@@ -2889,17 +3101,23 @@
       const dmgThumbs = (d.damages_photo_urls || []).length ? '<span class="delivery-log-photo-label">Damages</span>' + (d.damages_photo_urls || []).map((u) => photo('Damage', u)).join('') : '';
       const photosBlock = (noteThumb || photoThumbs || dmgThumbs) ? '<div class="delivery-log-photos">' + noteThumb + photoThumbs + dmgThumbs + '</div>' : '';
       const dmgMeta = dmgTot > 0 ? ' · <span style="color:#b91c1c;font-weight:600">' + dmgTot + ' unusable</span>' : '';
+      const extra = (notes || photosBlock) ? '<div class="delivery-log-extra">' + notes + photosBlock + '</div>' : '';
       return '<div class="delivery-log-item">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
-          '<div style="min-width:0"><div style="font-weight:700;font-size:14px">' + escapeHtml(supName) + ref + '</div>' +
-          '<div style="font-size:11px;color:var(--muted-foreground);margin-top:2px">' + dt + ' · ' + total + ' cases across ' + lines.length + ' product' + (lines.length === 1 ? '' : 's') + dmgMeta + '</div></div>' +
-          '<div style="display:flex;gap:6px;flex-shrink:0">' +
+        '<div class="delivery-log-head">' +
+          '<div class="delivery-log-head-main">' +
+            '<span class="delivery-log-supplier-icon"><i class="ph ph-storefront"></i></span>' +
+            '<div style="min-width:0">' +
+              '<div class="delivery-log-supplier">' + escapeHtml(supName) + ref + '</div>' +
+              '<div class="delivery-log-sub">' + dt + ' · ' + total + ' cases across ' + lines.length + ' product' + (lines.length === 1 ? '' : 's') + dmgMeta + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="delivery-log-actions">' +
             '<button class="btn btn-outline btn-sm btn-icon" onclick="editDelivery(\'' + d.id + '\')" title="Edit"><i class="ph ph-pencil-simple"></i></button>' +
             '<button class="btn btn-danger btn-sm btn-icon" onclick="deleteDelivery(\'' + d.id + '\')" title="Delete"><i class="ph ph-trash"></i></button>' +
           '</div>' +
         '</div>' +
-        '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">' + itemRows + '</div>' +
-        notes + photosBlock +
+        '<div class="delivery-log-body">' + itemRows + '</div>' +
+        extra +
       '</div>';
     }).join('');
   }

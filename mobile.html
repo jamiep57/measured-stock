@@ -291,9 +291,10 @@
     .boot-msg { padding:60px 20px; text-align:center; color:var(--muted-foreground); }
 
     /* ---------- Bug / feature reports ---------- */
-    .navbtn { position:relative; }
+    .icon-btn { position:relative; }
+    #bugBtn.active { background:var(--primary); color:var(--primary-foreground); border-color:var(--primary); }
     .nav-dot {
-      position:absolute; top:6px; left:calc(50% + 9px); width:8px; height:8px; border-radius:50%;
+      position:absolute; top:-3px; right:-3px; width:9px; height:9px; border-radius:50%;
       background:#f59e0b; box-shadow:0 0 0 2px var(--card);
     }
     .bug-card { position:relative; }
@@ -327,6 +328,7 @@
           <span class="role-tag">Staff</span>
         </div>
         <button class="icon-btn" onclick="reloadCurrent()" title="Refresh" aria-label="Refresh"><i class="ph ph-arrow-clockwise"></i></button>
+        <button class="icon-btn" id="bugBtn" onclick="switchTab('bugs')" title="Bug Reports" aria-label="Bug Reports"><i class="ph ph-bug"></i><span class="nav-dot" id="bugNavDot" style="display:none"></span></button>
         <button class="icon-btn" onclick="signOut()" title="Sign out" aria-label="Sign out"><i class="ph ph-sign-out"></i></button>
       </div>
       <div class="event-select-wrap">
@@ -417,10 +419,6 @@
       </button>
       <button class="navbtn" id="nav-counts" onclick="switchTab('counts')">
         <i class="ph ph-clipboard-text"></i><span>Stock Count</span>
-      </button>
-      <button class="navbtn" id="nav-bugs" onclick="switchTab('bugs')">
-        <i class="ph ph-bug"></i><span>Reports</span>
-        <span class="nav-dot" id="bugNavDot" style="display:none"></span>
       </button>
     </nav>
   </div>
@@ -683,7 +681,7 @@
       document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + tab));
       $('nav-deliveries').classList.toggle('active', tab === 'deliveries');
       $('nav-counts').classList.toggle('active', tab === 'counts');
-      $('nav-bugs').classList.toggle('active', tab === 'bugs');
+      $('bugBtn').classList.toggle('active', tab === 'bugs');
       reloadCurrent();
     }
 
