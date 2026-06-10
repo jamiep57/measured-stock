@@ -70,7 +70,7 @@ BEGIN
   ),
   target AS (
     SELECT event_id,
-           coalesce(min(id) FILTER (WHERE product_id = p_keep), min(id)) AS target_id
+           coalesce(min(id::text) FILTER (WHERE product_id = p_keep), min(id::text))::uuid AS target_id
     FROM affected GROUP BY event_id
   ),
   sums AS (
@@ -105,7 +105,7 @@ BEGIN
   ),
   target AS (
     SELECT event_id,
-           coalesce(min(id) FILTER (WHERE product_id = p_keep), min(id)) AS target_id
+           coalesce(min(id::text) FILTER (WHERE product_id = p_keep), min(id::text))::uuid AS target_id
     FROM affected GROUP BY event_id
   ),
   sums AS (
@@ -140,7 +140,7 @@ BEGIN
   ),
   target AS (
     SELECT event_id, bar_id,
-           coalesce(min(id) FILTER (WHERE product_id = p_keep), min(id)) AS target_id
+           coalesce(min(id::text) FILTER (WHERE product_id = p_keep), min(id::text))::uuid AS target_id
     FROM affected GROUP BY event_id, bar_id
   ),
   sums AS (
@@ -166,7 +166,7 @@ BEGIN
   ),
   target AS (
     SELECT warehouse_id,
-           coalesce(min(id) FILTER (WHERE product_id = p_keep), min(id)) AS target_id
+           coalesce(min(id::text) FILTER (WHERE product_id = p_keep), min(id::text))::uuid AS target_id
     FROM affected GROUP BY warehouse_id
   ),
   sums AS (
@@ -193,7 +193,7 @@ BEGIN
   ),
   target AS (
     SELECT bar_id,
-           coalesce(min(id) FILTER (WHERE product_id = p_keep), min(id)) AS target_id
+           coalesce(min(id::text) FILTER (WHERE product_id = p_keep), min(id::text))::uuid AS target_id
     FROM affected GROUP BY bar_id
   ),
   upd AS (

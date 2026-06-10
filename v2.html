@@ -3085,7 +3085,6 @@
       const total = round1(delLineSum(lines));
       const dmgTot = round1(delDamagedSum(lines));
       const supName = (d.supplier && d.supplier.name) || 'No supplier';
-      const initial = escapeHtml((supName.trim()[0] || '?').toUpperCase());
       const ref = d.reference ? '<span class="delivery-log-ref">' + escapeHtml(d.reference) + '</span>' : '';
       const notes = d.notes ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px;font-style:italic">' + escapeHtml(d.notes) + '</div>' : '';
       const itemRows = lines.length
