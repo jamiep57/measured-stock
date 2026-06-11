@@ -3287,7 +3287,9 @@
         ? lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
             const dmg = Number(l.damaged_qty) || 0;
             const dmgTag = dmg > 0 ? ' <span class="badge-unusable">' + round1(dmg) + ' unusable</span>' : '';
-            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + dmgTag + '</span><span style="font-weight:700">' + round1(l.qty) + ' cases</span></div>';
+            const size = productSizeById(l.product_id);
+            const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
+            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + round1(l.qty) + ' cases</span></div>';
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const photo = (label, url) => '<div class="delivery-log-photo" onclick="openDeliveryLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt="' + label + '"></div>';
@@ -3320,6 +3322,11 @@
   function productNameById(pid) {
     const p = _products.find((x) => x.id === pid);
     return (p && p.name) || '(unknown)';
+  }
+
+  function productSizeById(pid) {
+    const p = _products.find((x) => x.id === pid);
+    return (p && p.case_size) || '';
   }
 
   function deliveryProductOptions() {
