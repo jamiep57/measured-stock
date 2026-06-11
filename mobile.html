@@ -646,6 +646,11 @@
       const upc = ep && ep.product ? Number(ep.product.units_per_case) : 0;
       return upc > 0 ? upc : 1;
     }
+    function caseSizeById(pid) {
+      const eps = (_event && _event.event_products) || [];
+      const ep = eps.find((x) => x.product_id === pid);
+      return (ep && ep.product && ep.product.case_size) || '';
+    }
     function eventBars() {
       return ((_event && _event.bars) || []).filter((b) => !isBoneYard(b));
     }
@@ -776,7 +781,9 @@
           ? lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
               const ld = Number(l.damaged_qty) || 0;
               const dmgTag = ld > 0 ? '<span class="badge-dmg">' + round1(ld) + ' unusable</span>' : '';
-              return '<div class="row-line"><span>' + escapeHtml(productNameById(l.product_id)) + dmgTag + '</span><span style="font-weight:700;white-space:nowrap">' + round1(l.qty) + '</span></div>';
+              const cs = caseSizeById(l.product_id);
+              const csTag = cs ? '<span class="muted" style="font-size:12px;font-weight:400"> · ' + escapeHtml(cs) + '</span>' : '';
+              return '<div class="row-line"><span>' + escapeHtml(productNameById(l.product_id)) + csTag + dmgTag + '</span><span style="font-weight:700;white-space:nowrap">' + round1(l.qty) + '</span></div>';
             }).join('')
           : '<div class="muted" style="font-size:13px">No line items</div>';
         const photo = (url) => '<div class="thumb" onclick="event.stopPropagation();openLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt=""></div>';
@@ -804,7 +811,11 @@
     function deliveryProductOptions() {
       const eps = (_event && _event.event_products) || [];
       return eps
-        .map((ep) => ({ id: ep.product_id, name: (ep.product && ep.product.name) || productNameById(ep.product_id) }))
+        .map((ep) => ({
+          id: ep.product_id,
+          name: (ep.product && ep.product.name) || productNameById(ep.product_id),
+          caseSize: (ep.product && ep.product.case_size) || '',
+        }))
         .filter((o) => o.name && o.name !== '(unknown)')
         .sort((a, b) => a.name.localeCompare(b.name));
     }
@@ -829,7 +840,7 @@
         '<div class="line-item">' +
         '<select onchange="updateDeliveryLine(\'' + line.lineId + '\',\'productId\',this.value)">' +
           '<option value="">Product…</option>' +
-          options.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>').join('') +
+          options.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + (o.caseSize ? ' · ' + escapeHtml(o.caseSize) : '') + '</option>').join('') +
         '</select>' +
         '<input type="number" inputmode="decimal" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'cases\',this.value)">' +
         '<input type="number" inputmode="decimal" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)">' +

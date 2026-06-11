@@ -239,11 +239,16 @@
   const products = Object.assign(
     makeRepo('products', { order: 'name' }),
     {
-      // Library view with supplier + category names resolved.
+      // Library view with supplier + category names resolved, plus the
+      // full set of supplier/price rows (product_suppliers) for each
+      // product. The legacy supplier/case_price/unit_price columns still
+      // mirror the preferred row (kept in sync by migration 016 triggers).
       listFull() {
         return select(
           'products',
-          '?select=*,supplier:suppliers(id,name),category:categories(id,name,colour_key)&order=name'
+          '?select=*,supplier:suppliers(id,name),category:categories(id,name,colour_key)' +
+          ',product_suppliers(id,supplier_id,sku,case_price,unit_price,is_preferred,supplier:suppliers(id,name))' +
+          '&order=name'
         );
       },
       bySupplier(supplierId) {
@@ -273,6 +278,37 @@
           unit_price: numOrNull(input.unit_price),
           case_price: numOrNull(input.case_price),
         };
+      },
+    }
+  );
+
+  const productSuppliers = Object.assign(
+    makeRepo('product_suppliers'),
+    {
+      forProduct(productId) {
+        return select(
+          'product_suppliers',
+          '?product_id=eq.' + enc(productId) +
+          '&select=*,supplier:suppliers(id,name)' +
+          '&order=is_preferred.desc,created_at.asc'
+        );
+      },
+      // Replace the entire supplier/price set for a product in one shot.
+      // Simpler than diffing for a single-user library editor; the
+      // migration-016 triggers re-sync the legacy product columns after.
+      // `rows` items: { supplier_id, sku?, case_price?, unit_price?, is_preferred? }
+      async replaceForProduct(productId, rows) {
+        await remove('product_suppliers', 'product_id=eq.' + enc(productId));
+        const clean = (rows || []).filter((r) => r && r.supplier_id);
+        if (!clean.length) return [];
+        return insert('product_suppliers', clean.map((r) => ({
+          product_id: productId,
+          supplier_id: r.supplier_id,
+          sku: r.sku || null,
+          case_price: numOrNull(r.case_price),
+          unit_price: numOrNull(r.unit_price),
+          is_preferred: !!r.is_preferred,
+        })));
       },
     }
   );
@@ -529,7 +565,7 @@
     // helpers
     _: { numOrNull, numOrZero, enc, makeRepo },
     // reference
-    categories, suppliers, warehouses, products, warehouseStock,
+    categories, suppliers, warehouses, products, productSuppliers, warehouseStock,
     // event-scoped
     events, eventProducts, bars, recipients, distribution, barProducts,
     stockCounts, closing, transfers, deliveries, topups, wastage,

@@ -661,6 +661,11 @@
     #libTable.merge-mode .lib-sel-col { display:table-cell; width:34px; text-align:center; }
     #libTable.merge-mode tbody tr.lib-selected { background:var(--secondary); }
     #libTable .lib-sel-col input { width:16px; height:16px; cursor:pointer; }
+    .sup-more {
+      display:inline-block; font-size:10px; font-weight:600; line-height:1;
+      padding:2px 5px; border-radius:999px; background:var(--secondary);
+      color:var(--muted-foreground); vertical-align:middle;
+    }
     .merge-bar {
       display:none; align-items:center; gap:10px; flex-wrap:wrap;
       margin-left:auto; padding:6px 10px; border-radius:var(--radius);
@@ -1908,7 +1913,7 @@
           'onclick="toggleLibRowSel(\'' + p.id + '\', this.checked)"></td>' +
         '<td>' + escapeHtml(p.name) + '</td>' +
         '<td>' + catBadge(p.category) + '</td>' +
-        '<td>' + escapeHtml((p.supplier && p.supplier.name) || '') + '</td>' +
+        '<td>' + supplierCell(p) + '</td>' +
         '<td>' + escapeHtml(p.case_size || '') + '</td>' +
         '<td class="num">' + num(p.units_per_case) + '</td>' +
         '<td class="num">' + money(p.case_price) + '</td>' +
@@ -1917,6 +1922,17 @@
         '</tr>'
       );
     }).join('');
+  }
+
+  // Supplier column for the library table: the preferred supplier name,
+  // with a "+N" badge when the product is sourced from several suppliers.
+  function supplierCell(p) {
+    const name = (p.supplier && p.supplier.name) || '';
+    const extra = Math.max(0, ((p.product_suppliers && p.product_suppliers.length) || 0) - 1);
+    if (!extra) return escapeHtml(name);
+    return escapeHtml(name) +
+      ' <span class="sup-more" title="' + extra + ' more supplier' + (extra === 1 ? '' : 's') + '">+' +
+      extra + '</span>';
   }
 
   // ---------- library: merge duplicates ----------
@@ -2078,6 +2094,13 @@
     function renderField(f, value) {
       const id = fieldId(f.key);
       const cls = 'field' + (f.full ? ' full' : '');
+      // Custom fields render (and later collect) their own markup. Used
+      // for repeatable editors such as the product supplier/price list.
+      if (f.type === 'custom') {
+        const inner = f.render ? f.render(value) : '';
+        const lbl = f.label ? '<label>' + escapeHtml(f.label) + '</label>' : '';
+        return '<div class="' + cls + '" id="' + id + '_wrap">' + lbl + inner + '</div>';
+      }
       let control;
       if (f.type === 'select') {
         const opts = (f.options || []).map((o) =>
@@ -2103,6 +2126,10 @@
     function collect() {
       const out = {};
       for (const f of current.fields) {
+        if (f.type === 'custom') {
+          out[f.key] = f.collect ? f.collect() : undefined;
+          continue;
+        }
         const node = $(fieldId(f.key));
         let v = node ? node.value : '';
         if (f.type === 'number') {
@@ -2126,6 +2153,12 @@
       el.del.style.display = cfg.onDelete ? '' : 'none';
       el.backdrop.classList.add('open');
       el.drawer.classList.add('open');
+      // Let custom fields wire up their own event handlers now the DOM exists.
+      (cfg.fields || []).forEach((f) => {
+        if (f.type === 'custom' && f.mount) {
+          f.mount(document.getElementById(fieldId(f.key) + '_wrap'));
+        }
+      });
       const first = el.body.querySelector('input,select,textarea');
       if (first) setTimeout(() => first.focus(), 60);
     }
@@ -2149,6 +2182,10 @@
         if (f.required && (values[f.key] == null || values[f.key] === '')) {
           el.err.textContent = f.label + ' is required.';
           return;
+        }
+        if (f.validate) {
+          const msg = f.validate(values[f.key]);
+          if (msg) { el.err.textContent = msg; return; }
         }
       }
       el.err.textContent = '';
@@ -2193,22 +2230,163 @@
   })();
 
   // ---------- product CRUD (uses the Drawer) ----------
+
+  // Repeatable supplier + price editor used inside the product Drawer.
+  // Each row links the product to a supplier with its own case/unit price
+  // and supplier SKU; exactly one row is the "preferred" default that
+  // mirrors the product's headline supplier/price (see migration 016).
+  function makeSupplierPriceEditor(initialRows) {
+    injectSupplierEditorStyles();
+    const supOptsHtml = _suppliers
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map((s) => '<option value="' + escapeHtml(s.id) + '">' + escapeHtml(s.name) + '</option>')
+      .join('');
+    let listEl = null;
+    const prefName = 'psp_pref_' + Math.random().toString(36).slice(2);
+
+    function rowHtml(r) {
+      r = r || {};
+      const sel = '<select class="psp-sup"><option value="">— supplier —</option>' + supOptsHtml + '</select>';
+      return (
+        '<div class="psp-row">' +
+        sel +
+        '<input class="psp-case" type="number" step="any" min="0" placeholder="Case £">' +
+        '<input class="psp-unit" type="number" step="any" min="0" placeholder="Unit £">' +
+        '<input class="psp-sku" type="text" placeholder="Supplier SKU">' +
+        '<label class="psp-pref" title="Preferred supplier">' +
+          '<input type="radio" name="' + prefName + '"><span>Pref</span>' +
+        '</label>' +
+        '<button type="button" class="psp-del" title="Remove">✕</button>' +
+        '</div>'
+      );
+    }
+
+    function fillRow(rowEl, r) {
+      r = r || {};
+      rowEl.querySelector('.psp-sup').value = r.supplier_id || '';
+      rowEl.querySelector('.psp-case').value = r.case_price != null ? r.case_price : '';
+      rowEl.querySelector('.psp-unit').value = r.unit_price != null ? r.unit_price : '';
+      rowEl.querySelector('.psp-sku').value = r.sku || '';
+      rowEl.querySelector('.psp-pref input').checked = !!r.is_preferred;
+    }
+
+    function addRow(r) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = rowHtml(r);
+      const rowEl = tmp.firstChild;
+      fillRow(rowEl, r);
+      listEl.appendChild(rowEl);
+      return rowEl;
+    }
+
+    return {
+      render() {
+        return (
+          '<div class="psp-editor">' +
+          '<div class="psp-list"></div>' +
+          '<button type="button" class="btn btn-sm psp-add">+ Add supplier</button>' +
+          '</div>'
+        );
+      },
+      mount(wrap) {
+        listEl = wrap.querySelector('.psp-list');
+        const rows = (initialRows && initialRows.length) ? initialRows : [];
+        if (rows.length) {
+          rows.slice()
+            .sort((a, b) => (b.is_preferred ? 1 : 0) - (a.is_preferred ? 1 : 0))
+            .forEach((r) => addRow(r));
+        } else {
+          addRow({ is_preferred: true });
+        }
+        wrap.querySelector('.psp-add').addEventListener('click', () => {
+          const first = !listEl.querySelector('.psp-row');
+          addRow({ is_preferred: first });
+        });
+        listEl.addEventListener('click', (e) => {
+          const del = e.target.closest('.psp-del');
+          if (!del) return;
+          const row = del.closest('.psp-row');
+          const wasPref = row.querySelector('.psp-pref input').checked;
+          row.remove();
+          // Keep a preferred selected if we just removed it.
+          if (wasPref) {
+            const firstPref = listEl.querySelector('.psp-pref input');
+            if (firstPref) firstPref.checked = true;
+          }
+        });
+      },
+      collect() {
+        const out = [];
+        listEl.querySelectorAll('.psp-row').forEach((row) => {
+          const supplier_id = row.querySelector('.psp-sup').value || '';
+          const caseV = row.querySelector('.psp-case').value.trim();
+          const unitV = row.querySelector('.psp-unit').value.trim();
+          const sku = row.querySelector('.psp-sku').value.trim();
+          const is_preferred = row.querySelector('.psp-pref input').checked;
+          if (!supplier_id && !caseV && !unitV && !sku) return; // blank row
+          out.push({
+            supplier_id,
+            case_price: caseV === '' ? null : Number(caseV),
+            unit_price: unitV === '' ? null : Number(unitV),
+            sku: sku || null,
+            is_preferred,
+          });
+        });
+        if (out.length && !out.some((r) => r.is_preferred)) out[0].is_preferred = true;
+        return out;
+      },
+      validate(rows) {
+        if (!rows || !rows.length) return null; // a product may have no suppliers
+        const seen = new Set();
+        for (const r of rows) {
+          if (!r.supplier_id) return 'Choose a supplier for each price row (or clear the row).';
+          if (seen.has(r.supplier_id)) return 'A supplier is listed more than once — combine those rows.';
+          seen.add(r.supplier_id);
+        }
+        return null;
+      },
+    };
+  }
+
+  function injectSupplierEditorStyles() {
+    if (document.getElementById('psp-editor-styles')) return;
+    const css = document.createElement('style');
+    css.id = 'psp-editor-styles';
+    css.textContent =
+      '.psp-editor{display:flex;flex-direction:column;gap:8px}' +
+      '.psp-list{display:flex;flex-direction:column;gap:6px}' +
+      '.psp-row{display:grid;grid-template-columns:minmax(120px,1.6fr) 72px 72px minmax(90px,1fr) auto auto;' +
+        'gap:6px;align-items:center}' +
+      '.psp-row select,.psp-row input[type=number],.psp-row input[type=text]{width:100%;min-width:0}' +
+      '.psp-pref{display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer}' +
+      '.psp-pref input{margin:0}' +
+      '.psp-del{background:none;border:none;color:#b91c1c;cursor:pointer;font-size:14px;padding:2px 6px;line-height:1}' +
+      '.psp-add{align-self:flex-start}';
+    document.head.appendChild(css);
+  }
+
   function openProductModal(id) {
     const p = id ? _products.find((x) => x.id === id) : null;
     const catOpts = _categories.map((c) => ({ value: c.id, label: c.name }));
-    const supOpts = _suppliers.map((s) => ({ value: s.id, label: s.name }));
+    const editor = makeSupplierPriceEditor(p ? (p.product_suppliers || []) : []);
     Drawer.open({
       title: p ? 'Edit product' : 'New product',
       fields: [
         { key: 'name', label: 'Name', type: 'text', full: true, required: true },
         { key: 'category_id', label: 'Category', type: 'select', options: catOpts, placeholder: '— none —' },
-        { key: 'supplier_id', label: 'Supplier', type: 'select', options: supOpts, placeholder: '— none —' },
         { key: 'case_size', label: 'Case size', type: 'text', placeholder: 'e.g. 24x330ml' },
         { key: 'units_per_case', label: 'Units / case', type: 'number', min: 0 },
-        { key: 'case_price', label: 'Case price (£)', type: 'number', min: 0 },
-        { key: 'unit_price', label: 'Unit price (£)', type: 'number', min: 0 },
         { key: 'sku', label: 'SKU', type: 'text' },
         { key: 'abv', label: 'ABV (%)', type: 'number', min: 0 },
+        {
+          key: 'suppliers', type: 'custom', full: true,
+          label: 'Suppliers & prices',
+          render: () => editor.render(),
+          mount: (wrap) => editor.mount(wrap),
+          collect: () => editor.collect(),
+          validate: (rows) => editor.validate(rows),
+        },
       ],
       values: p || {},
       onDelete: p ? async () => { await DB.products.remove(p.id); await loadLibrary(); } : null,
@@ -2216,16 +2394,23 @@
         const patch = {
           name: v.name,
           category_id: v.category_id || null,
-          supplier_id: v.supplier_id || null,
           case_size: v.case_size || null,
           units_per_case: v.units_per_case != null ? v.units_per_case : 1,
-          case_price: v.case_price,
-          unit_price: v.unit_price,
           sku: v.sku || null,
           abv: v.abv,
         };
-        if (p) await DB.products.update(p.id, patch);
-        else await DB.products.create(patch);
+        // The preferred supplier's prices are mirrored onto the product's
+        // legacy supplier_id / case_price / unit_price columns by the
+        // migration-016 trigger, so don't set them here.
+        let productId;
+        if (p) {
+          await DB.products.update(p.id, patch);
+          productId = p.id;
+        } else {
+          const created = await DB.products.create(patch);
+          productId = created.id;
+        }
+        await DB.productSuppliers.replaceForProduct(productId, v.suppliers || []);
         await loadLibrary();
       },
     });
@@ -2306,8 +2491,17 @@
     }
     empty.style.display = 'none';
     body.style.display = '';
+    // Include any product sourced from this supplier (preferred or not),
+    // and surface the price from this supplier's specific row.
     const prods = _products
-      .filter((p) => p.supplier_id === s.id)
+      .filter((p) => (p.product_suppliers || []).some((ps) => ps.supplier_id === s.id) || p.supplier_id === s.id)
+      .map((p) => {
+        const row = (p.product_suppliers || []).find((ps) => ps.supplier_id === s.id);
+        return Object.assign({}, p, {
+          _supCasePrice: row ? row.case_price : p.case_price,
+          _supIsPreferred: row ? row.is_preferred : (p.supplier_id === s.id),
+        });
+      })
       .slice()
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     $('supDetailName').textContent = s.name || '—';
@@ -2329,11 +2523,11 @@
         '</tr></thead><tbody>' +
         prods.map((p) => (
           '<tr>' +
-          '<td>' + escapeHtml(p.name) + '</td>' +
+          '<td>' + escapeHtml(p.name) + (p._supIsPreferred ? ' <span class="sup-more">preferred</span>' : '') + '</td>' +
           '<td>' + catBadge(p.category) + '</td>' +
           '<td>' + escapeHtml(p.case_size || '—') + '</td>' +
           '<td>' + (num(p.units_per_case) || '—') + '</td>' +
-          '<td>' + (money(p.case_price) || '—') + '</td>' +
+          '<td>' + (money(p._supCasePrice) || '—') + '</td>' +
           '</tr>'
         )).join('') +
         '</tbody></table>';
@@ -2354,7 +2548,9 @@
       ],
       values: s || {},
       onDelete: s ? async () => {
-        if (_products.some((p) => p.supplier_id === s.id)) {
+        const linked = _products.some((p) =>
+          p.supplier_id === s.id || (p.product_suppliers || []).some((ps) => ps.supplier_id === s.id));
+        if (linked) {
           throw new Error('Can’t delete — products are still linked to this supplier. Reassign them first.');
         }
         await DB.suppliers.remove(s.id);
