@@ -950,6 +950,14 @@
           </div>
           <input type="date" id="evEnd" data-field="end_date">
         </div>
+        <div class="settings-field">
+          <div class="settings-field-row">
+            <label for="evTargetRevenue">Target revenue (£)</label>
+            <span class="settings-field-saved" id="saved-target_revenue"><i class="ph ph-check"></i> Saved</span>
+          </div>
+          <input type="number" id="evTargetRevenue" min="0" step="1000" inputmode="decimal" placeholder="e.g. 350000" data-field="target_revenue">
+          <p class="df-hint" style="margin:6px 0 0">Used on the <strong>Square</strong> page to project, from your mapped sales mix, which products will run out before you hit this revenue.</p>
+        </div>
       </div>
     </div>
 
@@ -1347,6 +1355,8 @@
 
     <div class="stats-row" id="squareStats" style="margin-bottom:20px"></div>
 
+    <div id="sqProjectionWrap" style="margin-bottom:24px"></div>
+
     <div id="sqEmpty" class="empty-state"><i class="ph ph-cash-register icon"></i><p>No Square sales imported for this event yet. Click <strong>Import Square CSV</strong> to begin.</p></div>
 
     <div id="sqTableWrap" class="dist-table-wrap" style="display:none">
@@ -1729,6 +1739,8 @@
     <button class="btn btn-primary" id="rf-save-btn" onclick="saveRecipeMapping()">Save recipe</button>
   </div>
 </aside>
+<!-- Shared searchable product dropdown for recipe ingredients (top-level so it is not clipped by the drawer) -->
+<div class="df-combo-menu" id="rf-combo-menu" role="listbox"></div>
 
 <!-- ===================== TRANSFER FORM DRAWER ===================== -->
 <div class="drawer-backdrop" id="transferFormOverlay" onclick="closeTransferForm()"></div>
@@ -3281,6 +3293,7 @@
     $('evPostcode').value = ev.venue_postcode || '';
     $('evStart').value = ev.start_date || '';
     $('evEnd').value = ev.end_date || '';
+    $('evTargetRevenue').value = ev.target_revenue != null ? ev.target_revenue : '';
     renderBars(ev.bars || []);
     renderRecipients(ev.recipients || []);
     $('setupContent').style.display = '';
@@ -7107,7 +7120,8 @@
   }
   async function loadSquare() {
     const noEv = $('sqNoEvent'), content = $('sqContent');
-    if (!_currentEvent || !_currentEvent.id) {
+    const id = $('eventPick').value;
+    if (!id) {
       if (noEv) noEv.style.display = '';
       if (content) content.style.display = 'none';
       return;
@@ -7116,6 +7130,10 @@
     if (content) content.style.display = '';
     try {
       setStatus('loading Square data…');
+      // getFull carries event_products (for stock) + target_revenue (for the projection)
+      if (!_currentEvent || _currentEvent.id !== id || !_currentEvent.event_products) {
+        _currentEvent = await DB.events.getFull(id);
+      }
       if (!_products.length) _products = (await DB.products.listFull()) || [];
       const [imp, recipes] = await Promise.all([
         DB.tillImports.forEvent(_currentEvent.id),
@@ -7161,6 +7179,8 @@
         : '';
     }
 
+    renderProjection();
+
     if (!rows.length) {
       if (empty) empty.style.display = '';
       if (tableWrap) tableWrap.style.display = 'none';
@@ -7204,6 +7224,171 @@
   }
 
   function jsArg(v) { return "'" + String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+
+  // ── run-out projection ──────────────────────────────────────────────
+  // Scales the imported (and recipe-mapped) sales mix up to the event's
+  // target revenue, then compares projected per-product consumption
+  // against the stock on hand to flag what runs out before the target.
+  //
+  //   factor             = target_revenue / imported net sales
+  //   projected cases    = (Σ items_sold × recipe qty) × factor   [qty is a case-fraction]
+  //   runs-dry revenue   = stock cases / baseline cases × imported net sales
+  //
+  // Stock = opening stock per event_product (delivered − damaged, falling
+  // back to qty ordered), which is the same "cases" unit recipes use.
+  function normProductName(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
+
+  function computeProjection() {
+    const rows = (_squareImport && _squareImport.rows) || [];
+    const baselineNet = rows.reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
+    const target = Number(_currentEvent && _currentEvent.target_revenue) || 0;
+
+    // Σ consumption per product (in cases) across every mapped till line.
+    const byName = {};
+    let mappedNet = 0;
+    rows.forEach((r) => {
+      const recipe = findRecipeFor(r.name, r.variation);
+      if (!recipe) return;
+      mappedNet += Number(r.net_sales) || 0;
+      const sold = Number(r.items_sold) || 0;
+      (recipe.ingredients || []).forEach((ig) => {
+        const key = normProductName(ig.product_name);
+        if (!key) return;
+        if (!byName[key]) byName[key] = { name: ig.product_name, baselineCases: 0 };
+        byName[key].baselineCases += sold * (Number(ig.qty) || 0);
+      });
+    });
+
+    // Resolve each consumed product to this event's stock. Summed by name so
+    // duplicate product records (pre-merge) don't undercount availability.
+    const eps = (_currentEvent && _currentEvent.event_products) || [];
+    const stockByName = {};
+    eps.forEach((ep) => {
+      if (!(ep.product && ep.product.name)) return;
+      const key = normProductName(ep.product.name);
+      if (!stockByName[key]) stockByName[key] = { available: 0, pid: ep.product_id };
+      stockByName[key].available += epOpeningStock(ep);
+    });
+
+    const factor = (baselineNet > 0 && target > 0) ? target / baselineNet : null;
+
+    const items = Object.keys(byName).map((key) => {
+      const b = byName[key];
+      const st = stockByName[key] || null;
+      const available = st ? st.available : null;
+      const projectedCases = factor != null ? b.baselineCases * factor : null;
+      const runOutRevenue = (b.baselineCases > 0 && available != null)
+        ? (available / b.baselineCases) * baselineNet
+        : null;
+      return {
+        name: b.name,
+        pid: st ? st.pid : null,
+        inEvent: !!st,
+        baselineCases: b.baselineCases,
+        projectedCases,
+        available,
+        runOutRevenue,
+      };
+    });
+
+    return { rows, baselineNet, mappedNet, target, factor, items };
+  }
+
+  function renderProjection() {
+    const wrap = $('sqProjectionWrap');
+    if (!wrap) return;
+    const p = computeProjection();
+    const head =
+      '<div class="page-title" style="font-size:16px;margin:0 0 4px">Stock run-out projection</div>' +
+      '<p class="page-subtitle" style="margin:0 0 14px">Scales your imported sales mix to the event\'s target revenue, then flags what will run out first.</p>';
+
+    if (!p.rows.length) { wrap.innerHTML = ''; return; }
+
+    if (!p.target) {
+      wrap.innerHTML = head +
+        '<div class="card" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+        '<i class="ph ph-target" style="font-size:22px;color:var(--muted-foreground)"></i>' +
+        '<div style="flex:1;min-width:200px"><strong>No target revenue set.</strong><div style="font-size:13px;color:var(--muted-foreground)">Set a target revenue in Event Setup to project which products run out before you reach it.</div></div>' +
+        '<button class="btn btn-primary btn-sm" onclick="showPanel(\'setup\')"><i class="ph ph-gear btn-leading-icon"></i> Open Event Setup</button>' +
+        '</div>';
+      return;
+    }
+
+    if (!(p.mappedNet > 0) || !p.items.length) {
+      wrap.innerHTML = head +
+        '<div class="card" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+        '<i class="ph ph-link-break" style="font-size:22px;color:var(--warning)"></i>' +
+        '<div><strong>Nothing mapped yet.</strong><div style="font-size:13px;color:var(--muted-foreground)">Map your till items to products (below) so their consumption can be projected.</div></div>' +
+        '</div>';
+      return;
+    }
+
+    const unmapped = p.baselineNet - p.mappedNet;
+    const unmappedPct = p.baselineNet > 0 ? (unmapped / p.baselineNet) * 100 : 0;
+    const runOutCount = p.items.filter((it) => it.inEvent && it.runOutRevenue != null && it.runOutRevenue < p.target).length;
+    const mappedInEvent = p.items.filter((it) => it.inEvent).length;
+
+    const stats =
+      '<div class="stats-row" style="margin-bottom:16px">' +
+        '<div class="stat-card"><div class="stat-label">Target revenue</div><div class="stat-value">' + money(p.target) + '</div><div class="stat-sub">projection scaled to this</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Imported sales</div><div class="stat-value">' + money(p.baselineNet) + '</div><div class="stat-sub">× ' + (p.factor).toFixed(2) + ' to hit target</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Will run out</div><div class="stat-value" style="color:' + (runOutCount ? 'var(--danger)' : 'var(--success)') + '">' + runOutCount + '</div><div class="stat-sub">of ' + mappedInEvent + ' stocked products</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Unmapped sales</div><div class="stat-value" style="color:' + (unmappedPct > 10 ? 'var(--warning)' : 'inherit') + '">' + Math.round(unmappedPct) + '%</div><div class="stat-sub">' + money(unmapped) + ' not attributed</div></div>' +
+      '</div>';
+
+    // Earliest run-out first; products not stocked for this event sink to the bottom.
+    const sorted = p.items.slice().sort((a, b) => {
+      if (a.inEvent !== b.inEvent) return a.inEvent ? -1 : 1;
+      const ar = a.runOutRevenue == null ? Infinity : a.runOutRevenue;
+      const br = b.runOutRevenue == null ? Infinity : b.runOutRevenue;
+      if (ar !== br) return ar - br;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    const body = sorted.map((it) => {
+      let badge, runOutCell, pctCell;
+      if (!it.inEvent) {
+        badge = '<span style="font-size:12px;font-weight:600;color:var(--muted-foreground)">Not in event</span>';
+        runOutCell = '<span class="muted">—</span>';
+        pctCell = '<span class="muted">—</span>';
+      } else {
+        const pct = it.runOutRevenue != null && p.target > 0 ? (it.runOutRevenue / p.target) * 100 : null;
+        let colour = 'var(--success)', label = 'Lasts', icon = 'ph-check-circle';
+        if (!(it.available > 0)) { colour = 'var(--danger)'; label = 'No stock'; icon = 'ph-x-circle'; }
+        else if (pct != null && pct < 100) { colour = 'var(--danger)'; label = 'Runs out'; icon = 'ph-warning-circle'; }
+        else if (pct != null && pct < 110) { colour = 'var(--warning)'; label = 'Tight'; icon = 'ph-warning'; }
+        badge = '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:' + colour + '"><i class="ph-bold ' + icon + '"></i> ' + label + '</span>';
+        runOutCell = it.runOutRevenue != null ? money(it.runOutRevenue) : '<span class="muted">—</span>';
+        pctCell = pct != null
+          ? '<span style="font-weight:600;color:' + colour + '">' + Math.round(pct) + '%</span>'
+          : '<span class="muted">—</span>';
+      }
+      return '<tr>' +
+        '<td>' + escapeHtml(it.name) + '</td>' +
+        '<td class="num">' + (it.projectedCases != null ? round1(it.projectedCases) : '—') + '</td>' +
+        '<td class="num">' + (it.available != null ? round1(it.available) : '<span class="muted">—</span>') + '</td>' +
+        '<td class="num">' + runOutCell + '</td>' +
+        '<td class="num">' + pctCell + '</td>' +
+        '<td>' + badge + '</td>' +
+        '</tr>';
+    }).join('');
+
+    wrap.innerHTML = head + stats +
+      '<div class="dist-table-wrap">' +
+        '<table>' +
+          '<thead><tr>' +
+            '<th>Product</th>' +
+            '<th class="num">Projected use</th>' +
+            '<th class="num">Stock</th>' +
+            '<th class="num">Runs dry at</th>' +
+            '<th class="num">% of target</th>' +
+            '<th>Status</th>' +
+          '</tr></thead>' +
+          '<tbody>' + body + '</tbody>' +
+        '</table>' +
+      '</div>' +
+      '<p class="df-hint" style="margin-top:10px">Projected use &amp; stock are in cases. <strong>Runs dry at</strong> is the revenue at which a product is exhausted at this sales mix; <strong>% of target</strong> below 100% means it runs out before you reach the target.</p>';
+  }
 
   // ── import the Square Item Sales CSV/XLSX ──────────────────────────
   function importSquareFile(e) {
@@ -7291,27 +7476,141 @@
   }
 
   // ── recipe drawer ──────────────────────────────────────────────────
-  function productSelectHtml(selectedName) {
-    const opts = _products.slice()
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-      .map((p) => {
-        const label = p.name + (p.case_size ? ' — ' + p.case_size : '');
-        return '<option value="' + escapeHtml(p.name) + '"' +
-          (String(p.name) === String(selectedName || '') ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
-      }).join('');
-    return '<select class="rf-product"><option value="">— Select product —</option>' + opts + '</select>';
-  }
-
   function addRecipeIngredientRow(productName, qty) {
     const wrap = $('rf-ingredients');
     if (!wrap) return;
+    const rowId = 'ri' + Math.random().toString(36).slice(2, 8);
     const row = document.createElement('div');
     row.className = 'rf-ing-row';
     row.innerHTML =
-      productSelectHtml(productName) +
+      '<input type="text" class="rf-product df-combo-input" id="rf-prod-' + rowId + '" autocomplete="off"' +
+        ' placeholder="Search products\u2026"' +
+        ' value="' + (productName != null ? escapeHtml(productName) : '') + '"' +
+        ' onfocus="openRecipeCombo(\'' + rowId + '\')"' +
+        ' oninput="filterRecipeCombo(\'' + rowId + '\')"' +
+        ' onkeydown="recipeComboKey(event,\'' + rowId + '\')">' +
       '<input type="text" class="rf-qty" placeholder="e.g. 1/12" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
       '<button type="button" class="rf-ing-remove" onclick="this.parentElement.remove()" title="Remove">&times;</button>';
     wrap.appendChild(row);
+  }
+
+  // ---- Searchable product picker for recipe ingredients ------------------
+  // Each ingredient row uses a text input + a shared #rf-combo-menu dropdown,
+  // mirroring the delivery-line combo. The selected product name is written
+  // straight into the input, which collectRecipeIngredients() reads.
+  let _rcRow = null;     // rowId whose dropdown is currently open
+  let _rcItems = [];     // filtered product list (for keyboard nav)
+  let _rcHi = -1;        // highlighted index within _rcItems
+  let _rcWired = false;  // document listeners attached once
+
+  function wireRecipeCombo() {
+    if (_rcWired) return;
+    _rcWired = true;
+    document.addEventListener('mousedown', (e) => {
+      if (_rcRow == null) return;
+      const menu = $('rf-combo-menu');
+      const input = document.getElementById('rf-prod-' + _rcRow);
+      if ((menu && menu.contains(e.target)) || (input && input === e.target)) return;
+      closeRecipeCombo();
+    });
+    const reposition = () => { if (_rcRow != null) positionRecipeCombo(_rcRow); };
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+  }
+
+  function positionRecipeCombo(rowId) {
+    const input = document.getElementById('rf-prod-' + rowId);
+    const menu = $('rf-combo-menu');
+    if (!input || !menu) return;
+    const r = input.getBoundingClientRect();
+    menu.style.left = r.left + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+    menu.style.width = r.width + 'px';
+  }
+
+  function openRecipeCombo(rowId) {
+    wireRecipeCombo();
+    _rcRow = rowId;
+    _rcHi = -1;
+    renderRecipeComboMenu(rowId);
+    positionRecipeCombo(rowId);
+    $('rf-combo-menu').classList.add('open');
+  }
+
+  function closeRecipeCombo() {
+    _rcRow = null;
+    _rcItems = [];
+    _rcHi = -1;
+    const menu = $('rf-combo-menu');
+    if (menu) { menu.classList.remove('open'); menu.innerHTML = ''; }
+  }
+
+  function filterRecipeCombo(rowId) {
+    if (_rcRow !== rowId) { openRecipeCombo(rowId); return; }
+    _rcHi = -1;
+    renderRecipeComboMenu(rowId);
+  }
+
+  function recipeComboCandidates(rowId) {
+    const input = document.getElementById('rf-prod-' + rowId);
+    const q = (input && input.value || '').trim().toLowerCase();
+    const matches = (p) => {
+      if (!q) return true;
+      const hay = [p.name, p.sku, p.case_size, p.supplier && p.supplier.name, p.category && p.category.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    };
+    return (_products || [])
+      .filter((p) => p.name && matches(p))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
+  function renderRecipeComboMenu(rowId) {
+    const menu = $('rf-combo-menu');
+    if (!menu) return;
+    _rcItems = recipeComboCandidates(rowId);
+    if (!_rcItems.length) {
+      menu.innerHTML = '<div class="df-combo-empty">No products match your search.</div>';
+      return;
+    }
+    menu.innerHTML = _rcItems.map((p, idx) => {
+      const meta = p.case_size ? '<span class="ci-meta">' + escapeHtml(p.case_size) + '</span>' : '';
+      return '<div class="df-combo-item' + (idx === _rcHi ? ' active' : '') + '" role="option"' +
+        ' onmousedown="event.preventDefault();recipeComboSelect(\'' + rowId + '\',' + idx + ')">' +
+        '<span class="ci-name">' + escapeHtml(p.name) + '</span>' + meta +
+      '</div>';
+    }).join('');
+  }
+
+  function recipeComboKey(e, rowId) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (_rcRow !== rowId) openRecipeCombo(rowId);
+      if (!_rcItems.length) return;
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      _rcHi = (_rcHi + dir + _rcItems.length) % _rcItems.length;
+      renderRecipeComboMenu(rowId);
+      const active = $('rf-combo-menu').querySelector('.df-combo-item.active');
+      if (active) active.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      if (_rcRow === rowId && _rcHi >= 0 && _rcItems[_rcHi]) {
+        e.preventDefault();
+        recipeComboSelect(rowId, _rcHi);
+      }
+    } else if (e.key === 'Escape') {
+      if (_rcRow === rowId) { e.preventDefault(); closeRecipeCombo(); }
+    }
+  }
+
+  function recipeComboSelect(rowId, idx) {
+    const p = _rcItems[idx];
+    const input = document.getElementById('rf-prod-' + rowId);
+    if (p && input) input.value = p.name;
+    closeRecipeCombo();
+    if (input && input.parentElement) {
+      const qty = input.parentElement.querySelector('.rf-qty');
+      if (qty) qty.focus();
+    }
   }
 
   function openRecipeModal(name, variation, recipeId) {
@@ -7335,6 +7634,7 @@
   }
 
   function closeRecipeForm() {
+    closeRecipeCombo();
     $('recipeFormOverlay').classList.remove('open');
     $('recipeFormDrawer').classList.remove('open');
     _editingRecipeId = null;
