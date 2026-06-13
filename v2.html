@@ -410,6 +410,16 @@
     .df-table th { position:static; top:auto; background:var(--secondary); text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted-foreground); padding:6px 10px; font-weight:600; }
     .df-table td { padding:6px 10px; }
     .df-table input, .df-table select { font:inherit; font-size:13px; padding:6px 10px; border:1px solid var(--input); border-radius:var(--radius); background:var(--background); color:var(--foreground); width:100%; }
+    .df-combo-input::placeholder { color:var(--muted-foreground); }
+    .df-combo-menu { position:fixed; z-index:70; max-height:300px; overflow-y:auto; background:var(--background); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 10px 30px rgba(0,0,0,.18); display:none; font-size:13px; padding:4px; }
+    .df-combo-menu.open { display:block; }
+    .df-combo-group { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted-foreground); padding:7px 8px 3px; }
+    .df-combo-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 8px; border-radius:calc(var(--radius) - 2px); cursor:pointer; }
+    .df-combo-item:hover, .df-combo-item.active { background:var(--secondary); }
+    .df-combo-item .ci-name { font-weight:600; color:var(--foreground); }
+    .df-combo-item .ci-meta { font-size:11px; color:var(--muted-foreground); white-space:nowrap; }
+    .df-combo-item .ci-add { display:inline-flex; align-items:center; gap:3px; font-size:11px; color:var(--primary); white-space:nowrap; font-weight:600; }
+    .df-combo-empty { padding:10px 8px; color:var(--muted-foreground); }
     .df-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .df-field { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
     .df-field label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; color:var(--muted-foreground); }
@@ -698,7 +708,7 @@
     .merge-modal-card .mm-head { padding:16px 20px; border-bottom:1px solid var(--border); }
     .merge-modal-card .mm-head h2 { margin:0 0 3px; font-size:15px; font-weight:700; }
     .merge-modal-card .mm-head p { margin:0; font-size:12px; color:var(--muted-foreground); }
-    .merge-modal-card .mm-body { padding:8px 12px; overflow:auto; flex:1; }
+    .merge-modal-card .mm-body { padding:0 12px 12px; overflow:auto; flex:1; }
     .merge-modal-card .mm-foot {
       display:flex; gap:10px; align-items:center; padding:14px 20px; border-top:1px solid var(--border);
     }
@@ -714,10 +724,14 @@
     .mm-opt .mm-meta { font-size:12px; color:var(--muted-foreground); margin-top:2px; }
     .mm-field-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:12px; }
     .mm-field-table th, .mm-field-table td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
-    .mm-field-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; background:var(--muted); }
-    .mm-field-table th.mm-prod { text-align:center; max-width:140px; }
+    .mm-field-table thead th { position:sticky; top:0; z-index:2; }
+    .mm-field-table th.mm-corner { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; background:var(--muted); }
+    .mm-field-table tbody th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; background:var(--muted); }
+    .mm-field-table th.mm-prod { text-align:center; max-width:160px; background:var(--card); border-bottom:2px solid var(--border); }
+    .mm-field-table th.mm-prod.chosen { background:var(--secondary); }
+    .mm-field-table th.mm-prod .mm-prod-name { font-size:12px; font-weight:700; color:var(--foreground); text-transform:none; letter-spacing:0; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .mm-field-table td.mm-prod { text-align:center; }
-    .mm-field-table .mm-val { font-size:11px; color:var(--muted-foreground); margin-top:2px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .mm-field-table .mm-val { font-size:11px; color:var(--muted-foreground); margin-top:2px; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .mm-field-table tr.mm-field-row:hover { background:var(--secondary); }
     .mm-offers-head { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; margin:4px 0 8px; }
     .mm-offers { display:flex; flex-direction:column; gap:6px; }
@@ -1605,6 +1619,8 @@
     <button class="btn btn-primary" id="df-save-btn" onclick="saveDelivery()">Save Delivery</button>
   </div>
 </aside>
+<!-- Shared searchable product dropdown for delivery lines (top-level so it is not clipped by the drawer) -->
+<div class="df-combo-menu" id="df-combo-menu" role="listbox"></div>
 
 <!-- ===================== WASTAGE FORM DRAWER ===================== -->
 <div class="drawer-backdrop" id="wastageFormOverlay" onclick="closeWastageForm()"></div>
@@ -1819,7 +1835,7 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="assets/js/db.js?v=20260608-0230-no-dots"></script>
+<script src="assets/js/db.js?v=20260613-offers-fallback"></script>
 <script>
   // ---------- state ----------
   const PROD_DB_REF = 'qqdvzcaukstfdixnfuqq';
@@ -2267,10 +2283,21 @@
   function renderMergeFieldTable() {
     const box = $('mergeFieldTable');
     if (!box || !_mergeChosen.length) return;
-    const cols = _mergeChosen.map((p) => (
-      '<th class="mm-prod" title="' + escapeHtml(p.name) + '">' + escapeHtml(p.name.length > 22 ? p.name.slice(0, 20) + '…' : p.name) + '</th>'
-    )).join('');
-    const rows = MERGE_FIELD_DEFS.map((def) => {
+    // The product name is chosen via the column header itself, so the names
+    // sit pinned at the top of the table. Remaining details are rows below.
+    const nameChecked = (id) => (_mergeFieldSource.name === id);
+    const cols = _mergeChosen.map((p) => {
+      const short = p.name.length > 22 ? p.name.slice(0, 20) + '…' : p.name;
+      return (
+        '<th class="mm-prod' + (nameChecked(p.id) ? ' chosen' : '') + '" title="' + escapeHtml(p.name) + '">' +
+        '<label style="cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px">' +
+        '<input type="radio" name="mergeField_name" value="' + p.id + '"' +
+          (nameChecked(p.id) ? ' checked' : '') + ' onchange="setMergeFieldSource(\'name\',\'' + p.id + '\')">' +
+        '<span class="mm-prod-name">' + escapeHtml(short) + '</span>' +
+        '</label></th>'
+      );
+    }).join('');
+    const rows = MERGE_FIELD_DEFS.filter((def) => def.key !== 'name').map((def) => {
       const cells = _mergeChosen.map((p) => {
         const checked = _mergeFieldSource[def.key] === p.id;
         return (
@@ -2284,7 +2311,7 @@
       }).join('');
       return '<tr class="mm-field-row"><th>' + escapeHtml(def.label) + '</th>' + cells + '</tr>';
     }).join('');
-    box.innerHTML = '<table class="mm-field-table"><thead><tr><th>Keep details from</th>' + cols + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    box.innerHTML = '<table class="mm-field-table"><thead><tr><th class="mm-corner">Keep details from</th>' + cols + '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function setMergeFieldSource(key, productId) {
@@ -3837,7 +3864,7 @@
       renderDeliveryCostSummary();
       return;
     }
-    if (!options.length) {
+    if (!options.length && !(_products || []).length) {
       body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
       renderDeliveryCostSummary();
       return;
@@ -3847,10 +3874,12 @@
       const { price } = deliveryLineCasePrice(line.productId, supplierId);
       const lineCost = (line.productId && price != null) ? price * (Number(line.qty) || 0) : null;
       return '<tr>' +
-      '<td><select onchange="updateDeliveryLine(\'' + line.lineId + '\',\'productId\',this.value)">' +
-        '<option value="">— Select product —</option>' +
-        options.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>').join('') +
-      '</select></td>' +
+      '<td style="position:relative"><input type="text" class="df-combo-input" id="df-combo-input-' + line.lineId + '" autocomplete="off"' +
+        ' value="' + escapeHtml(deliveryLineProductName(line.productId)) + '"' +
+        ' placeholder="Search products\u2026"' +
+        ' onfocus="openDeliveryCombo(\'' + line.lineId + '\')"' +
+        ' oninput="filterDeliveryCombo(\'' + line.lineId + '\')"' +
+        ' onkeydown="deliveryComboKey(event,\'' + line.lineId + '\')"></td>' +
       '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>' +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
       '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
@@ -3904,6 +3933,205 @@
     // Re-render to refresh the line cost + running total (onchange has
     // already fired, so rebuilding the row inputs won't disrupt typing).
     renderDeliveryLines();
+  }
+
+  // ---- Searchable product picker for delivery lines ----------------------
+  // Each delivery line uses a text input + a shared #df-combo-menu dropdown.
+  // It searches both products already on the event and the whole product
+  // library; choosing a library-only product auto-adds it to the event.
+  let _delComboLine = null;   // lineId whose dropdown is currently open
+  let _delComboItems = [];    // flat list of selectable items (for keyboard nav)
+  let _delComboHi = -1;       // highlighted index within _delComboItems
+  let _delComboWired = false; // document listeners attached once
+
+  function deliveryLineProductName(pid) {
+    if (!pid) return '';
+    const ep = ((_currentEvent && _currentEvent.event_products) || []).find((e) => e.product_id === pid);
+    if (ep && ep.product && ep.product.name) return ep.product.name;
+    const p = (_products || []).find((x) => x.id === pid);
+    return p ? (p.name || '') : '';
+  }
+
+  function wireDeliveryCombo() {
+    if (_delComboWired) return;
+    _delComboWired = true;
+    // Close when clicking outside the input + menu.
+    document.addEventListener('mousedown', (e) => {
+      if (_delComboLine == null) return;
+      const menu = $('df-combo-menu');
+      const input = document.getElementById('df-combo-input-' + _delComboLine);
+      if ((menu && menu.contains(e.target)) || (input && input === e.target)) return;
+      closeDeliveryCombo();
+    });
+    // Keep the floating menu aligned with its input while scrolling/resizing.
+    const reposition = () => { if (_delComboLine != null) positionDeliveryCombo(_delComboLine); };
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+  }
+
+  function positionDeliveryCombo(lineId) {
+    const input = document.getElementById('df-combo-input-' + lineId);
+    const menu = $('df-combo-menu');
+    if (!input || !menu) return;
+    const r = input.getBoundingClientRect();
+    menu.style.left = r.left + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+    menu.style.width = r.width + 'px';
+  }
+
+  function openDeliveryCombo(lineId) {
+    wireDeliveryCombo();
+    _delComboLine = lineId;
+    _delComboHi = -1;
+    renderDeliveryComboMenu(lineId);
+    positionDeliveryCombo(lineId);
+    $('df-combo-menu').classList.add('open');
+  }
+
+  function closeDeliveryCombo() {
+    const lineId = _delComboLine;
+    _delComboLine = null;
+    _delComboItems = [];
+    _delComboHi = -1;
+    const menu = $('df-combo-menu');
+    if (menu) { menu.classList.remove('open'); menu.innerHTML = ''; }
+    // Restore the input text to the selected product's name (discard any
+    // half-typed search term that wasn't used to pick a product).
+    if (lineId != null) {
+      const input = document.getElementById('df-combo-input-' + lineId);
+      const line = _delLines.find((l) => l.lineId === lineId);
+      if (input && line) input.value = deliveryLineProductName(line.productId);
+    }
+  }
+
+  function filterDeliveryCombo(lineId) {
+    if (_delComboLine !== lineId) { openDeliveryCombo(lineId); return; }
+    _delComboHi = -1;
+    renderDeliveryComboMenu(lineId);
+  }
+
+  // Build the (event + library) candidate list, filtered by the input text.
+  function deliveryComboCandidates(lineId) {
+    const input = document.getElementById('df-combo-input-' + lineId);
+    const q = (input && input.value || '').trim().toLowerCase();
+    const onEvent = new Set(((_currentEvent && _currentEvent.event_products) || []).map((ep) => ep.product_id));
+    const matches = (p) => {
+      if (!q) return true;
+      const hay = [p.name, p.sku, p.case_size, p.supplier && p.supplier.name, p.category && p.category.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    };
+    const eventItems = [];
+    const libraryItems = [];
+    deliveryProductOptions().forEach((o) => {
+      const p = (_products || []).find((x) => x.id === o.id) || { id: o.id, name: o.name };
+      if (matches(p)) eventItems.push({ id: o.id, name: o.name, onEvent: true, p });
+    });
+    (_products || []).forEach((p) => {
+      if (onEvent.has(p.id) || !p.name) return;
+      if (matches(p)) libraryItems.push({ id: p.id, name: p.name, onEvent: false, p });
+    });
+    eventItems.sort((a, b) => a.name.localeCompare(b.name));
+    libraryItems.sort((a, b) => a.name.localeCompare(b.name));
+    return { eventItems, libraryItems };
+  }
+
+  function renderDeliveryComboMenu(lineId) {
+    const menu = $('df-combo-menu');
+    if (!menu) return;
+    const { eventItems, libraryItems } = deliveryComboCandidates(lineId);
+    _delComboItems = eventItems.concat(libraryItems);
+    if (!_delComboItems.length) {
+      menu.innerHTML = '<div class="df-combo-empty">No products match your search.</div>';
+      return;
+    }
+    const itemHtml = (it, idx) => {
+      const meta = it.p && it.p.case_size ? '<span class="ci-meta">' + escapeHtml(it.p.case_size) + '</span>' : '';
+      const right = it.onEvent ? meta : '<span class="ci-add"><i class="ph ph-plus"></i> Add to event</span>';
+      return '<div class="df-combo-item' + (idx === _delComboHi ? ' active' : '') + '" role="option"' +
+        ' onmousedown="event.preventDefault();deliveryComboSelect(\'' + lineId + '\',\'' + it.id + '\')">' +
+        '<span class="ci-name">' + escapeHtml(it.name) + '</span>' + right +
+      '</div>';
+    };
+    let html = '';
+    let idx = 0;
+    if (eventItems.length) {
+      html += '<div class="df-combo-group">On this event</div>';
+      eventItems.forEach((it) => { html += itemHtml(it, idx); idx++; });
+    }
+    if (libraryItems.length) {
+      html += '<div class="df-combo-group">Product library</div>';
+      libraryItems.forEach((it) => { html += itemHtml(it, idx); idx++; });
+    }
+    menu.innerHTML = html;
+  }
+
+  function deliveryComboKey(e, lineId) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (_delComboLine !== lineId) openDeliveryCombo(lineId);
+      if (!_delComboItems.length) return;
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      _delComboHi = (_delComboHi + dir + _delComboItems.length) % _delComboItems.length;
+      renderDeliveryComboMenu(lineId);
+      const active = $('df-combo-menu').querySelector('.df-combo-item.active');
+      if (active) active.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      if (_delComboLine === lineId && _delComboHi >= 0 && _delComboItems[_delComboHi]) {
+        e.preventDefault();
+        deliveryComboSelect(lineId, _delComboItems[_delComboHi].id);
+      }
+    } else if (e.key === 'Escape') {
+      if (_delComboLine === lineId) { e.preventDefault(); closeDeliveryCombo(); }
+    }
+  }
+
+  async function deliveryComboSelect(lineId, productId) {
+    const line = _delLines.find((l) => l.lineId === lineId);
+    if (!line) return;
+    const onEvent = ((_currentEvent && _currentEvent.event_products) || []).some((ep) => ep.product_id === productId);
+    if (!onEvent) {
+      try {
+        await ensureProductOnEvent(productId);
+      } catch (err) {
+        console.error('deliveryComboSelect', err);
+        $('df-err').textContent = err.message || 'Failed to add product to the event.';
+        return;
+      }
+    }
+    line.productId = productId;
+    closeDeliveryCombo();
+    renderDeliveryLines();
+    if (!onEvent) { try { updateEventStats(); renderEventProducts(); } catch (_) {} }
+  }
+
+  // Add a library product to the current event with no ordered qty, so it can
+  // immediately be used on a delivery line. Mirrors addProductToEvent().
+  async function ensureProductOnEvent(productId) {
+    if (!_currentEvent) return false;
+    if (((_currentEvent.event_products) || []).some((ep) => ep.product_id === productId)) return true;
+    const p = (_products || []).find((x) => x.id === productId);
+    if (!p) return false;
+    const saved = await DB.eventProducts.setForEvent(_currentEvent.id, productId, { qty_ordered: 0 });
+    const ep = {
+      id: saved && saved.id,
+      event_id: _currentEvent.id,
+      product_id: productId,
+      qty_ordered: 0,
+      already_in_stock: null,
+      invoice_qty: null,
+      delivered_qty: null,
+      damaged_qty: 0,
+      product: {
+        id: p.id, name: p.name, case_size: p.case_size,
+        units_per_case: p.units_per_case, case_price: p.case_price,
+        category: p.category,
+      },
+    };
+    _currentEvent.event_products = (_currentEvent.event_products || []).concat(ep);
+    _evProducts = _currentEvent.event_products.slice().sort((a, b) =>
+      ((a.product && a.product.name) || '').localeCompare((b.product && b.product.name) || ''));
+    return true;
   }
 
   function readFileAsDataURL(file) {
@@ -3967,7 +4195,7 @@
     renderDeliveryLines(); renderDelNotePreview(); renderDelPhotos(); renderDelDamages();
   }
 
-  function openDeliveryForm() {
+  async function openDeliveryForm() {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     if (!_delEditingId) clearDeliveryForm();
     renderDeliverySupplierSelect();
@@ -3975,8 +4203,13 @@
     $('deliveryFormOverlay').classList.add('open');
     $('deliveryFormDrawer').classList.add('open');
     setTimeout(() => $('df-date').focus(), 50);
+    // Load the full product library so deliveries can search beyond the event.
+    try {
+      if (!_products.length) { _products = (await DB.products.listFull()) || []; renderDeliveryLines(); }
+    } catch (err) { console.error('openDeliveryForm: load products', err); }
   }
   function closeDeliveryForm() {
+    closeDeliveryCombo();
     $('deliveryFormOverlay').classList.remove('open');
     $('deliveryFormDrawer').classList.remove('open');
     _delEditingId = null;
@@ -4004,6 +4237,11 @@
     renderDeliveryLines(); renderDelNotePreview(); renderDelPhotos(); renderDelDamages();
     $('deliveryFormOverlay').classList.add('open');
     $('deliveryFormDrawer').classList.add('open');
+    (async () => {
+      try {
+        if (!_products.length) { _products = (await DB.products.listFull()) || []; renderDeliveryLines(); }
+      } catch (err) { console.error('editDelivery: load products', err); }
+    })();
   }
 
   function delStoragePath(deliveryId, label, file) {

@@ -250,6 +250,36 @@
   const suppliers = makeRepo('suppliers', { order: 'name' });
   const warehouses = makeRepo('warehouses', { order: 'name' });
 
+  // Migration 020 adds pack_size + units_per_case on product_suppliers.
+  // Probe once so older databases keep working until that SQL is applied.
+  let _productOffersReady = null;
+
+  async function probeProductOffers() {
+    if (_productOffersReady != null) return _productOffersReady;
+    try {
+      await select('product_suppliers', '?select=pack_size&limit=1');
+      _productOffersReady = true;
+    } catch (err) {
+      const msg = String(err && err.message || err);
+      if (msg.includes('pack_size') && msg.includes('does not exist')) {
+        _productOffersReady = false;
+      } else {
+        throw err;
+      }
+    }
+    return _productOffersReady;
+  }
+
+  function enrichLegacyProductOffers(products) {
+    (products || []).forEach((p) => {
+      (p.product_suppliers || []).forEach((ps) => {
+        if (!ps.pack_size) ps.pack_size = p.case_size || '';
+        if (ps.units_per_case == null) ps.units_per_case = p.units_per_case;
+      });
+    });
+    return products;
+  }
+
   const products = Object.assign(
     makeRepo('products', { order: 'name' }),
     {
@@ -257,13 +287,18 @@
       // full set of supplier/price rows (product_suppliers) for each
       // product. The legacy supplier/case_price/unit_price columns still
       // mirror the preferred row (kept in sync by migration 016 triggers).
-      listFull() {
-        return select(
+      async listFull() {
+        const offers = await probeProductOffers();
+        const psCols = offers
+          ? 'id,supplier_id,sku,pack_size,units_per_case,case_price,unit_price,is_preferred,supplier:suppliers(id,name)'
+          : 'id,supplier_id,sku,case_price,unit_price,is_preferred,supplier:suppliers(id,name)';
+        const rows = await select(
           'products',
           '?select=*,supplier:suppliers(id,name),category:categories(id,name,colour_key)' +
-          ',product_suppliers(id,supplier_id,sku,pack_size,units_per_case,case_price,unit_price,is_preferred,supplier:suppliers(id,name))' +
+          ',product_suppliers(' + psCols + ')' +
           '&order=name'
         );
+        return offers ? rows : enrichLegacyProductOffers(rows);
       },
       bySupplier(supplierId) {
         return select('products', '?supplier_id=eq.' + enc(supplierId) + '&select=*&order=name');
@@ -277,12 +312,14 @@
       // Returns { kept, merged }.
       // `fields` optional — { name, category_id, case_size, units_per_case, sku, abv }
       // from the merge dialog's per-field source picks.
-      merge(keepId, dupIds, fields) {
-        return rpc('merge_products', {
-          p_keep: keepId,
-          p_dups: Array.isArray(dupIds) ? dupIds : [dupIds],
-          p_fields: fields || null,
-        });
+      async merge(keepId, dupIds, fields) {
+        const dups = Array.isArray(dupIds) ? dupIds : [dupIds];
+        const base = { p_keep: keepId, p_dups: dups };
+        const offers = await probeProductOffers();
+        if (offers && fields && Object.keys(fields).length) {
+          return rpc('merge_products', Object.assign({}, base, { p_fields: fields }));
+        }
+        return rpc('merge_products', base);
       },
       normalise(input) {
         // Map a UI product object to the products table shape.
@@ -321,16 +358,22 @@
         await remove('product_suppliers', 'product_id=eq.' + enc(productId));
         const clean = (rows || []).filter((r) => r && r.supplier_id);
         if (!clean.length) return [];
-        return insert('product_suppliers', clean.map((r) => ({
-          product_id: productId,
-          supplier_id: r.supplier_id,
-          pack_size: (r.pack_size != null ? String(r.pack_size) : '').trim(),
-          units_per_case: numOrNull(r.units_per_case),
-          sku: (r.sku != null ? String(r.sku) : '').trim(),
-          case_price: numOrNull(r.case_price),
-          unit_price: numOrNull(r.unit_price),
-          is_preferred: !!r.is_preferred,
-        })));
+        const offers = await probeProductOffers();
+        return insert('product_suppliers', clean.map((r) => {
+          const row = {
+            product_id: productId,
+            supplier_id: r.supplier_id,
+            sku: (r.sku != null ? String(r.sku) : '').trim(),
+            case_price: numOrNull(r.case_price),
+            unit_price: numOrNull(r.unit_price),
+            is_preferred: !!r.is_preferred,
+          };
+          if (offers) {
+            row.pack_size = (r.pack_size != null ? String(r.pack_size) : '').trim();
+            row.units_per_case = numOrNull(r.units_per_case);
+          }
+          return row;
+        }));
       },
     }
   );
