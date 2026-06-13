@@ -261,7 +261,7 @@
         return select(
           'products',
           '?select=*,supplier:suppliers(id,name),category:categories(id,name,colour_key)' +
-          ',product_suppliers(id,supplier_id,sku,case_price,unit_price,is_preferred,supplier:suppliers(id,name))' +
+          ',product_suppliers(id,supplier_id,sku,pack_size,units_per_case,case_price,unit_price,is_preferred,supplier:suppliers(id,name))' +
           '&order=name'
         );
       },
@@ -270,14 +270,18 @@
       },
       // Fold one or more duplicate products into a single keeper. Re-points
       // every child table (event_products, distribution, deliveries, …),
-      // summing quantities on unique-constraint collisions, folds the two
-      // supplier/price lists together (migration 018) and then deletes the
-      // duplicate product rows. Atomic — runs in the merge_products() RPC.
+      // summing quantities on unique-constraint collisions, folds every
+      // supplier purchase option together (migration 020) and then deletes
+      // the duplicate product rows. Optional `fields` carries per-field
+      // choices from the merge dialog. Atomic — merge_products() RPC.
       // Returns { kept, merged }.
-      merge(keepId, dupIds) {
+      // `fields` optional — { name, category_id, case_size, units_per_case, sku, abv }
+      // from the merge dialog's per-field source picks.
+      merge(keepId, dupIds, fields) {
         return rpc('merge_products', {
           p_keep: keepId,
           p_dups: Array.isArray(dupIds) ? dupIds : [dupIds],
+          p_fields: fields || null,
         });
       },
       normalise(input) {
@@ -311,7 +315,8 @@
       // Replace the entire supplier/price set for a product in one shot.
       // Simpler than diffing for a single-user library editor; the
       // migration-016 triggers re-sync the legacy product columns after.
-      // `rows` items: { supplier_id, sku?, case_price?, unit_price?, is_preferred? }
+      // `rows` items: { supplier_id, pack_size?, units_per_case?, sku?,
+      //   case_price?, unit_price?, is_preferred? }
       async replaceForProduct(productId, rows) {
         await remove('product_suppliers', 'product_id=eq.' + enc(productId));
         const clean = (rows || []).filter((r) => r && r.supplier_id);
@@ -319,7 +324,9 @@
         return insert('product_suppliers', clean.map((r) => ({
           product_id: productId,
           supplier_id: r.supplier_id,
-          sku: r.sku || null,
+          pack_size: (r.pack_size != null ? String(r.pack_size) : '').trim(),
+          units_per_case: numOrNull(r.units_per_case),
+          sku: (r.sku != null ? String(r.sku) : '').trim(),
           case_price: numOrNull(r.case_price),
           unit_price: numOrNull(r.unit_price),
           is_preferred: !!r.is_preferred,

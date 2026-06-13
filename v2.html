@@ -204,6 +204,9 @@
     }
     thead th.num { text-align:right; }
     thead th .arrow { opacity:.4; font-size:10px; }
+    thead th:empty, thead th.act, thead th.lib-sel-col, thead th[data-nosort] { cursor:default; }
+    thead th:not(:empty):not(.act):not(.lib-sel-col):not([data-nosort]):hover { color:var(--foreground); }
+    thead th .ts-arrow:not(:empty) { opacity:.9; }
     tbody td { padding:9px 12px; border-bottom:1px solid var(--border); }
     tbody td.num { text-align:right; font-variant-numeric:tabular-nums; }
     tbody tr:hover { background:var(--secondary); }
@@ -686,7 +689,7 @@
     .merge-bar .merge-count { font-size:13px; font-weight:600; }
     .merge-modal-card {
       position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) scale(.98);
-      width:calc(100% - 32px); max-width:520px; max-height:calc(100vh - 64px);
+      width:calc(100% - 32px); max-width:720px; max-height:calc(100vh - 64px);
       background:var(--background); border:1px solid var(--border); border-radius:12px;
       box-shadow:0 24px 64px rgba(0,0,0,.28); z-index:60; display:flex; flex-direction:column;
       opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease;
@@ -709,6 +712,20 @@
     .mm-opt input { margin-top:3px; }
     .mm-opt .mm-name { font-weight:600; font-size:13px; }
     .mm-opt .mm-meta { font-size:12px; color:var(--muted-foreground); margin-top:2px; }
+    .mm-field-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:12px; }
+    .mm-field-table th, .mm-field-table td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .mm-field-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; background:var(--muted); }
+    .mm-field-table th.mm-prod { text-align:center; max-width:140px; }
+    .mm-field-table td.mm-prod { text-align:center; }
+    .mm-field-table .mm-val { font-size:11px; color:var(--muted-foreground); margin-top:2px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .mm-field-table tr.mm-field-row:hover { background:var(--secondary); }
+    .mm-offers-head { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; margin:4px 0 8px; }
+    .mm-offers { display:flex; flex-direction:column; gap:6px; }
+    .mm-offer { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius); font-size:12px; background:var(--muted); }
+    .mm-offer .mm-offer-main { font-weight:600; min-width:0; }
+    .mm-offer .mm-offer-sub { font-weight:400; color:var(--muted-foreground); font-size:11px; }
+    .mm-offer .mm-offer-price { font-weight:700; white-space:nowrap; }
+    .mm-offer.pref { border-color:var(--primary); background:var(--secondary); }
   </style>
 </head>
 <body>
@@ -990,9 +1007,12 @@
 <div class="merge-modal-card" id="mergeModal" role="dialog" aria-modal="true" aria-labelledby="mergeTitle">
   <div class="mm-head">
     <h2 id="mergeTitle">Merge products</h2>
-    <p>Choose the product to keep. The others are merged into it — every event, delivery, distribution and stock record is re-pointed (quantities are added together) and the duplicates are deleted. This cannot be undone.</p>
+    <p>Pick where each product detail comes from. <strong>Every supplier price</strong> from all selected products is combined onto the result — including multiple prices from the same supplier when the pack size differs.</p>
   </div>
-  <div class="mm-body" id="mergeBody"></div>
+  <div class="mm-body" id="mergeBody">
+    <div id="mergeFieldTable"></div>
+    <div id="mergeOffersPreview"></div>
+  </div>
   <div class="mm-foot">
     <span class="err" id="mergeErr"></span>
     <button class="btn" onclick="closeMergeDialog()" id="mergeCancelBtn">Cancel</button>
@@ -2143,74 +2163,194 @@
   }
 
   let _mergeKeepId = null;
+  let _mergeChosen = [];
+  let _mergeFieldSource = {};
+
+  const MERGE_FIELD_DEFS = [
+    { key: 'name', label: 'Name', display: (p) => p.name || '—' },
+    { key: 'category_id', label: 'Category', display: (p) => (p.category && p.category.name) || '—', value: (p) => p.category_id || null },
+    { key: 'case_size', label: 'Case size', display: (p) => p.case_size || '—', value: (p) => p.case_size || null },
+    { key: 'units_per_case', label: 'Units / case', display: (p) => (p.units_per_case != null ? String(p.units_per_case) : '—'), value: (p) => (p.units_per_case != null ? p.units_per_case : null) },
+    { key: 'sku', label: 'SKU', display: (p) => p.sku || '—', value: (p) => p.sku || null },
+    { key: 'abv', label: 'ABV (%)', display: (p) => (p.abv != null ? String(p.abv) : '—'), value: (p) => (p.abv != null ? p.abv : null) },
+  ];
+
+  function mergeProductScore(p) {
+    return ['supplier_id', 'category_id', 'case_size', 'units_per_case', 'case_price', 'unit_price', 'sku', 'abv']
+      .reduce((s, k) => s + (p[k] != null && p[k] !== '' ? 1 : 0), 0);
+  }
+
+  function mergeFieldValue(p, def) {
+    if (def.value) return def.value(p);
+    return p[def.key] != null && p[def.key] !== '' ? p[def.key] : null;
+  }
+
+  function defaultMergeFieldSource(chosen, def) {
+    const ranked = chosen
+      .map((p) => ({ id: p.id, v: mergeFieldValue(p, def) }))
+      .filter((x) => x.v != null && x.v !== '');
+    if (!ranked.length) return chosen[0].id;
+    ranked.sort((a, b) => {
+      const sa = mergeProductScore(chosen.find((p) => p.id === a.id));
+      const sb = mergeProductScore(chosen.find((p) => p.id === b.id));
+      return sb - sa || String(a.v).localeCompare(String(b.v));
+    });
+    return ranked[0].id;
+  }
+
+  function collectProductOffers(p) {
+    const rows = p.product_suppliers || [];
+    if (rows.length) {
+      return rows.map((r) => ({
+        supplier_id: r.supplier_id,
+        supplier_name: (r.supplier && r.supplier.name) || supplierNameById(r.supplier_id) || '—',
+        pack_size: (r.pack_size != null && r.pack_size !== '') ? r.pack_size : (p.case_size || ''),
+        sku: r.sku || '',
+        case_price: r.case_price,
+        is_preferred: !!r.is_preferred,
+      }));
+    }
+    if (p.supplier_id) {
+      return [{
+        supplier_id: p.supplier_id,
+        supplier_name: (p.supplier && p.supplier.name) || supplierNameById(p.supplier_id) || '—',
+        pack_size: p.case_size || '',
+        sku: p.sku || '',
+        case_price: p.case_price,
+        is_preferred: true,
+      }];
+    }
+    return [];
+  }
+
+  function mergeOffersPreview(chosen) {
+    const map = new Map();
+    chosen.forEach((p) => {
+      collectProductOffers(p).forEach((o) => {
+        const k = [o.supplier_id, o.pack_size || '', o.sku || ''].join('\0');
+        if (!map.has(k)) map.set(k, Object.assign({}, o));
+        else {
+          const ex = map.get(k);
+          if (ex.case_price == null && o.case_price != null) ex.case_price = o.case_price;
+          ex.is_preferred = ex.is_preferred || o.is_preferred;
+        }
+      });
+    });
+    return [...map.values()].sort((a, b) =>
+      (b.is_preferred ? 1 : 0) - (a.is_preferred ? 1 : 0) ||
+      (a.supplier_name || '').localeCompare(b.supplier_name || '') ||
+      (a.pack_size || '').localeCompare(b.pack_size || ''));
+  }
+
+  function renderMergeOffersPreview() {
+    const box = $('mergeOffersPreview');
+    if (!box) return;
+    const offers = mergeOffersPreview(_mergeChosen);
+    if (!offers.length) {
+      box.innerHTML = '<div class="mm-offers"><div style="font-size:12px;color:var(--muted-foreground);padding:8px 4px">No supplier prices on these products.</div></div>';
+      return;
+    }
+    box.innerHTML = '<div class="mm-offers-head">Resulting suppliers &amp; prices (all kept)</div><div class="mm-offers">' +
+      offers.map((o) => (
+        '<div class="mm-offer' + (o.is_preferred ? ' pref' : '') + '">' +
+          '<div class="mm-offer-main">' + escapeHtml(o.supplier_name) +
+            (o.pack_size ? ' <span class="mm-offer-sub">· ' + escapeHtml(o.pack_size) + '</span>' : '') +
+            (o.sku ? ' <span class="mm-offer-sub">· SKU ' + escapeHtml(o.sku) + '</span>' : '') +
+          '</div>' +
+          '<div class="mm-offer-price">' + (o.case_price != null ? money(o.case_price) : '—') +
+            (o.is_preferred ? ' <span class="mm-offer-sub">pref</span>' : '') +
+          '</div>' +
+        '</div>'
+      )).join('') + '</div>';
+  }
+
+  function renderMergeFieldTable() {
+    const box = $('mergeFieldTable');
+    if (!box || !_mergeChosen.length) return;
+    const cols = _mergeChosen.map((p) => (
+      '<th class="mm-prod" title="' + escapeHtml(p.name) + '">' + escapeHtml(p.name.length > 22 ? p.name.slice(0, 20) + '…' : p.name) + '</th>'
+    )).join('');
+    const rows = MERGE_FIELD_DEFS.map((def) => {
+      const cells = _mergeChosen.map((p) => {
+        const checked = _mergeFieldSource[def.key] === p.id;
+        return (
+          '<td class="mm-prod">' +
+          '<label style="cursor:pointer;display:block">' +
+          '<input type="radio" name="mergeField_' + def.key + '" value="' + p.id + '"' +
+            (checked ? ' checked' : '') + ' onchange="setMergeFieldSource(\'' + def.key + '\',\'' + p.id + '\')">' +
+          '<div class="mm-val">' + escapeHtml(def.display(p)) + '</div>' +
+          '</label></td>'
+        );
+      }).join('');
+      return '<tr class="mm-field-row"><th>' + escapeHtml(def.label) + '</th>' + cells + '</tr>';
+    }).join('');
+    box.innerHTML = '<table class="mm-field-table"><thead><tr><th>Keep details from</th>' + cols + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function setMergeFieldSource(key, productId) {
+    _mergeFieldSource[key] = productId;
+    renderMergeFieldTable();
+  }
+
+  function buildMergeFieldsPayload() {
+    const out = {};
+    MERGE_FIELD_DEFS.forEach((def) => {
+      const pid = _mergeFieldSource[def.key];
+      const p = _mergeChosen.find((x) => x.id === pid);
+      if (!p) return;
+      out[def.key] = mergeFieldValue(p, def);
+    });
+    return out;
+  }
 
   function openMergeDialog() {
     const chosen = _products.filter((p) => _libSelected.has(p.id));
     if (chosen.length < 2) return;
-    // Default keeper: the most "complete" record (most filled fields),
-    // tie-broken by oldest created_at.
-    const score = (p) => ['supplier_id', 'category_id', 'case_size', 'units_per_case', 'case_price', 'unit_price', 'sku', 'abv']
-      .reduce((s, k) => s + (p[k] != null && p[k] !== '' ? 1 : 0), 0);
     const sorted = chosen.slice().sort((a, b) =>
-      score(b) - score(a) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+      mergeProductScore(b) - mergeProductScore(a) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    _mergeChosen = sorted;
     _mergeKeepId = sorted[0].id;
+    _mergeFieldSource = {};
+    MERGE_FIELD_DEFS.forEach((def) => {
+      _mergeFieldSource[def.key] = defaultMergeFieldSource(sorted, def);
+    });
     $('mergeErr').textContent = '';
-    $('mergeBody').innerHTML = sorted.map((p) => {
-      const meta = [
-        p.category && p.category.name,
-        p.supplier && p.supplier.name,
-        p.case_size,
-        p.case_price != null ? money(p.case_price) : null,
-      ].filter(Boolean).join(' · ');
-      return (
-        '<label class="mm-opt ' + (p.id === _mergeKeepId ? 'chosen' : '') + '" data-id="' + p.id + '">' +
-        '<input type="radio" name="mergeKeep" value="' + p.id + '"' + (p.id === _mergeKeepId ? ' checked' : '') +
-          ' onchange="setMergeKeep(\'' + p.id + '\')">' +
-        '<span><span class="mm-name">' + escapeHtml(p.name) + '</span>' +
-        (meta ? '<span class="mm-meta">' + escapeHtml(meta) + '</span>' : '') + '</span>' +
-        '</label>'
-      );
-    }).join('');
+    renderMergeFieldTable();
+    renderMergeOffersPreview();
     $('mergeConfirmBtn').disabled = false;
     $('mergeConfirmBtn').textContent = 'Merge ' + chosen.length + ' into 1';
     $('mergeBackdrop').classList.add('open');
     $('mergeModal').classList.add('open');
   }
 
-  function setMergeKeep(id) {
-    _mergeKeepId = id;
-    document.querySelectorAll('#mergeBody .mm-opt').forEach((el) => {
-      el.classList.toggle('chosen', el.getAttribute('data-id') === id);
-    });
-  }
-
   function closeMergeDialog() {
     $('mergeBackdrop').classList.remove('open');
     $('mergeModal').classList.remove('open');
+    _mergeChosen = [];
   }
 
   async function confirmMerge() {
-    if (!_mergeKeepId) return;
-    const dupIds = [..._libSelected].filter((id) => id !== _mergeKeepId);
-    if (!dupIds.length) { $('mergeErr').textContent = 'Pick at least one other product to merge in.'; return; }
+    if (!_mergeKeepId || _mergeChosen.length < 2) return;
+    const dupIds = _mergeChosen.map((p) => p.id).filter((id) => id !== _mergeKeepId);
+    if (!dupIds.length) { $('mergeErr').textContent = 'Need at least two products to merge.'; return; }
     const btn = $('mergeConfirmBtn');
     const cancel = $('mergeCancelBtn');
     btn.disabled = true; cancel.disabled = true;
     btn.textContent = 'Merging…';
     $('mergeErr').textContent = '';
     try {
-      const res = await DB.products.merge(_mergeKeepId, dupIds);
+      const res = await DB.products.merge(_mergeKeepId, dupIds, buildMergeFieldsPayload());
       const merged = (res && res.merged != null) ? res.merged : dupIds.length;
       closeMergeDialog();
       _libSelected.clear();
-      toggleLibMergeMode(); // exit merge mode
+      toggleLibMergeMode();
       await loadLibrary();
       setStatus('✓ merged ' + merged + ' duplicate' + (merged === 1 ? '' : 's'), 'ok');
     } catch (err) {
       $('mergeErr').textContent = err.message || String(err);
       console.error(err);
       btn.disabled = false; cancel.disabled = false;
-      btn.textContent = 'Merge';
+      btn.textContent = 'Merge ' + _mergeChosen.length + ' into 1';
     }
   }
 
@@ -2383,10 +2523,9 @@
 
   // ---------- product CRUD (uses the Drawer) ----------
 
-  // Repeatable supplier + price editor used inside the product Drawer.
-  // Each row links the product to a supplier with its own case/unit price
-  // and supplier SKU; exactly one row is the "preferred" default that
-  // mirrors the product's headline supplier/price (see migration 016).
+  // Repeatable supplier purchase-option editor used inside the product Drawer.
+  // Each row is a distinct way to buy the product (supplier + pack size +
+  // price). The same supplier may appear more than once when pack sizes differ.
   function makeSupplierPriceEditor(initialRows) {
     injectSupplierEditorStyles();
     const supOptsHtml = _suppliers
@@ -2403,10 +2542,11 @@
       return (
         '<div class="psp-row">' +
         sel +
+        '<input class="psp-pack" type="text" placeholder="Pack size">' +
         '<input class="psp-case" type="number" step="any" min="0" placeholder="Case £">' +
         '<input class="psp-unit" type="number" step="any" min="0" placeholder="Unit £">' +
         '<input class="psp-sku" type="text" placeholder="Supplier SKU">' +
-        '<label class="psp-pref" title="Preferred supplier">' +
+        '<label class="psp-pref" title="Preferred purchase option">' +
           '<input type="radio" name="' + prefName + '"><span>Pref</span>' +
         '</label>' +
         '<button type="button" class="psp-del" title="Remove">✕</button>' +
@@ -2417,6 +2557,7 @@
     function fillRow(rowEl, r) {
       r = r || {};
       rowEl.querySelector('.psp-sup').value = r.supplier_id || '';
+      rowEl.querySelector('.psp-pack').value = r.pack_size || '';
       rowEl.querySelector('.psp-case').value = r.case_price != null ? r.case_price : '';
       rowEl.querySelector('.psp-unit').value = r.unit_price != null ? r.unit_price : '';
       rowEl.querySelector('.psp-sku').value = r.sku || '';
@@ -2472,13 +2613,15 @@
         const out = [];
         listEl.querySelectorAll('.psp-row').forEach((row) => {
           const supplier_id = row.querySelector('.psp-sup').value || '';
+          const pack_size = row.querySelector('.psp-pack').value.trim();
           const caseV = row.querySelector('.psp-case').value.trim();
           const unitV = row.querySelector('.psp-unit').value.trim();
           const sku = row.querySelector('.psp-sku').value.trim();
           const is_preferred = row.querySelector('.psp-pref input').checked;
-          if (!supplier_id && !caseV && !unitV && !sku) return; // blank row
+          if (!supplier_id && !pack_size && !caseV && !unitV && !sku) return;
           out.push({
             supplier_id,
+            pack_size: pack_size || null,
             case_price: caseV === '' ? null : Number(caseV),
             unit_price: unitV === '' ? null : Number(unitV),
             sku: sku || null,
@@ -2489,12 +2632,13 @@
         return out;
       },
       validate(rows) {
-        if (!rows || !rows.length) return null; // a product may have no suppliers
+        if (!rows || !rows.length) return null;
         const seen = new Set();
         for (const r of rows) {
           if (!r.supplier_id) return 'Choose a supplier for each price row (or clear the row).';
-          if (seen.has(r.supplier_id)) return 'A supplier is listed more than once — combine those rows.';
-          seen.add(r.supplier_id);
+          const key = r.supplier_id + '\0' + (r.pack_size || '') + '\0' + (r.sku || '');
+          if (seen.has(key)) return 'Duplicate supplier + pack size — combine those rows or change the pack/SKU.';
+          seen.add(key);
         }
         return null;
       },
@@ -2508,7 +2652,7 @@
     css.textContent =
       '.psp-editor{display:flex;flex-direction:column;gap:8px}' +
       '.psp-list{display:flex;flex-direction:column;gap:6px}' +
-      '.psp-row{display:grid;grid-template-columns:minmax(120px,1.6fr) 72px 72px minmax(90px,1fr) auto auto;' +
+      '.psp-row{display:grid;grid-template-columns:minmax(100px,1.3fr) minmax(90px,1.1fr) 68px 68px minmax(72px,.9fr) auto auto;' +
         'gap:6px;align-items:center}' +
       '.psp-row select,.psp-row input[type=number],.psp-row input[type=text]{width:100%;min-width:0}' +
       '.psp-pref{display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer}' +
@@ -2521,7 +2665,12 @@
   function openProductModal(id) {
     const p = id ? _products.find((x) => x.id === id) : null;
     const catOpts = _categories.map((c) => ({ value: c.id, label: c.name }));
-    const editor = makeSupplierPriceEditor(p ? (p.product_suppliers || []) : []);
+    const editor = makeSupplierPriceEditor(
+      p ? (p.product_suppliers || []).map((r) => ({
+        ...r,
+        pack_size: r.pack_size || p.case_size || '',
+      })) : []
+    );
     Drawer.open({
       title: p ? 'Edit product' : 'New product',
       fields: [
@@ -2551,9 +2700,7 @@
           sku: v.sku || null,
           abv: v.abv,
         };
-        // The preferred supplier's prices are mirrored onto the product's
-        // legacy supplier_id / case_price / unit_price columns by the
-        // migration-016 trigger, so don't set them here.
+        // Preferred purchase option mirrors legacy columns via migration 016/020 triggers.
         let productId;
         if (p) {
           await DB.products.update(p.id, patch);
@@ -2562,7 +2709,14 @@
           const created = await DB.products.create(patch);
           productId = created.id;
         }
-        await DB.productSuppliers.replaceForProduct(productId, v.suppliers || []);
+        await DB.productSuppliers.replaceForProduct(productId, (v.suppliers || []).map((r) => ({
+          supplier_id: r.supplier_id,
+          pack_size: (r.pack_size || v.case_size || '').trim(),
+          case_price: r.case_price,
+          unit_price: r.unit_price,
+          sku: r.sku,
+          is_preferred: r.is_preferred,
+        })));
         await loadLibrary();
       },
     });
@@ -2643,22 +2797,18 @@
     }
     empty.style.display = 'none';
     body.style.display = '';
-    // Include any product sourced from this supplier (preferred or not),
-    // and surface the price from this supplier's specific row.
-    const prods = _products
-      .filter((p) => (p.product_suppliers || []).some((ps) => ps.supplier_id === s.id) || p.supplier_id === s.id)
-      .map((p) => {
-        const row = (p.product_suppliers || []).find((ps) => ps.supplier_id === s.id);
-        return Object.assign({}, p, {
-          _supCasePrice: row ? row.case_price : p.case_price,
-          _supIsPreferred: row ? row.is_preferred : (p.supplier_id === s.id),
-        });
-      })
-      .slice()
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    // Every purchase option from this supplier (a product may list several).
+    const rows = [];
+    _products.forEach((p) => {
+      const offers = (p.product_suppliers || []).filter((ps) => ps.supplier_id === s.id);
+      if (offers.length) offers.forEach((row) => rows.push({ p, row }));
+      else if (p.supplier_id === s.id) rows.push({ p, row: null });
+    });
+    rows.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '') ||
+      ((a.row && a.row.pack_size) || '').localeCompare((b.row && b.row.pack_size) || ''));
     $('supDetailName').textContent = s.name || '—';
     $('supDetailMeta').textContent =
-      prods.length + ' product' + (prods.length === 1 ? '' : 's') +
+      rows.length + ' price line' + (rows.length === 1 ? '' : 's') +
       ' · SOR ' + (Number(s.default_sor_pct) || 0) + '%';
     setSupplierRo('supRoContact', s.contact_name);
     setSupplierRo('supRoEmail', s.email);
@@ -2666,22 +2816,26 @@
     setSupplierRo('supRoSor', (Number(s.default_sor_pct) || 0) + '%');
     setSupplierRo('supRoAddress', s.address);
     const wrap = $('supDetailProducts');
-    if (!prods.length) {
+    if (!rows.length) {
       wrap.innerHTML = '<div class="supplier-products-empty">No products linked to this supplier yet.</div>';
     } else {
       wrap.innerHTML =
         '<table class="supplier-products-table"><thead><tr>' +
-        '<th>Product</th><th>Category</th><th>Case size</th><th>Units/case</th><th>Case price</th>' +
+        '<th>Product</th><th>Category</th><th>Pack size</th><th>Case price</th>' +
         '</tr></thead><tbody>' +
-        prods.map((p) => (
-          '<tr>' +
-          '<td>' + escapeHtml(p.name) + (p._supIsPreferred ? ' <span class="sup-more">preferred</span>' : '') + '</td>' +
-          '<td>' + catBadge(p.category) + '</td>' +
-          '<td>' + escapeHtml(p.case_size || '—') + '</td>' +
-          '<td>' + (num(p.units_per_case) || '—') + '</td>' +
-          '<td>' + (money(p._supCasePrice) || '—') + '</td>' +
-          '</tr>'
-        )).join('') +
+        rows.map(({ p, row }) => {
+          const pack = (row && row.pack_size) || p.case_size || '—';
+          const price = row ? row.case_price : p.case_price;
+          const pref = row ? row.is_preferred : (p.supplier_id === s.id);
+          return (
+            '<tr>' +
+            '<td>' + escapeHtml(p.name) + (pref ? ' <span class="sup-more">pref</span>' : '') + '</td>' +
+            '<td>' + catBadge(p.category) + '</td>' +
+            '<td>' + escapeHtml(pack) + '</td>' +
+            '<td>' + (money(price) || '—') + '</td>' +
+            '</tr>'
+          );
+        }).join('') +
         '</tbody></table>';
     }
   }
@@ -2928,6 +3082,144 @@
       renderLibrary();
     });
   });
+
+  // ============================================================
+  // GENERIC TABLE SORTING + FILTERS
+  // ------------------------------------------------------------
+  // Makes every data table's column headers click-to-sort (asc /
+  // desc, with an arrow indicator) the same way the Library table
+  // works. Grouped tables (those with category-row separators) are
+  // sorted *within* each category block so the grouping is kept.
+  // The page search box in the top bar already filters the active
+  // panel; here we make that filter re-apply after a table
+  // re-renders so it survives auto-saves and reloads.
+  // ============================================================
+  const SORTABLE_TABLE_IDS = [
+    'evTable', 'slTable', 'openingTable', 'distTable', 'countTable',
+    'closingTable', 'summaryTable', 'supplierSummaryTable', 'squareTable',
+    'warehouseStockTable',
+  ];
+
+  function _tsHeaderRow(table) {
+    const head = table.tHead;
+    if (!head || !head.rows.length) return null;
+    return head.rows[head.rows.length - 1];
+  }
+
+  function _tsIsSortable(th) {
+    if (!th) return false;
+    if (th.dataset && th.dataset.nosort != null) return false;
+    if (th.classList.contains('act') || th.classList.contains('lib-sel-col')) return false;
+    const txt = (th.textContent || '').replace(/[▲▼]/g, '').trim();
+    return txt.length > 0;
+  }
+
+  // Pulls a sortable value out of a cell — uses the input/select
+  // value for editable cells, otherwise the text. Detects numbers
+  // (stripping £, %, commas) so numeric columns sort numerically.
+  function _tsCellValue(row, idx) {
+    if (!row.cells || row.cells.length <= idx) return { s: '', n: null, missing: true };
+    const cell = row.cells[idx];
+    const field = cell.querySelector('input, select');
+    const raw = field ? (field.value || '') : (cell.textContent || '');
+    const s = raw.trim().toLowerCase();
+    const cleaned = s.replace(/[£$,%\s]/g, '');
+    const n = cleaned !== '' && /^-?\d*\.?\d+$/.test(cleaned) ? parseFloat(cleaned) : null;
+    return { s, n, missing: false };
+  }
+
+  function _tsSort(table, colIdx, dir) {
+    const tbody = table.tBodies[0];
+    if (!tbody) return;
+    const cmp = (a, b) => {
+      const av = _tsCellValue(a, colIdx), bv = _tsCellValue(b, colIdx);
+      if (av.missing && bv.missing) return 0;
+      if (av.missing) return 1;       // rows without this column sink down
+      if (bv.missing) return -1;
+      if (av.n != null && bv.n != null) { if (av.n !== bv.n) return (av.n - bv.n) * dir; }
+      else { const c = av.s.localeCompare(bv.s); if (c) return c * dir; }
+      return 0;
+    };
+    // Split into category-row segments so grouped tables keep their
+    // category blocks; rows are only reordered inside each block.
+    const segments = [];
+    let cur = { header: null, items: [] };
+    Array.from(tbody.rows).forEach((r) => {
+      if (r.classList.contains('category-row')) { segments.push(cur); cur = { header: r, items: [] }; }
+      else cur.items.push(r);
+    });
+    segments.push(cur);
+    segments.forEach((seg) => seg.items.sort(cmp));
+    if (table._tsObserver) table._tsObserver.disconnect();
+    const frag = document.createDocumentFragment();
+    segments.forEach((seg) => {
+      if (seg.header) frag.appendChild(seg.header);
+      seg.items.forEach((it) => frag.appendChild(it));
+    });
+    tbody.appendChild(frag);
+    _tsIndicators(table);
+    if (table._tsObserver) table._tsObserver.observe(tbody, { childList: true });
+  }
+
+  function _tsIndicators(table) {
+    const hr = _tsHeaderRow(table);
+    if (!hr) return;
+    Array.from(hr.cells).forEach((th, idx) => {
+      if (!_tsIsSortable(th)) return;
+      let sp = th.querySelector('.ts-arrow');
+      if (!sp) {
+        sp = document.createElement('span');
+        sp.className = 'ts-arrow arrow';
+        th.appendChild(document.createTextNode(' '));
+        th.appendChild(sp);
+      }
+      sp.textContent = (idx === table._tsCol) ? (table._tsDir > 0 ? '▲' : '▼') : '';
+    });
+  }
+
+  function _tsReapplySearch() {
+    const el = $('pageSearchInput');
+    if (el && el.value.trim()) pageSearch(el.value);
+  }
+
+  function enhanceTableSorting(table) {
+    if (!table || table._tsEnhanced) return;
+    table._tsEnhanced = true;
+    table._tsCol = null;
+    table._tsDir = 1;
+
+    // Delegated header click — works even when the header row is
+    // built dynamically (distribution / stock levels).
+    table.addEventListener('click', (e) => {
+      const th = e.target.closest('th');
+      if (!th || !table.tHead || !table.tHead.contains(th)) return;
+      const hr = _tsHeaderRow(table);
+      if (!hr || th.parentElement !== hr) return;
+      if (!_tsIsSortable(th)) return;
+      const idx = Array.prototype.indexOf.call(hr.cells, th);
+      if (idx < 0) return;
+      if (table._tsCol === idx) table._tsDir *= -1;
+      else { table._tsCol = idx; table._tsDir = 1; }
+      _tsSort(table, idx, table._tsDir);
+    });
+
+    // Keep the chosen sort (and the page filter) applied after the
+    // table re-renders — but never reorder while the user is typing
+    // in one of its cells.
+    const tbody = table.tBodies[0];
+    if (tbody) {
+      table._tsObserver = new MutationObserver(() => {
+        if (table.contains(document.activeElement)) { _tsReapplySearch(); return; }
+        if (table._tsCol != null) _tsSort(table, table._tsCol, table._tsDir);
+        _tsReapplySearch();
+      });
+      table._tsObserver.observe(tbody, { childList: true });
+    }
+  }
+
+  function initTableTools() {
+    SORTABLE_TABLE_IDS.forEach((id) => { const t = $(id); if (t) enhanceTableSorting(t); });
+  }
 
   // ---------- event ----------
   async function loadEventList() {
@@ -3488,17 +3780,26 @@
     return (p && p.case_size) || '';
   }
 
-  // Case price to use for a delivery line: prefer the price the *delivering*
-  // supplier charges for this product (its product_suppliers row), then fall
-  // back to the product's headline/preferred case price. Returns
-  // { price:Number|null, matched:Boolean } — matched is true when the price
-  // came from the chosen supplier's own row (not a fallback).
+  // Case price for a delivery line from the delivering supplier's purchase
+  // options. When several offers exist for that supplier, prefer: global
+  // preferred row (if same supplier) → pack size matching product.case_size →
+  // first row with a price → product headline price.
   function deliveryLineCasePrice(pid, supplierId) {
     const p = _products.find((x) => x.id === pid);
     if (!p) return { price: null, matched: false };
     if (supplierId) {
-      const row = (p.product_suppliers || []).find((ps) => ps.supplier_id === supplierId);
-      if (row && row.case_price != null) return { price: Number(row.case_price), matched: true };
+      const rows = (p.product_suppliers || []).filter((ps) => ps.supplier_id === supplierId);
+      if (rows.length) {
+        const preferred = rows.find((r) => r.is_preferred && r.case_price != null);
+        if (preferred) return { price: Number(preferred.case_price), matched: true };
+        const pack = (p.case_size || '').trim();
+        if (pack) {
+          const packMatch = rows.find((r) => (r.pack_size || '').trim() === pack && r.case_price != null);
+          if (packMatch) return { price: Number(packMatch.case_price), matched: true };
+        }
+        const any = rows.find((r) => r.case_price != null);
+        if (any) return { price: Number(any.case_price), matched: true };
+      }
     }
     return { price: p.case_price != null ? Number(p.case_price) : null, matched: false };
   }
@@ -7001,6 +7302,7 @@
   (async function () {
     if (typeof DB === 'undefined') { setStatus('✕ db.js not loaded', 'err'); return; }
     updateDbIndicator();
+    initTableTools();
     wireEventDetailEditors();
     try { _activeWarehouseId = localStorage.getItem('v2_warehouse') || null; } catch (e) {}
     await Promise.all([loadLibrary(), loadEventList(), refreshWarehouses()]);
