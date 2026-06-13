@@ -761,6 +761,11 @@
         <span class="nav-label">Transfers</span>
         <span class="nav-status-dot" title="Built — panel is functional"></span>
       </button>
+      <button class="nav-item" data-panel="wastage" onclick="showPanel('wastage')" title="Wastage">
+        <i class="ph ph-trash nav-icon"></i>
+        <span class="nav-label">Wastage</span>
+        <span class="nav-status-dot" title="Built — panel is functional"></span>
+      </button>
       <button class="nav-item" data-panel="closing" onclick="showPanel('closing')" title="Closing Stock">
         <i class="ph ph-archive nav-icon"></i>
         <span class="nav-label">Closing Stock</span>
@@ -1081,6 +1086,25 @@
       <div class="stat-card"><div class="stat-label">Total value</div><div class="stat-value" id="del-stat-value">£0</div><div class="stat-sub">At supplier prices</div></div>
     </div>
     <div id="deliveryLogBody" class="delivery-log-list"></div>
+  </div>
+</div>
+<!-- ===================== WASTAGE ===================== -->
+<div id="panel-wastage" class="panel">
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div style="min-width:0;flex:1">
+      <div class="page-title">Wastage <span class="feature-dot green" title="Active — saves to the v2 tables"></span></div>
+      <p class="page-subtitle">Log spillage, breakages and write-offs for this event. Wasted quantities are subtracted from available stock (Bone Yard / Stock Levels).</p>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="openWastageForm()"><i class="ph ph-plus btn-leading-icon"></i> New Wastage</button>
+  </div>
+  <div id="wastageNoEvent" class="empty-state" style="display:none"><i class="ph ph-calendar-x icon"></i><p>Pick an event from the sidebar first.</p></div>
+  <div id="wastageContent">
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Entries logged</div><div class="stat-value" id="wst-stat-count">0</div><div class="stat-sub">This event</div></div>
+      <div class="stat-card"><div class="stat-label">Cases wasted</div><div class="stat-value" id="wst-stat-cases">0</div><div class="stat-sub">Converted to cases</div></div>
+      <div class="stat-card"><div class="stat-label">Value lost</div><div class="stat-value" id="wst-stat-value">£0</div><div class="stat-sub">At case prices</div></div>
+    </div>
+    <div id="wastageLogBody" class="delivery-log-list"></div>
   </div>
 </div>
 <!-- ===================== OPENING STOCK ===================== -->
@@ -1554,6 +1578,58 @@
   </div>
 </aside>
 
+<!-- ===================== WASTAGE FORM DRAWER ===================== -->
+<div class="drawer-backdrop" id="wastageFormOverlay" onclick="closeWastageForm()"></div>
+<aside class="drawer drawer--wide" id="wastageFormDrawer" role="dialog" aria-modal="true" aria-labelledby="wastageFormTitle">
+  <div class="drawer-head">
+    <h2 id="wastageFormTitle">Log Wastage</h2>
+    <button class="x" onclick="closeWastageForm()" aria-label="Close">&times;</button>
+  </div>
+  <div class="drawer-body drawer-body--block">
+    <div class="df-grid2">
+      <div class="df-field"><label>Recorded on</label><input type="datetime-local" id="wf-date"></div>
+      <div class="df-field"><label>Reason</label>
+        <select id="wf-reason">
+          <option value="">— Select reason —</option>
+          <option>Breakage / spillage</option>
+          <option>Out of date</option>
+          <option>Recipe testing</option>
+          <option>Quality / unsellable</option>
+          <option>Comp / staff drink</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="df-field">
+      <label>Unit</label>
+      <div class="transfer-unit-toggle">
+        <button type="button" id="wf-unit-cases" class="active" onclick="setWastageUnit('cases')">Cases</button>
+        <button type="button" id="wf-unit-units" onclick="setWastageUnit('units')">Units</button>
+      </div>
+    </div>
+    <div class="df-field">
+      <label>Products wasted</label>
+      <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <table class="df-table">
+          <thead><tr><th style="width:52%">Product</th><th id="wf-qty-head">Qty (cases)</th><th class="num" style="width:84px">Value</th><th style="width:36px"></th></tr></thead>
+          <tbody id="wf-lines-body"></tbody>
+        </table>
+        <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="addWastageLine()">+ Add Product</button>
+          <div style="font-size:13px;color:var(--muted-foreground)">Total <strong id="wf-cost-total" style="color:var(--foreground);font-size:14px">£0.00</strong></div>
+        </div>
+      </div>
+      <p class="df-hint">Wasted quantities are subtracted from the Bone Yard pool on the Stock Levels tab.</p>
+    </div>
+    <div class="df-field"><label>Notes</label><textarea id="wf-notes" rows="2" placeholder="Optional — e.g. dropped a tray, fridge failure…"></textarea></div>
+  </div>
+  <div class="drawer-foot">
+    <span class="err" id="wf-err"></span>
+    <button class="btn" onclick="clearWastageForm()">Clear</button>
+    <button class="btn btn-primary" id="wf-save-btn" onclick="saveWastage()">Save Wastage</button>
+  </div>
+</aside>
+
 <!-- ===================== ADD PRODUCT TO EVENT DRAWER ===================== -->
 <div class="drawer-backdrop" id="addProductOverlay" onclick="closeAddProductForm()"></div>
 <aside class="drawer drawer--wide" id="addProductDrawer" role="dialog" aria-modal="true" aria-labelledby="addProductTitle">
@@ -1736,7 +1812,7 @@
     setup: 'Event Setup', products: 'Products', library: 'Product Library',
     'stock-levels': 'Stock Levels', deliveries: 'Deliveries', opening: 'Opening Stock',
     distribution: 'Distribution', counts: 'Stock Counts', transfers: 'Transfers',
-    closing: 'Closing Stock', summary: 'Summary', square: 'Square', suppliers: 'Suppliers',
+    wastage: 'Wastage', closing: 'Closing Stock', summary: 'Summary', square: 'Square', suppliers: 'Suppliers',
     warehouse: 'Warehouse', settings: 'Settings', bugs: 'Bug & Feature Reports',
   };
 
@@ -1765,6 +1841,7 @@
     if (name === 'stock-levels') loadStockLevels();
     if (name === 'counts') loadCounts();
     if (name === 'transfers') loadTransfers();
+    if (name === 'wastage') loadWastage();
     if (name === 'closing') loadClosing();
     if (name === 'summary') loadSummary();
     if (name === 'square') loadSquare();
@@ -3676,6 +3753,318 @@
     $('deliveryLightbox').classList.remove('show');
   }
 
+  // ===================== WASTAGE =====================
+  // Wastage is logged as a batch (one save) + lines (one per product).
+  // A batch carries a unit ('cases' | 'units'); line quantities are
+  // converted to cases for the stock maths. Wasted cases are subtracted
+  // from the Bone Yard pool (see boneYardAvailable), so they flow through
+  // Stock Levels, Distribution availability and transfer checks.
+  let _wastage = [];            // wastage_batches (with lines) for the current event
+  let _wastageEventId = null;   // cache guard for _wastage
+  let _wstLines = [];           // form line state
+  let _wstEditingId = null;
+  let _wstUnit = 'cases';
+
+  function wstLineId() { return 'w' + Math.random().toString(36).slice(2, 8); }
+
+  async function ensureWastageData() {
+    if (!_currentEvent) return;
+    if (_wastageEventId === _currentEvent.id) return;
+    _wastage = (await DB.wastage.forEvent(_currentEvent.id)) || [];
+    _wastageEventId = _currentEvent.id;
+  }
+
+  function unitsPerCaseFor(pid) {
+    const p = _products.find((x) => x.id === pid);
+    let ups = p && Number(p.units_per_case);
+    if (!ups) {
+      const ep = ((_currentEvent && _currentEvent.event_products) || []).find((e) => e.product_id === pid);
+      ups = ep && ep.product && Number(ep.product.units_per_case);
+    }
+    return ups && ups > 0 ? ups : 1;
+  }
+
+  function wastageCasePrice(pid) {
+    const p = _products.find((x) => x.id === pid);
+    if (p && p.case_price != null) return Number(p.case_price);
+    const ep = ((_currentEvent && _currentEvent.event_products) || []).find((e) => e.product_id === pid);
+    if (ep && ep.product && ep.product.case_price != null) return Number(ep.product.case_price);
+    return null;
+  }
+
+  // Convert one wastage line to cases, respecting the batch's unit.
+  function batchLineCases(batch, line) {
+    const qty = Number(line.qty) || 0;
+    if (batch && batch.unit === 'units') return qty / unitsPerCaseFor(line.product_id);
+    return qty;
+  }
+  function wastageBatchCases(b) {
+    return (b.lines || []).reduce((s, l) => s + batchLineCases(b, l), 0);
+  }
+  function wastageBatchValue(b) {
+    return (b.lines || []).reduce((s, l) => {
+      const price = wastageCasePrice(l.product_id);
+      return s + (price != null ? price * batchLineCases(b, l) : 0);
+    }, 0);
+  }
+  // Total cases wasted for a product across every batch in the event.
+  function wastageCasesForProduct(pid) {
+    return _wastage.reduce((sum, b) =>
+      sum + (b.lines || []).filter((l) => l.product_id === pid)
+        .reduce((s, l) => s + batchLineCases(b, l), 0), 0);
+  }
+
+  async function loadWastage() {
+    const id = $('eventPick').value;
+    $('wastageNoEvent').style.display = id ? 'none' : '';
+    $('wastageContent').style.display = id ? '' : 'none';
+    if (!id) return;
+    try {
+      if (!_currentEvent || _currentEvent.id !== id) _currentEvent = await DB.events.getFull(id);
+      if (!_products.length) _products = (await DB.products.listFull()) || [];
+      _wastageEventId = null;
+      await ensureWastageData();
+      renderWastage();
+    } catch (err) {
+      console.error('loadWastage', err);
+      $('wastageLogBody').innerHTML =
+        '<div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div>';
+    }
+  }
+
+  function renderWastage() {
+    const sorted = _wastage.slice().sort((a, b) =>
+      new Date(b.recorded_at || b.created_at) - new Date(a.recorded_at || a.created_at));
+    const totalCases = round1(sorted.reduce((s, b) => s + wastageBatchCases(b), 0));
+    const totalValue = sorted.reduce((s, b) => s + wastageBatchValue(b), 0);
+    $('wst-stat-count').textContent = sorted.length;
+    $('wst-stat-cases').textContent = totalCases;
+    $('wst-stat-value').textContent = '£' + Math.round(totalValue).toLocaleString('en-GB');
+
+    const body = $('wastageLogBody');
+    if (!sorted.length) {
+      body.innerHTML = '<div class="empty-state"><i class="ph ph-trash icon"></i><p>No wastage logged yet.</p></div>';
+      return;
+    }
+    body.innerHTML = sorted.map((b) => {
+      const lines = b.lines || [];
+      const when = b.recorded_at || b.created_at;
+      const dt = when
+        ? new Date(when).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—';
+      const unitLabel = b.unit === 'units' ? 'units' : 'cases';
+      const cases = round1(wastageBatchCases(b));
+      const val = wastageBatchValue(b);
+      const reason = b.reason ? '<span class="delivery-log-ref">' + escapeHtml(b.reason) + '</span>' : '';
+      const notes = b.notes ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px;font-style:italic">' + escapeHtml(b.notes) + '</div>' : '';
+      const itemRows = lines.length
+        ? lines.slice().sort((a, c) => productNameById(a.product_id).localeCompare(productNameById(c.product_id))).map((l) => {
+            const size = productSizeById(l.product_id);
+            const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
+            const price = wastageCasePrice(l.product_id);
+            const lineCost = price != null ? price * batchLineCases(b, l) : null;
+            const costTag = lineCost != null ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">· ' + money(lineCost) + '</span>' : '';
+            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + '</span><span style="font-weight:700">' + round1(l.qty) + ' ' + unitLabel + costTag + '</span></div>';
+          }).join('')
+        : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
+      const valMeta = val > 0 ? ' · <span style="font-weight:700;color:var(--foreground)">' + money(val) + '</span>' : '';
+      const extra = notes ? '<div class="delivery-log-extra">' + notes + '</div>' : '';
+      return '<div class="delivery-log-item">' +
+        '<div class="delivery-log-head">' +
+          '<div class="delivery-log-head-main">' +
+            '<span class="delivery-log-supplier-icon" style="background:var(--danger)"><i class="ph ph-trash"></i></span>' +
+            '<div style="min-width:0">' +
+              '<div class="delivery-log-supplier">' + escapeHtml(b.reason || 'Wastage') + reason + '</div>' +
+              '<div class="delivery-log-sub">' + dt + ' · ' + cases + ' cases across ' + lines.length + ' product' + (lines.length === 1 ? '' : 's') + valMeta + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="delivery-log-actions">' +
+            '<button class="btn btn-outline btn-sm btn-icon" onclick="editWastage(\'' + b.id + '\')" title="Edit"><i class="ph ph-pencil-simple"></i></button>' +
+            '<button class="btn btn-danger btn-sm btn-icon" onclick="deleteWastage(\'' + b.id + '\')" title="Delete"><i class="ph ph-trash"></i></button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="delivery-log-body">' + itemRows + '</div>' +
+        extra +
+      '</div>';
+    }).join('');
+  }
+
+  function setWastageUnit(u) {
+    _wstUnit = (u === 'units') ? 'units' : 'cases';
+    const cb = $('wf-unit-cases'); const ub = $('wf-unit-units');
+    if (cb) cb.classList.toggle('active', _wstUnit === 'cases');
+    if (ub) ub.classList.toggle('active', _wstUnit === 'units');
+    const head = $('wf-qty-head');
+    if (head) head.textContent = _wstUnit === 'units' ? 'Qty (units)' : 'Qty (cases)';
+    renderWastageLines();
+  }
+
+  function renderWastageLines() {
+    const body = $('wf-lines-body');
+    if (!body) return;
+    const options = deliveryProductOptions();
+    if (!_wstLines.length) {
+      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
+      renderWastageCostSummary();
+      return;
+    }
+    if (!options.length) {
+      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
+      renderWastageCostSummary();
+      return;
+    }
+    body.innerHTML = _wstLines.map((line) => {
+      const price = wastageCasePrice(line.productId);
+      const cases = line.productId
+        ? (_wstUnit === 'units' ? (Number(line.qty) || 0) / unitsPerCaseFor(line.productId) : (Number(line.qty) || 0))
+        : 0;
+      const lineCost = (line.productId && price != null) ? price * cases : null;
+      return '<tr>' +
+        '<td><select onchange="updateWastageLine(\'' + line.lineId + '\',\'productId\',this.value)">' +
+          '<option value="">— Select product —</option>' +
+          options.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>').join('') +
+        '</select></td>' +
+        '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateWastageLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>' +
+        '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
+        '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeWastageLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
+      '</tr>';
+    }).join('');
+    renderWastageCostSummary();
+  }
+
+  function renderWastageCostSummary() {
+    const totalEl = $('wf-cost-total');
+    if (!totalEl) return;
+    let total = 0;
+    _wstLines.forEach((line) => {
+      if (!line.productId) return;
+      const price = wastageCasePrice(line.productId);
+      if (price == null) return;
+      const cases = _wstUnit === 'units' ? (Number(line.qty) || 0) / unitsPerCaseFor(line.productId) : (Number(line.qty) || 0);
+      total += price * cases;
+    });
+    totalEl.textContent = money(total) || '£0.00';
+  }
+
+  function addWastageLine() {
+    _wstLines.push({ lineId: wstLineId(), productId: '', qty: '' });
+    renderWastageLines();
+  }
+  function removeWastageLine(lineId) {
+    _wstLines = _wstLines.filter((l) => l.lineId !== lineId);
+    renderWastageLines();
+  }
+  function updateWastageLine(lineId, field, value) {
+    const l = _wstLines.find((x) => x.lineId === lineId);
+    if (l) l[field] = value;
+    renderWastageLines();
+  }
+
+  function clearWastageForm() {
+    _wstEditingId = null;
+    _wstLines = [{ lineId: wstLineId(), productId: '', qty: '' }];
+    const now = new Date();
+    $('wf-date').value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    $('wf-reason').value = ''; $('wf-notes').value = ''; $('wf-err').textContent = '';
+    $('wastageFormTitle').textContent = 'Log Wastage';
+    $('wf-save-btn').textContent = 'Save Wastage';
+    setWastageUnit('cases');
+  }
+
+  function openWastageForm() {
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    if (!_wstEditingId) clearWastageForm();
+    renderWastageLines();
+    $('wastageFormOverlay').classList.add('open');
+    $('wastageFormDrawer').classList.add('open');
+    setTimeout(() => $('wf-date').focus(), 50);
+  }
+  function closeWastageForm() {
+    $('wastageFormOverlay').classList.remove('open');
+    $('wastageFormDrawer').classList.remove('open');
+    _wstEditingId = null;
+  }
+
+  function editWastage(id) {
+    const b = _wastage.find((x) => x.id === id);
+    if (!b) return;
+    _wstEditingId = id;
+    const lines = b.lines || [];
+    _wstLines = lines.length
+      ? lines.map((l) => ({ lineId: wstLineId(), productId: l.product_id, qty: String(l.qty ?? '') }))
+      : [{ lineId: wstLineId(), productId: '', qty: '' }];
+    const when = b.recorded_at || b.created_at;
+    if (when) { const dt = new Date(when); $('wf-date').value = new Date(dt - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
+    // Reason may be a free-text value not in the preset list; add it so it shows.
+    const reasonSel = $('wf-reason');
+    if (b.reason && !Array.from(reasonSel.options).some((o) => o.value === b.reason || o.text === b.reason)) {
+      const opt = document.createElement('option'); opt.textContent = b.reason; reasonSel.appendChild(opt);
+    }
+    reasonSel.value = b.reason || '';
+    $('wf-notes').value = b.notes || '';
+    $('wf-err').textContent = '';
+    $('wastageFormTitle').textContent = 'Edit Wastage';
+    $('wf-save-btn').textContent = 'Update Wastage';
+    setWastageUnit(b.unit === 'units' ? 'units' : 'cases');
+    $('wastageFormOverlay').classList.add('open');
+    $('wastageFormDrawer').classList.add('open');
+  }
+
+  async function saveWastage() {
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    const valid = _wstLines
+      .filter((l) => l.productId && (Number(l.qty) || 0) > 0)
+      .map((l) => ({ product_id: l.productId, qty: round1(l.qty) }));
+    if (!valid.length) { $('wf-err').textContent = 'Add at least one product with a quantity.'; return; }
+
+    const btn = $('wf-save-btn');
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saving…'; $('wf-err').textContent = '';
+
+    const isEdit = !!_wstEditingId;
+    try {
+      const head = {
+        event_id: _currentEvent.id,
+        unit: _wstUnit === 'units' ? 'units' : 'cases',
+        reason: ($('wf-reason').value || '').trim() || null,
+        recorded_at: $('wf-date').value ? new Date($('wf-date').value).toISOString() : new Date().toISOString(),
+        notes: ($('wf-notes').value || '').trim() || null,
+      };
+
+      let batchId = _wstEditingId;
+      if (isEdit) {
+        await DB.wastage.update(batchId, head);
+        await DB.remove('wastage_lines', 'batch_id=eq.' + enc(batchId));
+      } else {
+        const created = await DB.wastage.create(head);
+        batchId = created.id;
+      }
+      await DB.wastage.addLines(valid.map((v) => ({ batch_id: batchId, product_id: v.product_id, qty: v.qty })));
+
+      _wastageEventId = null;
+      await loadWastage();
+      closeWastageForm();
+    } catch (err) {
+      console.error('saveWastage', err);
+      $('wf-err').textContent = err.message || 'Failed to save wastage';
+    } finally {
+      btn.disabled = false; btn.textContent = prev;
+    }
+  }
+
+  async function deleteWastage(id) {
+    if (!confirm('Delete this wastage entry? This cannot be undone.')) return;
+    try {
+      await DB.remove('wastage_lines', 'batch_id=eq.' + enc(id));
+      await DB.wastage.remove(id);
+      _wastageEventId = null;
+      await loadWastage();
+    } catch (err) {
+      console.error('deleteWastage', err);
+      alert('Failed to delete wastage: ' + err.message);
+    }
+  }
+
   // ===================== OPENING STOCK =====================
   let _openingTimers = {};
   let _openingCountedIn = {}; // product_id -> total cases logged via the Deliveries tab
@@ -3917,7 +4306,7 @@
     }, 0);
   }
   function boneYardAvailable(pid, bars, openingByPid) {
-    return round1((openingByPid[pid] || 0) - distAllocatedToBars(pid, bars) - transferOutFromEvent(pid) + transferInToEvent(pid));
+    return round1((openingByPid[pid] || 0) - distAllocatedToBars(pid, bars) - transferOutFromEvent(pid) + transferInToEvent(pid) - wastageCasesForProduct(pid));
   }
   function barProductRows(barId) { return _barProducts.filter((r) => r.bar_id === barId); }
   function barServesProduct(barId, pid) {
@@ -3943,6 +4332,8 @@
       _barProducts = barProds || [];
       _transfersEventId = null;
       await ensureTransferData();
+      _wastageEventId = null;
+      await ensureWastageData();
       renderDistribution();
     } catch (err) {
       console.error('loadDistribution', err);
@@ -4140,6 +4531,8 @@
       _barProducts = barProds || [];
       _transfersEventId = null;
       await ensureTransferData();
+      _wastageEventId = null;
+      await ensureWastageData();
       refreshSlCatFilter();
       renderStockLevels();
     } catch (err) {
@@ -4638,6 +5031,8 @@
       _warehouses = (await DB.warehouses.list()) || [];
       _transfersEventId = null;
       await ensureTransferData();
+      _wastageEventId = null;
+      await ensureWastageData();
       renderTransfers();
     } catch (err) {
       console.error('loadTransfers', err);
