@@ -1081,6 +1081,7 @@
         <tr>
           <th>Product</th>
           <th>Category</th>
+          <th>Case size</th>
           <th class="num">Ordered</th>
           <th class="num">In stock</th>
           <th class="num">Invoice</th>
@@ -1362,13 +1363,13 @@
     <div id="sqTableWrap" class="dist-table-wrap" style="display:none">
       <table id="squareTable">
         <thead><tr>
-          <th>Till item</th>
-          <th>Variation</th>
-          <th>Category</th>
-          <th class="num">Items sold</th>
-          <th class="num">Net sales</th>
-          <th>Recipe</th>
-          <th></th>
+          <th data-sort="name">Till item <span class="arrow"></span></th>
+          <th data-sort="variation">Variation <span class="arrow"></span></th>
+          <th data-sort="category">Category <span class="arrow"></span></th>
+          <th class="num" data-sort="items_sold">Items sold <span class="arrow"></span></th>
+          <th class="num" data-sort="net_sales">Net sales <span class="arrow"></span></th>
+          <th data-sort="mapped">Recipe <span class="arrow"></span></th>
+          <th data-nosort></th>
         </tr></thead>
         <tbody id="squareTableBody"></tbody>
       </table>
@@ -3122,6 +3123,15 @@
     });
   });
 
+  // Square (till mapping) header clicks — bespoke data-level sort.
+  document.querySelectorAll('#squareTable thead th[data-sort]').forEach((th) => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (_sqSortKey === key) _sqSortDir *= -1; else { _sqSortKey = key; _sqSortDir = 1; }
+      renderSquare();
+    });
+  });
+
   // ============================================================
   // GENERIC TABLE SORTING + FILTERS
   // ------------------------------------------------------------
@@ -3133,9 +3143,12 @@
   // panel; here we make that filter re-apply after a table
   // re-renders so it survives auto-saves and reloads.
   // ============================================================
+  // NOTE: squareTable is intentionally excluded — it has bespoke
+  // data-level sorting in renderSquare() (it fully rebuilds its tbody
+  // on every render, so the generic DOM sorter would fight it).
   const SORTABLE_TABLE_IDS = [
     'evTable', 'slTable', 'openingTable', 'distTable', 'countTable',
-    'closingTable', 'summaryTable', 'supplierSummaryTable', 'squareTable',
+    'closingTable', 'summaryTable', 'supplierSummaryTable',
     'warehouseStockTable',
   ];
 
@@ -3620,6 +3633,7 @@
       '<tr>' +
       '<td class="ev-name">' + escapeHtml((ep.product && ep.product.name) || '(unknown)') + '</td>' +
       '<td>' + catBadge(ep.product && ep.product.category) + '</td>' +
+      '<td>' + ((ep.product && ep.product.case_size) ? escapeHtml(ep.product.case_size) : '<span class="muted">—</span>') + '</td>' +
       orderedCell(ep) +
       cell(ep.already_in_stock) +
       cell(ep.invoice_qty) +
@@ -3627,7 +3641,7 @@
       cell(ep.damaged_qty, { danger: true }) +
       actionCell(ep) +
       '</tr>'
-    )).join('') || '<tr><td colspan="8" class="empty">No products match.</td></tr>';
+    )).join('') || '<tr><td colspan="9" class="empty">No products match.</td></tr>';
 
     if (_evEditingId) { const inp = $('ev-ord-' + _evEditingId); if (inp) { inp.focus(); inp.select(); } }
 
@@ -3638,7 +3652,7 @@
     };
     $('evFoot').innerHTML = rows.length
       ? ('<tr>' +
-          '<td>Totals</td><td></td>' +
+          '<td>Totals</td><td></td><td></td>' +
           footCell(sum('qty_ordered')) +
           footCell(sum('already_in_stock')) +
           footCell(sum('invoice_qty')) +
@@ -7090,6 +7104,28 @@
   let _squareImport = null;   // { id, file_name, imported_at, rows:[...] }
   let _recipes = [];          // [{ id, till_item, till_variation, notes, ingredients:[...] }]
   let _editingRecipeId = null;
+  let _sqSortKey = null;      // null = default (unmapped first, then name)
+  let _sqSortDir = 1;         // 1 = asc, -1 = desc
+
+  function sqSortValue(r, key) {
+    switch (key) {
+      case 'items_sold': return Number(r.items_sold) || 0;
+      case 'net_sales': return Number(r.net_sales) || 0;
+      case 'mapped': return findRecipeFor(r.name, r.variation) ? 1 : 0;
+      case 'variation': return String(r.variation || '').toLowerCase();
+      case 'category': return String(r.category || '').toLowerCase();
+      default: return String(r.name || '').toLowerCase();
+    }
+  }
+
+  // Reflect the active sort column with an arrow in the header.
+  function updateSquareSortArrows() {
+    document.querySelectorAll('#squareTable thead th[data-sort]').forEach((th) => {
+      const a = th.querySelector('.arrow');
+      if (!a) return;
+      a.textContent = (th.dataset.sort === _sqSortKey) ? (_sqSortDir > 0 ? '▲' : '▼') : '';
+    });
+  }
 
   function fmtQty(n) {
     const v = Number(n) || 0;
@@ -7190,6 +7226,12 @@
     if (tableWrap) tableWrap.style.display = '';
 
     const sorted = rows.slice().sort((a, b) => {
+      if (_sqSortKey) {
+        const av = sqSortValue(a, _sqSortKey), bv = sqSortValue(b, _sqSortKey);
+        if (av < bv) return -1 * _sqSortDir;
+        if (av > bv) return 1 * _sqSortDir;
+        return (a.name || '').localeCompare(b.name || '');
+      }
       const am = findRecipeFor(a.name, a.variation) ? 1 : 0;
       const bm = findRecipeFor(b.name, b.variation) ? 1 : 0;
       if (am !== bm) return am - bm; // unmapped first
@@ -7221,6 +7263,11 @@
         '<td style="text-align:right">' + btn + '</td>' +
         '</tr>';
     }).join('');
+
+    updateSquareSortArrows();
+    // Keep the top-bar page filter applied after the table re-renders.
+    const _ps = $('pageSearchInput');
+    if (_ps && _ps.value.trim()) pageSearch(_ps.value);
   }
 
   function jsArg(v) { return "'" + String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
