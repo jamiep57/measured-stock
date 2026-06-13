@@ -203,7 +203,9 @@
       cursor:pointer; white-space:nowrap; user-select:none;
     }
     thead th.num { text-align:right; }
-    thead th .arrow { opacity:.4; font-size:10px; }
+    thead th .arrow { opacity:.4; font-size:10px; min-width:1em; display:inline-block; }
+    thead th[data-sort] .arrow:empty::after { content:'⇕'; opacity:.35; }
+    thead th[data-sort]:hover .arrow:empty::after { opacity:.65; }
     thead th:empty, thead th.act, thead th.lib-sel-col, thead th[data-nosort] { cursor:default; }
     thead th:not(:empty):not(.act):not(.lib-sel-col):not([data-nosort]):hover { color:var(--foreground); }
     thead th .ts-arrow:not(:empty) { opacity:.9; }
@@ -3283,6 +3285,20 @@
       const key = th.dataset.sort;
       if (_sqSortKey === key) _sqSortDir *= -1; else { _sqSortKey = key; _sqSortDir = 1; }
       renderSquare();
+    });
+  });
+
+  // Square projection table — header is rebuilt on every render, so delegate.
+  $('sqProjectionWrap')?.addEventListener('click', (e) => {
+    const th = e.target.closest('#sqProjectionTable thead th[data-sort]');
+    if (!th) return;
+    sortProjection(th.dataset.sort);
+  });
+
+  // Modifiers table — same bespoke data-level sort as Square mapping.
+  document.querySelectorAll('#modifierTable thead th[data-sort]').forEach((th) => {
+    th.addEventListener('click', () => {
+      sortModifiers(th.dataset.sort);
     });
   });
 
@@ -7614,8 +7630,7 @@
     }).join('');
 
     const ph = (key, label, cls) =>
-      '<th' + (cls ? ' class="' + cls + '"' : '') + ' data-sort="' + key + '"' +
-      ' onclick="sortProjection(\'' + key + '\')">' + label +
+      '<th' + (cls ? ' class="' + cls + '"' : '') + ' data-sort="' + key + '">' + label +
       ' <span class="arrow">' + (_sqProjSortKey === key ? (_sqProjSortDir > 0 ? '▲' : '▼') : '') + '</span></th>';
 
     wrap.innerHTML = head + stats +
