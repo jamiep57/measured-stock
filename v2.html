@@ -7106,6 +7106,27 @@
   let _editingRecipeId = null;
   let _sqSortKey = null;      // null = default (unmapped first, then name)
   let _sqSortDir = 1;         // 1 = asc, -1 = desc
+  let _sqProjSortKey = null;  // null = default (in-event, earliest run-out)
+  let _sqProjSortDir = 1;     // 1 = asc, -1 = desc
+
+  function projSortValue(it, key) {
+    switch (key) {
+      case 'projectedCases': return it.projectedCases == null ? null : Number(it.projectedCases);
+      case 'available': return it.available == null ? null : Number(it.available);
+      // % of target is monotonic with the run-out revenue, so reuse it.
+      case 'pct':
+      case 'runOutRevenue': return it.runOutRevenue == null ? null : Number(it.runOutRevenue);
+      default: return String(it.name || '').toLowerCase();
+    }
+  }
+
+  // Click-to-sort for the projection table header. The table is rebuilt
+  // on every renderProjection(), so we just store the key/dir and re-render.
+  function sortProjection(key) {
+    if (_sqProjSortKey === key) _sqProjSortDir *= -1;
+    else { _sqProjSortKey = key; _sqProjSortDir = 1; }
+    renderProjection();
+  }
 
   function sqSortValue(r, key) {
     switch (key) {
@@ -7383,8 +7404,22 @@
         '<div class="stat-card"><div class="stat-label">Unmapped sales</div><div class="stat-value" style="color:' + (unmappedPct > 10 ? 'var(--warning)' : 'inherit') + '">' + Math.round(unmappedPct) + '%</div><div class="stat-sub">' + money(unmapped) + ' not attributed</div></div>' +
       '</div>';
 
-    // Earliest run-out first; products not stocked for this event sink to the bottom.
     const sorted = p.items.slice().sort((a, b) => {
+      if (_sqProjSortKey) {
+        const av = projSortValue(a, _sqProjSortKey), bv = projSortValue(b, _sqProjSortKey);
+        const an = av == null, bn = bv == null;
+        if (an && bn) return (a.name || '').localeCompare(b.name || '');
+        if (an) return 1;   // missing values always sink to the bottom
+        if (bn) return -1;
+        if (typeof av === 'number' && typeof bv === 'number') {
+          if (av !== bv) return (av - bv) * _sqProjSortDir;
+        } else {
+          const c = String(av).localeCompare(String(bv));
+          if (c) return c * _sqProjSortDir;
+        }
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      // Default: earliest run-out first; products not stocked for this event sink to the bottom.
       if (a.inEvent !== b.inEvent) return a.inEvent ? -1 : 1;
       const ar = a.runOutRevenue == null ? Infinity : a.runOutRevenue;
       const br = b.runOutRevenue == null ? Infinity : b.runOutRevenue;
@@ -7420,16 +7455,21 @@
         '</tr>';
     }).join('');
 
+    const ph = (key, label, cls) =>
+      '<th' + (cls ? ' class="' + cls + '"' : '') + ' data-sort="' + key + '"' +
+      ' onclick="sortProjection(\'' + key + '\')">' + label +
+      ' <span class="arrow">' + (_sqProjSortKey === key ? (_sqProjSortDir > 0 ? '▲' : '▼') : '') + '</span></th>';
+
     wrap.innerHTML = head + stats +
       '<div class="dist-table-wrap">' +
-        '<table>' +
+        '<table id="sqProjectionTable">' +
           '<thead><tr>' +
-            '<th>Product</th>' +
-            '<th class="num">Projected use</th>' +
-            '<th class="num">Stock</th>' +
-            '<th class="num">Runs dry at</th>' +
-            '<th class="num">% of target</th>' +
-            '<th>Status</th>' +
+            ph('name', 'Product', '') +
+            ph('projectedCases', 'Projected use', 'num') +
+            ph('available', 'Stock', 'num') +
+            ph('runOutRevenue', 'Runs dry at', 'num') +
+            ph('pct', '% of target', 'num') +
+            '<th data-nosort>Status</th>' +
           '</tr></thead>' +
           '<tbody>' + body + '</tbody>' +
         '</table>' +
