@@ -232,7 +232,21 @@
 
   // ---------- Reference repos (global) -------------------------------
 
-  const categories = makeRepo('categories', { order: 'sort_order,name' });
+  const categories = Object.assign(
+    makeRepo('categories', { order: 'sort_order,name' }),
+    {
+      // Fold one or more duplicate categories into a single keeper. Every
+      // product on a duplicate is re-pointed to the keeper, then the
+      // duplicate category rows are deleted. Atomic — runs in the
+      // merge_categories() RPC (migration 017). Returns { kept, merged }.
+      merge(keepId, dupIds) {
+        return rpc('merge_categories', {
+          p_keep: keepId,
+          p_dups: Array.isArray(dupIds) ? dupIds : [dupIds],
+        });
+      },
+    }
+  );
   const suppliers = makeRepo('suppliers', { order: 'name' });
   const warehouses = makeRepo('warehouses', { order: 'name' });
 

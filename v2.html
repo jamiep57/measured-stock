@@ -260,6 +260,9 @@
     }
     .pill-add:hover { color:var(--foreground); border-color:var(--ring); }
     .pill-empty { font-size:12px; color:var(--muted-foreground); font-style:italic; }
+    .pill-item.cat-selected { border-color:var(--primary); box-shadow:0 0 0 1px var(--primary) inset; }
+    .pill-list.merge-mode .pill-add { display:none; }
+    .cat-merge-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
     /* ── deliveries (ported from measured-stock-v2) ── */
     .stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
     .stat-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; }
@@ -984,6 +987,21 @@
   </div>
 </div>
 
+<!-- ===================== MERGE CATEGORIES MODAL ===================== -->
+<div class="drawer-backdrop" id="catMergeBackdrop" onclick="closeCategoryMergeDialog()"></div>
+<div class="merge-modal-card" id="catMergeModal" role="dialog" aria-modal="true" aria-labelledby="catMergeTitle">
+  <div class="mm-head">
+    <h2 id="catMergeTitle">Merge categories</h2>
+    <p>Choose the category to keep. The others are merged into it — every product using a duplicate is moved onto the kept category and the duplicates are deleted. This cannot be undone.</p>
+  </div>
+  <div class="mm-body" id="catMergeBody"></div>
+  <div class="mm-foot">
+    <span class="err" id="catMergeErr"></span>
+    <button class="btn" onclick="closeCategoryMergeDialog()" id="catMergeCancelBtn">Cancel</button>
+    <button class="btn btn-primary" id="catMergeConfirmBtn" onclick="confirmCategoryMerge()">Merge</button>
+  </div>
+</div>
+
 <!-- ===================== PRODUCTS (event) ===================== -->
 <div id="panel-products" class="panel">
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
@@ -1060,6 +1078,7 @@
       <div class="stat-card"><div class="stat-label">Deliveries logged</div><div class="stat-value" id="del-stat-count">0</div><div class="stat-sub">This event</div></div>
       <div class="stat-card"><div class="stat-label">Cases received</div><div class="stat-value" id="del-stat-cases">0</div><div class="stat-sub">Sum of line qtys</div></div>
       <div class="stat-card"><div class="stat-label">Unusable cases</div><div class="stat-value" id="del-stat-damaged">0</div><div class="stat-sub">Flagged on delivery</div></div>
+      <div class="stat-card"><div class="stat-label">Total value</div><div class="stat-value" id="del-stat-value">£0</div><div class="stat-sub">At supplier prices</div></div>
     </div>
     <div id="deliveryLogBody" class="delivery-log-list"></div>
   </div>
@@ -1417,6 +1436,14 @@
       </div>
       <div class="settings-fields">
         <div class="settings-field full">
+          <div class="cat-merge-toolbar">
+            <button type="button" class="btn btn-sm" id="catMergeToggle" onclick="toggleCatMergeMode()">Merge categories</button>
+            <div class="merge-bar" id="catMergeBar">
+              <span class="merge-count" id="catMergeCount">0 selected</span>
+              <button type="button" class="btn btn-primary btn-sm" id="catMergeBtn" onclick="openCategoryMergeDialog()" disabled>Merge selected…</button>
+              <button type="button" class="btn btn-sm" onclick="toggleCatMergeMode()">Cancel</button>
+            </div>
+          </div>
           <div class="pill-list" id="settingsCategories"></div>
         </div>
       </div>
@@ -1473,7 +1500,7 @@
   <div class="drawer-body drawer-body--block">
     <div class="df-grid2">
       <div class="df-field"><label>Delivered on</label><input type="datetime-local" id="df-date"></div>
-      <div class="df-field"><label>Supplier</label><select id="df-supplier"><option value="">— Optional —</option></select></div>
+      <div class="df-field"><label>Supplier</label><select id="df-supplier" onchange="renderDeliveryLines()"><option value="">— Optional —</option></select></div>
     </div>
     <div class="df-field"><label>Delivery note reference</label><input type="text" id="df-reference" placeholder="e.g. DN-44213"></div>
     <div class="df-field"><label>Notes</label><textarea id="df-notes" rows="2" placeholder="Short cases, damages, driver name…"></textarea></div>
@@ -1482,12 +1509,14 @@
       <label>Products delivered</label>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:46%">Product</th><th>Qty (cases)</th><th title="Unusable / damaged cases">Unusable</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:42%">Product</th><th>Qty (cases)</th><th title="Unusable / damaged cases">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
           <tbody id="df-lines-body"></tbody>
         </table>
-        <div style="padding:8px 12px;border-top:1px solid var(--border)">
+        <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
           <button class="btn btn-outline btn-sm" onclick="addDeliveryLine()">+ Add Product</button>
+          <div style="font-size:13px;color:var(--muted-foreground)">Total <strong id="df-cost-total" style="color:var(--foreground);font-size:14px">£0.00</strong></div>
         </div>
+        <p class="df-hint" id="df-cost-hint" style="padding:0 12px 8px;margin:0">Costed at the selected supplier's prices.</p>
       </div>
       <p class="df-hint">Unusable cases are subtracted from Opening Stock automatically.</p>
     </div>
@@ -2065,6 +2094,7 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('mergeModal').classList.contains('open')) closeMergeDialog();
+    if (e.key === 'Escape' && $('catMergeModal').classList.contains('open')) closeCategoryMergeDialog();
   });
 
   // =====================================================================
@@ -3264,9 +3294,11 @@
   function renderDeliveries() {
     const totalCases = round1(_deliveries.reduce((s, d) => s + delLineSum(d.lines), 0));
     const totalDmg = round1(_deliveries.reduce((s, d) => s + delDamagedSum(d.lines), 0));
+    const totalValue = _deliveries.reduce((s, d) => s + deliveryCost(d), 0);
     $('del-stat-count').textContent = _deliveries.length;
     $('del-stat-cases').textContent = totalCases;
     $('del-stat-damaged').textContent = totalDmg;
+    $('del-stat-value').textContent = '£' + Math.round(totalValue).toLocaleString('en-GB');
 
     const body = $('deliveryLogBody');
     if (!_deliveries.length) {
@@ -3280,6 +3312,7 @@
         : '—';
       const total = round1(delLineSum(lines));
       const dmgTot = round1(delDamagedSum(lines));
+      const costTot = deliveryCost(d);
       const supName = (d.supplier && d.supplier.name) || 'No supplier';
       const ref = d.reference ? '<span class="delivery-log-ref">' + escapeHtml(d.reference) + '</span>' : '';
       const notes = d.notes ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px;font-style:italic">' + escapeHtml(d.notes) + '</div>' : '';
@@ -3289,7 +3322,10 @@
             const dmgTag = dmg > 0 ? ' <span class="badge-unusable">' + round1(dmg) + ' unusable</span>' : '';
             const size = productSizeById(l.product_id);
             const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
-            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + round1(l.qty) + ' cases</span></div>';
+            const { price } = deliveryLineCasePrice(l.product_id, d.supplier_id || null);
+            const lineCost = price != null ? price * (Number(l.qty) || 0) : null;
+            const costTag = lineCost != null ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">· ' + money(lineCost) + '</span>' : '';
+            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + round1(l.qty) + ' cases' + costTag + '</span></div>';
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const photo = (label, url) => '<div class="delivery-log-photo" onclick="openDeliveryLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt="' + label + '"></div>';
@@ -3298,6 +3334,7 @@
       const dmgThumbs = (d.damages_photo_urls || []).length ? '<span class="delivery-log-photo-label">Damages</span>' + (d.damages_photo_urls || []).map((u) => photo('Damage', u)).join('') : '';
       const photosBlock = (noteThumb || photoThumbs || dmgThumbs) ? '<div class="delivery-log-photos">' + noteThumb + photoThumbs + dmgThumbs + '</div>' : '';
       const dmgMeta = dmgTot > 0 ? ' · <span style="color:#b91c1c;font-weight:600">' + dmgTot + ' unusable</span>' : '';
+      const costMeta = costTot > 0 ? ' · <span style="font-weight:700;color:var(--foreground)">' + money(costTot) + '</span>' : '';
       const extra = (notes || photosBlock) ? '<div class="delivery-log-extra">' + notes + photosBlock + '</div>' : '';
       return '<div class="delivery-log-item">' +
         '<div class="delivery-log-head">' +
@@ -3305,7 +3342,7 @@
             '<span class="delivery-log-supplier-icon"><i class="ph ph-storefront"></i></span>' +
             '<div style="min-width:0">' +
               '<div class="delivery-log-supplier">' + escapeHtml(supName) + ref + '</div>' +
-              '<div class="delivery-log-sub">' + dt + ' · ' + total + ' cases across ' + lines.length + ' product' + (lines.length === 1 ? '' : 's') + dmgMeta + '</div>' +
+              '<div class="delivery-log-sub">' + dt + ' · ' + total + ' cases across ' + lines.length + ' product' + (lines.length === 1 ? '' : 's') + dmgMeta + costMeta + '</div>' +
             '</div>' +
           '</div>' +
           '<div class="delivery-log-actions">' +
@@ -3329,6 +3366,29 @@
     return (p && p.case_size) || '';
   }
 
+  // Case price to use for a delivery line: prefer the price the *delivering*
+  // supplier charges for this product (its product_suppliers row), then fall
+  // back to the product's headline/preferred case price. Returns
+  // { price:Number|null, matched:Boolean } — matched is true when the price
+  // came from the chosen supplier's own row (not a fallback).
+  function deliveryLineCasePrice(pid, supplierId) {
+    const p = _products.find((x) => x.id === pid);
+    if (!p) return { price: null, matched: false };
+    if (supplierId) {
+      const row = (p.product_suppliers || []).find((ps) => ps.supplier_id === supplierId);
+      if (row && row.case_price != null) return { price: Number(row.case_price), matched: true };
+    }
+    return { price: p.case_price != null ? Number(p.case_price) : null, matched: false };
+  }
+
+  // Total £ value of a delivery's lines, costed at its supplier's prices.
+  function deliveryCost(d) {
+    return (d.lines || []).reduce((s, l) => {
+      const { price } = deliveryLineCasePrice(l.product_id, d.supplier_id || null);
+      return s + (price != null ? price * (Number(l.qty) || 0) : 0);
+    }, 0);
+  }
+
   function deliveryProductOptions() {
     const eps = (_currentEvent && _currentEvent.event_products) || [];
     return eps
@@ -3350,24 +3410,61 @@
     const body = $('df-lines-body');
     const options = deliveryProductOptions();
     if (!_delLines.length) {
-      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
+      renderDeliveryCostSummary();
       return;
     }
     if (!options.length) {
-      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
+      renderDeliveryCostSummary();
       return;
     }
-    body.innerHTML = _delLines.map((line) =>
-      '<tr>' +
+    const supplierId = ($('df-supplier') && $('df-supplier').value) || null;
+    body.innerHTML = _delLines.map((line) => {
+      const { price } = deliveryLineCasePrice(line.productId, supplierId);
+      const lineCost = (line.productId && price != null) ? price * (Number(line.qty) || 0) : null;
+      return '<tr>' +
       '<td><select onchange="updateDeliveryLine(\'' + line.lineId + '\',\'productId\',this.value)">' +
         '<option value="">— Select product —</option>' +
         options.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>').join('') +
       '</select></td>' +
       '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>' +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
+      '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
       '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeDeliveryLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
-      '</tr>'
-    ).join('');
+      '</tr>';
+    }).join('');
+    renderDeliveryCostSummary();
+  }
+
+  // Live total + supplier-price hint under the delivery form's line table.
+  function renderDeliveryCostSummary() {
+    const totalEl = $('df-cost-total');
+    if (!totalEl) return;
+    const supplierId = ($('df-supplier') && $('df-supplier').value) || null;
+    let total = 0;
+    let anyFallback = false;
+    let anyMissing = false;
+    _delLines.forEach((line) => {
+      if (!line.productId) return;
+      const { price, matched } = deliveryLineCasePrice(line.productId, supplierId);
+      if (price == null) { anyMissing = true; return; }
+      if (!matched) anyFallback = true;
+      total += price * (Number(line.qty) || 0);
+    });
+    totalEl.textContent = money(total) || '£0.00';
+    const hint = $('df-cost-hint');
+    if (hint) {
+      if (!supplierId) {
+        hint.textContent = 'No supplier selected — using each product\u2019s preferred price.';
+      } else if (anyMissing) {
+        hint.textContent = 'Costed at this supplier\u2019s prices. Some lines have no price set for any supplier.';
+      } else if (anyFallback) {
+        hint.textContent = 'Costed at this supplier\u2019s prices, falling back to the preferred price where this supplier has none.';
+      } else {
+        hint.textContent = 'Costed at this supplier\u2019s prices.';
+      }
+    }
   }
 
   function addDeliveryLine() {
@@ -3381,6 +3478,9 @@
   function updateDeliveryLine(lineId, field, value) {
     const l = _delLines.find((x) => x.lineId === lineId);
     if (l) l[field] = value;
+    // Re-render to refresh the line cost + running total (onchange has
+    // already fired, so rebuilding the row inputs won't disrupt typing).
+    renderDeliveryLines();
   }
 
   function readFileAsDataURL(file) {
@@ -5643,6 +5743,7 @@
     try {
       if (!_warehouses.length) await refreshWarehouses();
       if (!_categories.length) _categories = (await DB.categories.list()) || [];
+      if (!_products.length) _products = (await DB.products.listFull()) || [];
     } catch (e) { console.warn('loadSettings', e); }
     renderSettingsWarehouses();
     renderSettingsCategories();
@@ -5665,16 +5766,116 @@
   function renderSettingsCategories() {
     const el = $('settingsCategories');
     if (!el) return;
+    el.classList.toggle('merge-mode', _catMergeMode);
     const sorted = (_categories || []).slice().sort((a, b) =>
       (a.sort_order - b.sort_order) || (a.name || '').localeCompare(b.name || ''));
     const pills = sorted.map((c) => {
       const key = c.colour_key || colourKey(c.name);
-      return '<button type="button" class="pill-item" onclick="openCategoryModal(\'' + c.id + '\')">' +
+      const sel = _catSelected.has(c.id);
+      const action = _catMergeMode
+        ? 'toggleCatSel(\'' + c.id + '\')'
+        : 'openCategoryModal(\'' + c.id + '\')';
+      return '<button type="button" class="pill-item' + (sel ? ' cat-selected' : '') + '" onclick="' + action + '">' +
         '<span class="badge badge-' + key + '" style="padding:1px 7px;font-size:10px">' + escapeHtml(c.name) + '</span></button>';
     }).join('');
     const empty = sorted.length ? '' : '<span class="pill-empty">No categories yet.</span>';
     el.innerHTML = pills + empty +
       '<button type="button" class="pill-add" onclick="openCategoryModal()"><i class="ph ph-plus"></i> Add category</button>';
+  }
+
+  // ---------- settings: merge categories ----------
+  let _catMergeMode = false;
+  const _catSelected = new Set();
+  let _catMergeKeepId = null;
+
+  function toggleCatMergeMode() {
+    _catMergeMode = !_catMergeMode;
+    _catSelected.clear();
+    $('catMergeBar').classList.toggle('open', _catMergeMode);
+    $('catMergeToggle').classList.toggle('btn-primary', _catMergeMode);
+    $('catMergeToggle').textContent = _catMergeMode ? 'Exit merge mode' : 'Merge categories';
+    updateCatMergeBar();
+    renderSettingsCategories();
+  }
+
+  function toggleCatSel(id) {
+    if (_catSelected.has(id)) _catSelected.delete(id); else _catSelected.add(id);
+    updateCatMergeBar();
+    renderSettingsCategories();
+  }
+
+  function updateCatMergeBar() {
+    const n = _catSelected.size;
+    $('catMergeCount').textContent = n + ' selected';
+    $('catMergeBtn').disabled = n < 2;
+  }
+
+  function openCategoryMergeDialog() {
+    const chosen = (_categories || []).filter((c) => _catSelected.has(c.id));
+    if (chosen.length < 2) return;
+    // Count products on each category so the keeper defaults to the most-used,
+    // tie-broken by oldest created_at.
+    const useCount = (id) => (_products || []).filter((p) =>
+      p.category_id === id || (p.category && p.category.id === id)).length;
+    const sorted = chosen.slice().sort((a, b) =>
+      useCount(b.id) - useCount(a.id) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    _catMergeKeepId = sorted[0].id;
+    $('catMergeErr').textContent = '';
+    $('catMergeBody').innerHTML = sorted.map((c) => {
+      const key = c.colour_key || colourKey(c.name);
+      const n = useCount(c.id);
+      const meta = n + ' product' + (n === 1 ? '' : 's');
+      return (
+        '<label class="mm-opt ' + (c.id === _catMergeKeepId ? 'chosen' : '') + '" data-id="' + c.id + '">' +
+        '<input type="radio" name="catMergeKeep" value="' + c.id + '"' + (c.id === _catMergeKeepId ? ' checked' : '') +
+          ' onchange="setCatMergeKeep(\'' + c.id + '\')">' +
+        '<span><span class="mm-name"><span class="badge badge-' + key + '" style="padding:1px 7px;font-size:10px">' + escapeHtml(c.name) + '</span></span>' +
+        '<span class="mm-meta">' + meta + '</span></span>' +
+        '</label>'
+      );
+    }).join('');
+    $('catMergeConfirmBtn').disabled = false;
+    $('catMergeConfirmBtn').textContent = 'Merge ' + chosen.length + ' into 1';
+    $('catMergeBackdrop').classList.add('open');
+    $('catMergeModal').classList.add('open');
+  }
+
+  function setCatMergeKeep(id) {
+    _catMergeKeepId = id;
+    document.querySelectorAll('#catMergeBody .mm-opt').forEach((el) => {
+      el.classList.toggle('chosen', el.getAttribute('data-id') === id);
+    });
+  }
+
+  function closeCategoryMergeDialog() {
+    $('catMergeBackdrop').classList.remove('open');
+    $('catMergeModal').classList.remove('open');
+  }
+
+  async function confirmCategoryMerge() {
+    if (!_catMergeKeepId) return;
+    const dupIds = [..._catSelected].filter((id) => id !== _catMergeKeepId);
+    if (!dupIds.length) { $('catMergeErr').textContent = 'Pick at least one other category to merge in.'; return; }
+    const btn = $('catMergeConfirmBtn');
+    const cancel = $('catMergeCancelBtn');
+    btn.disabled = true; cancel.disabled = true;
+    btn.textContent = 'Merging…';
+    $('catMergeErr').textContent = '';
+    try {
+      const res = await DB.categories.merge(_catMergeKeepId, dupIds);
+      const merged = (res && res.merged != null) ? res.merged : dupIds.length;
+      closeCategoryMergeDialog();
+      _catSelected.clear();
+      _categories = (await DB.categories.list()) || [];
+      try { _products = (await DB.products.listFull()) || _products; } catch (_) {}
+      toggleCatMergeMode(); // exit merge mode (re-renders)
+      setStatus('✓ merged ' + merged + ' categor' + (merged === 1 ? 'y' : 'ies'), 'ok');
+    } catch (err) {
+      $('catMergeErr').textContent = err.message || String(err);
+      console.error(err);
+      btn.disabled = false; cancel.disabled = false;
+      btn.textContent = 'Merge';
+    }
   }
 
   function openCategoryModal(id) {
