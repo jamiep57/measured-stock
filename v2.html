@@ -524,10 +524,13 @@
     #warehouseStockTable thead th { position:static; text-align:left; white-space:nowrap; }
     #warehouseStockTable tbody td:nth-child(4) { font-weight:700; }
     /* ── square / till mapping ── */
-    #squareTable thead th { position:static; white-space:nowrap; }
-    #squareTable thead th.num, #squareTable tbody td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    #squareTable thead th, #modifierTable thead th { position:static; white-space:nowrap; }
+    #squareTable thead th.num, #squareTable tbody td.num,
+    #modifierTable thead th.num, #modifierTable tbody td.num { text-align:right; font-variant-numeric:tabular-nums; }
     #squareTable tbody tr.row-unmapped td:first-child { font-weight:600; }
     #squareTable tbody tr.row-mapped { color:var(--muted-foreground); }
+    #modifierTable tbody tr.row-unmapped td:nth-child(2) { font-weight:600; }
+    #modifierTable tbody tr.row-mapped { color:var(--muted-foreground); }
     .recipe-tag { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:3px 9px; border-radius:9999px; }
     .recipe-tag.mapped { background:#dcfce7; color:#166534; }
     .recipe-tag.unmapped { background:var(--secondary); color:var(--muted-foreground); }
@@ -826,6 +829,11 @@
       <button class="nav-item" data-panel="square" onclick="showPanel('square')" title="Square">
         <i class="ph ph-cash-register nav-icon"></i>
         <span class="nav-label">Square</span>
+        <span class="nav-status-dot" title="Built — panel is functional"></span>
+      </button>
+      <button class="nav-item" data-panel="modifiers" onclick="showPanel('modifiers')" title="Modifiers">
+        <i class="ph ph-plus-circle nav-icon"></i>
+        <span class="nav-label">Modifiers</span>
         <span class="nav-status-dot" title="Built — panel is functional"></span>
       </button>
 
@@ -1385,6 +1393,46 @@
   </div>
 </div>
 
+<!-- ===================== MODIFIERS (mixer / add-on mapping) ===================== -->
+<div id="panel-modifiers" class="panel">
+  <div class="page-header">
+    <div class="page-title">Modifiers <span class="feature-dot green" title="Built — imports the Square modifier sales and maps each modifier to a recipe"></span></div>
+    <p class="page-subtitle">Import the Square <strong>Modifier Sales</strong> CSV for this event, then map each modifier (mixers, Red Bull, etc.) to the products it consumes. Mappings share the same global recipe library as Square.</p>
+  </div>
+
+  <div id="modNoEvent" class="empty-state" style="display:none"><i class="ph ph-calendar-x icon"></i><p>Pick an event from the sidebar first.</p></div>
+
+  <div id="modContent">
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label class="btn btn-primary btn-sm" style="cursor:pointer" title="Square › Reports › Modifier Sales — export as CSV/Excel">
+          <i class="ph ph-upload-simple btn-leading-icon"></i> Import Modifier CSV
+          <input type="file" accept=".csv,.tsv,.xlsx,.xls,.txt" onchange="importModifierFile(event)" style="display:none" id="modImportInput">
+        </label>
+        <button class="btn btn-outline btn-sm" onclick="clearModifierImport()" id="modClearBtn" style="display:none"><i class="ph ph-trash btn-leading-icon"></i> Clear import</button>
+        <span id="modImportStatus" style="font-size:12px;color:var(--muted-foreground);margin-left:auto"></span>
+      </div>
+    </div>
+
+    <div class="stats-row" id="modifierStats" style="margin-bottom:20px"></div>
+
+    <div id="modEmpty" class="empty-state"><i class="ph ph-plus-circle icon"></i><p>No modifier sales imported for this event yet. Click <strong>Import Modifier CSV</strong> to begin.</p></div>
+
+    <div id="modTableWrap" class="dist-table-wrap" style="display:none">
+      <table id="modifierTable">
+        <thead><tr>
+          <th data-sort="modifier_set">Modifier set <span class="arrow"></span></th>
+          <th data-sort="modifier">Modifier <span class="arrow"></span></th>
+          <th class="num" data-sort="qty_sold">Qty sold <span class="arrow"></span></th>
+          <th data-sort="mapped">Recipe <span class="arrow"></span></th>
+          <th data-nosort></th>
+        </tr></thead>
+        <tbody id="modifierTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== SUPPLIERS (global) ===================== -->
 <div id="panel-suppliers" class="panel">
   <div class="page-header">
@@ -1730,8 +1778,8 @@
   </div>
   <div class="drawer-body drawer-body--block">
     <div class="df-grid2">
-      <div class="df-field"><label>Till item name</label><input type="text" id="rf-item" placeholder="As it appears on Square"></div>
-      <div class="df-field"><label>Variation</label><input type="text" id="rf-variation" placeholder="Regular"></div>
+      <div class="df-field"><label id="rf-item-label">Till item name</label><input type="text" id="rf-item" placeholder="As it appears on Square"></div>
+      <div class="df-field"><label id="rf-variation-label">Variation</label><input type="text" id="rf-variation" placeholder="Regular"></div>
     </div>
     <div class="df-field">
       <label>Ingredients <span style="font-weight:400;color:var(--muted-foreground)">— quantity is a fraction of one case</span></label>
@@ -2011,7 +2059,7 @@
     setup: 'Event Setup', products: 'Products', library: 'Product Library',
     'stock-levels': 'Stock Levels', deliveries: 'Deliveries', opening: 'Opening Stock',
     distribution: 'Distribution', counts: 'Stock Counts', transfers: 'Transfers',
-    wastage: 'Wastage', closing: 'Closing Stock', summary: 'Summary', square: 'Square', suppliers: 'Suppliers',
+    wastage: 'Wastage', closing: 'Closing Stock', summary: 'Summary', square: 'Square', modifiers: 'Modifiers', suppliers: 'Suppliers',
     warehouse: 'Warehouse', settings: 'Settings', bugs: 'Bug & Feature Reports',
   };
 
@@ -2044,6 +2092,7 @@
     if (name === 'closing') loadClosing();
     if (name === 'summary') loadSummary();
     if (name === 'square') loadSquare();
+    if (name === 'modifiers') loadModifiers();
     if (name === 'suppliers') loadSuppliers();
     if (name === 'warehouse') loadWarehousePanel();
     if (name === 'settings') loadSettings();
@@ -7212,6 +7261,7 @@
   let _squareImport = null;   // { id, file_name, imported_at, rows:[...] }
   let _recipes = [];          // [{ id, till_item, till_variation, notes, ingredients:[...] }]
   let _editingRecipeId = null;
+  let _recipeModalKind = 'square'; // 'square' | 'modifier' — drives the recipe drawer labels & re-render target
   let _sqSortKey = null;      // null = default (unmapped first, then name)
   let _sqSortDir = 1;         // 1 = asc, -1 = desc
   let _sqProjSortKey = null;  // null = default (in-event, earliest run-out)
@@ -7670,6 +7720,234 @@
     } catch (e) { console.error(e); setStatus('✕ ' + (e.message || e), 'err'); }
   }
 
+  // ============================================================
+  // MODIFIERS — Square modifier sales → recipe mapping
+  // ============================================================
+  // Imports the Square "Modifier Sales" CSV into modifier_imports /
+  // modifier_sale_rows (one import per event, overwritten on re-import)
+  // and maps each modifier (set + name) to a global recipe. Modifier
+  // recipes live in the same recipes/recipe_ingredients tables as Square
+  // items — they are keyed by (modifier name, modifier set), so they
+  // never collide with till-item recipes (keyed by item + variation).
+
+  let _modifierImport = null; // { id, file_name, imported_at, rows:[...] }
+  let _modSortKey = null;     // null = default (unmapped first, then set/name)
+  let _modSortDir = 1;        // 1 = asc, -1 = desc
+
+  function modSortValue(r, key) {
+    switch (key) {
+      case 'qty_sold': return Number(r.qty_sold) || 0;
+      case 'mapped': return findRecipeFor(r.modifier, r.modifier_set) ? 1 : 0;
+      case 'modifier': return String(r.modifier || '').toLowerCase();
+      default: return String(r.modifier_set || '').toLowerCase();
+    }
+  }
+
+  function sortModifiers(key) {
+    if (_modSortKey === key) _modSortDir *= -1;
+    else { _modSortKey = key; _modSortDir = 1; }
+    renderModifiers();
+  }
+
+  function updateModifierSortArrows() {
+    document.querySelectorAll('#modifierTable thead th[data-sort]').forEach((th) => {
+      const a = th.querySelector('.arrow');
+      if (!a) return;
+      a.textContent = (th.dataset.sort === _modSortKey) ? (_modSortDir > 0 ? '▲' : '▼') : '';
+    });
+  }
+
+  async function loadModifiers() {
+    const noEv = $('modNoEvent'), content = $('modContent');
+    const id = $('eventPick').value;
+    if (!id) {
+      if (noEv) noEv.style.display = '';
+      if (content) content.style.display = 'none';
+      return;
+    }
+    if (noEv) noEv.style.display = 'none';
+    if (content) content.style.display = '';
+    try {
+      setStatus('loading modifier data…');
+      if (!_currentEvent || _currentEvent.id !== id) {
+        _currentEvent = await DB.events.getFull(id);
+      }
+      if (!_products.length) _products = (await DB.products.listFull()) || [];
+      const [imp, recipes] = await Promise.all([
+        DB.modifierImports.forEvent(id),
+        DB.recipes.listFull(),
+      ]);
+      _modifierImport = imp;
+      _recipes = recipes || [];
+      renderModifiers();
+      setStatus('● connected', 'ok');
+    } catch (e) {
+      console.error(e);
+      setStatus('✕ ' + (e.message || e), 'err');
+    }
+  }
+
+  function renderModifiers() {
+    const rows = (_modifierImport && _modifierImport.rows) || [];
+    const statsEl = $('modifierStats');
+    const tableWrap = $('modTableWrap');
+    const empty = $('modEmpty');
+    const clearBtn = $('modClearBtn');
+    const statusEl = $('modImportStatus');
+
+    let mapped = 0;
+    rows.forEach((r) => { if (findRecipeFor(r.modifier, r.modifier_set)) mapped++; });
+    const unmapped = rows.length - mapped;
+    const qtyTotal = rows.reduce((a, r) => a + (Number(r.qty_sold) || 0), 0);
+
+    if (statsEl) {
+      statsEl.innerHTML =
+        '<div class="stat-card"><div class="stat-label">Modifier lines</div><div class="stat-value">' + rows.length + '</div><div class="stat-sub">Qty sold &gt; 0</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Mapped</div><div class="stat-value" style="color:#166534">' + mapped + '</div><div class="stat-sub">Have a recipe</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Need mapping</div><div class="stat-value" style="color:var(--warning)">' + unmapped + '</div><div class="stat-sub">No recipe yet</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Total qty sold</div><div class="stat-value">' + num(qtyTotal) + '</div><div class="stat-sub">Across imported lines</div></div>';
+    }
+
+    if (clearBtn) clearBtn.style.display = _modifierImport ? '' : 'none';
+    if (statusEl) {
+      statusEl.textContent = _modifierImport
+        ? (_modifierImport.file_name || 'import') + ' · ' + rows.length + ' lines'
+        : '';
+    }
+
+    if (!rows.length) {
+      if (empty) empty.style.display = '';
+      if (tableWrap) tableWrap.style.display = 'none';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    if (tableWrap) tableWrap.style.display = '';
+
+    const sorted = rows.slice().sort((a, b) => {
+      if (_modSortKey) {
+        const av = modSortValue(a, _modSortKey), bv = modSortValue(b, _modSortKey);
+        if (av < bv) return -1 * _modSortDir;
+        if (av > bv) return 1 * _modSortDir;
+        return (a.modifier || '').localeCompare(b.modifier || '');
+      }
+      const am = findRecipeFor(a.modifier, a.modifier_set) ? 1 : 0;
+      const bm = findRecipeFor(b.modifier, b.modifier_set) ? 1 : 0;
+      if (am !== bm) return am - bm; // unmapped first
+      const cs = (a.modifier_set || '').localeCompare(b.modifier_set || '');
+      if (cs) return cs;
+      return (a.modifier || '').localeCompare(b.modifier || '');
+    });
+
+    $('modifierTableBody').innerHTML = sorted.map((r) => {
+      const recipe = findRecipeFor(r.modifier, r.modifier_set);
+      let tag, btn;
+      if (recipe) {
+        const ings = (recipe.ingredients || []).slice().sort((x, y) => (x.position || 0) - (y.position || 0));
+        const summary = ings.length
+          ? ings.map((ig) => escapeHtml(ig.product_name) + ' ×' + fmtQty(ig.qty)).join(', ')
+          : 'no ingredients';
+        tag = '<span class="recipe-tag mapped"><i class="ph-bold ph-check"></i> Mapped</span> <span class="ing-list" style="font-size:12px;color:var(--muted-foreground)">' + summary + '</span>';
+        btn = '<button class="btn btn-outline btn-sm" onclick="openRecipeModal(' + jsArg(r.modifier) + ',' + jsArg(r.modifier_set) + ',' + jsArg(recipe.id) + ',\'modifier\')"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit</button>';
+      } else {
+        tag = '<span class="recipe-tag unmapped">Not mapped</span>';
+        btn = '<button class="btn btn-primary btn-sm" onclick="openRecipeModal(' + jsArg(r.modifier) + ',' + jsArg(r.modifier_set) + ',null,\'modifier\')"><i class="ph ph-link btn-leading-icon"></i> Map</button>';
+      }
+      return '<tr class="' + (recipe ? 'row-mapped' : 'row-unmapped') + '">' +
+        '<td>' + (r.modifier_set ? escapeHtml(r.modifier_set) : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + escapeHtml(r.modifier) + '</td>' +
+        '<td class="num">' + num(r.qty_sold) + '</td>' +
+        '<td>' + tag + '</td>' +
+        '<td style="text-align:right">' + btn + '</td>' +
+        '</tr>';
+    }).join('');
+
+    updateModifierSortArrows();
+    const _ps = $('pageSearchInput');
+    if (_ps && _ps.value.trim()) pageSearch(_ps.value);
+  }
+
+  // ── import the Square Modifier Sales CSV/XLSX ──────────────────────
+  function importModifierFile(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!_currentEvent || !_currentEvent.id) { alert('Pick an event first'); return; }
+    const statusEl = $('modImportStatus');
+    const setErr = (m) => { if (statusEl) { statusEl.textContent = m; statusEl.style.color = 'var(--danger)'; } };
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array', raw: false });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+
+        const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+        const colMap = {
+          modifierSet: ['modifierset', 'set'],
+          modifier: ['modifier', 'modifiername', 'name'],
+          qtySold: ['netqtysold', 'qtysold', 'qty', 'quantitysold', 'quantity', 'sold', 'count'],
+          netSales: ['netsales', 'net', 'netsalesgbp', 'sales'],
+        };
+        const keys = raw.length ? Object.keys(raw[0]) : [];
+        const findCol = (field) => { for (const k of keys) { if (colMap[field].includes(norm(k))) return k; } return null; };
+        const money2 = (v) => { const n = parseFloat(String(v == null ? '' : v).replace(/[£$,\s]/g, '').trim()); return isFinite(n) ? n : 0; };
+
+        if (!raw.length) return setErr('No rows found in file.');
+        const modCol = findCol('modifier');
+        if (!modCol) return setErr('Could not find a "Modifier" column.');
+        const setCol = findCol('modifierSet');
+        const qtyCol = findCol('qtySold');
+        const netCol = findCol('netSales');
+
+        const parsed = raw.map((r) => {
+          const modifier = String(r[modCol] || '').trim();
+          if (!modifier) return null;
+          return {
+            modifier_set: String(setCol ? r[setCol] || '' : '').trim(),
+            modifier,
+            qty_sold: Math.round(parseFloat(qtyCol ? r[qtyCol] : 0) || 0),
+            net_sales: money2(netCol ? r[netCol] : 0),
+          };
+        }).filter(Boolean).filter((r) => r.qty_sold > 0);
+
+        if (!parsed.length) return setErr('No modifier lines with qty sold > 0 found.');
+
+        setStatus('saving import…');
+        const imp = (await DB.modifierImports.upsert(
+          { event_id: _currentEvent.id, file_name: file.name, imported_at: new Date().toISOString() },
+          'event_id'
+        ))[0];
+        await DB.remove('modifier_sale_rows', 'import_id=eq.' + encodeURIComponent(imp.id));
+        await DB.insert('modifier_sale_rows', parsed.map((p) => ({
+          import_id: imp.id,
+          modifier_set: p.modifier_set || null, modifier: p.modifier,
+          qty_sold: p.qty_sold, net_sales: p.net_sales,
+        })), { returning: false });
+
+        await loadModifiers();
+        if (statusEl) statusEl.style.color = '';
+        const mapped = parsed.filter((p) => findRecipeFor(p.modifier, p.modifier_set)).length;
+        if (statusEl) statusEl.textContent = 'Imported ' + parsed.length + ' lines · ' + mapped + ' already mapped · ' + (parsed.length - mapped) + ' need mapping';
+      } catch (err) {
+        console.error(err);
+        setErr('Could not read file: ' + (err.message || err));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function clearModifierImport() {
+    if (!_currentEvent || !_modifierImport) return;
+    if (!confirm('Remove the imported modifier sales for this event? Recipes are kept.')) return;
+    try {
+      setStatus('clearing import…');
+      await DB.modifierImports.removeWhere('event_id=eq.' + encodeURIComponent(_currentEvent.id));
+      await loadModifiers();
+    } catch (e) { console.error(e); setStatus('✕ ' + (e.message || e), 'err'); }
+  }
+
   // ── recipe drawer ──────────────────────────────────────────────────
   function addRecipeIngredientRow(productName, qty) {
     const wrap = $('rf-ingredients');
@@ -7808,10 +8086,17 @@
     }
   }
 
-  function openRecipeModal(name, variation, recipeId) {
+  function openRecipeModal(name, variation, recipeId, kind) {
     _editingRecipeId = recipeId || null;
+    _recipeModalKind = kind === 'modifier' ? 'modifier' : 'square';
     const recipe = recipeId ? (_recipes || []).find((r) => r.id === recipeId) : null;
-    $('recipeFormTitle').textContent = recipe ? 'Edit recipe' : 'Map till item';
+    const isMod = _recipeModalKind === 'modifier';
+    $('recipeFormTitle').textContent = recipe ? 'Edit recipe' : (isMod ? 'Map modifier' : 'Map till item');
+    const itemLabel = $('rf-item-label'), varLabel = $('rf-variation-label');
+    if (itemLabel) itemLabel.textContent = isMod ? 'Modifier' : 'Till item name';
+    if (varLabel) varLabel.textContent = isMod ? 'Modifier set' : 'Variation';
+    $('rf-item').placeholder = isMod ? 'As it appears on Square' : 'As it appears on Square';
+    $('rf-variation').placeholder = isMod ? 'e.g. Mixer' : 'Regular';
     $('rf-item').value = recipe ? recipe.till_item : (name || '');
     $('rf-variation').value = recipe ? (recipe.till_variation || '') : (variation || '');
     $('rf-notes').value = recipe ? (recipe.notes || '') : '';
@@ -7876,13 +8161,20 @@
       })), { returning: false });
       _recipes = (await DB.recipes.listFull()) || [];
       closeRecipeForm();
-      renderSquare();
+      rerenderMappingViews();
     } catch (err) {
       console.error(err);
       errEl.textContent = err.message || String(err);
     } finally {
       saveBtn.disabled = false; saveBtn.textContent = 'Save recipe';
     }
+  }
+
+  // Both the Square and Modifier screens read the shared _recipes list to
+  // show mapped/unmapped state, so re-render whichever ones are present.
+  function rerenderMappingViews() {
+    if ($('squareTableBody')) renderSquare();
+    if ($('modifierTableBody')) renderModifiers();
   }
 
   async function deleteRecipeMapping() {
@@ -7893,7 +8185,7 @@
       await DB.recipes.remove(_editingRecipeId);
       _recipes = (await DB.recipes.listFull()) || [];
       closeRecipeForm();
-      renderSquare();
+      rerenderMappingViews();
     } catch (err) { console.error(err); errEl.textContent = err.message || String(err); }
   }
 
