@@ -478,6 +478,14 @@
     #closingTable td.cl-carried-cell { text-align:right; white-space:nowrap; }
     .cl-xfer-btn { margin-left:10px; font-size:11px; padding:4px 8px; white-space:nowrap; }
     .cl-xfer-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .rf-readonly { padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--muted, #f4f4f5); font-weight:600; font-size:13px; }
+    .rtn-preview { margin-top:6px; }
+    .rtn-preview .rtn-summary { font-size:13px; color:var(--muted-foreground); margin-bottom:8px; }
+    .rtn-preview .rtn-summary strong { color:var(--foreground); }
+    .rtn-pallet-chips { display:flex; flex-wrap:wrap; gap:8px; }
+    .rtn-pallet-chip { border:1px solid var(--border); border-radius:var(--radius); padding:8px 12px; font-size:12px; min-width:96px; }
+    .rtn-pallet-chip .pl-label { font-weight:700; font-size:11px; letter-spacing:.4px; color:var(--muted-foreground); text-transform:uppercase; }
+    .rtn-pallet-chip .pl-qty { font-weight:700; font-size:15px; }
     /* ── opening stock ── */
     #openingTable thead th { position:static; text-align:center; white-space:nowrap; }
     #openingTable thead th:first-child, #openingTable thead th:nth-child(2) { text-align:left; }
@@ -1733,6 +1741,43 @@
     <button type="button" class="btn" onclick="clearTransferForm()">Clear</button>
     <button type="button" class="btn" id="tf-save-btn" onclick="logTransfer(false)">Log transfer</button>
     <button type="button" class="btn btn-primary" id="tf-save-note-btn" onclick="logTransfer(true)">Log &amp; Download Note</button>
+  </div>
+</aside>
+
+<!-- ===================== RETURN TO SUPPLIER DRAWER ===================== -->
+<div class="drawer-backdrop" id="returnFormOverlay" onclick="closeReturnDrawer()"></div>
+<aside class="drawer drawer--wide" id="returnFormDrawer" role="dialog" aria-modal="true" aria-labelledby="returnFormTitle">
+  <div class="drawer-head">
+    <h2 id="returnFormTitle">Return to supplier</h2>
+    <button class="x" onclick="closeReturnDrawer()" aria-label="Close">&times;</button>
+  </div>
+  <div class="drawer-body drawer-body--block">
+    <div class="df-grid2">
+      <div class="df-field"><label>Product</label><div class="rf-readonly" id="rtn-product">—</div></div>
+      <div class="df-field"><label>Supplier</label><div class="rf-readonly" id="rtn-supplier">—</div></div>
+    </div>
+    <div class="df-grid2">
+      <div class="df-field">
+        <label>Return quantity (cases)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rtn-qty" oninput="recalcReturnPallets()">
+        <p class="df-hint">Confirm how many cases are going back to the supplier.</p>
+      </div>
+      <div class="df-field">
+        <label>Cases per pallet</label>
+        <input type="number" inputmode="numeric" min="1" step="1" id="rtn-per-pallet" placeholder="e.g. 48" oninput="recalcReturnPallets()">
+        <p class="df-hint">Used to split the return across pallets.</p>
+      </div>
+    </div>
+    <div class="df-field">
+      <label>Return date</label>
+      <input type="date" id="rtn-date">
+    </div>
+    <div id="rtn-preview" class="rtn-preview"></div>
+  </div>
+  <div class="drawer-foot">
+    <span class="err" id="rtn-err"></span>
+    <button type="button" class="btn" onclick="closeReturnDrawer()">Cancel</button>
+    <button type="button" class="btn btn-primary" id="rtn-print-btn" onclick="generatePalletStickers()"><i class="ph ph-printer btn-leading-icon"></i> Generate pallet stickers</button>
   </div>
 </aside>
 
@@ -5679,6 +5724,7 @@
           '<td class="cl-carried-cell" style="white-space:nowrap">' +
             '<span id="cl-carried-' + pid + '" style="font-weight:700;color:var(--muted-foreground)">' + carriedDisp + '</span>' +
             '<button type="button" class="btn btn-outline btn-sm cl-xfer-btn" id="cl-xfer-' + pid + '" onclick="transferCarriedOut(\'' + pid + '\')" title="Transfer carried-over stock out of the event"' + (carriedNum > 0 ? '' : ' disabled') + '><i class="ph ph-arrow-square-out btn-leading-icon"></i> Transfer out</button>' +
+            '<button type="button" class="btn btn-outline btn-sm cl-xfer-btn" id="cl-return-btn-' + pid + '" onclick="openReturnDrawer(\'' + pid + '\')" title="Return this product to its supplier and print pallet stickers"' + ((returnAmt || 0) > 0 ? '' : ' disabled') + '><i class="ph ph-arrow-u-up-left btn-leading-icon"></i> Return to supplier</button>' +
           '</td>' +
         '</tr>';
       });
@@ -5707,6 +5753,8 @@
     if (carriedEl) carriedEl.textContent = carried;
     const xbtn = $('cl-xfer-' + pid);
     if (xbtn) xbtn.disabled = !(carried > 0);
+    const rbtn = $('cl-return-btn-' + pid);
+    if (rbtn) rbtn.disabled = !(returnAmt > 0);
 
     let cl = closingRowFor(pid);
     if (!cl) { cl = { event_id: _currentEvent.id, product_id: pid }; _closing.push(cl); }
@@ -5927,6 +5975,178 @@
     _xferAllowOverdraw = true;        // trust the closing count, not Bone Yard math
     setTransferUnit('units');
     renderTransferLines();
+  }
+
+  // ===================== RETURN TO SUPPLIER =====================
+  // Confirm the return quantity for a single product, split it across pallets,
+  // then print one sticker per pallet to stick on the physical pallets.
+  let _returnCtx = null;   // { pid }
+
+  function openReturnDrawer(pid) {
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    const returnEl = $('cl-return-' + pid);
+    const returnAmt = returnEl ? (parseFloat(returnEl.value) || 0)
+      : (closingRowFor(pid) ? Number(closingRowFor(pid).return_amount) || 0 : 0);
+    if (!(returnAmt > 0)) { alert('Enter a return amount for this product first.'); return; }
+    _returnCtx = { pid };
+    $('rtn-product').textContent = (ep && ep.product && ep.product.name) || productNameById(pid);
+    $('rtn-supplier').textContent = supplierNameById(productSupplierId(pid));
+    $('rtn-qty').value = round1(returnAmt);
+    $('rtn-per-pallet').value = '';
+    $('rtn-date').value = new Date().toISOString().slice(0, 10);
+    $('rtn-err').textContent = '';
+    recalcReturnPallets();
+    $('returnFormOverlay').classList.add('open');
+    $('returnFormDrawer').classList.add('open');
+    setTimeout(() => { const el = $('rtn-per-pallet'); if (el) el.focus(); }, 50);
+  }
+
+  function closeReturnDrawer() {
+    _returnCtx = null;
+    $('returnFormOverlay').classList.remove('open');
+    $('returnFormDrawer').classList.remove('open');
+  }
+
+  // Split the return qty into whole pallets: every pallet but the last carries
+  // `perPallet` cases, the last carries the remainder.
+  function returnPalletQtys() {
+    const qty = Math.max(0, parseFloat($('rtn-qty').value) || 0);
+    const per = Math.max(0, parseFloat($('rtn-per-pallet').value) || 0);
+    if (!(qty > 0)) return [];
+    if (!(per > 0)) return [round1(qty)];
+    const count = Math.ceil(qty / per);
+    const out = [];
+    let left = qty;
+    for (let i = 0; i < count; i++) {
+      const take = Math.min(per, left);
+      out.push(round1(take));
+      left = round1(left - take);
+    }
+    return out;
+  }
+
+  function recalcReturnPallets() {
+    const wrap = $('rtn-preview');
+    if (!wrap) return;
+    const pallets = returnPalletQtys();
+    if (!pallets.length) { wrap.innerHTML = ''; return; }
+    const qty = round1(pallets.reduce((a, b) => a + b, 0));
+    const chips = pallets.map((q, i) =>
+      '<div class="rtn-pallet-chip"><div class="pl-label">Pallet ' + (i + 1) + ' of ' + pallets.length + '</div><div class="pl-qty">' + q + ' cases</div></div>'
+    ).join('');
+    wrap.innerHTML =
+      '<div class="rtn-summary">Returning <strong>' + qty + ' cases</strong> across <strong>' + pallets.length + ' pallet' + (pallets.length !== 1 ? 's' : '') + '</strong>.</div>' +
+      '<div class="rtn-pallet-chips">' + chips + '</div>';
+  }
+
+  async function generatePalletStickers() {
+    $('rtn-err').textContent = '';
+    if (!_returnCtx || !_currentEvent) { closeReturnDrawer(); return; }
+    const pallets = returnPalletQtys();
+    if (!pallets.length) { $('rtn-err').textContent = 'Enter a return quantity greater than 0.'; return; }
+    const pid = _returnCtx.pid;
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    const info = productInfoById(pid);
+    const ctx = {
+      supplier: supplierNameById(productSupplierId(pid)),
+      eventName: (_currentEvent && _currentEvent.name) || '',
+      productName: (ep && ep.product && ep.product.name) || info.name || productNameById(pid),
+      caseSize: info.size || '',
+      date: ($('rtn-date').value ? new Date($('rtn-date').value + 'T00:00:00') : new Date()),
+      pallets,
+    };
+    const btn = $('rtn-print-btn');
+    const prev = btn.innerHTML;
+    btn.disabled = true; btn.textContent = 'Generating…';
+    try {
+      await generatePalletStickerPDF(ctx);
+      closeReturnDrawer();
+    } catch (err) {
+      console.error('generatePalletStickers', err);
+      $('rtn-err').textContent = err.message || 'Failed to generate stickers';
+    } finally {
+      btn.disabled = false; btn.innerHTML = prev;
+    }
+  }
+
+  // One landscape A4 page per pallet, big enough to read across a warehouse.
+  async function generatePalletStickerPDF(ctx) {
+    if (!window.jspdf || !window.jspdf.jsPDF) { throw new Error('PDF library failed to load — check your connection and reload.'); }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageW = 297, pageH = 210, m = 14;
+    const black = [20, 20, 20], grey = [110, 110, 110], line = [200, 200, 200];
+    const total = ctx.pallets.length;
+    const dateStr = ctx.date.toLocaleDateString('en-GB');
+
+    ctx.pallets.forEach((qty, i) => {
+      if (i > 0) doc.addPage();
+      doc.setDrawColor.apply(doc, line);
+      doc.setLineWidth(0.6);
+      doc.rect(m, m, pageW - 2 * m, pageH - 2 * m, 'S');
+
+      // Brand + return banner
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor.apply(doc, black);
+      doc.text('measured', m + 8, m + 16);
+      doc.setFontSize(13);
+      doc.setTextColor.apply(doc, grey);
+      doc.text('RETURN TO SUPPLIER', pageW - m - 8, m + 15, { align: 'right' });
+      doc.setDrawColor.apply(doc, line);
+      doc.line(m + 8, m + 22, pageW - m - 8, m + 22);
+
+      // Supplier — the dominant line
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor.apply(doc, grey);
+      doc.text('SUPPLIER', m + 8, m + 36);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(46);
+      doc.setTextColor.apply(doc, black);
+      doc.text(String(ctx.supplier || '—'), m + 8, m + 56, { maxWidth: pageW - 2 * m - 16 });
+
+      // Product + size
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor.apply(doc, grey);
+      doc.text('PRODUCT', m + 8, m + 80);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(24);
+      doc.setTextColor.apply(doc, black);
+      const prodLine = ctx.productName + (ctx.caseSize ? '  ·  ' + ctx.caseSize : '');
+      doc.text(prodLine, m + 8, m + 92, { maxWidth: pageW - 2 * m - 16 });
+
+      // Pallet number — huge
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor.apply(doc, grey);
+      doc.text('PALLET', m + 8, pageH - m - 38);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(60);
+      doc.setTextColor.apply(doc, black);
+      doc.text((i + 1) + ' of ' + total, m + 8, pageH - m - 12);
+
+      // Qty on this pallet — large, right side
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor.apply(doc, grey);
+      doc.text('CASES ON THIS PALLET', pageW - m - 8, pageH - m - 38, { align: 'right' });
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(60);
+      doc.setTextColor.apply(doc, black);
+      doc.text(String(qty), pageW - m - 8, pageH - m - 12, { align: 'right' });
+
+      // Event + date footer line
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(13);
+      doc.setTextColor.apply(doc, grey);
+      doc.text(ctx.eventName + '   ·   ' + dateStr, pageW / 2, m + 110, { align: 'center' });
+    });
+
+    const safe = (s) => String(s || '').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    doc.save('pallet_stickers_' + safe(ctx.supplier) + '_' + safe(ctx.productName) + '.pdf');
   }
 
   // ===================== WAREHOUSES =====================
