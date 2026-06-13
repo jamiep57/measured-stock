@@ -538,9 +538,13 @@
     .recipe-tag.unmapped { background:var(--secondary); color:var(--muted-foreground); }
     .recipe-tag .ing-list { font-weight:400; }
     .rf-ing-list { display:flex; flex-direction:column; gap:8px; }
-    .rf-ing-row { display:grid; grid-template-columns: minmax(0,1fr) 120px auto; gap:8px; align-items:center; }
+    .rf-ing-row { display:grid; grid-template-columns: minmax(0,1fr) 150px auto; gap:8px; align-items:start; }
     .rf-ing-row select, .rf-ing-row input { font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--input); border-radius:var(--radius); background:var(--background); color:var(--foreground); width:100%; }
+    .rf-ing-row .rf-product { margin-top:0; }
+    .rf-ing-row .rf-qty-cell { display:flex; flex-direction:column; gap:5px; }
     .rf-ing-row .rf-qty { text-align:center; font-variant-numeric:tabular-nums; }
+    .rf-ing-row .shot-btns { justify-content:center; margin-top:0; }
+    .rf-ing-row .rf-ing-remove { margin-top:7px; }
     .rf-ing-remove { background:none; border:none; color:var(--muted-foreground); font-size:18px; line-height:1; cursor:pointer; padding:0 4px; }
     .rf-ing-remove:hover { color:var(--danger); }
     @media (max-width:640px) { .rf-ing-row { grid-template-columns: 1fr; } }
@@ -1101,7 +1105,7 @@
           <th>Category</th>
           <th>Case size</th>
           <th class="num">Ordered</th>
-          <th class="num">In stock</th>
+          <th class="num" title="Live total on site — Bone Yard plus every bar (same as Stock Levels)">Stock level</th>
           <th class="num">Invoice</th>
           <th class="num">Delivered</th>
           <th class="num">Damaged</th>
@@ -1259,7 +1263,7 @@
           <tbody id="countTableBody"></tbody>
         </table>
       </div>
-      <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Use the bar chips to switch which bar you’re counting. You can type simple maths (e.g. <code>7+4</code>) — it evaluates when you leave the cell. <strong>Spirits</strong> are counted as loose bottles in the Singles column — tap <strong>+ Single</strong> / <strong>+ Double</strong> to add a part-used bottle in 25ml shots.</p>
+      <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Use the bar chips to switch which bar you’re counting. You can type simple maths (e.g. <code>7+4</code>) — it evaluates when you leave the cell.</p>
     </div>
   </div>
 </div>
@@ -1304,7 +1308,7 @@
         <tbody id="closingTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Enter whole cases and loose singles separately — total close count = cases + singles ÷ units per case. <strong>Spirits</strong>: count loose bottles in the Singles column and tap <strong>+ Single</strong> / <strong>+ Double</strong> for a part-used bottle (25ml shots). <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
+    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Enter whole cases and loose singles separately — total close count = cases + singles ÷ units per case. <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
   </div>
 </div>
 <!-- ===================== SUMMARY (COGS) ===================== -->
@@ -1787,7 +1791,7 @@
       <label>Ingredients <span style="font-weight:400;color:var(--muted-foreground)">— quantity is a fraction of one case</span></label>
       <div id="rf-ingredients" class="rf-ing-list"></div>
       <button type="button" class="btn btn-outline btn-sm" onclick="addRecipeIngredientRow()" style="margin-top:8px"><i class="ph ph-plus btn-leading-icon"></i> Add ingredient</button>
-      <p class="df-hint">Quantity is a fraction of one case. Type a decimal or a fraction — e.g. <strong>1/12</strong> = one unit from a 12-pack, <strong>1</strong> = a whole case.</p>
+      <p class="df-hint">Quantity is a fraction of one case. Type a decimal or a fraction — e.g. <strong>1/12</strong> = one unit from a 12-pack, <strong>1</strong> = a whole case. For spirits, pick the product then tap <strong>+ Single</strong> / <strong>+ Double</strong> — the 25ml shot fraction (e.g. 1/168 for a 6×700ml case) is filled in automatically.</p>
     </div>
     <div class="df-field"><label>Notes</label><textarea id="rf-notes" rows="2" placeholder="Optional — e.g. pour size, review note"></textarea></div>
   </div>
@@ -1834,7 +1838,7 @@
       <label>Products</label>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:50%">Product</th><th>Quantity</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:40%">Product</th><th>Pack size</th><th>Quantity</th><th style="width:36px"></th></tr></thead>
           <tbody id="tf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border)">
@@ -1850,6 +1854,8 @@
     <button type="button" class="btn btn-primary" id="tf-save-note-btn" onclick="logTransfer(true)">Log &amp; Download Note</button>
   </div>
 </aside>
+<!-- Shared searchable product dropdown for transfer lines (top-level so it is not clipped by the drawer) -->
+<div class="df-combo-menu" id="tf-combo-menu" role="listbox"></div>
 
 <!-- ===================== RETURN TO SUPPLIER DRAWER ===================== -->
 <div class="drawer-backdrop" id="returnFormOverlay" onclick="closeReturnDrawer()"></div>
@@ -2004,6 +2010,28 @@
     return spb > 0 ? spb : 28;
   }
 
+  // Bottles in one supplier case, from the pack-size leading multiplier
+  // ("6x700ml" ⇒ 6, "6 x 1L" ⇒ 6, "70cl" ⇒ 1), falling back to units_per_case.
+  function spiritBottlesPerCase(p) {
+    const s = String((p && p.case_size) || '').toLowerCase();
+    const m = s.match(/(\d+(?:\.\d+)?)\s*x/);
+    if (m) { const n = parseFloat(m[1]); if (n > 0) return n; }
+    const upc = Number(p && p.units_per_case);
+    return upc > 0 ? upc : 1;
+  }
+
+  // Delivery log display unit: spirits show bottles (cases × bottles-per-case),
+  // everything else stays in cases. The stored value is always cases.
+  function deliveryDisplayQty(pid, qtyCases) {
+    const p = spiritProductById(pid);
+    const n = Number(qtyCases) || 0;
+    if (p && isSpiritBottle(p)) {
+      const b = round1(n * spiritBottlesPerCase(p));
+      return { n: b, unit: b === 1 ? 'bottle' : 'bottles' };
+    }
+    return { n: round1(n), unit: 'cases' };
+  }
+
   function spiritProductById(pid) {
     const ev = _currentEvent && _currentEvent.event_products;
     if (ev) {
@@ -2013,47 +2041,12 @@
     return (_products || []).find((p) => p.id === pid) || null;
   }
 
-  // Markup for the +Single / +Double tap buttons placed under a singles input.
-  function spiritShotButtons(scope, pid, p) {
-    if (!isSpiritBottle(p)) return '';
-    const spb = shotsPerBottle(p);
-    return '<div class="shot-btns">' +
-      '<button type="button" class="shot-btn" title="Add a single — 25ml = 1/' + spb + ' bottle" ' +
-        'onclick="addSpiritShots(\'' + scope + '\',\'' + pid + '\',1)">+ Single</button>' +
-      '<button type="button" class="shot-btn" title="Add a double — 50ml = 2/' + spb + ' bottle" ' +
-        'onclick="addSpiritShots(\'' + scope + '\',\'' + pid + '\',2)">+ Double</button>' +
-      '<span class="shot-read" id="' + (scope === 'count' ? 'cnt' : 'cl') + '-shotread-' + pid + '"></span>' +
-    '</div>';
-  }
-
-  // Add n shots to the singles field, as a fraction of one bottle.
-  function addSpiritShots(scope, pid, n) {
-    const p = spiritProductById(pid);
-    if (!p) return;
-    const spb = shotsPerBottle(p);
-    const id = (scope === 'count' ? 'cnt-singles-' : 'cl-singles-') + pid;
-    const el = $(id);
-    if (!el) return;
-    const cur = parseFloat(el.value) || 0;
-    el.value = roundN(cur + n / spb, 4);
-    if (scope === 'count') { autoSaveCountEntry(pid); updateCountStats(); }
-    else { recalcClosing(pid); }
-    updateSpiritReadout(scope, pid);
-  }
-
-  // Show the singles value as "X btl + Y sh" next to the buttons.
-  function updateSpiritReadout(scope, pid) {
-    const p = spiritProductById(pid);
-    if (!p || !isSpiritBottle(p)) return;
-    const out = $((scope === 'count' ? 'cnt' : 'cl') + '-shotread-' + pid);
-    const el = $((scope === 'count' ? 'cnt-singles-' : 'cl-singles-') + pid);
-    if (!out || !el) return;
-    const spb = shotsPerBottle(p);
-    const v = Math.max(0, parseFloat(el.value) || 0);
-    let btl = Math.floor(v + 1e-9);
-    let sh = Math.round((v - btl) * spb);
-    if (sh >= spb) { btl += 1; sh = 0; }
-    out.textContent = v ? (btl + ' btl' + (sh ? ' + ' + sh + ' sh' : '')) : '';
+  // 25ml shots in one whole case: bottles-per-case × shots-per-bottle
+  // (6x700ml ⇒ 6 × 28 = 168; 70cl ⇒ 1 × 28 = 28). Used by the recipe-mapping
+  // +Single / +Double buttons to express a pour as a fraction of one case.
+  function shotsPerCase(p) {
+    const spc = spiritBottlesPerCase(p) * shotsPerBottle(p);
+    return spc > 0 ? spc : 28;
   }
 
   // ---------- panels / sidebar ----------
@@ -3637,6 +3630,8 @@
       $('evStats').style.display = '';
       if (addBtn) addBtn.style.display = '';
       updateEventStats();
+      _stockDataEventId = null;
+      await ensureEventStockData();
       renderEventProducts();
       renderSetupStats(ev);
       setStatus('● connected', 'ok');
@@ -3805,7 +3800,7 @@
       '<td>' + catBadge(ep.product && ep.product.category) + '</td>' +
       '<td>' + ((ep.product && ep.product.case_size) ? escapeHtml(ep.product.case_size) : '<span class="muted">—</span>') + '</td>' +
       orderedCell(ep) +
-      cell(ep.already_in_stock) +
+      cell(siteAvailable(ep.product_id)) +
       cell(ep.invoice_qty) +
       cell(ep.delivered_qty) +
       cell(ep.damaged_qty, { danger: true }) +
@@ -3824,7 +3819,7 @@
       ? ('<tr>' +
           '<td>Totals</td><td></td><td></td>' +
           footCell(sum('qty_ordered')) +
-          footCell(sum('already_in_stock')) +
+          footCell(rows.reduce((s, ep) => s + siteAvailable(ep.product_id), 0)) +
           footCell(sum('invoice_qty')) +
           footCell(sum('delivered_qty')) +
           footCell(sum('damaged_qty'), true) +
@@ -3957,13 +3952,15 @@
       const itemRows = lines.length
         ? lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
             const dmg = Number(l.damaged_qty) || 0;
-            const dmgTag = dmg > 0 ? ' <span class="badge-unusable">' + round1(dmg) + ' unusable</span>' : '';
+            const dmgDisp = deliveryDisplayQty(l.product_id, dmg);
+            const dmgTag = dmg > 0 ? ' <span class="badge-unusable">' + dmgDisp.n + ' unusable</span>' : '';
             const size = productSizeById(l.product_id);
             const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
             const { price } = deliveryLineCasePrice(l.product_id, d.supplier_id || null);
             const lineCost = price != null ? price * (Number(l.qty) || 0) : null;
             const costTag = lineCost != null ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">· ' + money(lineCost) + '</span>' : '';
-            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + round1(l.qty) + ' cases' + costTag + '</span></div>';
+            const qtyDisp = deliveryDisplayQty(l.product_id, l.qty);
+            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + qtyDisp.n + ' ' + qtyDisp.unit + costTag + '</span></div>';
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const photo = (label, url) => '<div class="delivery-log-photo" onclick="openDeliveryLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt="' + label + '"></div>';
@@ -4503,6 +4500,7 @@
 
       await loadDeliveries();
       await syncDeliveredFromDeliveries();
+      refreshLiveStockViews();
       if (!$('df-err').textContent) closeDeliveryForm();
     } catch (err) {
       console.error('saveDelivery', err);
@@ -4519,6 +4517,7 @@
       await DB.deliveries.remove(id);
       await loadDeliveries();
       await syncDeliveredFromDeliveries();
+      refreshLiveStockViews();
     } catch (err) {
       console.error('deleteDelivery', err);
       alert('Failed to delete delivery: ' + err.message);
@@ -4824,6 +4823,7 @@
 
       _wastageEventId = null;
       await loadWastage();
+      refreshLiveStockViews();
       closeWastageForm();
     } catch (err) {
       console.error('saveWastage', err);
@@ -4840,6 +4840,7 @@
       await DB.wastage.remove(id);
       _wastageEventId = null;
       await loadWastage();
+      refreshLiveStockViews();
     } catch (err) {
       console.error('deleteWastage', err);
       alert('Failed to delete wastage: ' + err.message);
@@ -4951,8 +4952,7 @@
         damaged_qty: ep.damaged_qty,
       }).catch((e) => console.warn('recalcOpeningRow save', e));
     }, 800);
-    if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
-    if ($('panel-distribution').classList.contains('active')) renderDistribution();
+    refreshLiveStockViews();
   }
 
   async function saveOpening() {
@@ -4977,8 +4977,7 @@
       await DB.upsert('event_products', rows, { onConflict: 'event_id,product_id' });
       btn.textContent = 'Saved ✓';
       setTimeout(() => { btn.textContent = prev; }, 1200);
-      if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
-      if ($('panel-distribution').classList.contains('active')) renderDistribution();
+      refreshLiveStockViews();
     } catch (err) {
       console.error('saveOpening', err);
       alert('Failed to save opening stock: ' + (err.message || err));
@@ -4993,6 +4992,32 @@
   // =====================================================================
   let _distRows = [];        // distribution rows for the event
   let _barProducts = [];     // bar_products rows for the event
+  let _stockDataEventId = null;
+
+  // Distribution, bar menus, transfers and wastage — shared by Stock Levels,
+  // Distribution, Transfers and the Products-on-event stock level column.
+  async function ensureEventStockData() {
+    if (!_currentEvent || !_currentEvent.id) return;
+    if (_stockDataEventId === _currentEvent.id) return;
+    const [dist, barProds] = await Promise.all([
+      DB.distribution.forEvent(_currentEvent.id),
+      DB.barProducts.forEvent(_currentEvent.id),
+    ]);
+    _distRows = dist || [];
+    _barProducts = barProds || [];
+    _transfersEventId = null;
+    await ensureTransferData();
+    _wastageEventId = null;
+    await ensureWastageData();
+    _stockDataEventId = _currentEvent.id;
+  }
+
+  function refreshLiveStockViews() {
+    if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
+    if ($('panel-distribution').classList.contains('active')) renderDistribution();
+    if ($('panel-products').classList.contains('active')) renderEventProducts();
+    if ($('panel-products').classList.contains('active')) renderEventProducts();
+  }
   let _distTimers = {};
   let _transfers = [];
   let _transfersEventId = null;
@@ -5105,16 +5130,7 @@
       if (!_currentEvent || _currentEvent.id !== id) {
         _currentEvent = await DB.events.getFull(id);
       }
-      const [dist, barProds] = await Promise.all([
-        DB.distribution.forEvent(id),
-        DB.barProducts.forEvent(id),
-      ]);
-      _distRows = dist || [];
-      _barProducts = barProds || [];
-      _transfersEventId = null;
-      await ensureTransferData();
-      _wastageEventId = null;
-      await ensureWastageData();
+      await ensureEventStockData();
       renderDistribution();
     } catch (err) {
       console.error('loadDistribution', err);
@@ -5222,6 +5238,8 @@
         if (saved && saved.id) row.id = saved.id;
       } catch (e) { console.warn('save distribution', e); }
     }, 500);
+    if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
+    if ($('panel-products').classList.contains('active')) renderEventProducts();
   }
 
   function markProductMoved(pid) {
@@ -5304,16 +5322,7 @@
       if (!_currentEvent || _currentEvent.id !== id) {
         _currentEvent = await DB.events.getFull(id);
       }
-      const [dist, barProds] = await Promise.all([
-        DB.distribution.forEvent(id),
-        DB.barProducts.forEvent(id),
-      ]);
-      _distRows = dist || [];
-      _barProducts = barProds || [];
-      _transfersEventId = null;
-      await ensureTransferData();
-      _wastageEventId = null;
-      await ensureWastageData();
+      await ensureEventStockData();
       refreshSlCatFilter();
       renderStockLevels();
     } catch (err) {
@@ -5581,12 +5590,11 @@
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + (barId ? escapeHtml(barNameById(barId)) : '—') + '</td>' +
           '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + (line && line.cases != null ? line.cases : '') + '" placeholder="0" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
-          '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats();updateSpiritReadout(\'count\',\'' + pid + '\')" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats();updateSpiritReadout(\'count\',\'' + pid + '\')">' + spiritShotButtons('count', pid, ep.product) + '</td>' +
+          '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
         '</tr>';
       });
     });
     $('countTableBody').innerHTML = html;
-    eps.forEach((ep) => { if (isSpiritBottle(ep.product)) updateSpiritReadout('count', ep.product_id); });
     updateCountStats();
     filterCountTable();
   }
@@ -5837,21 +5845,32 @@
 
   function transferSourceProductOptions() {
     if (!_xferSource) return [];
+    const packSizeFor = (pid, fromProduct) => {
+      if (fromProduct && fromProduct.case_size) return fromProduct.case_size;
+      const ep = ((_currentEvent && _currentEvent.event_products) || []).find((x) => x.product_id === pid);
+      if (ep && ep.product && ep.product.case_size) return ep.product.case_size;
+      const p = (_products || []).find((x) => x.id === pid);
+      return (p && p.case_size) || '';
+    };
     if (_xferSource.type === 'event' || _xferSource.type === 'site') {
       return ((_currentEvent && _currentEvent.event_products) || [])
         .filter((ep) => ep.product && ep.product.name)
-        .map((ep) => ({ id: ep.product_id, name: ep.product.name }));
+        .map((ep) => ({ id: ep.product_id, name: ep.product.name, case_size: packSizeFor(ep.product_id, ep.product) }));
     }
     if (_xferSource.type === 'bar') {
       return ((_currentEvent && _currentEvent.event_products) || [])
         .filter((ep) => ep.product && ep.product.name)
         .filter((ep) => barServesProduct(_xferSource.id, ep.product_id) && barStockAvailable(_xferSource.id, ep.product_id) > 0)
-        .map((ep) => ({ id: ep.product_id, name: ep.product.name }));
+        .map((ep) => ({ id: ep.product_id, name: ep.product.name, case_size: packSizeFor(ep.product_id, ep.product) }));
     }
     if (_xferSource.type === 'warehouse') {
       return _warehouseStock
         .filter((s) => s.warehouse_id === _xferSource.id && (Number(s.qty_on_hand) || 0) > 0)
-        .map((s) => ({ id: s.product_id, name: (s.product && s.product.name) || productNameById(s.product_id) }));
+        .map((s) => ({
+          id: s.product_id,
+          name: (s.product && s.product.name) || productNameById(s.product_id),
+          case_size: packSizeFor(s.product_id, s.product),
+        }));
     }
     return [];
   }
@@ -5928,10 +5947,15 @@
     _xferLines.push({ lineId: xferLineId(), productId: '', qty: '' });
     renderTransferLines();
     const rows = document.querySelectorAll('#tf-lines-body tr');
-    if (rows.length) { const sel = rows[rows.length - 1].querySelector('select'); if (sel) sel.focus(); }
+    const line = _xferLines[_xferLines.length - 1];
+    if (rows.length && line) {
+      const input = rows[rows.length - 1].querySelector('.df-combo-input');
+      if (input) { input.focus(); openTransferCombo(line.lineId); }
+    }
   }
 
   function removeTransferLine(lineId) {
+    if (_tfComboLine === lineId) closeTransferCombo();
     _xferLines = _xferLines.filter((l) => l.lineId !== lineId);
     renderTransferLines();
   }
@@ -5953,36 +5977,176 @@
     const body = $('tf-lines-body');
     if (!body) return;
     if (!_xferLines.length) {
-      body.innerHTML = '<tr><td colspan="3" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add product” to add items</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add product” to add items</td></tr>';
       return;
     }
     if (!_xferSource) {
-      body.innerHTML = '<tr><td colspan="3" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Pick where the stock is coming from first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Pick where the stock is coming from first.</td></tr>';
       return;
     }
     const productOptions = transferSourceProductOptions();
     if (!productOptions.length) {
-      body.innerHTML = '<tr><td colspan="3" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">No stock available at <strong>' + escapeHtml(locationLabel(_xferSource)) + '</strong>.</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">No stock available at <strong>' + escapeHtml(locationLabel(_xferSource)) + '</strong>.</td></tr>';
       return;
     }
     body.innerHTML = _xferLines.map((line) => {
+      const opt = line.productId ? productOptions.find((o) => o.id === line.productId) : null;
+      const packSize = opt && opt.case_size ? opt.case_size : '';
       const avail = line.productId ? getStockAt(_xferSource, line.productId) : null;
       const availLabel = avail == null ? '' : '<div style="font-size:11px;color:var(--muted-foreground);margin-top:3px">Available: <strong>' + avail + '</strong></div>';
       const qtyNum = parseFloat(line.qty);
       const over = avail != null && !isNaN(qtyNum) && qtyNum > avail;
       const overStyle = over ? ';border-color:var(--danger);color:var(--danger)' : '';
       return '<tr>' +
-        '<td style="padding:6px 10px"><select style="width:100%" onchange="updateTransferLine(\'' + line.lineId + '\',\'productId\',this.value)">' +
-          '<option value="">— Select product —</option>' +
-          productOptions.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>').join('') +
-        '</select>' + availLabel + '</td>' +
+        '<td style="padding:6px 10px;position:relative"><input type="text" class="df-combo-input" id="tf-combo-input-' + line.lineId + '" autocomplete="off"' +
+          ' value="' + escapeHtml(transferLineProductName(line.productId)) + '"' +
+          ' placeholder="Search products\u2026"' +
+          ' onfocus="openTransferCombo(\'' + line.lineId + '\')"' +
+          ' oninput="filterTransferCombo(\'' + line.lineId + '\')"' +
+          ' onkeydown="transferComboKey(event,\'' + line.lineId + '\')">' + availLabel + '</td>' +
+        '<td style="padding:6px 10px;font-size:12px;color:var(--muted-foreground)">' + (packSize ? escapeHtml(packSize) : '—') + '</td>' +
         '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.qty) + '" placeholder="0" style="width:100px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'qty\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',this)"></td>' +
         '<td style="padding:6px 8px;text-align:center"><button type="button" class="btn btn-danger btn-sm btn-icon" onclick="removeTransferLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
       '</tr>';
     }).join('');
   }
 
+  // ---- Searchable product picker for transfer lines ----------------------
+  let _tfComboLine = null;
+  let _tfComboItems = [];
+  let _tfComboHi = -1;
+  let _tfComboWired = false;
+
+  function transferLineProductName(pid) {
+    if (!pid) return '';
+    const opt = transferSourceProductOptions().find((o) => o.id === pid);
+    if (opt) return opt.name;
+    return productNameById(pid);
+  }
+
+  function transferProductForOption(o) {
+    const ep = ((_currentEvent && _currentEvent.event_products) || []).find((e) => e.product_id === o.id);
+    if (ep && ep.product) return ep.product;
+    const p = (_products || []).find((x) => x.id === o.id);
+    return p || { id: o.id, name: o.name, case_size: o.case_size || '' };
+  }
+
+  function wireTransferCombo() {
+    if (_tfComboWired) return;
+    _tfComboWired = true;
+    document.addEventListener('mousedown', (e) => {
+      if (_tfComboLine == null) return;
+      const menu = $('tf-combo-menu');
+      const input = document.getElementById('tf-combo-input-' + _tfComboLine);
+      if ((menu && menu.contains(e.target)) || (input && input === e.target)) return;
+      closeTransferCombo();
+    });
+    const reposition = () => { if (_tfComboLine != null) positionTransferCombo(_tfComboLine); };
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+  }
+
+  function positionTransferCombo(lineId) {
+    const input = document.getElementById('tf-combo-input-' + lineId);
+    const menu = $('tf-combo-menu');
+    if (!input || !menu) return;
+    const r = input.getBoundingClientRect();
+    menu.style.left = r.left + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+    menu.style.width = r.width + 'px';
+  }
+
+  function openTransferCombo(lineId) {
+    wireTransferCombo();
+    _tfComboLine = lineId;
+    _tfComboHi = -1;
+    renderTransferComboMenu(lineId);
+    positionTransferCombo(lineId);
+    $('tf-combo-menu').classList.add('open');
+  }
+
+  function closeTransferCombo() {
+    const lineId = _tfComboLine;
+    _tfComboLine = null;
+    _tfComboItems = [];
+    _tfComboHi = -1;
+    const menu = $('tf-combo-menu');
+    if (menu) { menu.classList.remove('open'); menu.innerHTML = ''; }
+    if (lineId != null) {
+      const input = document.getElementById('tf-combo-input-' + lineId);
+      const line = _xferLines.find((l) => l.lineId === lineId);
+      if (input && line) input.value = transferLineProductName(line.productId);
+    }
+  }
+
+  function filterTransferCombo(lineId) {
+    if (_tfComboLine !== lineId) { openTransferCombo(lineId); return; }
+    _tfComboHi = -1;
+    renderTransferComboMenu(lineId);
+  }
+
+  function transferComboCandidates(lineId) {
+    const input = document.getElementById('tf-combo-input-' + lineId);
+    const q = (input && input.value || '').trim().toLowerCase();
+    const matches = (p) => {
+      if (!q) return true;
+      const hay = [p.name, p.sku, p.case_size, p.supplier && p.supplier.name, p.category && p.category.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    };
+    return transferSourceProductOptions()
+      .map((o) => ({ id: o.id, name: o.name, case_size: o.case_size || '', p: transferProductForOption(o) }))
+      .filter((it) => matches(it.p))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function renderTransferComboMenu(lineId) {
+    const menu = $('tf-combo-menu');
+    if (!menu) return;
+    _tfComboItems = transferComboCandidates(lineId);
+    if (!_tfComboItems.length) {
+      menu.innerHTML = '<div class="df-combo-empty">No products match your search.</div>';
+      return;
+    }
+    menu.innerHTML = _tfComboItems.map((it, idx) => {
+      const meta = it.case_size ? '<span class="ci-meta">' + escapeHtml(it.case_size) + '</span>' : '';
+      return '<div class="df-combo-item' + (idx === _tfComboHi ? ' active' : '') + '" role="option"' +
+        ' onmousedown="event.preventDefault();transferComboSelect(\'' + lineId + '\',\'' + it.id + '\')">' +
+        '<span class="ci-name">' + escapeHtml(it.name) + '</span>' + meta +
+      '</div>';
+    }).join('');
+  }
+
+  function transferComboKey(e, lineId) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (_tfComboLine !== lineId) openTransferCombo(lineId);
+      if (!_tfComboItems.length) return;
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      _tfComboHi = (_tfComboHi + dir + _tfComboItems.length) % _tfComboItems.length;
+      renderTransferComboMenu(lineId);
+      const active = $('tf-combo-menu').querySelector('.df-combo-item.active');
+      if (active) active.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      if (_tfComboLine === lineId && _tfComboHi >= 0 && _tfComboItems[_tfComboHi]) {
+        e.preventDefault();
+        transferComboSelect(lineId, _tfComboItems[_tfComboHi].id);
+      }
+    } else if (e.key === 'Escape') {
+      if (_tfComboLine === lineId) { e.preventDefault(); closeTransferCombo(); }
+    }
+  }
+
+  function transferComboSelect(lineId, productId) {
+    const line = _xferLines.find((l) => l.lineId === lineId);
+    if (!line) return;
+    line.productId = productId;
+    closeTransferCombo();
+    renderTransferLines();
+  }
+
   async function onTransferSourceChange() {
+    closeTransferCombo();
     const sel = $('tf-source');
     _xferSource = parseSourceValue(sel && sel.value);
     if (_xferSource && _xferSource.type === 'warehouse') {
@@ -6191,6 +6355,7 @@
   }
 
   function closeTransferForm() {
+    closeTransferCombo();
     _xferAllowOverdraw = false;
     $('transferFormOverlay').classList.remove('open');
     $('transferFormDrawer').classList.remove('open');
@@ -6321,8 +6486,7 @@
       clearTransferForm();
       renderTransfers();
       closeTransferForm();
-      if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
-      if ($('panel-distribution').classList.contains('active')) renderDistribution();
+      refreshLiveStockViews();
     } catch (err) {
       console.error('logTransfer', err);
       $('tf-err').textContent = err.message || 'Failed to log transfer';
@@ -6349,8 +6513,7 @@
       _warehouseTransfers = (_warehouseTransfers || []).filter((x) => x.id !== id);
       if ($('panel-warehouse').classList.contains('active')) { loadWarehousePanel(); return; }
       renderTransfers();
-      if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
-      if ($('panel-distribution').classList.contains('active')) renderDistribution();
+      refreshLiveStockViews();
     } catch (err) {
       console.error('deleteTransfer', err);
       alert('Failed to delete transfer: ' + (err.message || err));
@@ -6455,7 +6618,7 @@
           '<td class="cl-sor-pill">' + sorDisplay + '</td>' +
           '<td style="font-weight:600">' + invQty + '</td>' +
           '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (casesVal != null ? casesVal : '') + '" placeholder="0" id="cl-cases-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
-          '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (singlesVal != null ? singlesVal : '') + '" placeholder="0" id="cl-singles-' + pid + '" onchange="recalcClosing(\'' + pid + '\')">' + spiritShotButtons('closing', pid, ep.product) + '</td>' +
+          '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (singlesVal != null ? singlesVal : '') + '" placeholder="0" id="cl-singles-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
           '<td style="font-weight:700" id="cl-maxret-' + pid + '">' + (maxReturn != null ? maxReturn : '—') + '</td>' +
           '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (returnAmt != null ? returnAmt : '') + '" placeholder="0" id="cl-return-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
           '<td class="cl-carried-cell" style="white-space:nowrap">' +
@@ -6467,7 +6630,6 @@
       });
     });
     body.innerHTML = html;
-    eps.forEach((ep) => { if (isSpiritBottle(ep.product)) updateSpiritReadout('closing', ep.product_id); });
   }
 
   function recalcClosing(pid) {
@@ -6493,7 +6655,6 @@
     if (xbtn) xbtn.disabled = !(carried > 0);
     const rbtn = $('cl-return-btn-' + pid);
     if (rbtn) rbtn.disabled = !(returnAmt > 0);
-    updateSpiritReadout('closing', pid);
 
     let cl = closingRowFor(pid);
     if (!cl) { cl = { event_id: _currentEvent.id, product_id: pid }; _closing.push(cl); }
@@ -7977,9 +8138,39 @@
         ' onfocus="openRecipeCombo(\'' + rowId + '\')"' +
         ' oninput="filterRecipeCombo(\'' + rowId + '\')"' +
         ' onkeydown="recipeComboKey(event,\'' + rowId + '\')">' +
-      '<input type="text" class="rf-qty" placeholder="e.g. 1/12" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
-      '<button type="button" class="rf-ing-remove" onclick="this.parentElement.remove()" title="Remove">&times;</button>';
+      '<div class="rf-qty-cell">' +
+        '<input type="text" class="rf-qty" placeholder="e.g. 1/12" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
+        '<div class="shot-btns">' +
+          '<button type="button" class="shot-btn" title="Add one 25ml single — set automatically as a fraction of the chosen product\u2019s case" onclick="addRecipeShot(\'' + rowId + '\',1)">+ Single</button>' +
+          '<button type="button" class="shot-btn" title="Add one 50ml double" onclick="addRecipeShot(\'' + rowId + '\',2)">+ Double</button>' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="rf-ing-remove" onclick="this.closest(\'.rf-ing-row\').remove()" title="Remove">&times;</button>';
     wrap.appendChild(row);
+  }
+
+  function recipeProductByName(name) {
+    const n = String(name || '').trim().toLowerCase();
+    if (!n) return null;
+    return (_products || []).find((p) => (p.name || '').trim().toLowerCase() === n) || null;
+  }
+
+  // +Single (n=1) / +Double (n=2): add a 25ml serving to a recipe ingredient
+  // row's quantity, expressed as a fraction of one case for the chosen product
+  // (6x700ml ⇒ 1/168 per single). The user thinks in shots; the maths is done
+  // here so the mapping stays in the app's per-case model.
+  function addRecipeShot(rowId, n) {
+    const prodEl = document.getElementById('rf-prod-' + rowId);
+    const row = prodEl && prodEl.closest('.rf-ing-row');
+    if (!row) return;
+    const qtyEl = row.querySelector('.rf-qty');
+    if (!qtyEl) return;
+    const p = recipeProductByName(prodEl.value);
+    if (!p) { prodEl.focus(); return; }
+    const spc = shotsPerCase(p);
+    const cur = parseQtyInput(qtyEl.value);
+    const base = isFinite(cur) ? cur : 0;
+    qtyEl.value = fmtQty(roundN(base + n / spc, 6));
   }
 
   // ---- Searchable product picker for recipe ingredients ------------------
