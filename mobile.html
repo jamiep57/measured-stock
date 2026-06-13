@@ -96,7 +96,7 @@
        (offsetHeight covers the topbar/nav padding), so we don't add them again
        here — doing so would leave a large empty gap. */
     .content {
-      flex:1; padding:var(--header-h) var(--gutter) calc(var(--nav-h) + 16px);
+      flex:1; padding:var(--header-h) var(--gutter) calc(var(--nav-h) + var(--save-bar-h, 0px) + 16px);
     }
 
     /* ---------- Bottom nav ---------- */
@@ -288,6 +288,11 @@
       padding:9px 4px; outline:none; font-weight:600;
     }
     .count-inputs input:focus { border-color:var(--ring); }
+    .count-save-bar {
+      position:fixed; left:0; right:0; bottom:var(--nav-h); z-index:35;
+      padding:10px var(--gutter); background:var(--card); border-top:1px solid var(--border);
+      box-shadow:0 -2px 8px rgba(0,0,0,.06);
+    }
 
     /* ---------- Toast / lightbox ---------- */
     .toast {
@@ -401,6 +406,9 @@
             </div>
           </div>
           <div id="cntItemList"></div>
+        </div>
+        <div class="count-save-bar" id="cntSaveBar" style="display:none">
+          <button class="btn btn-primary btn-block btn-lg" id="cntSaveBtn" onclick="saveActiveCount()"><i class="ph-bold ph-floppy-disk"></i> Save count</button>
         </div>
       </section>
 
@@ -1112,6 +1120,8 @@
       catch (err) { console.error(err); _activeLines = []; }
       $('cntSessions').style.display = 'none';
       $('cntActive').style.display = '';
+      $('cntSaveBar').style.display = '';
+      document.documentElement.style.setProperty('--save-bar-h', '62px');
       $('cntSearch').value = '';
       $('cntActiveTitle').textContent = session.name;
       $('cntActiveMeta').textContent = (session.bar_id ? barNameById(session.bar_id) : 'All bars') + ' · ' + fmtDateTime(session.counted_at);
@@ -1128,6 +1138,8 @@
     function closeActiveCount() {
       _activeCountId = null; _activeCountBar = null; _activeLines = [];
       $('cntActive').style.display = 'none';
+      $('cntSaveBar').style.display = 'none';
+      document.documentElement.style.setProperty('--save-bar-h', '0px');
       $('cntSessions').style.display = '';
       renderCountSessions();
     }
@@ -1219,7 +1231,12 @@
 
     function persistCount(pid) {
       clearTimeout(_countTimers[pid]);
-      _countTimers[pid] = setTimeout(() => doPersistCount(pid), 350);
+      _countTimers[pid] = setTimeout(() => {
+        doPersistCount(pid).catch((err) => {
+          console.warn('persistCount', err);
+          toast('Save failed — check connection', true);
+        });
+      }, 350);
     }
     async function doPersistCount(pid) {
       const session = _counts.find((c) => c.id === _activeCountId);
@@ -1228,20 +1245,42 @@
       const cases = parseFloat(($('cnt-cases-' + pid) || {}).value) || 0;
       const singles = parseFloat(($('cnt-singles-' + pid) || {}).value) || 0;
       let line = _activeLines.find((l) => l.product_id === pid && l.bar_id === barId);
-      try {
-        if (cases || singles) {
-          if (!line) {
-            line = await DB.stockCounts.addLines([{ count_id: _activeCountId, product_id: pid, bar_id: barId, cases, singles }]).then((r) => r[0]);
-            _activeLines.push(line);
-          } else {
-            line.cases = cases; line.singles = singles;
-            await DB.update('stock_count_lines', 'id=eq.' + DB._.enc(line.id), { cases, singles });
-          }
-        } else if (line) {
-          await DB.remove('stock_count_lines', 'id=eq.' + DB._.enc(line.id));
-          _activeLines.splice(_activeLines.indexOf(line), 1);
+      if (cases || singles) {
+        if (!line) {
+          line = await DB.stockCounts.addLines([{ count_id: _activeCountId, product_id: pid, bar_id: barId, cases, singles }]).then((r) => r[0]);
+          _activeLines.push(line);
+        } else {
+          line.cases = cases; line.singles = singles;
+          await DB.update('stock_count_lines', 'id=eq.' + DB._.enc(line.id), { cases, singles });
         }
-      } catch (err) { console.warn('persistCount', err); toast('Save failed — check connection', true); }
+      } else if (line) {
+        await DB.remove('stock_count_lines', 'id=eq.' + DB._.enc(line.id));
+        _activeLines.splice(_activeLines.indexOf(line), 1);
+      }
+    }
+    async function saveActiveCount() {
+      if (!_activeCountId) return;
+      Object.keys(_countTimers).forEach((pid) => {
+        clearTimeout(_countTimers[pid]);
+        delete _countTimers[pid];
+      });
+      document.querySelectorAll('#cntItemList .cnt-cases, #cntItemList .cnt-singles').forEach((el) => evalMath(el));
+      liveCountStats();
+      const pids = Array.from(document.querySelectorAll('#cntItemList .count-item')).map((el) => el.dataset.pid);
+      const btn = $('cntSaveBtn');
+      const prev = btn.innerHTML;
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        await Promise.all(pids.map((pid) => doPersistCount(pid)));
+        toast('Count saved');
+      } catch (err) {
+        console.error('saveActiveCount', err);
+        toast('Save failed — check connection', true);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = prev;
+      }
     }
 
     // =====================================================================
@@ -1427,7 +1466,7 @@
       addDeliveryLine, removeDeliveryLine, updateDeliveryLine,
       onDelNoteFile, onDelPhotosFile, onDelDamagesFile, clearDelNote, removeDelPhoto, removeDelDamage,
       openNewCountSheet, closeNewCountSheet, createCountSession, deleteCount,
-      activateCount, closeActiveCount, switchCountBar, filterCountItems, evalMath, persistCount, liveCountStats,
+      activateCount, closeActiveCount, switchCountBar, filterCountItems, evalMath, persistCount, saveActiveCount, liveCountStats,
       openBugForm, closeBugForm, saveBug, deleteBug, toggleBugStatus, setBugFilter, setBugTypeFilter,
       openLightbox, closeLightbox,
     });
