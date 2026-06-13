@@ -581,6 +581,14 @@
     #countTable input:focus { border-color:var(--ring); box-shadow:0 0 0 3px rgba(24,24,27,.08); outline:none; }
     #countTable tbody tr.counted input { border-color:#bbf7d0; background:#f0fdf4; }
     #countTable tbody tr.category-row td { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted-foreground); background:var(--secondary); }
+    /* spirits: +single / +double shot buttons under a singles input */
+    .shot-btns { display:flex; align-items:center; justify-content:flex-end; gap:4px; margin-top:5px; flex-wrap:wrap; }
+    .shot-btn { font:inherit; font-size:10px; font-weight:600; line-height:1; padding:4px 7px; border:1px solid var(--input); border-radius:9999px; background:var(--card); color:var(--foreground); cursor:pointer; white-space:nowrap; transition:background .12s, border-color .12s; }
+    .shot-btn:hover { background:var(--secondary); border-color:var(--ring); }
+    .shot-btn:active { transform:translateY(1px); }
+    .shot-read { width:100%; text-align:right; font-size:10px; color:var(--muted-foreground); font-variant-numeric:tabular-nums; min-height:12px; }
+    #closingTable .shot-btns { justify-content:flex-start; }
+    #closingTable .shot-read { text-align:left; }
     /* settings-page style sections (label/description left, fields right) */
     .settings { max-width:1000px; }
     .settings-section {
@@ -1241,7 +1249,7 @@
           <tbody id="countTableBody"></tbody>
         </table>
       </div>
-      <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Use the bar chips to switch which bar you’re counting. You can type simple maths (e.g. <code>7+4</code>) — it evaluates when you leave the cell.</p>
+      <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Use the bar chips to switch which bar you’re counting. You can type simple maths (e.g. <code>7+4</code>) — it evaluates when you leave the cell. <strong>Spirits</strong> are counted as loose bottles in the Singles column — tap <strong>+ Single</strong> / <strong>+ Double</strong> to add a part-used bottle in 25ml shots.</p>
     </div>
   </div>
 </div>
@@ -1286,7 +1294,7 @@
         <tbody id="closingTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Enter whole cases and loose singles separately — total close count = cases + singles ÷ units per case. <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
+    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Enter whole cases and loose singles separately — total close count = cases + singles ÷ units per case. <strong>Spirits</strong>: count loose bottles in the Singles column and tap <strong>+ Single</strong> / <strong>+ Double</strong> for a part-used bottle (25ml shots). <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
   </div>
 </div>
 <!-- ===================== SUMMARY (COGS) ===================== -->
@@ -1899,6 +1907,103 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
+  }
+
+  // ---------- spirits: count loose bottles + shots ----------
+  // For spirits we work in the SINGLES column (= loose bottles). A part-used
+  // bottle is entered in 25ml shots, where 1 shot = 1/(shots per bottle) of a
+  // single bottle. Shots per bottle is read automatically from the pack size
+  // (700ml ⇒ 28, 1L ⇒ 40 …) so there is no manual mapping to maintain.
+  const SPIRIT_MEASURE_ML = 25; // standard single
+
+  // Per-bottle volume in ml, parsed from a pack-size string. Returns null if
+  // no volume is present (e.g. "24" or "12"). Uses the last volume token so
+  // "6 x 700ml" ⇒ 700 and "70cl" ⇒ 700.
+  function packBottleMl(packSize) {
+    const s = String(packSize || '').toLowerCase();
+    const re = /(\d+(?:[.,]\d+)?)\s*(ml|cl|l|litre|litres|ltr)\b/g;
+    let m, last = null;
+    while ((m = re.exec(s)) !== null) last = m;
+    if (!last) return null;
+    const n = parseFloat(last[1].replace(',', '.'));
+    if (!isFinite(n)) return null;
+    const unit = last[2];
+    if (unit === 'ml') return n;
+    if (unit === 'cl') return n * 10;
+    return n * 1000; // l / litre / ltr
+  }
+
+  function categoryColourKeyOf(p) {
+    const cat = p && p.category;
+    if (!cat) return null;
+    return cat.colour_key || colourKey(cat.name);
+  }
+
+  // A product we count in bottles+shots: a spirits-category bottle (≥500ml),
+  // which excludes spirit RTD/mixer cans (e.g. 12x250ml).
+  function isSpiritBottle(p) {
+    if (!p) return false;
+    if (categoryColourKeyOf(p) !== 'spirits') return false;
+    const ml = packBottleMl(p.case_size);
+    return ml != null && ml >= 500;
+  }
+
+  function shotsPerBottle(p) {
+    const ml = packBottleMl(p && p.case_size);
+    const spb = ml ? Math.round(ml / SPIRIT_MEASURE_ML) : 28;
+    return spb > 0 ? spb : 28;
+  }
+
+  function spiritProductById(pid) {
+    const ev = _currentEvent && _currentEvent.event_products;
+    if (ev) {
+      const ep = ev.find((e) => e.product_id === pid);
+      if (ep && ep.product) return ep.product;
+    }
+    return (_products || []).find((p) => p.id === pid) || null;
+  }
+
+  // Markup for the +Single / +Double tap buttons placed under a singles input.
+  function spiritShotButtons(scope, pid, p) {
+    if (!isSpiritBottle(p)) return '';
+    const spb = shotsPerBottle(p);
+    return '<div class="shot-btns">' +
+      '<button type="button" class="shot-btn" title="Add a single — 25ml = 1/' + spb + ' bottle" ' +
+        'onclick="addSpiritShots(\'' + scope + '\',\'' + pid + '\',1)">+ Single</button>' +
+      '<button type="button" class="shot-btn" title="Add a double — 50ml = 2/' + spb + ' bottle" ' +
+        'onclick="addSpiritShots(\'' + scope + '\',\'' + pid + '\',2)">+ Double</button>' +
+      '<span class="shot-read" id="' + (scope === 'count' ? 'cnt' : 'cl') + '-shotread-' + pid + '"></span>' +
+    '</div>';
+  }
+
+  // Add n shots to the singles field, as a fraction of one bottle.
+  function addSpiritShots(scope, pid, n) {
+    const p = spiritProductById(pid);
+    if (!p) return;
+    const spb = shotsPerBottle(p);
+    const id = (scope === 'count' ? 'cnt-singles-' : 'cl-singles-') + pid;
+    const el = $(id);
+    if (!el) return;
+    const cur = parseFloat(el.value) || 0;
+    el.value = roundN(cur + n / spb, 4);
+    if (scope === 'count') { autoSaveCountEntry(pid); updateCountStats(); }
+    else { recalcClosing(pid); }
+    updateSpiritReadout(scope, pid);
+  }
+
+  // Show the singles value as "X btl + Y sh" next to the buttons.
+  function updateSpiritReadout(scope, pid) {
+    const p = spiritProductById(pid);
+    if (!p || !isSpiritBottle(p)) return;
+    const out = $((scope === 'count' ? 'cnt' : 'cl') + '-shotread-' + pid);
+    const el = $((scope === 'count' ? 'cnt-singles-' : 'cl-singles-') + pid);
+    if (!out || !el) return;
+    const spb = shotsPerBottle(p);
+    const v = Math.max(0, parseFloat(el.value) || 0);
+    let btl = Math.floor(v + 1e-9);
+    let sh = Math.round((v - btl) * spb);
+    if (sh >= spb) { btl += 1; sh = 0; }
+    out.textContent = v ? (btl + ' btl' + (sh ? ' + ' + sh + ' sh' : '')) : '';
   }
 
   // ---------- panels / sidebar ----------
@@ -5411,11 +5516,12 @@
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + (barId ? escapeHtml(barNameById(barId)) : '—') + '</td>' +
           '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + (line && line.cases != null ? line.cases : '') + '" placeholder="0" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
-          '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
+          '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats();updateSpiritReadout(\'count\',\'' + pid + '\')" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats();updateSpiritReadout(\'count\',\'' + pid + '\')">' + spiritShotButtons('count', pid, ep.product) + '</td>' +
         '</tr>';
       });
     });
     $('countTableBody').innerHTML = html;
+    eps.forEach((ep) => { if (isSpiritBottle(ep.product)) updateSpiritReadout('count', ep.product_id); });
     updateCountStats();
     filterCountTable();
   }
@@ -6284,7 +6390,7 @@
           '<td class="cl-sor-pill">' + sorDisplay + '</td>' +
           '<td style="font-weight:600">' + invQty + '</td>' +
           '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (casesVal != null ? casesVal : '') + '" placeholder="0" id="cl-cases-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
-          '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (singlesVal != null ? singlesVal : '') + '" placeholder="0" id="cl-singles-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
+          '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (singlesVal != null ? singlesVal : '') + '" placeholder="0" id="cl-singles-' + pid + '" onchange="recalcClosing(\'' + pid + '\')">' + spiritShotButtons('closing', pid, ep.product) + '</td>' +
           '<td style="font-weight:700" id="cl-maxret-' + pid + '">' + (maxReturn != null ? maxReturn : '—') + '</td>' +
           '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (returnAmt != null ? returnAmt : '') + '" placeholder="0" id="cl-return-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
           '<td class="cl-carried-cell" style="white-space:nowrap">' +
@@ -6296,6 +6402,7 @@
       });
     });
     body.innerHTML = html;
+    eps.forEach((ep) => { if (isSpiritBottle(ep.product)) updateSpiritReadout('closing', ep.product_id); });
   }
 
   function recalcClosing(pid) {
@@ -6321,6 +6428,7 @@
     if (xbtn) xbtn.disabled = !(carried > 0);
     const rbtn = $('cl-return-btn-' + pid);
     if (rbtn) rbtn.disabled = !(returnAmt > 0);
+    updateSpiritReadout('closing', pid);
 
     let cl = closingRowFor(pid);
     if (!cl) { cl = { event_id: _currentEvent.id, product_id: pid }; _closing.push(cl); }
