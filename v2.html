@@ -688,6 +688,8 @@
     .drawer-body { padding:18px 20px; overflow:auto; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:14px; align-content:start; }
     .drawer-foot { display:flex; gap:10px; align-items:center; padding:14px 20px; border-top:1px solid var(--border); flex-shrink:0; }
     .drawer-foot .err { margin-right:auto; color:var(--danger); font-size:12px; }
+    .drawer-foot .tf-foot-err { margin-right:auto; display:flex; flex-direction:column; gap:6px; min-width:0; flex:1; max-width:65%; }
+    .drawer-foot .tf-foot-err .err { margin-right:0; }
     .drawer-foot .spacer { margin-right:auto; }
     .field { display:flex; flex-direction:column; gap:4px; }
     .field.full { grid-column:1 / -1; }
@@ -1032,9 +1034,9 @@
       <tr>
         <th class="lib-sel-col"></th>
         <th data-sort="name">Product <span class="arrow"></span></th>
+        <th data-sort="case_size">Case size <span class="arrow"></span></th>
         <th data-sort="category">Category <span class="arrow"></span></th>
         <th data-sort="supplier">Supplier <span class="arrow"></span></th>
-        <th data-sort="case_size">Case size <span class="arrow"></span></th>
         <th class="num" data-sort="units_per_case">Units/case <span class="arrow"></span></th>
         <th class="num" data-sort="case_price">Case price <span class="arrow"></span></th>
         <th class="num" data-sort="unit_price">Unit price <span class="arrow"></span></th>
@@ -1102,8 +1104,8 @@
       <thead>
         <tr>
           <th>Product</th>
-          <th>Category</th>
           <th>Case size</th>
+          <th>Category</th>
           <th class="num">Ordered</th>
           <th class="num" title="Live total on site — Bone Yard plus every bar (same as Stock Levels)">Stock level</th>
           <th class="num">Invoice</th>
@@ -1123,7 +1125,7 @@
 <div id="panel-stock-levels" class="panel">
   <div class="page-header">
     <div class="page-title">Stock Levels <span class="feature-dot green" title="Read-only live view — derived, never edited here"></span></div>
-    <p class="page-subtitle">Live, read-only view of where every SKU sits across the event — Goods in (Bone Yard) plus each serving bar. Derived from deliveries and distribution; never edited directly.</p>
+    <p class="page-subtitle">Live, read-only view of where every SKU sits — bar columns use the latest physical count when logged, otherwise distribution allocations. Bone Yard and Total are on the right.</p>
   </div>
   <div id="slNoEvent" class="empty-state" style="display:none"><i class="ph ph-calendar-x icon"></i><p>Pick an event from the sidebar first.</p></div>
   <div id="slContent">
@@ -1138,7 +1140,7 @@
         <tbody id="slBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Goods in = Opening − allocated − transfers out + transfers in. Total = Goods in + all bars. Warehouse columns coming when the Warehouses panel is ported.</p>
+    <p class="df-hint" style="margin-top:10px">Bar columns show the latest physical count when one exists, otherwise allocated stock from Distribution. <strong>Bone Yard</strong> (goods in) and <strong>Total</strong> are on the right — undistributed stock sits in Bone Yard until you allocate it on the Distribution tab.</p>
   </div>
 </div>
 <!-- ===================== DELIVERIES ===================== -->
@@ -1296,6 +1298,7 @@
       <table id="closingTable">
         <thead><tr>
           <th>Product</th>
+          <th>Pack size</th>
           <th>Supplier</th>
           <th>SOR %</th>
           <th title="Invoiced / ordered quantity">Invoice qty</th>
@@ -1326,6 +1329,7 @@
       <table id="summaryTable">
         <thead><tr>
           <th>Product</th>
+          <th>Pack size</th>
           <th>Category</th>
           <th>Opening</th>
           <th>Distributed</th>
@@ -1533,7 +1537,7 @@
     </div>
     <div class="dist-table-wrap" style="margin-bottom:16px">
       <table id="warehouseStockTable">
-        <thead><tr><th>Product</th><th>Category</th><th>Pack size</th><th>Qty on hand</th><th>Last updated</th></tr></thead>
+        <thead><tr><th>Product</th><th>Pack size</th><th>Category</th><th>Qty on hand</th><th>Last updated</th></tr></thead>
         <tbody id="warehouseStockBody"></tbody>
       </table>
     </div>
@@ -1848,7 +1852,10 @@
     </div>
   </div>
   <div class="drawer-foot">
-    <span class="err" id="tf-err"></span>
+    <div class="tf-foot-err">
+      <span class="err" id="tf-err"></span>
+      <button type="button" class="btn btn-outline btn-sm" id="tf-record-anyways-btn" style="display:none" onclick="transferRecordAnyways()">Record anyways</button>
+    </div>
     <button type="button" class="btn" onclick="clearTransferForm()">Clear</button>
     <button type="button" class="btn" id="tf-save-btn" onclick="logTransfer(false)">Log transfer</button>
     <button type="button" class="btn btn-primary" id="tf-save-note-btn" onclick="logTransfer(true)">Log &amp; Download Note</button>
@@ -2261,9 +2268,9 @@
         '<td class="lib-sel-col"><input type="checkbox" ' + (sel ? 'checked ' : '') +
           'onclick="toggleLibRowSel(\'' + p.id + '\', this.checked)"></td>' +
         '<td>' + escapeHtml(p.name) + '</td>' +
+        '<td>' + escapeHtml(p.case_size || '') + '</td>' +
         '<td>' + catBadge(p.category) + '</td>' +
         '<td>' + supplierCell(p) + '</td>' +
-        '<td>' + escapeHtml(p.case_size || '') + '</td>' +
         '<td class="num">' + num(p.units_per_case) + '</td>' +
         '<td class="num">' + money(p.case_price) + '</td>' +
         '<td class="num">' + money(p.unit_price) + '</td>' +
@@ -3010,7 +3017,7 @@
     } else {
       wrap.innerHTML =
         '<table class="supplier-products-table"><thead><tr>' +
-        '<th>Product</th><th>Category</th><th>Pack size</th><th>Case price</th>' +
+        '<th>Product</th><th>Pack size</th><th>Category</th><th>Case price</th>' +
         '</tr></thead><tbody>' +
         rows.map(({ p, row }) => {
           const pack = (row && row.pack_size) || p.case_size || '—';
@@ -3019,8 +3026,8 @@
           return (
             '<tr>' +
             '<td>' + escapeHtml(p.name) + (pref ? ' <span class="sup-more">pref</span>' : '') + '</td>' +
-            '<td>' + catBadge(p.category) + '</td>' +
             '<td>' + escapeHtml(pack) + '</td>' +
+            '<td>' + catBadge(p.category) + '</td>' +
             '<td>' + (money(price) || '—') + '</td>' +
             '</tr>'
           );
@@ -3631,7 +3638,7 @@
       if (addBtn) addBtn.style.display = '';
       updateEventStats();
       _stockDataEventId = null;
-      await ensureEventStockData();
+      await ensureEventStockData(true);
       renderEventProducts();
       renderSetupStats(ev);
       setStatus('● connected', 'ok');
@@ -3694,7 +3701,7 @@
     }
     body.innerHTML = rows.map((p) => {
       const added = onEvent.has(p.id);
-      const meta = catBadge(p.category) + (p.case_size ? ' <span style="font-size:11px;color:var(--muted-foreground)">' + escapeHtml(p.case_size) + '</span>' : '');
+      const meta = (p.case_size ? '<span style="font-size:11px;color:var(--muted-foreground)">' + escapeHtml(p.case_size) + '</span> ' : '') + catBadge(p.category);
       const action = added
         ? '<span class="badge" style="background:var(--muted);color:var(--muted-foreground)">On event</span>'
         : '<button class="btn btn-outline btn-sm" onclick="addProductToEvent(\'' + p.id + '\')">+ Add</button>';
@@ -3797,8 +3804,8 @@
     $('evBody').innerHTML = rows.map((ep) => (
       '<tr>' +
       '<td class="ev-name">' + escapeHtml((ep.product && ep.product.name) || '(unknown)') + '</td>' +
-      '<td>' + catBadge(ep.product && ep.product.category) + '</td>' +
       '<td>' + ((ep.product && ep.product.case_size) ? escapeHtml(ep.product.case_size) : '<span class="muted">—</span>') + '</td>' +
+      '<td>' + catBadge(ep.product && ep.product.category) + '</td>' +
       orderedCell(ep) +
       cell(siteAvailable(ep.product_id)) +
       cell(ep.invoice_qty) +
@@ -4993,12 +5000,53 @@
   let _distRows = [];        // distribution rows for the event
   let _barProducts = [];     // bar_products rows for the event
   let _stockDataEventId = null;
+  let _latestCountAtBar = {}; // "barId|productId" → cases (newest count session wins)
+  let _countDataEventId = null;
 
-  // Distribution, bar menus, transfers and wastage — shared by Stock Levels,
-  // Distribution, Transfers and the Products-on-event stock level column.
-  async function ensureEventStockData() {
+  function distRowFor(barId, pid) {
+    const sb = String(barId), sp = String(pid);
+    return _distRows.find((x) => String(x.bar_id) === sb && String(x.product_id) === sp);
+  }
+
+  function boneYardBar() {
+    return ((_currentEvent && _currentEvent.bars) || []).find((b) => isBoneYard(b)) || null;
+  }
+
+  // Latest physical count (cases) for a product at a bar, from stock_count_lines.
+  async function ensureLatestCountIndex() {
     if (!_currentEvent || !_currentEvent.id) return;
-    if (_stockDataEventId === _currentEvent.id) return;
+    if (_countDataEventId === _currentEvent.id) return;
+    _latestCountAtBar = {};
+    const sessions = ((await DB.stockCounts.forEvent(_currentEvent.id)) || [])
+      .slice().sort((a, b) => new Date(b.counted_at || 0) - new Date(a.counted_at || 0));
+    for (const session of sessions) {
+      let lines;
+      try { lines = (await DB.stockCounts.lines(session.id)) || []; }
+      catch (e) { console.warn('ensureLatestCountIndex', e); lines = []; }
+      for (const line of lines) {
+        if (!line.bar_id || !line.product_id) continue;
+        const key = String(line.bar_id) + '|' + String(line.product_id);
+        if (_latestCountAtBar[key] != null) continue;
+        const cases = (Number(line.cases) || 0) +
+          (Number(line.singles) || 0) / unitsPerCaseFor(line.product_id);
+        if (!cases && line.cases == null && line.singles == null) continue;
+        _latestCountAtBar[key] = round1(cases);
+      }
+    }
+    _countDataEventId = _currentEvent.id;
+  }
+
+  function latestPhysicalCount(barId, pid) {
+    if (!barId || !pid) return null;
+    const v = _latestCountAtBar[String(barId) + '|' + String(pid)];
+    return v != null ? v : null;
+  }
+
+  // Distribution, bar menus, transfers, wastage and count index — shared by Stock
+  // Levels, Distribution, Transfers and the Products-on-event stock level column.
+  async function ensureEventStockData(force) {
+    if (!_currentEvent || !_currentEvent.id) return;
+    if (!force && _stockDataEventId === _currentEvent.id) return;
     const [dist, barProds] = await Promise.all([
       DB.distribution.forEvent(_currentEvent.id),
       DB.barProducts.forEvent(_currentEvent.id),
@@ -5009,13 +5057,14 @@
     await ensureTransferData();
     _wastageEventId = null;
     await ensureWastageData();
+    _countDataEventId = null;
+    await ensureLatestCountIndex();
     _stockDataEventId = _currentEvent.id;
   }
 
   function refreshLiveStockViews() {
     if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
     if ($('panel-distribution').classList.contains('active')) renderDistribution();
-    if ($('panel-products').classList.contains('active')) renderEventProducts();
     if ($('panel-products').classList.contains('active')) renderEventProducts();
   }
   let _distTimers = {};
@@ -5039,7 +5088,7 @@
   function distAllocatedToBars(pid, bars) {
     return bars.reduce((sum, b) => {
       if (isBoneYard(b)) return sum;
-      const d = _distRows.find((x) => x.product_id === pid && x.bar_id === b.id);
+      const d = distRowFor(b.id, pid);
       return sum + (d ? Number(d.qty_allocated) || 0 : 0);
     }, 0);
   }
@@ -5050,8 +5099,9 @@
     _transfersEventId = _currentEvent.id;
   }
   function transferQtyForProduct(transfer, pid) {
+    const sp = String(pid);
     const lines = transfer.lines || [];
-    return lines.filter((l) => l.product_id === pid).reduce((s, l) => s + (Number(l.qty) || 0), 0);
+    return lines.filter((l) => String(l.product_id) === sp).reduce((s, l) => s + (Number(l.qty) || 0), 0);
   }
   // Which bar (within the event) a transfer left from. Prefers the real
   // from_bar_id column (post-migration / cutover); falls back to a marker we
@@ -5157,7 +5207,7 @@
       return;
     }
 
-    head.innerHTML = '<tr><th>Product</th><th>Opening</th><th style="color:var(--warning)">Left to Allocate</th>' +
+    head.innerHTML = '<tr><th>Product</th><th>Pack size</th><th>Opening</th><th style="color:var(--warning)">Left to Allocate</th>' +
       '<th class="dist-bar-header"><div class="dist-bar-head"><span class="dist-bar-name">Bone Yard</span><span class="dist-bar-tag" title="Holds undistributed stock (goods in)">Goods in</span></div></th>' +
       bars.map((b) => {
         return '<th class="dist-bar-header"><div class="dist-bar-head"><span class="dist-bar-name">' + escapeHtml(b.name) + '</span></div></th>';
@@ -5174,7 +5224,7 @@
 
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += '<tr class="category-row"><td colspan="' + (5 + bars.length) + '">' + escapeHtml(cat) + '</td></tr>';
+      html += '<tr class="category-row"><td colspan="' + (6 + bars.length) + '">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const opening = openingByPid[pid];
@@ -5185,6 +5235,7 @@
         const boneNeg = boneStock < 0 ? ';color:var(--danger)' : '';
         html += '<tr>' +
           '<td style="white-space:nowrap">' + escapeHtml(ep.product.name) + '</td>' +
+          '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td>' + opening + '</td>' +
           '<td><span class="lta-badge ' + ltaClass + '" id="lta-' + pid + '">' + lta + '</span></td>' +
           '<td class="dist-cell dist-cell--bone-yard" title="Goods in — what is still in the Bone Yard"><span class="dist-bone-yard-value" id="dist-by-' + pid + '" style="' + boneNeg + '">' + boneStock + '</span></td>' +
@@ -5192,7 +5243,7 @@
             if (!barServesProduct(b.id, pid)) {
               return '<td class="dist-cell-off"><button type="button" class="dist-cell-add" onclick="addProductToBar(\'' + b.id + '\',\'' + pid + '\')" title="Add to ' + escapeHtml(b.name) + '\u2019s menu"><i class="ph-bold ph-plus"></i></button></td>';
             }
-            const d = _distRows.find((x) => x.product_id === pid && x.bar_id === b.id);
+            const d = distRowFor(b.id, pid);
             const qty = d ? Number(d.qty_allocated) || 0 : 0;
             const hasValue = qty > 0 ? ' has-value' : '';
             return '<td class="dist-cell">' +
@@ -5211,7 +5262,7 @@
     const bar = (_currentEvent.bars || []).find((b) => b.id === barId);
     if (isBoneYard(bar)) return;
     const qty = round1(parseFloat(val) || 0);
-    let row = _distRows.find((d) => d.product_id === pid && d.bar_id === barId);
+    let row = distRowFor(barId, pid);
     if (!row) { row = { event_id: _currentEvent.id, product_id: pid, bar_id: barId, qty_allocated: qty }; _distRows.push(row); }
     else row.qty_allocated = qty;
 
@@ -5278,7 +5329,7 @@
   async function removeProductFromBar(barId, pid) {
     if (!barId || !pid || !barServesProduct(barId, pid)) return;
     const eps = _currentEvent.event_products || [];
-    const distRow = _distRows.find((d) => d.bar_id === barId && d.product_id === pid);
+    const distRow = distRowFor(barId, pid);
     const allocatedQty = distRow ? Number(distRow.qty_allocated) || 0 : 0;
     if (allocatedQty > 0 && !confirm('This product still has ' + allocatedQty + ' allocated to this bar. Removing it will set that allocation to zero. Continue?')) return;
 
@@ -5322,7 +5373,7 @@
       if (!_currentEvent || _currentEvent.id !== id) {
         _currentEvent = await DB.events.getFull(id);
       }
-      await ensureEventStockData();
+      await ensureEventStockData(true);
       refreshSlCatFilter();
       renderStockLevels();
     } catch (err) {
@@ -5348,9 +5399,27 @@
   }
 
   function barStockAvailable(barId, pid) {
-    const d = _distRows.find((x) => x.product_id === pid && x.bar_id === barId);
+    const d = distRowFor(barId, pid);
     const allocated = d ? Number(d.qty_allocated) || 0 : 0;
     return round1(allocated - transferOutFromBar(barId, pid) + transferInToBar(barId, pid));
+  }
+
+  // Bar column value: prefer newest physical count, else distribution-based stock.
+  function barLevelDisplay(barId, pid) {
+    if (!barServesProduct(barId, pid)) return null;
+    const physical = latestPhysicalCount(barId, pid);
+    if (physical != null) return physical;
+    return barStockAvailable(barId, pid);
+  }
+
+  // Bone Yard / goods-in column: prefer a physical count at the Bone Yard bar.
+  function goodsInDisplay(pid, bars, openingByPid) {
+    const by = boneYardBar();
+    if (by) {
+      const physical = latestPhysicalCount(by.id, pid);
+      if (physical != null) return physical;
+    }
+    return boneYardAvailable(pid, bars, openingByPid);
   }
 
   function renderStockLevels() {
@@ -5370,30 +5439,30 @@
     const openingByPid = {};
     eps.forEach((ep) => { openingByPid[ep.product_id] = epOpeningStock(ep); });
 
-    // Goods in / Bone Yard is always the first stock column (virtual).
-    // Total columns: Product, Category, Pack Size, Goods in, [bars], Total.
-    const totalCols = 4 + bars.length + 1;
+    // Columns: Product, Pack Size, Category, [bars…], Bone Yard, Total.
+    // Bone Yard + Total sit on the right so wide bar lists stay readable.
+    const totalCols = 3 + bars.length + 2;
 
     const groupRow =
-      '<th colspan="4" style="border-bottom:none"></th>' +
+      '<th colspan="3" style="border-bottom:none"></th>' +
       (bars.length ? '<th colspan="' + bars.length + '" class="stock-col-divider" style="border-bottom:none;text-align:center;font-size:11px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.5px">Bars</th>' : '') +
-      '<th class="stock-col-divider" style="border-bottom:none"></th>';
+      '<th colspan="2" class="stock-col-divider" style="border-bottom:none;text-align:center;font-size:11px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.5px">Summary</th>';
 
     const colHeaders =
       '<th style="min-width:180px">Product</th>' +
-      '<th>Category</th>' +
       '<th>Pack Size</th>' +
-      '<th title="Goods in — delivered to the event but not yet distributed">Bone Yard<br><span style="font-weight:400;color:var(--muted-foreground);font-size:11px">Goods in</span></th>' +
-      bars.map((b, i) => '<th' + (i === 0 ? ' class="stock-col-divider"' : '') + ' title="Allocated to ' + escapeHtml(b.name) + ' via Distribution">' + escapeHtml(b.name) + '</th>').join('') +
-      '<th class="stock-col-divider">Total</th>';
+      '<th>Category</th>' +
+      bars.map((b, i) => '<th' + (i === 0 ? ' class="stock-col-divider"' : '') + ' title="Latest count or allocated stock at ' + escapeHtml(b.name) + '">' + escapeHtml(b.name) + '</th>').join('') +
+      '<th class="stock-col-divider" title="Goods in — delivered but not yet at a bar">Bone Yard<br><span style="font-weight:400;color:var(--muted-foreground);font-size:11px">Goods in</span></th>' +
+      '<th>Total</th>';
 
     head.innerHTML = '<tr>' + groupRow + '</tr><tr>' + colHeaders + '</tr>';
 
     let rows = eps.map((ep) => {
       const pid = ep.product_id;
       const cat = productCategoryObj(pid);
-      const goodsIn = boneYardAvailable(pid, bars, openingByPid);
-      const barQtys = bars.map((b) => barServesProduct(b.id, pid) ? barStockAvailable(b.id, pid) : null);
+      const barQtys = bars.map((b) => barLevelDisplay(b.id, pid));
+      const goodsIn = goodsInDisplay(pid, bars, openingByPid);
       const total = round1(goodsIn + barQtys.reduce((a, q) => a + (q || 0), 0));
       return { pid, name: ep.product.name, cat, catId: cat && cat.id, case_size: ep.product.case_size || '', goodsIn, barQtys, total };
     });
@@ -5425,15 +5494,15 @@
         const goodsNeg = r.goodsIn < 0 ? ';color:var(--danger)' : '';
         html += '<tr>' +
           '<td>' + escapeHtml(r.name) + '</td>' +
-          '<td>' + catBadge(r.cat) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.case_size || '—') + '</td>' +
-          '<td style="font-weight:700' + goodsNeg + '">' + r.goodsIn + '</td>' +
+          '<td>' + catBadge(r.cat) + '</td>' +
           r.barQtys.map((q, i) => {
             const div = i === 0 ? ' stock-col-divider' : '';
             if (q == null) return '<td class="' + div.trim() + '" style="color:var(--muted-foreground);font-size:12px" title="Not on this bar\u2019s menu">\u2014</td>';
             return '<td class="' + div.trim() + '" style="font-weight:500">' + (q > 0 ? q : '<span style="color:var(--muted-foreground)">0</span>') + '</td>';
           }).join('') +
-          '<td class="stock-col-divider" style="font-weight:700">' + r.total + '</td>' +
+          '<td class="stock-col-divider" style="font-weight:700' + goodsNeg + '">' + r.goodsIn + '</td>' +
+          '<td style="font-weight:700">' + r.total + '</td>' +
         '</tr>';
       });
     });
@@ -5529,7 +5598,10 @@
       _counts = _counts.filter((c) => c.id !== id);
       delete _countLines[id];
       if (_activeCountId === id) { _activeCountId = null; $('activeCountPanel').style.display = 'none'; }
+      _countDataEventId = null;
+      await ensureLatestCountIndex();
       renderCountSessions();
+      refreshLiveStockViews();
     } catch (err) { console.error(err); alert('Failed to delete: ' + (err.message || err)); }
   }
 
@@ -5681,6 +5753,9 @@
         lines.splice(lines.indexOf(line), 1);
       }
       _countLines[_activeCountId] = lines;
+      _countDataEventId = null;
+      await ensureLatestCountIndex();
+      refreshLiveStockViews();
     } catch (err) { console.warn('persistCountEntry', err); }
   }
 
@@ -5693,6 +5768,7 @@
   let _xferLines = [];
   let _xferSource = null;   // { type: 'event'|'bar'|'warehouse', id }
   let _xferAllowOverdraw = false;  // one-shot: skip availability check (carried-over transfers)
+  let _xferPendingDownloadPDF = false;
 
   function xferLineId() { return 't' + Math.random().toString(36).slice(2, 8); }
 
@@ -5743,14 +5819,14 @@
     return '—';
   }
 
-  // Total stock physically on site for a product: Bone Yard + every serving bar.
+  // Total stock on site for a product — matches the Stock Levels total column.
   function siteAvailable(pid) {
     const bars = ((_currentEvent && _currentEvent.bars) || []).filter((b) => !isBoneYard(b));
     const opening = {};
     ((_currentEvent && _currentEvent.event_products) || []).forEach((ep) => { opening[ep.product_id] = epOpeningStock(ep); });
-    const bone = boneYardAvailable(pid, bars, opening);
-    const inBars = bars.reduce((n, b) => n + barStockAvailable(b.id, pid), 0);
-    return round1(bone + inBars);
+    const goodsIn = goodsInDisplay(pid, bars, opening);
+    const inBars = bars.reduce((n, b) => n + (barLevelDisplay(b.id, pid) || 0), 0);
+    return round1(goodsIn + inBars);
   }
 
   function getStockAt(location, pid) {
@@ -6342,13 +6418,26 @@
     doc.save('delivery_note_' + safeName + '_' + dateTag + '.pdf');
   }
 
+  function setTransferOverdrawPrompt(show) {
+    const btn = $('tf-record-anyways-btn');
+    if (btn) btn.style.display = show ? '' : 'none';
+  }
+
+  function transferRecordAnyways() {
+    _xferAllowOverdraw = true;
+    setTransferOverdrawPrompt(false);
+    logTransfer(_xferPendingDownloadPDF);
+  }
+
   function openTransferForm() {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     _xferAllowOverdraw = false;
+    _xferPendingDownloadPDF = false;
     if (!_xferSource && _currentEvent) _xferSource = { type: 'event', id: _currentEvent.id };
     renderTransfers();
     const dEl = $('tf-date'); if (dEl && !dEl.value) setTransferDateTimeNow();
     $('tf-err').textContent = '';
+    setTransferOverdrawPrompt(false);
     $('transferFormOverlay').classList.add('open');
     $('transferFormDrawer').classList.add('open');
     setTimeout(() => { const el = $('tf-source'); if (el) el.focus(); }, 50);
@@ -6357,6 +6446,8 @@
   function closeTransferForm() {
     closeTransferCombo();
     _xferAllowOverdraw = false;
+    _xferPendingDownloadPDF = false;
+    setTransferOverdrawPrompt(false);
     $('transferFormOverlay').classList.remove('open');
     $('transferFormDrawer').classList.remove('open');
   }
@@ -6371,6 +6462,8 @@
 
   function clearTransferForm() {
     _xferAllowOverdraw = false;
+    _xferPendingDownloadPDF = false;
+    setTransferOverdrawPrompt(false);
     $('tf-recipient').value = '';
     _xferLines = [{ lineId: xferLineId(), productId: '', qty: '' }];
     setTransferUnit('cases');
@@ -6395,6 +6488,7 @@
 
   async function logTransfer(downloadPDF) {
     $('tf-err').textContent = '';
+    setTransferOverdrawPrompt(false);
     if (!_xferSource) { $('tf-err').textContent = 'Pick where the stock is coming from.'; return; }
     const dest = parseSourceValue($('tf-recipient').value);
     if (!dest) { $('tf-err').textContent = 'Select where the stock is going.'; return; }
@@ -6420,8 +6514,11 @@
     }
     if (overs.length && !_xferAllowOverdraw) {
       $('tf-err').textContent = 'Not enough stock at ' + locationLabel(_xferSource) + ': ' + overs.join('; ');
+      _xferPendingDownloadPDF = !!downloadPDF;
+      setTransferOverdrawPrompt(true);
       return;
     }
+    _xferPendingDownloadPDF = false;
 
     const isWarehouseSource = _xferSource.type === 'warehouse';
     const isBarSource = _xferSource.type === 'bar';
@@ -6562,7 +6659,7 @@
       renderClosing();
     } catch (err) {
       console.error('loadClosing', err);
-      $('closingTableBody').innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
+      $('closingTableBody').innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
     }
   }
 
@@ -6585,7 +6682,7 @@
     const eps = ((_currentEvent && _currentEvent.event_products) || [])
       .filter((ep) => ep.product && ep.product.name);
     if (!eps.length) {
-      body.innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
       return;
     }
     const grouped = {};
@@ -6595,7 +6692,7 @@
     });
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += '<tr class="category-row"><td colspan="9">' + escapeHtml(cat) + '</td></tr>';
+      html += '<tr class="category-row"><td colspan="10">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const invQty = closingInvoiceQty(ep);
@@ -6614,6 +6711,7 @@
         const carriedDisp = (hasCount && returnAmt != null) ? carriedNum : '—';
         html += '<tr>' +
           '<td style="white-space:nowrap">' + escapeHtml(ep.product.name) + '</td>' +
+          '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td style="color:var(--muted-foreground)">' + escapeHtml(supplierNameById(productSupplierId(pid))) + '</td>' +
           '<td class="cl-sor-pill">' + sorDisplay + '</td>' +
           '<td style="font-weight:600">' + invQty + '</td>' +
@@ -6756,7 +6854,7 @@
       renderSummary();
     } catch (err) {
       console.error('loadSummary', err);
-      $('summaryTableBody').innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
+      $('summaryTableBody').innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
     }
   }
 
@@ -6790,7 +6888,7 @@
 
     const body = $('summaryTableBody');
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
     } else {
       const grouped = {};
       rows.forEach((r) => {
@@ -6799,10 +6897,11 @@
       });
       let html = '';
       Object.keys(grouped).sort().forEach((cat) => {
-        html += '<tr class="category-row"><td colspan="9">' + escapeHtml(cat) + '</td></tr>';
+        html += '<tr class="category-row"><td colspan="10">' + escapeHtml(cat) + '</td></tr>';
         grouped[cat].slice().sort((a, b) => (a.ep.product.name || '').localeCompare(b.ep.product.name || '')).forEach((r) => {
           html += '<tr>' +
             '<td>' + escapeHtml(r.ep.product.name) + '</td>' +
+            '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.ep.product.case_size || '—') + '</td>' +
             '<td>' + catBadge(productCategoryObj(r.pid)) + '</td>' +
             '<td>' + round1(r.opening) + '</td>' +
             '<td>' + round1(r.distributed) + '</td>' +
@@ -7140,8 +7239,8 @@
         const updated = s.last_updated ? new Date(s.last_updated).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
         return '<tr>' +
           '<td>' + escapeHtml(p.name || productNameById(s.product_id)) + '</td>' +
-          '<td>' + catBadge(cat) + '</td>' +
           '<td style="color:var(--muted-foreground);font-size:12px">' + escapeHtml(p.case_size || '—') + '</td>' +
+          '<td>' + catBadge(cat) + '</td>' +
           '<td>' + round1(s.qty_on_hand) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + updated + '</td>' +
         '</tr>';
