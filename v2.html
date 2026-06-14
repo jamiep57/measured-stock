@@ -541,6 +541,8 @@
     .recipe-tag .ing-list { font-weight:400; }
     .rf-ing-list { display:flex; flex-direction:column; gap:8px; }
     .rf-ing-row { display:grid; grid-template-columns: minmax(0,1fr) 150px auto; gap:8px; align-items:start; }
+    .rf-ing-row--pool .rf-pool-label { font-size:11px; font-weight:600; color:var(--muted-foreground); margin-bottom:3px; }
+    .rf-ing-row--pool .rf-pool-wrap { display:flex; flex-direction:column; gap:0; }
     .rf-ing-row select, .rf-ing-row input { font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--input); border-radius:var(--radius); background:var(--background); color:var(--foreground); width:100%; }
     .rf-ing-row .rf-product { margin-top:0; }
     .rf-ing-row .rf-qty-cell { display:flex; flex-direction:column; gap:5px; }
@@ -1821,10 +1823,13 @@
       <div class="df-field"><label id="rf-variation-label">Variation</label><input type="text" id="rf-variation" placeholder="Regular"></div>
     </div>
     <div class="df-field">
-      <label>Ingredients <span style="font-weight:400;color:var(--muted-foreground)">— quantity is a fraction of one case</span></label>
+      <label>Ingredients <span style="font-weight:400;color:var(--muted-foreground)">— product (case fraction) or pool (servings)</span></label>
       <div id="rf-ingredients" class="rf-ing-list"></div>
-      <button type="button" class="btn btn-outline btn-sm" onclick="addRecipeIngredientRow()" style="margin-top:8px"><i class="ph ph-plus btn-leading-icon"></i> Add ingredient</button>
-      <p class="df-hint">Quantity is a fraction of one case. Type a decimal or a fraction — e.g. <strong>1/12</strong> = one unit from a 12-pack, <strong>1</strong> = a whole case. For spirits, pick the product then tap <strong>+ Single</strong> / <strong>+ Double</strong> — the 25ml shot fraction (e.g. 1/168 for a 6×700ml case) is filled in automatically.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button type="button" class="btn btn-outline btn-sm" onclick="addRecipeIngredientRow()"><i class="ph ph-plus btn-leading-icon"></i> Add product</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addRecipePoolRow()"><i class="ph ph-drop btn-leading-icon"></i> Add pool</button>
+      </div>
+      <p class="df-hint"><strong>Product:</strong> quantity is a fraction of one case — e.g. <strong>1/12</strong> = one unit from a 12-pack, <strong>1/52</strong> = one pint from a keg. For spirits, pick the product then tap <strong>+ Single</strong> / <strong>+ Double</strong> for the shot fraction.<br><strong>Pool:</strong> combines interchangeable SKUs (e.g. Vodka 70cl + 1L) tagged with the same pool name on the product. Quantity is <strong>servings</strong> per sale — use <strong>+ Single</strong> (1) or <strong>+ Double</strong> (2).</p>
     </div>
     <div class="df-field"><label>Notes</label><textarea id="rf-notes" rows="2" placeholder="Optional — e.g. pour size, review note"></textarea></div>
   </div>
@@ -1861,17 +1866,11 @@
       <div class="df-field"><label>Time</label><input type="time" id="tf-time"></div>
     </div>
     <div class="df-field">
-      <label>Unit</label>
-      <div class="transfer-unit-toggle">
-        <button type="button" id="tf-unit-cases" class="active" onclick="setTransferUnit('cases')">Cases</button>
-        <button type="button" id="tf-unit-units" onclick="setTransferUnit('units')">Units</button>
-      </div>
-    </div>
-    <div class="df-field">
       <label>Products</label>
+      <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:40%">Product</th><th>Pack size</th><th>Quantity</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:36%">Product</th><th>Pack size</th><th>Cases</th><th>Singles</th><th style="width:36px"></th></tr></thead>
           <tbody id="tf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border)">
@@ -2180,6 +2179,11 @@
 
     // List-style panels (e.g. suppliers).
     panel.querySelectorAll('.supplier-list-item').forEach((item) => {
+      item.style.display = (!q || item.textContent.toLowerCase().includes(q)) ? '' : 'none';
+    });
+
+    // Card-style panels (e.g. deliveries, wastage).
+    panel.querySelectorAll('.delivery-log-item').forEach((item) => {
       item.style.display = (!q || item.textContent.toLowerCase().includes(q)) ? '' : 'none';
     });
   }
@@ -2925,6 +2929,8 @@
         { key: 'units_per_case', label: 'Units / case', type: 'number', min: 0 },
         { key: 'sku', label: 'SKU', type: 'text' },
         { key: 'abv', label: 'ABV (%)', type: 'number', min: 0 },
+        { key: 'pool_name', label: 'Volume pool', type: 'text', full: true, placeholder: 'e.g. House Vodka — groups interchangeable bottle sizes' },
+        { key: 'pool_servings_per_unit', label: 'Servings per bottle', type: 'number', min: 0, placeholder: 'e.g. 24 for 70cl, 22.5 for 1L' },
         {
           key: 'suppliers', type: 'custom', full: true,
           label: 'Suppliers & prices',
@@ -2937,6 +2943,17 @@
       values: p || {},
       onDelete: p ? async () => { await DB.products.remove(p.id); await loadLibrary(); } : null,
       onSave: async (v) => {
+        const poolName = (v.pool_name || '').trim() || null;
+        let poolServings = null;
+        if (poolName) {
+          if (v.pool_servings_per_unit != null && v.pool_servings_per_unit !== '') {
+            poolServings = Number(v.pool_servings_per_unit);
+          } else {
+            const cs = v.case_size || (p && p.case_size);
+            const ml = packBottleMl(cs);
+            if (ml) poolServings = shotsPerBottle({ case_size: cs });
+          }
+        }
         const patch = {
           name: v.name,
           category_id: v.category_id || null,
@@ -2944,6 +2961,8 @@
           units_per_case: v.units_per_case != null ? v.units_per_case : 1,
           sku: v.sku || null,
           abv: v.abv,
+          pool_name: poolName,
+          pool_servings_per_unit: poolServings,
         };
         // Preferred purchase option mirrors legacy columns via migration 016/020 triggers.
         let productId;
@@ -4202,6 +4221,8 @@
         extra +
       '</div>';
     }).join('');
+    const _ps = $('pageSearchInput');
+    if (_ps && _ps.value.trim()) pageSearch(_ps.value);
   }
 
   function productNameById(pid) {
@@ -4900,6 +4921,8 @@
         extra +
       '</div>';
     }).join('');
+    const _ps = $('pageSearchInput');
+    if (_ps && _ps.value.trim()) pageSearch(_ps.value);
   }
 
   function setWastageUnit(u) {
@@ -5324,10 +5347,30 @@
     _transfers = (await DB.transfers.forEvent(_currentEvent.id)) || [];
     _transfersEventId = _currentEvent.id;
   }
+  // Total cases for a saved transfer line: whole cases plus loose singles
+  // expressed as a fraction of a case. Legacy lines (no singles column) just
+  // use qty, which already holds cases (or folded fractional cases).
+  function transferLineCases(l) {
+    const ups = unitsPerCaseFor(l.product_id) || 1;
+    return (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
+  }
   function transferQtyForProduct(transfer, pid) {
     const sp = String(pid);
     const lines = transfer.lines || [];
-    return lines.filter((l) => String(l.product_id) === sp).reduce((s, l) => s + (Number(l.qty) || 0), 0);
+    return lines.filter((l) => String(l.product_id) === sp).reduce((s, l) => s + transferLineCases(l), 0);
+  }
+  // Human label for a saved transfer line, e.g. "3 cases + 5 singles".
+  function transferLineQtyLabel(t, l) {
+    const cases = Number(l.qty) || 0;
+    const singles = Number(l.singles) || 0;
+    if (singles > 0) {
+      const parts = [];
+      if (cases > 0) parts.push(round1(cases) + ' case' + (cases === 1 ? '' : 's'));
+      parts.push(Math.round(singles) + ' single' + (Math.round(singles) === 1 ? '' : 's'));
+      return parts.join(' + ');
+    }
+    if (t && t.unit === 'units') return round1(cases) + ' units';
+    return round1(cases) + ' case' + (cases === 1 ? '' : 's');
   }
   // Which bar (within the event) a transfer left from. Prefers the real
   // from_bar_id column (post-migration / cutover); falls back to a marker we
@@ -6239,14 +6282,15 @@
     sel.value = cur;
   }
 
-  function setTransferUnit(unit) {
-    _xferUnit = unit;
-    $('tf-unit-cases').classList.toggle('active', unit === 'cases');
-    $('tf-unit-units').classList.toggle('active', unit === 'units');
+  // Total cases for a transfer form line: whole cases plus loose singles
+  // expressed as a fraction of a case (uses the product's units/case).
+  function transferFormLineCases(line) {
+    const ups = unitsPerCaseFor(line.productId) || 1;
+    return (Number(line.cases) || 0) + (Number(line.singles) || 0) / ups;
   }
 
   function addTransferLine() {
-    _xferLines.push({ lineId: xferLineId(), productId: '', qty: '' });
+    _xferLines.push({ lineId: xferLineId(), productId: '', cases: '', singles: '' });
     renderTransferLines();
     const rows = document.querySelectorAll('#tf-lines-body tr');
     const line = _xferLines[_xferLines.length - 1];
@@ -6268,10 +6312,10 @@
     if (field === 'productId') renderTransferLines();
   }
 
-  function evalTransferLineQty(lineId, input) {
+  function evalTransferLineQty(lineId, field, input) {
     evalMathInput(input);
     const l = _xferLines.find((x) => x.lineId === lineId);
-    if (l) l.qty = input.value;
+    if (l) l[field] = input.value;
     renderTransferLines();
   }
 
@@ -6279,26 +6323,28 @@
     const body = $('tf-lines-body');
     if (!body) return;
     if (!_xferLines.length) {
-      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add product” to add items</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add product” to add items</td></tr>';
       return;
     }
     if (!_xferSource) {
-      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Pick where the stock is coming from first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Pick where the stock is coming from first.</td></tr>';
       return;
     }
     const productOptions = transferSourceProductOptions();
     if (!productOptions.length) {
-      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">No stock available at <strong>' + escapeHtml(locationLabel(_xferSource)) + '</strong>.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">No stock available at <strong>' + escapeHtml(locationLabel(_xferSource)) + '</strong>.</td></tr>';
       return;
     }
     body.innerHTML = _xferLines.map((line) => {
       const opt = line.productId ? productOptions.find((o) => o.id === line.productId) : null;
       const packSize = opt && opt.case_size ? opt.case_size : '';
       const avail = line.productId ? getStockAt(_xferSource, line.productId) : null;
-      const availLabel = avail == null ? '' : '<div style="font-size:11px;color:var(--muted-foreground);margin-top:3px">Available: <strong>' + avail + '</strong></div>';
-      const qtyNum = parseFloat(line.qty);
-      const over = avail != null && !isNaN(qtyNum) && qtyNum > avail;
+      const ups = line.productId ? unitsPerCaseFor(line.productId) : 1;
+      const availLabel = avail == null ? '' : '<div style="font-size:11px;color:var(--muted-foreground);margin-top:3px">Available: <strong>' + avail + '</strong> case' + (avail === 1 ? '' : 's') + '</div>';
+      const requested = line.productId ? transferFormLineCases(line) : 0;
+      const over = avail != null && requested > avail;
       const overStyle = over ? ';border-color:var(--danger);color:var(--danger)' : '';
+      const singlesHint = (line.productId && ups > 1) ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + ups + ' per case</div>' : '';
       return '<tr>' +
         '<td style="padding:6px 10px;position:relative"><input type="text" class="df-combo-input" id="tf-combo-input-' + line.lineId + '" autocomplete="off"' +
           ' value="' + escapeHtml(transferLineProductName(line.productId)) + '"' +
@@ -6307,7 +6353,8 @@
           ' oninput="filterTransferCombo(\'' + line.lineId + '\')"' +
           ' onkeydown="transferComboKey(event,\'' + line.lineId + '\')">' + availLabel + '</td>' +
         '<td style="padding:6px 10px;font-size:12px;color:var(--muted-foreground)">' + (packSize ? escapeHtml(packSize) : '—') + '</td>' +
-        '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.qty) + '" placeholder="0" style="width:100px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'qty\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',this)"></td>' +
+        '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.cases || '') + '" placeholder="0" style="width:80px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'cases\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',\'cases\',this)"></td>' +
+        '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.singles || '') + '" placeholder="0" style="width:80px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'singles\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',\'singles\',this)">' + singlesHint + '</td>' +
         '<td style="padding:6px 8px;text-align:center"><button type="button" class="btn btn-danger btn-sm btn-icon" onclick="removeTransferLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
       '</tr>';
     }).join('');
@@ -6474,7 +6521,7 @@
   function renderTransfers() {
     renderTransferSourceSelect();
     renderTransferRecipientSelect();
-    if (!_xferLines.length) _xferLines = [{ lineId: xferLineId(), productId: '', qty: '' }];
+    if (!_xferLines.length) _xferLines = [{ lineId: xferLineId(), productId: '', cases: '', singles: '' }];
     renderTransferLines();
 
     const logBody = $('transferLogBody');
@@ -6493,7 +6540,7 @@
       const dt = t.transferred_at ? new Date(t.transferred_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
       const itemRows = lines.map((l) => {
         const pName = (l.product && l.product.name) || productNameById(l.product_id);
-        const qtyLabel = t.unit === 'units' ? (l.qty + ' units') : (l.qty + ' cases');
+        const qtyLabel = transferLineQtyLabel(t, l);
         return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(pName) + '</span><span style="font-weight:700">' + qtyLabel + '</span></div>';
       }).join('');
       return '<div class="transfer-log-item">' +
@@ -6524,7 +6571,7 @@
     const t = (_transfers || []).find((x) => x.id === transferId);
     if (!t) { alert('Transfer not found'); return; }
     const recipientName = transferDestLabel(t);
-    const lines = (t.lines || []).map((l) => ({ productId: l.product_id, qty: l.qty }));
+    const lines = (t.lines || []).map((l) => ({ productId: l.product_id, cases: Number(l.qty) || 0, singles: Number(l.singles) || 0, unit: t.unit }));
     const date = t.transferred_at ? new Date(t.transferred_at) : new Date();
     await generateDeliveryNotePDF(recipientName, lines, date, t.unit || 'cases');
   }
@@ -6609,7 +6656,17 @@
         setFont('normal', 9.5, black);
         doc.text(info.name || '', ml + 2, y + 6);
         doc.text(info.size || '', ml + col1W + 2, y + 6);
-        doc.text(line.qty + ' ' + unit, ml + col1W + col2W + 2, y + 6);
+        let countText;
+        if (line.cases != null || line.singles != null) {
+          const cs = Number(line.cases) || 0, sg = Number(line.singles) || 0;
+          const parts = [];
+          if (cs > 0 || sg === 0) parts.push(round1(cs) + ' case' + (cs === 1 ? '' : 's'));
+          if (sg > 0) parts.push(Math.round(sg) + ' single' + (Math.round(sg) === 1 ? '' : 's'));
+          countText = parts.join(' + ');
+        } else {
+          countText = line.qty + ' ' + unit;
+        }
+        doc.text(countText, ml + col1W + col2W + 2, y + 6);
       }
       y += rowH;
     }
@@ -6691,8 +6748,7 @@
     _xferPendingDownloadPDF = false;
     setTransferOverdrawPrompt(false);
     $('tf-recipient').value = '';
-    _xferLines = [{ lineId: xferLineId(), productId: '', qty: '' }];
-    setTransferUnit('cases');
+    _xferLines = [{ lineId: xferLineId(), productId: '', cases: '', singles: '' }];
     if (_currentEvent) _xferSource = { type: 'event', id: _currentEvent.id };
     $('tf-err').textContent = '';
     setTransferDateTimeNow();
@@ -6728,15 +6784,15 @@
       $('tf-err').textContent = 'Source and destination are the same location.';
       return;
     }
-    const valid = _xferLines.filter((l) => l.productId && l.qty !== '' && parseFloat(l.qty) > 0);
+    const valid = _xferLines.filter((l) => l.productId && transferFormLineCases(l) > 0);
     if (!valid.length) { $('tf-err').textContent = 'Add at least one product with a quantity.'; return; }
 
     const totalsByProduct = {};
-    valid.forEach((l) => { totalsByProduct[l.productId] = (totalsByProduct[l.productId] || 0) + parseFloat(l.qty); });
+    valid.forEach((l) => { totalsByProduct[l.productId] = (totalsByProduct[l.productId] || 0) + transferFormLineCases(l); });
     const overs = [];
     for (const [pid, qty] of Object.entries(totalsByProduct)) {
       const avail = getStockAt(_xferSource, pid);
-      if (qty > avail) overs.push(productNameById(pid) + ': requested ' + qty + ', available ' + avail);
+      if (qty > avail) overs.push(productNameById(pid) + ': requested ' + round1(qty) + ', available ' + round1(avail) + ' cases');
     }
     if (overs.length && !_xferAllowOverdraw) {
       $('tf-err').textContent = 'Not enough stock at ' + locationLabel(_xferSource) + ': ' + overs.join('; ');
@@ -6787,16 +6843,32 @@
       const lineRows = valid.map((l) => ({
         transfer_id: transfer.id,
         product_id: l.productId,
-        qty: round1(parseFloat(l.qty)),
+        qty: round1(Number(l.cases) || 0),
+        singles: Math.round(Number(l.singles) || 0),
         unit_cost: 0,
         chargeback_applied: false,
       }));
-      const savedLines = await DB.transfers.addLines(lineRows);
+      let savedLines;
+      try {
+        savedLines = await DB.transfers.addLines(lineRows);
+      } catch (lineErr) {
+        // Fallback for databases where migration 022 (transfer_lines.singles)
+        // hasn't been applied yet: fold loose singles into fractional cases.
+        if (/singles|constraint|check/i.test(lineErr && lineErr.message || '')) {
+          savedLines = await DB.transfers.addLines(valid.map((l) => ({
+            transfer_id: transfer.id,
+            product_id: l.productId,
+            qty: roundN(transferFormLineCases(l), 4),
+            unit_cost: 0,
+            chargeback_applied: false,
+          })));
+        } else { throw lineErr; }
+      }
       if (isWarehouseSource) {
-        await Promise.all(savedLines.map((l) => adjustWarehouseStock(_xferSource.id, l.product_id, -Number(l.qty))));
+        await Promise.all(savedLines.map((l) => adjustWarehouseStock(_xferSource.id, l.product_id, -transferLineCases(l))));
       }
       if (destIsWarehouse) {
-        await Promise.all(savedLines.map((l) => adjustWarehouseStockDB(toWarehouseId, l.product_id, Number(l.qty))));
+        await Promise.all(savedLines.map((l) => adjustWarehouseStockDB(toWarehouseId, l.product_id, transferLineCases(l))));
       }
       transfer.lines = savedLines;
       const recip = recipientId ? ((_currentEvent.recipients) || []).find((r) => r.id === recipientId) : null;
@@ -6804,7 +6876,7 @@
       _transfers.unshift(transfer);
       _transfersEventId = _currentEvent.id;
       if (downloadPDF) {
-        await generateDeliveryNotePDF(transferDestLabel(transfer), valid.map((l) => ({ productId: l.productId, qty: round1(parseFloat(l.qty)) })), transferredAt, _xferUnit);
+        await generateDeliveryNotePDF(transferDestLabel(transfer), savedLines.map((l) => ({ productId: l.product_id, cases: Number(l.qty) || 0, singles: Number(l.singles) || 0 })), transferredAt, 'cases');
       }
       clearTransferForm();
       renderTransfers();
@@ -6825,10 +6897,10 @@
     try {
       // Reverse warehouse movements: add back to the source, remove from the destination.
       if (t && t.from_warehouse_id) {
-        await Promise.all(lines.map((l) => adjustWarehouseStockDB(t.from_warehouse_id, l.product_id, Number(l.qty))));
+        await Promise.all(lines.map((l) => adjustWarehouseStockDB(t.from_warehouse_id, l.product_id, transferLineCases(l))));
       }
       if (t && t.to_warehouse_id) {
-        await Promise.all(lines.map((l) => adjustWarehouseStockDB(t.to_warehouse_id, l.product_id, -Number(l.qty))));
+        await Promise.all(lines.map((l) => adjustWarehouseStockDB(t.to_warehouse_id, l.product_id, -transferLineCases(l))));
       }
       await DB.transfers.clearLines(id);
       await DB.transfers.remove(id);
@@ -7195,10 +7267,9 @@
       await ensureTransferData();
     } catch (e) { console.warn('transferCarriedOut load', e); }
     _xferSource = { type: 'site', id: _currentEvent.id };
-    _xferLines = [{ lineId: xferLineId(), productId: pid, qty: String(carried) }];
+    _xferLines = [{ lineId: xferLineId(), productId: pid, cases: String(carried), singles: '' }];
     openTransferForm();
     _xferAllowOverdraw = true;        // trust the closing count, not Bone Yard math
-    setTransferUnit('units');
     renderTransferLines();
   }
 
@@ -7488,7 +7559,7 @@
       const dirColor = inbound ? 'var(--success)' : 'var(--danger)';
       const itemRows = lines.map((l) => {
         const pName = (l.product && l.product.name) || productNameById(l.product_id);
-        const qtyLabel = t.unit === 'units' ? (round1(l.qty) + ' units') : (round1(l.qty) + ' cases');
+        const qtyLabel = transferLineQtyLabel(t, l);
         return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(pName) + '</span><span style="font-weight:700">' + qtyLabel + '</span></div>';
       }).join('');
       return '<div class="transfer-log-item">' +
@@ -7926,7 +7997,7 @@
       if (recipe) {
         const ings = (recipe.ingredients || []).slice().sort((x, y) => (x.position || 0) - (y.position || 0));
         const summary = ings.length
-          ? ings.map((ig) => escapeHtml(ig.product_name) + ' ×' + fmtQty(ig.qty)).join(', ')
+          ? ings.map((ig) => formatRecipeIngredientSummary(ig)).join(', ')
           : 'no ingredients';
         tag = '<span class="recipe-tag mapped"><i class="ph-bold ph-check"></i> Mapped</span> <span class="ing-list" style="font-size:12px;color:var(--muted-foreground)">' + summary + '</span>';
         btn = '<button class="btn btn-outline btn-sm" onclick="openRecipeModal(' + jsArg(r.name) + ',' + jsArg(r.variation) + ',' + jsArg(recipe.id) + ')"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit</button>';
@@ -7965,14 +8036,56 @@
   // Stock = opening stock per event_product (delivered − damaged, falling
   // back to qty ordered), which is the same "cases" unit recipes use.
   function normProductName(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
+  function normPoolName(s) { return normProductName(s); }
+
+  function listDistinctPoolNames() {
+    const seen = new Set();
+    const out = [];
+    (_products || []).forEach((p) => {
+      const n = (p.pool_name || '').trim();
+      if (!n) return;
+      const k = normPoolName(n);
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(n);
+    });
+    return out.sort((a, b) => a.localeCompare(b));
+  }
+
+  function formatRecipeIngredientSummary(ig) {
+    if (ig.pool_name) return escapeHtml(ig.pool_name) + ' (pool) ×' + fmtQty(ig.qty) + ' serv';
+    return escapeHtml(ig.product_name) + ' ×' + fmtQty(ig.qty);
+  }
+
+  function poolStockForEvent(poolName) {
+    const poolKey = normPoolName(poolName);
+    const eps = (_currentEvent && _currentEvent.event_products) || [];
+    const epByPid = {};
+    eps.forEach((ep) => { epByPid[ep.product_id] = ep; });
+    let available = 0;
+    let inEvent = false;
+    (_products || []).forEach((p) => {
+      if (!p.pool_name || normPoolName(p.pool_name) !== poolKey) return;
+      const spu = Number(p.pool_servings_per_unit);
+      if (!(spu > 0)) return;
+      const ep = epByPid[p.id];
+      if (!ep) return;
+      inEvent = true;
+      const cases = epOpeningStock(ep);
+      const bottles = cases * spiritBottlesPerCase(p);
+      available += bottles * spu;
+    });
+    return { available: inEvent ? available : null, inEvent };
+  }
 
   function computeProjection() {
     const rows = (_squareImport && _squareImport.rows) || [];
     const baselineNet = rows.reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
     const target = Number(_currentEvent && _currentEvent.target_revenue) || 0;
 
-    // Σ consumption per product (in cases) across every mapped till line.
+    // Σ consumption per product (in cases) and per pool (in servings).
     const byName = {};
+    const byPool = {};
     let mappedNet = 0;
     rows.forEach((r) => {
       const recipe = findRecipeFor(r.name, r.variation);
@@ -7980,10 +8093,19 @@
       mappedNet += Number(r.net_sales) || 0;
       const sold = Number(r.items_sold) || 0;
       (recipe.ingredients || []).forEach((ig) => {
+        const qty = Number(ig.qty) || 0;
+        if (!(qty > 0)) return;
+        if (ig.pool_name) {
+          const key = normPoolName(ig.pool_name);
+          if (!key) return;
+          if (!byPool[key]) byPool[key] = { name: ig.pool_name, baselineServings: 0 };
+          byPool[key].baselineServings += sold * qty;
+          return;
+        }
         const key = normProductName(ig.product_name);
         if (!key) return;
         if (!byName[key]) byName[key] = { name: ig.product_name, baselineCases: 0 };
-        byName[key].baselineCases += sold * (Number(ig.qty) || 0);
+        byName[key].baselineCases += sold * qty;
       });
     });
 
@@ -8000,7 +8122,7 @@
 
     const factor = (baselineNet > 0 && target > 0) ? target / baselineNet : null;
 
-    const items = Object.keys(byName).map((key) => {
+    const productItems = Object.keys(byName).map((key) => {
       const b = byName[key];
       const st = stockByName[key] || null;
       const available = st ? st.available : null;
@@ -8010,6 +8132,7 @@
         : null;
       return {
         name: b.name,
+        unit: 'cases',
         pid: st ? st.pid : null,
         inEvent: !!st,
         baselineCases: b.baselineCases,
@@ -8018,6 +8141,28 @@
         runOutRevenue,
       };
     });
+
+    const poolItems = Object.keys(byPool).map((key) => {
+      const b = byPool[key];
+      const st = poolStockForEvent(b.name);
+      const available = st.available;
+      const projectedCases = factor != null ? b.baselineServings * factor : null;
+      const runOutRevenue = (b.baselineServings > 0 && available != null)
+        ? (available / b.baselineServings) * baselineNet
+        : null;
+      return {
+        name: b.name + ' (pool)',
+        unit: 'servings',
+        pid: null,
+        inEvent: st.inEvent,
+        baselineCases: b.baselineServings,
+        projectedCases,
+        available,
+        runOutRevenue,
+      };
+    });
+
+    const items = productItems.concat(poolItems);
 
     return { rows, baselineNet, mappedNet, target, factor, items };
   }
@@ -8060,7 +8205,7 @@
       '<div class="stats-row" style="margin-bottom:16px">' +
         '<div class="stat-card"><div class="stat-label">Target revenue</div><div class="stat-value">' + money(p.target) + '</div><div class="stat-sub">projection scaled to this</div></div>' +
         '<div class="stat-card"><div class="stat-label">Imported sales</div><div class="stat-value">' + money(p.baselineNet) + '</div><div class="stat-sub">× ' + (p.factor).toFixed(2) + ' to hit target</div></div>' +
-        '<div class="stat-card"><div class="stat-label">Will run out</div><div class="stat-value" style="color:' + (runOutCount ? 'var(--danger)' : 'var(--success)') + '">' + runOutCount + '</div><div class="stat-sub">of ' + mappedInEvent + ' stocked products</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Will run out</div><div class="stat-value" style="color:' + (runOutCount ? 'var(--danger)' : 'var(--success)') + '">' + runOutCount + '</div><div class="stat-sub">of ' + mappedInEvent + ' stocked items</div></div>' +
         '<div class="stat-card"><div class="stat-label">Unmapped sales</div><div class="stat-value" style="color:' + (unmappedPct > 10 ? 'var(--warning)' : 'inherit') + '">' + Math.round(unmappedPct) + '%</div><div class="stat-sub">' + money(unmapped) + ' not attributed</div></div>' +
       '</div>';
 
@@ -8105,10 +8250,11 @@
           ? '<span style="font-weight:600;color:' + colour + '">' + Math.round(pct) + '%</span>'
           : '<span class="muted">—</span>';
       }
+      const unitSuffix = it.unit === 'servings' ? ' serv' : '';
       return '<tr>' +
         '<td>' + escapeHtml(it.name) + '</td>' +
-        '<td class="num">' + (it.projectedCases != null ? round1(it.projectedCases) : '—') + '</td>' +
-        '<td class="num">' + (it.available != null ? round1(it.available) : '<span class="muted">—</span>') + '</td>' +
+        '<td class="num">' + (it.projectedCases != null ? round1(it.projectedCases) + unitSuffix : '—') + '</td>' +
+        '<td class="num">' + (it.available != null ? round1(it.available) + unitSuffix : '<span class="muted">—</span>') + '</td>' +
         '<td class="num">' + runOutCell + '</td>' +
         '<td class="num">' + pctCell + '</td>' +
         '<td>' + badge + '</td>' +
@@ -8133,7 +8279,7 @@
           '<tbody>' + body + '</tbody>' +
         '</table>' +
       '</div>' +
-      '<p class="df-hint" style="margin-top:10px">Projected use &amp; stock are in cases. <strong>Runs dry at</strong> is the revenue at which a product is exhausted at this sales mix; <strong>% of target</strong> below 100% means it runs out before you reach the target.</p>';
+      '<p class="df-hint" style="margin-top:10px">Projected use &amp; stock are in <strong>cases</strong> for products and <strong>servings</strong> for volume pools. <strong>Runs dry at</strong> is the revenue at which an item is exhausted at this sales mix; <strong>% of target</strong> below 100% means it runs out before you reach the target.</p>';
   }
 
   // ── import the Square Item Sales CSV/XLSX ──────────────────────────
@@ -8345,7 +8491,7 @@
       if (recipe) {
         const ings = (recipe.ingredients || []).slice().sort((x, y) => (x.position || 0) - (y.position || 0));
         const summary = ings.length
-          ? ings.map((ig) => escapeHtml(ig.product_name) + ' ×' + fmtQty(ig.qty)).join(', ')
+          ? ings.map((ig) => formatRecipeIngredientSummary(ig)).join(', ')
           : 'no ingredients';
         tag = '<span class="recipe-tag mapped"><i class="ph-bold ph-check"></i> Mapped</span> <span class="ing-list" style="font-size:12px;color:var(--muted-foreground)">' + summary + '</span>';
         btn = '<button class="btn btn-outline btn-sm" onclick="openRecipeModal(' + jsArg(r.modifier) + ',' + jsArg(r.modifier_set) + ',' + jsArg(recipe.id) + ',\'modifier\')"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit</button>';
@@ -8456,6 +8602,7 @@
     const rowId = 'ri' + Math.random().toString(36).slice(2, 8);
     const row = document.createElement('div');
     row.className = 'rf-ing-row';
+    row.id = 'rf-row-' + rowId;
     row.innerHTML =
       '<input type="text" class="rf-product df-combo-input" id="rf-prod-' + rowId + '" autocomplete="off"' +
         ' placeholder="Search products\u2026"' +
@@ -8472,6 +8619,51 @@
       '</div>' +
       '<button type="button" class="rf-ing-remove" onclick="this.closest(\'.rf-ing-row\').remove()" title="Remove">&times;</button>';
     wrap.appendChild(row);
+  }
+
+  function addRecipePoolRow(poolName, qty) {
+    const wrap = $('rf-ingredients');
+    if (!wrap) return;
+    const rowId = 'rp' + Math.random().toString(36).slice(2, 8);
+    const pools = listDistinctPoolNames();
+    const selected = poolName != null ? String(poolName).trim() : '';
+    const opts = pools.map((n) => {
+      const sel = selected && normPoolName(n) === normPoolName(selected) ? ' selected' : '';
+      return '<option value="' + escapeHtml(n) + '"' + sel + '>' + escapeHtml(n) + '</option>';
+    }).join('');
+    const row = document.createElement('div');
+    row.className = 'rf-ing-row rf-ing-row--pool';
+    row.id = 'rf-row-' + rowId;
+    row.innerHTML =
+      '<div class="rf-pool-wrap">' +
+        '<span class="rf-pool-label">Volume pool</span>' +
+        '<select class="rf-pool" id="rf-pool-' + rowId + '">' +
+          '<option value="">— Select pool —</option>' + opts +
+        '</select>' +
+      '</div>' +
+      '<div class="rf-qty-cell">' +
+        '<input type="text" class="rf-qty" placeholder="servings" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
+        '<div class="shot-btns">' +
+          '<button type="button" class="shot-btn" title="One serving per sale" onclick="addRecipePoolServing(\'' + rowId + '\',1)">+ Single</button>' +
+          '<button type="button" class="shot-btn" title="Two servings per sale" onclick="addRecipePoolServing(\'' + rowId + '\',2)">+ Double</button>' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="rf-ing-remove" onclick="this.closest(\'.rf-ing-row\').remove()" title="Remove">&times;</button>';
+    wrap.appendChild(row);
+    if (!pools.length) {
+      const err = $('rf-err');
+      if (err) err.textContent = 'No volume pools defined yet — set a pool name on interchangeable products in the Product Library first.';
+    }
+  }
+
+  function addRecipePoolServing(rowId, n) {
+    const row = document.getElementById('rf-row-' + rowId);
+    if (!row) return;
+    const qtyEl = row.querySelector('.rf-qty');
+    const poolEl = row.querySelector('.rf-pool');
+    if (!qtyEl) return;
+    if (poolEl && !poolEl.value) { poolEl.focus(); return; }
+    qtyEl.value = String(n);
   }
 
   function recipeProductByName(name) {
@@ -8636,7 +8828,10 @@
     $('rf-delete-btn').style.display = recipe ? '' : 'none';
     if (recipe && (recipe.ingredients || []).length) {
       recipe.ingredients.slice().sort((a, b) => (a.position || 0) - (b.position || 0))
-        .forEach((ig) => addRecipeIngredientRow(ig.product_name, ig.qty));
+        .forEach((ig) => {
+          if (ig.pool_name) addRecipePoolRow(ig.pool_name, ig.qty);
+          else addRecipeIngredientRow(ig.product_name, ig.qty);
+        });
     } else {
       addRecipeIngredientRow();
     }
@@ -8654,9 +8849,18 @@
   function collectRecipeIngredients() {
     const out = [];
     document.querySelectorAll('#rf-ingredients .rf-ing-row').forEach((row, i) => {
-      const name = row.querySelector('.rf-product').value;
-      const qty = parseQtyInput(row.querySelector('.rf-qty').value);
-      if (name && isFinite(qty) && qty > 0) out.push({ product_name: name, qty, position: i });
+      const qtyEl = row.querySelector('.rf-qty');
+      const qty = parseQtyInput(qtyEl && qtyEl.value);
+      if (!isFinite(qty) || qty <= 0) return;
+      if (row.classList.contains('rf-ing-row--pool')) {
+        const poolEl = row.querySelector('.rf-pool');
+        const pool = poolEl ? (poolEl.value || '').trim() : '';
+        if (pool) out.push({ pool_name: pool, qty, position: i });
+        return;
+      }
+      const prodEl = row.querySelector('.rf-product');
+      const name = prodEl ? (prodEl.value || '').trim() : '';
+      if (name) out.push({ product_name: name, qty, position: i });
     });
     return out;
   }
@@ -8688,7 +8892,11 @@
         recipeId = created.id;
       }
       await DB.insert('recipe_ingredients', ingredients.map((ig) => ({
-        recipe_id: recipeId, product_name: ig.product_name, qty: ig.qty, position: ig.position,
+        recipe_id: recipeId,
+        product_name: ig.product_name || null,
+        pool_name: ig.pool_name || null,
+        qty: ig.qty,
+        position: ig.position,
       })), { returning: false });
       _recipes = (await DB.recipes.listFull()) || [];
       closeRecipeForm();
