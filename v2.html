@@ -691,6 +691,19 @@
     .drawer-foot .tf-foot-err { margin-right:auto; display:flex; flex-direction:column; gap:6px; min-width:0; flex:1; max-width:65%; }
     .drawer-foot .tf-foot-err .err { margin-right:0; }
     .drawer-foot .spacer { margin-right:auto; }
+    /* product detail drawer (read-only: supplier prices + deliveries) */
+    .pd-section { margin-bottom:22px; }
+    .pd-section:last-child { margin-bottom:0; }
+    .pd-section-head { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); font-weight:600; margin:0 0 10px; }
+    .pd-empty { font-size:13px; color:var(--muted-foreground); padding:10px 0; }
+    .pd-card { border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; }
+    .pd-card:last-child { margin-bottom:0; }
+    .pd-card-top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+    .pd-sup { font-weight:700; font-size:14px; }
+    .pd-price { font-weight:700; font-size:15px; white-space:nowrap; }
+    .pd-meta { font-size:12px; color:var(--muted-foreground); margin-top:4px; }
+    .pd-badge { display:inline-block; margin-left:8px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--primary, #16a34a); background:rgba(22,163,74,.12); border-radius:999px; padding:2px 7px; vertical-align:middle; }
+    .pd-summary { font-size:12px; color:var(--muted-foreground); margin-bottom:12px; }
     .field { display:flex; flex-direction:column; gap:4px; }
     .field.full { grid-column:1 / -1; }
     .field label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; color:var(--muted-foreground); }
@@ -1633,6 +1646,16 @@
   </div>
 </aside>
 
+<!-- ===================== PRODUCT DETAIL DRAWER (read-only) ===================== -->
+<div class="drawer-backdrop" id="productDetailOverlay" onclick="closeProductDetail()"></div>
+<aside class="drawer" id="productDetailDrawer" role="dialog" aria-modal="true" aria-labelledby="productDetailTitle">
+  <div class="drawer-head">
+    <h2 id="productDetailTitle">Product</h2>
+    <button class="x" onclick="closeProductDetail()" aria-label="Close">&times;</button>
+  </div>
+  <div class="drawer-body drawer-body--block" id="productDetailBody"></div>
+</aside>
+
 <!-- ===================== DELIVERY FORM DRAWER ===================== -->
 <div class="drawer-backdrop" id="deliveryFormOverlay"></div>
 <aside class="drawer drawer--wide" id="deliveryFormDrawer" role="dialog" aria-modal="true" aria-labelledby="deliveryFormTitle">
@@ -1652,7 +1675,7 @@
       <label>Products delivered</label>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:42%">Product</th><th>Qty (cases)</th><th title="Unusable / damaged cases">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:38%">Product</th><th>Cases</th><th title="Loose individual units">Singles</th><th title="Unusable / damaged cases">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
           <tbody id="df-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2037,6 +2060,23 @@
       return { n: b, unit: b === 1 ? 'bottle' : 'bottles' };
     }
     return { n: round1(n), unit: 'cases' };
+  }
+
+  // Human label for a delivery line's quantity. Spirits collapse to bottles
+  // (cases × bottles-per-case); everything else shows whole cases and any
+  // loose singles separately ("3 cases · 5 singles").
+  function deliveryLineQtyLabel(l) {
+    const p = spiritProductById(l.product_id);
+    if (p && isSpiritBottle(p)) {
+      const d = deliveryDisplayQty(l.product_id, delLineCases(l));
+      return d.n + ' ' + d.unit;
+    }
+    const cases = round1(l.qty);
+    const singles = Math.round(Number(l.singles) || 0);
+    const parts = [];
+    if (cases || !singles) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
+    if (singles) parts.push(singles + ' ' + (singles === 1 ? 'single' : 'singles'));
+    return parts.join(' \u00b7 ');
   }
 
   function spiritProductById(pid) {
@@ -2553,6 +2593,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('mergeModal').classList.contains('open')) closeMergeDialog();
     if (e.key === 'Escape' && $('catMergeModal').classList.contains('open')) closeCategoryMergeDialog();
+    if (e.key === 'Escape' && $('productDetailDrawer').classList.contains('open')) closeProductDetail();
   });
 
   // =====================================================================
@@ -3781,7 +3822,7 @@
       const pid = ep.product_id;
       if (_evEditingId === pid) {
         const val = ep.qty_ordered != null ? ep.qty_ordered : '';
-        return '<td class="num"><input type="text" id="ev-ord-' + pid + '" value="' + escapeHtml(val) +
+        return '<td class="num" onclick="event.stopPropagation()"><input type="text" id="ev-ord-' + pid + '" value="' + escapeHtml(val) +
           '" style="width:72px;text-align:right" autocomplete="off"' +
           ' onkeydown="if(event.key===\'Enter\')saveEventProductOrdered(\'' + pid + '\');if(event.key===\'Escape\')cancelEventProductEdit()"></td>';
       }
@@ -3791,18 +3832,18 @@
     const actionCell = (ep) => {
       const pid = ep.product_id;
       if (_evEditingId === pid) {
-        return '<td style="white-space:nowrap;text-align:right">' +
+        return '<td style="white-space:nowrap;text-align:right" onclick="event.stopPropagation()">' +
           '<button class="btn btn-primary btn-sm btn-icon" title="Save" onclick="saveEventProductOrdered(\'' + pid + '\')"><i class="ph ph-check"></i></button> ' +
           '<button class="btn btn-outline btn-sm btn-icon" title="Cancel" onclick="cancelEventProductEdit()"><i class="ph ph-x"></i></button>' +
         '</td>';
       }
-      return '<td style="text-align:right">' +
+      return '<td style="text-align:right" onclick="event.stopPropagation()">' +
         '<button class="btn btn-outline btn-sm btn-icon" title="Edit ordered qty" onclick="editEventProductOrdered(\'' + pid + '\')"><i class="ph ph-pencil-simple"></i></button>' +
       '</td>';
     };
 
     $('evBody').innerHTML = rows.map((ep) => (
-      '<tr>' +
+      '<tr style="cursor:pointer" title="View supplier prices & deliveries" onclick="openProductDetail(\'' + ep.product_id + '\')">' +
       '<td class="ev-name">' + escapeHtml((ep.product && ep.product.name) || '(unknown)') + '</td>' +
       '<td>' + ((ep.product && ep.product.case_size) ? escapeHtml(ep.product.case_size) : '<span class="muted">—</span>') + '</td>' +
       '<td>' + catBadge(ep.product && ep.product.category) + '</td>' +
@@ -3865,6 +3906,107 @@
     }
   }
 
+  // ---------- Product detail drawer (read-only): supplier prices + deliveries ----------
+  function closeProductDetail() {
+    $('productDetailOverlay').classList.remove('open');
+    $('productDetailDrawer').classList.remove('open');
+  }
+
+  async function openProductDetail(productId) {
+    if (!_currentEvent) return;
+    const ep = (_evProducts || []).find((x) => x.product_id === productId);
+    const name = (ep && ep.product && ep.product.name) || productNameById(productId) || 'Product';
+    $('productDetailTitle').textContent = name;
+    $('productDetailBody').innerHTML =
+      '<div style="padding:10px 0;color:var(--muted-foreground);font-size:13px">Loading…</div>';
+    $('productDetailOverlay').classList.add('open');
+    $('productDetailDrawer').classList.add('open');
+    try {
+      // Supplier offers live on the library products (product_suppliers).
+      if (!_products.length) _products = (await DB.products.listFull()) || [];
+      // Always pull fresh deliveries for the current event.
+      const deliveries = await DB.deliveries.forEvent(_currentEvent.id);
+      renderProductDetail(productId, deliveries || []);
+    } catch (err) {
+      console.error('openProductDetail', err);
+      $('productDetailBody').innerHTML =
+        '<div class="err" style="font-size:13px">' + escapeHtml(err.message || String(err)) + '</div>';
+    }
+  }
+
+  function renderProductDetail(productId, deliveries) {
+    const body = $('productDetailBody');
+    const product = (_products || []).find((p) => p.id === productId);
+
+    // ----- Supplier prices -----
+    const offers = (product && product.product_suppliers) ? product.product_suppliers.slice() : [];
+    offers.sort((a, b) =>
+      (b.is_preferred ? 1 : 0) - (a.is_preferred ? 1 : 0) ||
+      (((a.supplier && a.supplier.name) || '').localeCompare((b.supplier && b.supplier.name) || '')));
+
+    const offersHtml = offers.length
+      ? offers.map((o) => {
+          const sup = escapeHtml((o.supplier && o.supplier.name) || 'Unknown supplier');
+          const pref = o.is_preferred ? '<span class="pd-badge">Preferred</span>' : '';
+          const pack = o.pack_size || (product && product.case_size) || '';
+          const sku = o.sku ? 'SKU ' + escapeHtml(o.sku) : '';
+          const metaBits = [pack ? escapeHtml(pack) : '', sku].filter(Boolean).join(' · ');
+          const casePrice = o.case_price != null ? money(o.case_price) : '—';
+          const unitPrice = o.unit_price != null ? ('<div class="pd-meta">' + money(o.unit_price) + ' / unit</div>') : '';
+          return '<div class="pd-card">' +
+            '<div class="pd-card-top"><span class="pd-sup">' + sup + pref + '</span>' +
+              '<span class="pd-price">' + casePrice + '</span></div>' +
+            (metaBits ? '<div class="pd-meta">' + metaBits + '</div>' : '') +
+            unitPrice +
+          '</div>';
+        }).join('')
+      : '<div class="pd-empty">No supplier prices saved for this product.</div>';
+
+    // ----- Deliveries (this event) -----
+    const rel = (deliveries || [])
+      .filter((d) => (d.lines || []).some((l) => l.product_id === productId))
+      .sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at));
+
+    let totalCases = 0;
+    const delHtml = rel.length
+      ? rel.map((d) => {
+          const line = (d.lines || []).find((l) => l.product_id === productId) || {};
+          totalCases += (Number(line.qty) || 0);
+          const qty = deliveryDisplayQty(productId, line.qty);
+          const dmg = Number(line.damaged_qty) || 0;
+          const dmgTag = dmg > 0
+            ? ' <span class="badge-unusable">' + deliveryDisplayQty(productId, dmg).n + ' unusable</span>'
+            : '';
+          const dt = d.delivered_at
+            ? new Date(d.delivered_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+            : '—';
+          const sup = escapeHtml((d.supplier && d.supplier.name) || 'No supplier');
+          const ref = d.reference ? ' · ' + escapeHtml(d.reference) : '';
+          const { price } = deliveryLineCasePrice(productId, d.supplier_id || null);
+          const priceTag = price != null ? (money(price) + ' / case') : '';
+          const cost = price != null ? money(price * (Number(line.qty) || 0)) : '';
+          const metaBits = [dt + ref, priceTag, cost ? ('total ' + cost) : ''].filter(Boolean).join(' · ');
+          return '<div class="pd-card">' +
+            '<div class="pd-card-top"><span class="pd-sup">' + sup + '</span>' +
+              '<span class="pd-price">' + qty.n + ' ' + qty.unit + dmgTag + '</span></div>' +
+            '<div class="pd-meta">' + metaBits + '</div>' +
+          '</div>';
+        }).join('')
+      : '<div class="pd-empty">No deliveries logged for this product yet.</div>';
+
+    const delHead = rel.length
+      ? ('Deliveries · ' + round1(totalCases) + ' case' + (round1(totalCases) === 1 ? '' : 's') + ' across ' + rel.length + ' deliver' + (rel.length === 1 ? 'y' : 'ies'))
+      : 'Deliveries';
+
+    const sizeBits = [product && product.case_size, product && product.category && product.category.name]
+      .filter(Boolean).map(escapeHtml).join(' · ');
+
+    body.innerHTML =
+      (sizeBits ? '<div class="pd-summary">' + sizeBits + '</div>' : '') +
+      '<div class="pd-section"><div class="pd-section-head">Supplier prices</div>' + offersHtml + '</div>' +
+      '<div class="pd-section"><div class="pd-section-head">' + delHead + '</div>' + delHtml + '</div>';
+  }
+
   // =====================================================================
   // Deliveries
   // =====================================================================
@@ -3900,7 +4042,13 @@
     }
   }
 
-  function delLineSum(lines) { return (lines || []).reduce((s, l) => s + (Number(l.qty) || 0), 0); }
+  // Total cases for a saved delivery line: whole cases plus any loose
+  // singles expressed as a fraction of a case.
+  function delLineCases(l) {
+    const ups = unitsPerCaseFor(l.product_id) || 1;
+    return (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
+  }
+  function delLineSum(lines) { return (lines || []).reduce((s, l) => s + delLineCases(l), 0); }
   function delDamagedSum(lines) { return (lines || []).reduce((s, l) => s + (Number(l.damaged_qty) || 0), 0); }
 
   // Deliveries are now the source of truth for delivered qty. Recompute the
@@ -3912,14 +4060,14 @@
     const map = {};
     _deliveries.forEach((d) => (d.lines || []).forEach((l) => {
       if (!l.product_id) return;
-      map[l.product_id] = (map[l.product_id] || 0) + (Number(l.qty) || 0);
+      map[l.product_id] = (map[l.product_id] || 0) + delLineCases(l);
     }));
     _openingCountedIn = map;
     const eps = _currentEvent.event_products || [];
     const updates = [];
     eps.forEach((ep) => {
-      const counted = round1(map[ep.product_id] || 0);
-      const cur = ep.delivered_qty != null ? round1(ep.delivered_qty) : null;
+      const counted = roundN(map[ep.product_id] || 0, 3);
+      const cur = ep.delivered_qty != null ? roundN(ep.delivered_qty, 3) : null;
       if (cur !== counted) {
         ep.delivered_qty = counted;
         updates.push(
@@ -3964,10 +4112,9 @@
             const size = productSizeById(l.product_id);
             const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
             const { price } = deliveryLineCasePrice(l.product_id, d.supplier_id || null);
-            const lineCost = price != null ? price * (Number(l.qty) || 0) : null;
+            const lineCost = price != null ? price * delLineCases(l) : null;
             const costTag = lineCost != null ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">· ' + money(lineCost) + '</span>' : '';
-            const qtyDisp = deliveryDisplayQty(l.product_id, l.qty);
-            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + qtyDisp.n + ' ' + qtyDisp.unit + costTag + '</span></div>';
+            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + deliveryLineQtyLabel(l) + costTag + '</span></div>';
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const photo = (label, url) => '<div class="delivery-log-photo" onclick="openDeliveryLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt="' + label + '"></div>';
@@ -4036,7 +4183,7 @@
   function deliveryCost(d) {
     return (d.lines || []).reduce((s, l) => {
       const { price } = deliveryLineCasePrice(l.product_id, d.supplier_id || null);
-      return s + (price != null ? price * (Number(l.qty) || 0) : 0);
+      return s + (price != null ? price * delLineCases(l) : 0);
     }, 0);
   }
 
@@ -4061,19 +4208,19 @@
     const body = $('df-lines-body');
     const options = deliveryProductOptions();
     if (!_delLines.length) {
-      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
       renderDeliveryCostSummary();
       return;
     }
     if (!options.length && !(_products || []).length) {
-      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
       renderDeliveryCostSummary();
       return;
     }
     const supplierId = ($('df-supplier') && $('df-supplier').value) || null;
     body.innerHTML = _delLines.map((line) => {
       const { price } = deliveryLineCasePrice(line.productId, supplierId);
-      const lineCost = (line.productId && price != null) ? price * (Number(line.qty) || 0) : null;
+      const lineCost = (line.productId && price != null) ? price * delFormLineCases(line) : null;
       return '<tr>' +
       '<td style="position:relative"><input type="text" class="df-combo-input" id="df-combo-input-' + line.lineId + '" autocomplete="off"' +
         ' value="' + escapeHtml(deliveryLineProductName(line.productId)) + '"' +
@@ -4082,12 +4229,20 @@
         ' oninput="filterDeliveryCombo(\'' + line.lineId + '\')"' +
         ' onkeydown="deliveryComboKey(event,\'' + line.lineId + '\')"></td>' +
       '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>' +
+      '<td><input type="number" step="1" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>' +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
       '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
       '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeDeliveryLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
       '</tr>';
     }).join('');
     renderDeliveryCostSummary();
+  }
+
+  // Total cases for an in-progress form line: whole cases plus loose singles
+  // expressed as a fraction of a case (uses the product's units/case).
+  function delFormLineCases(line) {
+    const ups = unitsPerCaseFor(line.productId) || 1;
+    return (Number(line.qty) || 0) + (Number(line.singles) || 0) / ups;
   }
 
   // Live total + supplier-price hint under the delivery form's line table.
@@ -4121,7 +4276,7 @@
   }
 
   function addDeliveryLine() {
-    _delLines.push({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', damagedQty: '' });
+    _delLines.push({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', singles: '', damagedQty: '' });
     renderDeliveryLines();
   }
   function removeDeliveryLine(lineId) {
@@ -4385,7 +4540,7 @@
 
   function clearDeliveryForm() {
     _delEditingId = null;
-    _delLines = [{ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', damagedQty: '' }];
+    _delLines = [{ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', singles: '', damagedQty: '' }];
     _delNote = null; _delPhotos = []; _delDamages = [];
     const now = new Date();
     $('df-date').value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -4422,8 +4577,8 @@
     _delEditingId = id;
     const lines = d.lines || [];
     _delLines = lines.length
-      ? lines.map((l) => ({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' }))
-      : [{ lineId: 'l1', productId: '', qty: '', damagedQty: '' }];
+      ? lines.map((l) => ({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), singles: (l.singles != null && Number(l.singles) !== 0) ? String(l.singles) : '', damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' }))
+      : [{ lineId: 'l1', productId: '', qty: '', singles: '', damagedQty: '' }];
     _delNote = d.delivery_note_url ? { url: d.delivery_note_url } : null;
     _delPhotos = (d.photo_urls || []).map((u) => ({ id: 'p' + Math.random().toString(36).slice(2, 8), url: u }));
     _delDamages = (d.damages_photo_urls || []).map((u) => ({ id: 'd' + Math.random().toString(36).slice(2, 8), url: u }));
@@ -4459,8 +4614,8 @@
   async function saveDelivery() {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const valid = _delLines
-      .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
-      .map((l) => ({ product_id: l.productId, qty: round1(l.qty), damaged_qty: round1(l.damagedQty) }));
+      .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.singles) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
+      .map((l) => ({ product_id: l.productId, qty: round1(l.qty), singles: Math.round(Number(l.singles) || 0), damaged_qty: round1(l.damagedQty) }));
     if (!valid.length) { $('df-err').textContent = 'Add at least one product with a quantity.'; return; }
 
     const btn = $('df-save-btn');
@@ -4503,7 +4658,19 @@
       }
 
       if (isEdit) await DB.deliveries.clearLines(deliveryId);
-      await DB.deliveries.addLines(valid.map((v) => ({ delivery_id: deliveryId, product_id: v.product_id, qty: v.qty, damaged_qty: v.damaged_qty })));
+      try {
+        await DB.deliveries.addLines(valid.map((v) => ({ delivery_id: deliveryId, product_id: v.product_id, qty: v.qty, singles: v.singles, damaged_qty: v.damaged_qty })));
+      } catch (lineErr) {
+        // Fallback for databases where migration 021 (delivery_lines.singles)
+        // hasn't been applied yet: fold loose singles into fractional cases.
+        if (/singles/i.test(lineErr && lineErr.message || '')) {
+          await DB.deliveries.addLines(valid.map((v) => ({
+            delivery_id: deliveryId, product_id: v.product_id,
+            qty: roundN(v.qty + v.singles / (unitsPerCaseFor(v.product_id) || 1), 4),
+            damaged_qty: v.damaged_qty,
+          })));
+        } else { throw lineErr; }
+      }
 
       await loadDeliveries();
       await syncDeliveredFromDeliveries();
@@ -4866,7 +5033,7 @@
         (d.lines || []).forEach((l) => {
           const pid = l.product_id;
           if (!pid) return;
-          _openingCountedIn[pid] = (_openingCountedIn[pid] || 0) + (Number(l.qty) || 0);
+          _openingCountedIn[pid] = (_openingCountedIn[pid] || 0) + delLineCases(l);
         });
       });
     } catch (err) {
