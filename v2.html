@@ -4028,6 +4028,10 @@
           const line = (d.lines || []).find((l) => l.product_id === productId) || {};
           totalCases += (Number(line.qty) || 0);
           const qty = deliveryDisplayQty(productId, line.qty);
+          const prod = spiritProductById(productId);
+          const casesTag = (prod && isSpiritBottle(prod))
+            ? ' / ' + round1(Number(line.qty) || 0) + ' ' + (round1(Number(line.qty) || 0) === 1 ? 'case' : 'cases')
+            : '';
           const dmg = Number(line.damaged_qty) || 0;
           const dmgTag = dmg > 0
             ? ' <span class="badge-unusable">' + deliveryDisplayQty(productId, dmg).n + ' unusable</span>'
@@ -4043,7 +4047,7 @@
           const metaBits = [dt + ref, priceTag, cost ? ('total ' + cost) : ''].filter(Boolean).join(' · ');
           return '<div class="pd-card">' +
             '<div class="pd-card-top"><span class="pd-sup">' + sup + '</span>' +
-              '<span class="pd-price">' + qty.n + ' ' + qty.unit + dmgTag + '</span></div>' +
+              '<span class="pd-price">' + qty.n + ' ' + qty.unit + casesTag + dmgTag + '</span></div>' +
             '<div class="pd-meta">' + metaBits + '</div>' +
           '</div>';
         }).join('')
