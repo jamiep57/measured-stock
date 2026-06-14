@@ -412,6 +412,8 @@
     .df-table th { position:static; top:auto; background:var(--secondary); text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted-foreground); padding:6px 10px; font-weight:600; }
     .df-table td { padding:6px 10px; }
     .df-table input, .df-table select { font:inherit; font-size:13px; padding:6px 10px; border:1px solid var(--input); border-radius:var(--radius); background:var(--background); color:var(--foreground); width:100%; }
+    .df-table input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+    .df-table input[type=number]::-webkit-outer-spin-button, .df-table input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
     .df-combo-input::placeholder { color:var(--muted-foreground); }
     .df-combo-menu { position:fixed; z-index:70; max-height:300px; overflow-y:auto; background:var(--background); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 10px 30px rgba(0,0,0,.18); display:none; font-size:13px; padding:4px; }
     .df-combo-menu.open { display:block; }
@@ -1654,6 +1656,10 @@
     <button class="x" onclick="closeProductDetail()" aria-label="Close">&times;</button>
   </div>
   <div class="drawer-body drawer-body--block" id="productDetailBody"></div>
+  <div class="drawer-foot">
+    <span class="spacer"></span>
+    <button class="btn btn-primary" id="productDetailEditBtn" onclick="editProductFromDetail()"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit product</button>
+  </div>
 </aside>
 
 <!-- ===================== DELIVERY FORM DRAWER ===================== -->
@@ -2068,8 +2074,10 @@
   function deliveryLineQtyLabel(l) {
     const p = spiritProductById(l.product_id);
     if (p && isSpiritBottle(p)) {
-      const d = deliveryDisplayQty(l.product_id, delLineCases(l));
-      return d.n + ' ' + d.unit;
+      const cases = delLineCases(l);
+      const d = deliveryDisplayQty(l.product_id, cases);
+      const c = round1(cases);
+      return d.n + ' ' + d.unit + ' / ' + c + ' ' + (c === 1 ? 'case' : 'cases');
     }
     const cases = round1(l.qty);
     const singles = Math.round(Number(l.singles) || 0);
@@ -2899,7 +2907,7 @@
     document.head.appendChild(css);
   }
 
-  function openProductModal(id) {
+  function openProductModal(id, opts) {
     const p = id ? _products.find((x) => x.id === id) : null;
     const catOpts = _categories.map((c) => ({ value: c.id, label: c.name }));
     const editor = makeSupplierPriceEditor(
@@ -2954,7 +2962,11 @@
           sku: r.sku,
           is_preferred: r.is_preferred,
         })));
-        await loadLibrary();
+        if (opts && typeof opts.afterSave === 'function') {
+          await opts.afterSave(productId);
+        } else {
+          await loadLibrary();
+        }
       },
     });
   }
@@ -3906,14 +3918,18 @@
     }
   }
 
-  // ---------- Product detail drawer (read-only): supplier prices + deliveries ----------
+  // ---------- Product detail drawer: supplier prices + deliveries (+ inline edit) ----------
+  let _productDetailId = null;
+
   function closeProductDetail() {
+    _productDetailId = null;
     $('productDetailOverlay').classList.remove('open');
     $('productDetailDrawer').classList.remove('open');
   }
 
   async function openProductDetail(productId) {
     if (!_currentEvent) return;
+    _productDetailId = productId;
     const ep = (_evProducts || []).find((x) => x.product_id === productId);
     const name = (ep && ep.product && ep.product.name) || productNameById(productId) || 'Product';
     $('productDetailTitle').textContent = name;
@@ -3932,6 +3948,45 @@
       $('productDetailBody').innerHTML =
         '<div class="err" style="font-size:13px">' + escapeHtml(err.message || String(err)) + '</div>';
     }
+  }
+
+  // Open the full library product editor (name, category, case size, supplier
+  // prices, …) from the detail drawer, then refresh both the event table and
+  // the detail drawer so changes show without leaving the Products page.
+  async function editProductFromDetail() {
+    const productId = _productDetailId;
+    if (!productId) return;
+    try {
+      if (!_categories.length) _categories = (await DB.categories.list()) || [];
+      if (!_suppliers.length) _suppliers = (await DB.suppliers.list()) || [];
+      if (!_products.length) _products = (await DB.products.listFull()) || [];
+    } catch (err) {
+      console.error('editProductFromDetail (load)', err);
+    }
+    closeProductDetail();
+    openProductModal(productId, {
+      afterSave: async () => {
+        try {
+          _products = (await DB.products.listFull()) || _products;
+        } catch (err) { console.error('editProductFromDetail (reload)', err); }
+        // Mirror the updated library fields onto the event's embedded product
+        // so the products table (name / case size / category) stays in sync.
+        const fresh = (_products || []).find((p) => p.id === productId);
+        if (fresh) {
+          (_evProducts || []).concat((_currentEvent && _currentEvent.event_products) || [])
+            .filter((ep) => ep.product_id === productId && ep.product)
+            .forEach((ep) => {
+              ep.product.name = fresh.name;
+              ep.product.case_size = fresh.case_size;
+              ep.product.units_per_case = fresh.units_per_case;
+              ep.product.case_price = fresh.case_price;
+              ep.product.category = fresh.category;
+            });
+        }
+        renderEventProducts();
+        openProductDetail(productId);
+      },
+    });
   }
 
   function renderProductDetail(productId, deliveries) {
