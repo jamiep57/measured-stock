@@ -7842,6 +7842,7 @@
 
   function projSortValue(it, key) {
     switch (key) {
+      case 'servingsSold': return it.servingsSold == null ? null : Number(it.servingsSold);
       case 'projectedCases': return it.projectedCases == null ? null : Number(it.projectedCases);
       case 'available': return it.available == null ? null : Number(it.available);
       // % of target is monotonic with the run-out revenue, so reuse it.
@@ -8092,20 +8093,25 @@
       if (!recipe) return;
       mappedNet += Number(r.net_sales) || 0;
       const sold = Number(r.items_sold) || 0;
+      // Track which items this till line touches so a recipe that lists the
+      // same product/pool twice only counts the drink once for "servings sold".
+      const seenProd = new Set(), seenPool = new Set();
       (recipe.ingredients || []).forEach((ig) => {
         const qty = Number(ig.qty) || 0;
         if (!(qty > 0)) return;
         if (ig.pool_name) {
           const key = normPoolName(ig.pool_name);
           if (!key) return;
-          if (!byPool[key]) byPool[key] = { name: ig.pool_name, baselineServings: 0 };
+          if (!byPool[key]) byPool[key] = { name: ig.pool_name, baselineServings: 0, baselineServingsSold: 0 };
           byPool[key].baselineServings += sold * qty;
+          if (!seenPool.has(key)) { byPool[key].baselineServingsSold += sold; seenPool.add(key); }
           return;
         }
         const key = normProductName(ig.product_name);
         if (!key) return;
-        if (!byName[key]) byName[key] = { name: ig.product_name, baselineCases: 0 };
+        if (!byName[key]) byName[key] = { name: ig.product_name, baselineCases: 0, baselineServingsSold: 0 };
         byName[key].baselineCases += sold * qty;
+        if (!seenProd.has(key)) { byName[key].baselineServingsSold += sold; seenProd.add(key); }
       });
     });
 
@@ -8137,6 +8143,7 @@
         inEvent: !!st,
         baselineCases: b.baselineCases,
         projectedCases,
+        servingsSold: factor != null ? b.baselineServingsSold * factor : null,
         available,
         runOutRevenue,
       };
@@ -8157,6 +8164,7 @@
         inEvent: st.inEvent,
         baselineCases: b.baselineServings,
         projectedCases,
+        servingsSold: factor != null ? b.baselineServingsSold * factor : null,
         available,
         runOutRevenue,
       };
@@ -8251,8 +8259,12 @@
           : '<span class="muted">—</span>';
       }
       const unitSuffix = it.unit === 'servings' ? ' serv' : '';
+      const servingsCell = it.servingsSold != null
+        ? Math.round(it.servingsSold).toLocaleString('en-GB')
+        : '<span class="muted">—</span>';
       return '<tr>' +
         '<td>' + escapeHtml(it.name) + '</td>' +
+        '<td class="num">' + servingsCell + '</td>' +
         '<td class="num">' + (it.projectedCases != null ? round1(it.projectedCases) + unitSuffix : '—') + '</td>' +
         '<td class="num">' + (it.available != null ? round1(it.available) + unitSuffix : '<span class="muted">—</span>') + '</td>' +
         '<td class="num">' + runOutCell + '</td>' +
@@ -8270,6 +8282,7 @@
         '<table id="sqProjectionTable">' +
           '<thead><tr>' +
             ph('name', 'Product', '') +
+            ph('servingsSold', 'Servings sold', 'num') +
             ph('projectedCases', 'Projected use', 'num') +
             ph('available', 'Stock', 'num') +
             ph('runOutRevenue', 'Runs dry at', 'num') +
@@ -8279,7 +8292,7 @@
           '<tbody>' + body + '</tbody>' +
         '</table>' +
       '</div>' +
-      '<p class="df-hint" style="margin-top:10px">Projected use &amp; stock are in <strong>cases</strong> for products and <strong>servings</strong> for volume pools. <strong>Runs dry at</strong> is the revenue at which an item is exhausted at this sales mix; <strong>% of target</strong> below 100% means it runs out before you reach the target.</p>';
+      '<p class="df-hint" style="margin-top:10px"><strong>Servings sold</strong> is the projected number of drinks/servings sold that use the item, scaled to target. Projected use &amp; stock are in <strong>cases</strong> for products and <strong>servings</strong> for volume pools. <strong>Runs dry at</strong> is the revenue at which an item is exhausted at this sales mix; <strong>% of target</strong> below 100% means it runs out before you reach the target.</p>';
   }
 
   // ── import the Square Item Sales CSV/XLSX ──────────────────────────
