@@ -8274,7 +8274,7 @@
       return;
     }
     body.innerHTML = _rcnReturnLines.map((line) => {
-      const ups = Number(((_currentEvent.event_products || []).find((x) => x.product_id === pid) || {}).product || {}).units_per_case) || 1;
+      const ups = Number((((_currentEvent.event_products || []).find((x) => x.product_id === pid) || {}).product || {}).units_per_case) || 1;
       const price = rcnReturnLinePrice(line, pid);
       const lineCases = rcnReturnLineCases(line, ups);
       const lineVal = price != null ? price * lineCases : null;
