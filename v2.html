@@ -8301,9 +8301,16 @@
     return combineCasesSingles(line.cases, line.singles, ups);
   }
 
-  function rcnReturnLinePrice(line, pid) {
+  function rcnReturnLinePrice(line, pid, draft) {
     if (line.casePrice !== '' && line.casePrice != null && !isNaN(Number(line.casePrice))) {
       return Number(line.casePrice);
+    }
+    if (_reconCtx && _reconCtx.pid === pid) {
+      const ep = ((_currentEvent && _currentEvent.event_products) || []).find((x) => x.product_id === pid);
+      if (ep) {
+        const d = draft !== undefined ? draft : reconDrawerDraft();
+        return reconCasePrice(ep, d);
+      }
     }
     if (line.supplierId) return deliveryLineCasePrice(pid, line.supplierId).price;
     return null;
@@ -8353,7 +8360,8 @@
     }
     body.innerHTML = _rcnReturnLines.map((line) => {
       const ups = Number((((_currentEvent.event_products || []).find((x) => x.product_id === pid) || {}).product || {}).units_per_case) || 1;
-      const price = rcnReturnLinePrice(line, pid);
+      const draft = reconDrawerDraft();
+      const price = rcnReturnLinePrice(line, pid, draft);
       const lineCases = rcnReturnLineCases(line, ups);
       const lineVal = price != null ? price * lineCases : null;
       const canPrint = line.supplierId && lineCases > 0;
@@ -8381,10 +8389,11 @@
     const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
     let totCases = 0;
     let totVal = 0;
+    const draft = reconDrawerDraft();
     _rcnReturnLines.forEach((line) => {
       const c = rcnReturnLineCases(line, ups);
       totCases += c;
-      const p = rcnReturnLinePrice(line, pid);
+      const p = rcnReturnLinePrice(line, pid, draft);
       if (p != null) totVal += p * c;
     });
     el.textContent = totCases > 0
@@ -8403,7 +8412,7 @@
       supplierId: next ? next.supplier_id : '',
       cases: '',
       singles: '',
-      casePrice: next && next.price != null ? String(next.price) : '',
+      casePrice: '',
     });
     renderRcnReturnLines();
     recalcReconDrawer();
@@ -8413,10 +8422,6 @@
     const line = _rcnReturnLines.find((l) => l.lineId === lineId);
     if (!line) return;
     line[field] = value;
-    if (field === 'supplierId' && _reconCtx) {
-      const { price } = deliveryLineCasePrice(_reconCtx.pid, value || null);
-      if (price != null && (line.casePrice === '' || line.casePrice == null)) line.casePrice = String(price);
-    }
     renderRcnReturnLines();
     recalcReconDrawer();
   }
@@ -8552,8 +8557,9 @@
     $('rcn-budget-override').disabled = !manualOn;
     const ups = Number(ep.product && ep.product.units_per_case) || 1;
     let returnValue = 0;
+    const draft = reconDrawerDraft();
     _rcnReturnLines.forEach((line) => {
-      const p = rcnReturnLinePrice(line, _reconCtx.pid);
+      const p = rcnReturnLinePrice(line, _reconCtx.pid, draft);
       if (p != null) returnValue += p * rcnReturnLineCases(line, ups);
     });
     r.returnValue = returnValue;
