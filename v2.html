@@ -564,6 +564,12 @@
     .recon-filter:hover { border-color:var(--ring); color:var(--foreground); }
     .recon-filter.active { border-color:var(--foreground); color:var(--foreground); background:var(--secondary); }
     .recon-filter-dot { width:8px; height:8px; border-radius:999px; flex-shrink:0; }
+    .recon-cat-select {
+      font:inherit; font-size:12px; font-weight:600; padding:5px 28px 5px 10px;
+      border:1px solid var(--border); border-radius:999px; background:var(--background);
+      color:var(--foreground); cursor:pointer; max-width:240px;
+    }
+    .recon-cat-select:focus { border-color:var(--ring); outline:none; box-shadow:0 0 0 3px rgba(24,24,27,.08); }
     .recon-status-pick { display:flex; gap:10px; flex-wrap:wrap; }
     .recon-status-pick .recon-marker { width:22px; height:22px; }
     .recon-status-pick .recon-status-clear {
@@ -1457,6 +1463,8 @@
       <button type="button" class="recon-filter" data-recon-filter="yellow" onclick="setReconFilter('yellow')"><span class="recon-filter-dot" style="background:#f59e0b"></span> Review</button>
       <button type="button" class="recon-filter" data-recon-filter="green" onclick="setReconFilter('green')"><span class="recon-filter-dot" style="background:#22c55e"></span> Done</button>
       <button type="button" class="recon-filter" data-recon-filter="none" onclick="setReconFilter('none')">Unmarked</button>
+      <span class="label" style="margin-left:8px">Category</span>
+      <select id="reconCatFilter" class="recon-cat-select" onchange="setReconCategoryFilter(this.value)"><option value="">All categories</option></select>
     </div>
     <div class="dist-table-wrap">
       <table id="reconTable">
@@ -7703,6 +7711,7 @@
 
   let _reconCtx = null;
   let _reconStatusFilter = '';
+  let _reconCategoryFilter = '';
   let _reconDrawerStatus = '';
 
   function reconStatusKey(pid) {
@@ -7758,6 +7767,43 @@
       btn.classList.toggle('active', (btn.dataset.reconFilter || '') === _reconStatusFilter);
     });
     renderRecon();
+  }
+
+  function refreshReconCatFilter() {
+    const sel = $('reconCatFilter');
+    if (!sel) return;
+    const eps = ((_currentEvent && _currentEvent.event_products) || []);
+    const cats = new Map();
+    eps.forEach((ep) => {
+      const c = productCategoryObj(ep.product_id);
+      if (c && c.id) cats.set(c.id, c.name);
+    });
+    const cur = _reconCategoryFilter || sel.value;
+    sel.innerHTML = '<option value="">All categories</option>' +
+      [...cats.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([cid, name]) => '<option value="' + cid + '">' + escapeHtml(name) + '</option>').join('');
+    if ([...cats.keys()].includes(cur)) sel.value = cur;
+    else { sel.value = ''; _reconCategoryFilter = ''; }
+  }
+
+  function setReconCategoryFilter(catId) {
+    _reconCategoryFilter = catId || '';
+    renderRecon();
+  }
+
+  function filterReconRows(allRows) {
+    return allRows.filter((r) => {
+      if (_reconStatusFilter) {
+        const s = r.reconStatus || '';
+        if (_reconStatusFilter === 'none') { if (s) return false; }
+        else if (s !== _reconStatusFilter) return false;
+      }
+      if (_reconCategoryFilter) {
+        const c = productCategoryObj(r.pid);
+        if (!c || c.id !== _reconCategoryFilter) return false;
+      }
+      return true;
+    });
   }
 
   async function setReconStatus(pid, status) {
@@ -7968,6 +8014,7 @@
       _transfersEventId = null;
       await ensureTransferData();
       await ensureEventStockData(true);
+      refreshReconCatFilter();
       renderRecon();
     } catch (err) {
       console.error('loadRecon', err);
@@ -7999,16 +8046,11 @@
       else statusCounts.none++;
     });
 
-    const rows = _reconStatusFilter
-      ? allRows.filter((r) => {
-          const s = r.reconStatus || '';
-          if (_reconStatusFilter === 'none') return !s;
-          return s === _reconStatusFilter;
-        })
-      : allRows;
+    const rows = filterReconRows(allRows);
 
     let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
-    allRows.forEach((r) => {
+    const totalSource = (_reconStatusFilter || _reconCategoryFilter) ? rows : allRows;
+    totalSource.forEach((r) => {
       totBudget += r.budgetCost || 0;
       totConsLoose += r.consumptionLooseCharge || 0;
       totInvoice += r.invoiceCharge || 0;
