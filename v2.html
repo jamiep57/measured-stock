@@ -2133,9 +2133,16 @@
         <p class="df-hint">Loose units — added as a fraction of a case in the recon.</p>
       </div>
     </div>
-    <div class="df-field">
-      <label for="rcn-price">Case price override (£)</label>
-      <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+    <div class="df-grid2" id="rcn-price-row">
+      <div class="df-field" id="rcn-case-price-wrap">
+        <label for="rcn-price">Case price override (£)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+      </div>
+      <div class="df-field" id="rcn-unit-price-wrap" style="display:none">
+        <label for="rcn-unit-price">Bottle price override (£)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-unit-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+        <p class="df-hint" id="rcn-unit-price-hint">Spirits — per bottle. Used when case override is blank.</p>
+      </div>
     </div>
     <div class="df-field">
       <label>Delivered this event (by supplier)</label>
@@ -7674,8 +7681,7 @@
       const returnAmt = Number(cl.return_amount) || 0;
       const transferred = summaryTransferOut(pid);
       const distributed = distAllocatedToBars(pid, bars);
-      const price = ep.order_price_override != null ? Number(ep.order_price_override)
-        : (ep.product && ep.product.case_price != null ? Number(ep.product.case_price) : 0);
+      const price = reconCasePrice(ep);
       const consumed = round1(Math.max(0, opening - closing - transferred));
       const cost = consumed * price;
       totOpen += opening; totConsumed += consumed; totReturn += returnAmt; totCost += cost;
@@ -7821,10 +7827,54 @@
     return pluByPid;
   }
 
-  function reconCasePrice(ep) {
+  function productOfferForEvent(ep) {
+    const p = ep && ep.product;
+    if (!p) return null;
+    const sid = productSupplierId(ep.product_id);
+    const rows = p.product_suppliers || [];
+    if (sid && rows.length) {
+      const match = rows.find((ps) => ps.supplier_id === sid);
+      if (match) return match;
+    }
+    return rows.find((ps) => ps.is_preferred) || rows[0] || null;
+  }
+
+  function defaultBottlePrice(ep) {
+    const p = ep && ep.product;
+    if (!p) return null;
+    const offer = productOfferForEvent(ep);
+    if (offer && offer.unit_price != null) return Number(offer.unit_price);
+    if (p.unit_price != null) return Number(p.unit_price);
+    const cp = p.case_price != null ? Number(p.case_price) : null;
+    const bpc = spiritBottlesPerCase(p);
+    if (cp != null && bpc > 0) return cp / bpc;
+    return null;
+  }
+
+  function reconCasePrice(ep, draft) {
     const p = ep.product;
+    const spirit = p && isSpiritBottle(p);
+    if (draft) {
+      if (draft.casePrice !== '' && draft.casePrice != null) return Number(draft.casePrice) || 0;
+      if (spirit && draft.unitPrice !== '' && draft.unitPrice != null) {
+        const bpc = spiritBottlesPerCase(p) || 1;
+        return (Number(draft.unitPrice) || 0) * bpc;
+      }
+    }
     if (ep.order_price_override != null) return Number(ep.order_price_override) || 0;
+    if (spirit && ep.order_unit_price_override != null) {
+      const bpc = spiritBottlesPerCase(p) || 1;
+      return (Number(ep.order_unit_price_override) || 0) * bpc;
+    }
     return p && p.case_price != null ? Number(p.case_price) || 0 : 0;
+  }
+
+  function reconBottlePrice(ep, draft) {
+    const p = ep && ep.product;
+    if (!p || !isSpiritBottle(p)) return null;
+    const caseP = reconCasePrice(ep, draft);
+    const bpc = spiritBottlesPerCase(p) || 1;
+    return bpc > 0 ? caseP / bpc : null;
   }
 
   function reconBudgetCost(row, cl) {
@@ -7858,12 +7908,7 @@
     const transferred = summaryTransferOut(pid);
     const consumption = roundN(delivered - closingCases - closingUnits - transferred + onHand, 2);
     const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
-    let casePrice = reconCasePrice(ep);
-    if (draft && draft.casePrice != null && draft.casePrice !== '') {
-      casePrice = Number(draft.casePrice) || 0;
-    } else if (draft && draft.casePrice === '') {
-      casePrice = p && p.case_price != null ? Number(p.case_price) || 0 : 0;
-    }
+    const casePrice = reconCasePrice(ep, draft);
     const consumptionCharge = consumption * casePrice;
     const consumptionLooseCharge = (consumption + closingUnits) * casePrice;
     const pluCharge = plu * casePrice;
@@ -8160,6 +8205,22 @@
         : '';
     }
     renderRcnDeliveredSummary(pid);
+    syncReconDrawerPriceFields(ep);
+  }
+
+  function syncReconDrawerPriceFields(ep) {
+    const spirit = !!(ep && ep.product && isSpiritBottle(ep.product));
+    const unitWrap = $('rcn-unit-price-wrap');
+    const priceRow = $('rcn-price-row');
+    if (unitWrap) unitWrap.style.display = spirit ? '' : 'none';
+    if (priceRow) priceRow.classList.toggle('df-grid2', spirit);
+    const hint = $('rcn-unit-price-hint');
+    if (hint && spirit) {
+      const def = defaultBottlePrice(ep);
+      hint.textContent = def != null
+        ? 'Spirits — per bottle. Default ' + money(def) + '. Used when case override is blank.'
+        : 'Spirits — per bottle. Used when case override is blank.';
+    }
   }
 
   // Suppliers that delivered this product on the current event (qty summed).
@@ -8430,6 +8491,8 @@
     $('rcn-invoice-cases').value = invSplit ? invSplit.cases : '';
     $('rcn-invoice-singles').value = invSplit && invSplit.singles ? invSplit.singles : '';
     $('rcn-price').value = ep.order_price_override != null ? ep.order_price_override : '';
+    $('rcn-unit-price').value = ep.order_unit_price_override != null ? ep.order_unit_price_override : '';
+    syncReconDrawerPriceFields(ep);
     let casesVal = cl.closing_cases != null ? Number(cl.closing_cases) : '';
     let singlesVal = cl.closing_singles != null ? Number(cl.closing_singles) : '';
     if (casesVal === '' && singlesVal === '' && cl.close_count != null) casesVal = Number(cl.close_count);
@@ -8457,6 +8520,7 @@
 
   function reconDrawerDraft() {
     const priceRaw = $('rcn-price').value.trim();
+    const unitPriceRaw = ($('rcn-unit-price') && $('rcn-unit-price').value || '').trim();
     const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === (_reconCtx && _reconCtx.pid));
     const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
     const invCasesRaw = $('rcn-invoice-cases').value;
@@ -8468,6 +8532,7 @@
       invoiced: invSet ? combineCasesSingles(invCasesRaw, invSinglesRaw, ups) : 0,
       invoiceSet: invSet,
       casePrice: priceRaw !== '' ? parseFloat(priceRaw) : '',
+      unitPrice: unitPriceRaw !== '' ? parseFloat(unitPriceRaw) : '',
       closingCases: parseFloat($('rcn-cl-cases').value) || 0,
       closingSingles: parseFloat($('rcn-cl-singles').value) || 0,
       budgetMethod: $('rcn-budget-method').value,
@@ -8492,8 +8557,12 @@
       if (p != null) returnValue += p * rcnReturnLineCases(line, ups);
     });
     r.returnValue = returnValue;
+    const spirit = ep.product && isSpiritBottle(ep.product);
+    const bottleP = spirit ? reconBottlePrice(ep, reconDrawerDraft()) : null;
     $('rcn-preview').innerHTML =
       '<table><tbody>' +
+        (spirit ? '<tr><td>Bottle price (effective)</td><td>' + (bottleP != null ? money(bottleP) : '—') + '</td></tr>' : '') +
+        '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>' +
         '<tr><td>On hand</td><td>' + reconQtyCell(r.onHand) + '</td></tr>' +
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
@@ -8524,6 +8593,7 @@
     const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
     const returnAmt = round1(totalReturnCasesFromRcnLines(pid));
     const priceRaw = $('rcn-price').value.trim();
+    const unitPriceRaw = ($('rcn-unit-price') && $('rcn-unit-price').value || '').trim();
     const validReturnLines = _rcnReturnLines.filter((line) =>
       line.supplierId && rcnReturnLineCases(line, ups) > 0
     );
@@ -8531,9 +8601,11 @@
       await DB.eventProducts.setForEvent(_currentEvent.id, pid, {
         invoice_qty: draft.invoiceSet ? roundN(draft.invoiced, 3) : null,
         order_price_override: priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null,
+        order_unit_price_override: unitPriceRaw !== '' ? roundN(parseFloat(unitPriceRaw), 2) : null,
       });
       ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : null;
       ep.order_price_override = priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null;
+      ep.order_unit_price_override = unitPriceRaw !== '' ? roundN(parseFloat(unitPriceRaw), 2) : null;
       try {
         const returnRows = validReturnLines.map((line) => ({
           event_id: _currentEvent.id,
