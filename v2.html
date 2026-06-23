@@ -1486,7 +1486,7 @@
         <tbody id="reconTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Use the <strong>red / yellow / green</strong> dots to mark lines for follow-up (click a dot without opening the row). Click a row to edit details. Rows auto-flag <strong>investigate</strong> when consumption and PLU differ by more than 8%.</p>
+    <p class="df-hint" style="margin-top:10px">Use the <strong>red / yellow / green</strong> dots to mark lines for follow-up (click a dot without opening the row). Click a row to edit details.</p>
   </div>
 </div>
 <!-- ===================== SQUARE (till mapping) ===================== -->
@@ -8046,13 +8046,12 @@
       grouped[cat].slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
         const abv = r.p.abv != null ? (Number(r.p.abv).toFixed(2) + '%') : '—';
         const size = r.p.unit_size || r.p.size || '—';
-        const flag = r.investigate && !r.reconNote ? '<span class="recon-flag">investigate</span>' : '';
         const noteHint = r.reconNote
           ? '<span class="recon-note-hint" title="' + escapeHtml(r.reconNote) + '">' + escapeHtml(r.reconNote) + '</span>' : '';
         const statusClass = r.reconStatus ? (' recon-row-status-' + r.reconStatus) : '';
         html += '<tr class="recon-row' + statusClass + (r.investigate ? ' row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
           reconMarkerCell(r.pid, r.reconStatus) +
-          '<td style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + flag + noteHint + '</td>' +
+          '<td style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + noteHint + '</td>' +
           '<td>' + escapeHtml(abv) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(size) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.p.case_size || '—') + '</td>' +
@@ -8107,7 +8106,7 @@
     rows.slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
       const abv = r.p.abv != null ? Number(r.p.abv).toFixed(2) + '%' : '';
       const statusLabel = { red: 'Action', yellow: 'Review', green: 'Done' }[r.reconStatus] || '';
-      const note = r.reconNote || (r.investigate ? 'investigate' : '');
+      const note = r.reconNote || '';
       lines.push([
         statusLabel, r.p.name, abv, r.p.unit_size || r.p.size || '', r.p.case_size || '',
         r.casePrice ? '£' + r.casePrice.toFixed(2) : '', r.supplierName, r.ups || '',
