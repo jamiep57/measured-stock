@@ -429,7 +429,7 @@
         return select(
           'event_products',
           '?event_id=eq.' + enc(eventId) +
-          '&select=*,product:products(id,name,case_size,units_per_case,case_price,category_id,supplier_id)' +
+          '&select=*,product:products(id,name,case_size,units_per_case,case_price,abv,category_id,supplier_id)' +
           '&order=id'
         );
       },
@@ -518,6 +518,24 @@
         const row = Object.assign({ event_id: eventId, product_id: productId }, patch);
         return upsert('closing_stock', [row], { onConflict: 'event_id,product_id' })
           .then((r) => r[0]);
+      },
+    }
+  );
+
+  const supplierReturns = Object.assign(
+    makeRepo('supplier_return_lines'),
+    {
+      forEvent(eventId) {
+        return select(
+          'supplier_return_lines',
+          '?event_id=eq.' + enc(eventId) + '&select=*&order=created_at'
+        );
+      },
+      replaceForProduct(eventId, productId, rows) {
+        const filter = 'event_id=eq.' + enc(eventId) + '&product_id=eq.' + enc(productId);
+        return remove('supplier_return_lines', filter).then(() =>
+          (rows && rows.length) ? insert('supplier_return_lines', rows) : []
+        );
       },
     }
   );
@@ -645,7 +663,7 @@
           '&select=*' +
           ',bars:bars(*)' +
           ',recipients:recipients(*)' +
-          ',event_products:event_products(*,product:products(id,name,case_size,units_per_case,case_price,category:categories(id,name,colour_key)))'
+          ',event_products:event_products(*,product:products(id,name,case_size,units_per_case,case_price,abv,category:categories(id,name,colour_key)))'
         ).then((r) => (r && r[0]) || null);
       },
     }
@@ -667,7 +685,7 @@
     categories, suppliers, warehouses, products, productSuppliers, warehouseStock,
     // event-scoped
     events, eventProducts, bars, recipients, distribution, barProducts,
-    stockCounts, closing, transfers, deliveries, topups, wastage,
+    stockCounts, closing, supplierReturns, transfers, deliveries, topups, wastage,
     tillImports, modifierImports,
     // global libraries
     recipes, bugs,

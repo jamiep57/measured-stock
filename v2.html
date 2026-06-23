@@ -496,6 +496,8 @@
     .cl-xfer-btn { margin-left:10px; font-size:11px; padding:4px 8px; white-space:nowrap; }
     .cl-xfer-btn:disabled { opacity:.4; cursor:not-allowed; }
     .rf-readonly { padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--muted, #f4f4f5); font-weight:600; font-size:13px; }
+    .rf-readonly-row { display:flex; align-items:center; gap:8px; }
+    .rf-readonly-row .rf-readonly { flex:1; min-width:0; }
     .rtn-preview { margin-top:6px; }
     .rtn-preview .rtn-summary { font-size:13px; color:var(--muted-foreground); margin-bottom:8px; }
     .rtn-preview .rtn-summary strong { color:var(--foreground); }
@@ -600,6 +602,16 @@
     .recon-preview th, .recon-preview td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:right; }
     .recon-preview th:first-child, .recon-preview td:first-child { text-align:left; color:var(--muted-foreground); font-weight:500; }
     .recon-preview tr:last-child td { border-bottom:none; font-weight:700; background:var(--secondary); }
+    .rcn-return-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+    .rcn-return-table th, .rcn-return-table td { padding:6px 4px; border-bottom:1px solid var(--border); text-align:center; vertical-align:middle; }
+    .rcn-return-table th:first-child, .rcn-return-table td:first-child { text-align:left; }
+    .rcn-return-table input, .rcn-return-table select { width:100%; min-width:0; font:inherit; font-size:12px; padding:5px 6px; border:1px solid var(--input); border-radius:var(--radius); background:var(--background); }
+    .rcn-return-table .num { text-align:right; font-weight:600; white-space:nowrap; }
+    .rcn-delivered-summary { margin-top:4px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; font-size:12px; }
+    .rcn-delivered-summary table { width:100%; border-collapse:collapse; }
+    .rcn-delivered-summary th, .rcn-delivered-summary td { padding:7px 10px; border-bottom:1px solid var(--border); text-align:right; }
+    .rcn-delivered-summary th:first-child, .rcn-delivered-summary td:first-child { text-align:left; }
+    .rcn-delivered-summary tr:last-child td { border-bottom:none; font-weight:600; background:var(--secondary); }
     /* ── warehouse ── */
     #warehouseStockTable thead th { position:static; text-align:left; white-space:nowrap; }
     #warehouseStockTable tbody td:nth-child(4) { font-weight:700; }
@@ -757,8 +769,6 @@
     .drawer.open { transform:translateX(0); }
     .drawer-backdrop.drawer-backdrop--stack { z-index:55; }
     .drawer.drawer--stack { z-index:56; }
-    .df-label-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
-    .df-label-row label { margin:0; }
     .drawer-head {
       display:flex; align-items:center; gap:12px; padding:18px 20px;
       border-bottom:1px solid var(--border); flex-shrink:0;
@@ -1407,13 +1417,14 @@
           <th title="Whole cases counted at close">Closing count (cases)</th>
           <th title="Loose units counted at close — a fraction of a case">Closing count (singles)</th>
           <th title="Invoice qty × SOR %">Max returnable</th>
-          <th>Return amount</th>
+          <th title="Whole cases being returned">Return (cases)</th>
+          <th title="Loose units being returned">Return (singles)</th>
           <th title="Close count − return amount">Carried over</th>
         </tr></thead>
         <tbody id="closingTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Enter whole cases and loose singles separately — total close count = cases + singles ÷ units per case. <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
+    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Enter whole cases and loose singles separately — total = cases + singles ÷ units per case (closing count and return amount). <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
   </div>
 </div>
 <!-- ===================== SUMMARY (COGS) ===================== -->
@@ -2084,24 +2095,34 @@
     <div class="df-grid2">
       <div class="df-field"><label>Product</label><div class="rf-readonly" id="rcn-product">—</div></div>
       <div class="df-field">
-        <div class="df-label-row">
-          <label>Supplier</label>
+        <label>Primary supplier</label>
+        <div class="rf-readonly-row">
+          <div class="rf-readonly" id="rcn-supplier">—</div>
           <button type="button" class="btn btn-outline btn-sm" onclick="editProductFromRecon()" title="Edit SKU, case size &amp; supplier prices"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit</button>
         </div>
-        <div class="rf-readonly" id="rcn-supplier">—</div>
         <p class="df-hint" id="rcn-case-size" style="margin-top:6px;margin-bottom:0"></p>
+        <p class="df-hint" id="rcn-delivered-suppliers" style="margin-top:4px;margin-bottom:0"></p>
       </div>
     </div>
     <div class="page-title" style="font-size:13px;margin:12px 0 8px">Stock &amp; invoicing</div>
     <div class="df-grid2">
       <div class="df-field">
-        <label for="rcn-invoice">Invoiced (cases)</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice" oninput="recalcReconDrawer()">
+        <label for="rcn-invoice-cases">Invoiced (cases)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-cases" oninput="recalcReconDrawer()">
       </div>
       <div class="df-field">
-        <label for="rcn-price">Case price override (£)</label>
-        <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+        <label for="rcn-invoice-singles">Invoiced (singles)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-singles" oninput="recalcReconDrawer()">
+        <p class="df-hint">Loose units — added as a fraction of a case in the recon.</p>
       </div>
+    </div>
+    <div class="df-field">
+      <label for="rcn-price">Case price override (£)</label>
+      <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+    </div>
+    <div class="df-field">
+      <label>Delivered this event (by supplier)</label>
+      <div id="rcn-delivered-by-supplier" class="rcn-delivered-summary"></div>
     </div>
     <div class="df-grid2">
       <div class="df-field">
@@ -2114,10 +2135,24 @@
         <p class="df-hint">Loose units — added as a fraction of a case in the recon.</p>
       </div>
     </div>
-    <div class="df-field">
-      <label for="rcn-return">Return amount (cases)</label>
-      <input type="number" inputmode="decimal" min="0" step="any" id="rcn-return" oninput="recalcReconDrawer()">
+    <div class="page-title" style="font-size:13px;margin:16px 0 8px">Returns to suppliers</div>
+    <p class="df-hint" style="margin-top:0">Add a line per supplier you are returning stock to — each can use a different case price.</p>
+    <div style="overflow-x:auto">
+      <table class="rcn-return-table" id="rcn-return-table">
+        <thead><tr>
+          <th style="min-width:120px">Supplier</th>
+          <th style="width:72px">Cases</th>
+          <th style="width:72px">Singles</th>
+          <th style="width:88px">£/case</th>
+          <th style="width:72px">Value</th>
+          <th style="width:36px" title="Print pallet stickers"></th>
+          <th style="width:32px"></th>
+        </tr></thead>
+        <tbody id="rcn-return-body"></tbody>
+      </table>
     </div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addRcnReturnLine()"><i class="ph ph-plus btn-leading-icon"></i> Add return line</button>
+    <p class="df-hint" id="rcn-return-total" style="margin-top:8px;margin-bottom:0"></p>
     <div class="page-title" style="font-size:13px;margin:16px 0 8px">Follow-up &amp; budget</div>
     <div class="df-field">
       <label>Status marker</label>
@@ -4394,6 +4429,9 @@
   // =====================================================================
   const DELIVERY_BUCKET = 'delivery-photos';
   let _deliveries = [];
+  let _deliveriesEventId = null;
+  let _supplierReturns = [];
+  let _supplierReturnsEventId = null;
   let _delEditingId = null;
   let _delLines = [];                 // [{lineId, productId, qty, damagedQty}]
   let _delNote = null;                // {file?,dataUrl?,url?}
@@ -4416,12 +4454,34 @@
       const rows = await DB.deliveries.forEvent(id);
       _deliveries = (rows || []).slice().sort((a, b) =>
         new Date(b.delivered_at) - new Date(a.delivered_at));
+      _deliveriesEventId = id;
       renderDeliveries();
     } catch (err) {
       console.error('loadDeliveries', err);
       $('deliveryLogBody').innerHTML =
         '<div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div>';
     }
+  }
+
+  async function ensureDeliveriesData() {
+    if (!_currentEvent) return;
+    if (_deliveriesEventId === _currentEvent.id) return;
+    const rows = await DB.deliveries.forEvent(_currentEvent.id);
+    _deliveries = (rows || []).slice().sort((a, b) =>
+      new Date(b.delivered_at) - new Date(a.delivered_at));
+    _deliveriesEventId = _currentEvent.id;
+  }
+
+  async function ensureSupplierReturnsData() {
+    if (!_currentEvent) return;
+    if (_supplierReturnsEventId === _currentEvent.id) return;
+    try {
+      _supplierReturns = (await DB.supplierReturns.forEvent(_currentEvent.id)) || [];
+    } catch (err) {
+      console.warn('ensureSupplierReturnsData', err);
+      _supplierReturns = [];
+    }
+    _supplierReturnsEventId = _currentEvent.id;
   }
 
   // Total cases for a saved delivery line: whole cases plus any loose
@@ -7346,7 +7406,7 @@
       renderClosing();
     } catch (err) {
       console.error('loadClosing', err);
-      $('closingTableBody').innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
+      $('closingTableBody').innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
     }
   }
 
@@ -7363,13 +7423,37 @@
     return cl && cl.close_count != null ? Number(cl.close_count) || 0 : 0;
   }
 
+  // Split a stored case total into whole cases + loose singles for UI entry.
+  function splitCasesSingles(totalCases, ups) {
+    const total = Math.max(0, Number(totalCases) || 0);
+    const u = Number(ups) || 1;
+    if (u <= 0) return { cases: total, singles: 0 };
+    const cases = Math.floor(total + 1e-9);
+    const remainder = total - cases;
+    const singles = remainder > 1e-9 ? roundN(remainder * u, 4) : 0;
+    return { cases, singles };
+  }
+
+  // Combine cases + singles inputs into one stored case total.
+  function combineCasesSingles(cases, singles, ups) {
+    const c = Math.max(0, Number(cases) || 0);
+    const s = Math.max(0, Number(singles) || 0);
+    const u = Number(ups) || 1;
+    return roundN(c + (u > 0 ? s / u : 0), 4);
+  }
+
+  function casesSinglesInputsSet(casesVal, singlesVal) {
+    return String(casesVal != null ? casesVal : '').trim() !== ''
+      || String(singlesVal != null ? singlesVal : '').trim() !== '';
+  }
+
   function renderClosing() {
     const body = $('closingTableBody');
     if (!body) return;
     const eps = ((_currentEvent && _currentEvent.event_products) || [])
       .filter((ep) => ep.product && ep.product.name);
     if (!eps.length) {
-      body.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
       return;
     }
     const grouped = {};
@@ -7379,7 +7463,7 @@
     });
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += '<tr class="category-row"><td colspan="10">' + escapeHtml(cat) + '</td></tr>';
+      html += '<tr class="category-row"><td colspan="11">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const invQty = closingInvoiceQty(ep);
@@ -7393,6 +7477,9 @@
         if (casesVal == null && singlesVal == null && cl.close_count != null) casesVal = Number(cl.close_count);
         const hasCount = casesVal != null || singlesVal != null;
         const closeCount = hasCount ? closingCountInCases(cl, ep) : null;
+        const returnSplit = cl.return_amount != null ? splitCasesSingles(cl.return_amount, ups) : { cases: null, singles: null };
+        const returnCasesVal = returnSplit.cases;
+        const returnSinglesVal = returnSplit.singles;
         const returnAmt = cl.return_amount != null ? Number(cl.return_amount) : null;
         const carriedNum = round1(Math.max(0, (closeCount || 0) - (returnAmt || 0)));
         const carriedDisp = (hasCount && returnAmt != null) ? carriedNum : '—';
@@ -7405,7 +7492,8 @@
           '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (casesVal != null ? casesVal : '') + '" placeholder="0" id="cl-cases-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
           '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (singlesVal != null ? singlesVal : '') + '" placeholder="0" id="cl-singles-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
           '<td style="font-weight:700" id="cl-maxret-' + pid + '">' + (maxReturn != null ? maxReturn : '—') + '</td>' +
-          '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (returnAmt != null ? returnAmt : '') + '" placeholder="0" id="cl-return-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
+          '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (returnCasesVal != null ? returnCasesVal : '') + '" placeholder="0" id="cl-return-cases-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
+          '<td><input type="number" inputmode="decimal" min="0" step="any" value="' + (returnSinglesVal != null ? returnSinglesVal : '') + '" placeholder="0" id="cl-return-singles-' + pid + '" onchange="recalcClosing(\'' + pid + '\')"></td>' +
           '<td class="cl-carried-cell" style="white-space:nowrap">' +
             '<span id="cl-carried-' + pid + '" style="font-weight:700;color:var(--muted-foreground)">' + carriedDisp + '</span>' +
             '<button type="button" class="btn btn-outline btn-sm cl-xfer-btn" id="cl-xfer-' + pid + '" onclick="transferCarriedOut(\'' + pid + '\')" title="Transfer carried-over stock out of the event"' + (carriedNum > 0 ? '' : ' disabled') + '><i class="ph ph-arrow-square-out btn-leading-icon"></i> Transfer out</button>' +
@@ -7426,11 +7514,16 @@
     const maxReturn = sor > 0 ? round1(invQty * sor / 100) : null;
     const casesEl = $('cl-cases-' + pid);
     const singlesEl = $('cl-singles-' + pid);
-    const returnEl = $('cl-return-' + pid);
+    const returnCasesEl = $('cl-return-cases-' + pid);
+    const returnSinglesEl = $('cl-return-singles-' + pid);
     const cases = Math.max(0, parseFloat(casesEl && casesEl.value) || 0);
     const singles = Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0);
     const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
-    const returnAmt = Math.max(0, parseFloat(returnEl && returnEl.value) || 0);
+    const returnAmt = round1(combineCasesSingles(
+      parseFloat(returnCasesEl && returnCasesEl.value) || 0,
+      parseFloat(returnSinglesEl && returnSinglesEl.value) || 0,
+      ups
+    ));
     const carried = round1(Math.max(0, closeCount - returnAmt));
     const maxEl = $('cl-maxret-' + pid);
     const carriedEl = $('cl-carried-' + pid);
@@ -7475,11 +7568,16 @@
         const ups = Number(ep.product && ep.product.units_per_case) || 1;
         const casesEl = $('cl-cases-' + pid);
         const singlesEl = $('cl-singles-' + pid);
-        const returnEl = $('cl-return-' + pid);
+        const returnCasesEl = $('cl-return-cases-' + pid);
+        const returnSinglesEl = $('cl-return-singles-' + pid);
         const cases = Math.max(0, parseFloat(casesEl && casesEl.value) || 0);
         const singles = Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0);
         const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
-        const returnAmt = round1(Math.max(0, parseFloat(returnEl && returnEl.value) || 0));
+        const returnAmt = round1(combineCasesSingles(
+          parseFloat(returnCasesEl && returnCasesEl.value) || 0,
+          parseFloat(returnSinglesEl && returnSinglesEl.value) || 0,
+          ups
+        ));
         return {
           event_id: _currentEvent.id,
           product_id: pid,
@@ -8037,6 +8135,227 @@
     const caseSizeEl = $('rcn-case-size');
     const caseSize = (ep.product && ep.product.case_size) ? String(ep.product.case_size).trim() : '';
     if (caseSizeEl) caseSizeEl.textContent = caseSize || '';
+    const delHint = $('rcn-delivered-suppliers');
+    if (delHint) {
+      const delivered = deliveredBySupplierForProduct(pid);
+      delHint.textContent = delivered.length
+        ? 'Also delivered from: ' + delivered.map((d) => d.name).join(', ')
+        : '';
+    }
+    renderRcnDeliveredSummary(pid);
+  }
+
+  // Suppliers that delivered this product on the current event (qty summed).
+  function deliveredBySupplierForProduct(pid) {
+    const map = {};
+    (_deliveries || []).forEach((d) => {
+      if (!d.supplier_id) return;
+      const line = (d.lines || []).find((l) => l.product_id === pid);
+      if (!line) return;
+      const cases = delLineCases(line);
+      if (!cases) return;
+      if (!map[d.supplier_id]) {
+        map[d.supplier_id] = {
+          supplier_id: d.supplier_id,
+          name: (d.supplier && d.supplier.name) || supplierNameById(d.supplier_id),
+          cases: 0,
+          price: deliveryLineCasePrice(pid, d.supplier_id).price,
+        };
+      }
+      map[d.supplier_id].cases += cases;
+    });
+    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // Supplier options for return lines: library prices + anyone who delivered.
+  function supplierOptionsForProduct(pid) {
+    const p = (_products || []).find((x) => x.id === pid);
+    const seen = new Set();
+    const out = [];
+    (p && p.product_suppliers || []).forEach((ps) => {
+      if (!ps.supplier_id || seen.has(ps.supplier_id)) return;
+      seen.add(ps.supplier_id);
+      const { price } = deliveryLineCasePrice(pid, ps.supplier_id);
+      out.push({ id: ps.supplier_id, name: supplierNameById(ps.supplier_id), price });
+    });
+    if (p && p.supplier_id && !seen.has(p.supplier_id)) {
+      const { price } = deliveryLineCasePrice(pid, p.supplier_id);
+      out.push({ id: p.supplier_id, name: supplierNameById(p.supplier_id), price });
+    }
+    deliveredBySupplierForProduct(pid).forEach((d) => {
+      if (!seen.has(d.supplier_id)) {
+        seen.add(d.supplier_id);
+        out.push({ id: d.supplier_id, name: d.name, price: d.price });
+      }
+    });
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function renderRcnDeliveredSummary(pid) {
+    const el = $('rcn-delivered-by-supplier');
+    if (!el) return;
+    const rows = deliveredBySupplierForProduct(pid);
+    if (!rows.length) {
+      el.innerHTML = '<div style="padding:10px;color:var(--muted-foreground)">No deliveries logged for this product yet.</div>';
+      return;
+    }
+    let totCases = 0;
+    let totVal = 0;
+    const body = rows.map((r) => {
+      totCases += r.cases;
+      const val = r.price != null ? r.price * r.cases : null;
+      if (val != null) totVal += val;
+      return '<tr><td>' + escapeHtml(r.name) + '</td>' +
+        '<td>' + round1(r.cases) + '</td>' +
+        '<td>' + (r.price != null ? money(r.price) : '—') + '</td>' +
+        '<td>' + (val != null ? money(val) : '—') + '</td></tr>';
+    }).join('');
+    el.innerHTML = '<table><thead><tr><th>Supplier</th><th>Cases delivered</th><th>Case price</th><th>Value</th></tr></thead><tbody>' +
+      body +
+      '<tr><td>Total</td><td>' + round1(totCases) + '</td><td></td><td>' + (totVal ? money(totVal) : '—') + '</td></tr></tbody></table>';
+  }
+
+  let _rcnReturnLines = [];
+
+  function rcnReturnLineId() { return 'rr' + Math.random().toString(36).slice(2, 8); }
+
+  function rcnReturnLineCases(line, ups) {
+    return combineCasesSingles(line.cases, line.singles, ups);
+  }
+
+  function rcnReturnLinePrice(line, pid) {
+    if (line.casePrice !== '' && line.casePrice != null && !isNaN(Number(line.casePrice))) {
+      return Number(line.casePrice);
+    }
+    if (line.supplierId) return deliveryLineCasePrice(pid, line.supplierId).price;
+    return null;
+  }
+
+  function initRcnReturnLines(pid) {
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
+    const saved = (_supplierReturns || []).filter((r) => r.product_id === pid);
+    if (saved.length) {
+      _rcnReturnLines = saved.map((r) => {
+        const split = splitCasesSingles(combineCasesSingles(r.qty, r.singles, ups), ups);
+        return {
+          lineId: r.id || rcnReturnLineId(),
+          supplierId: r.supplier_id || '',
+          cases: split.cases || '',
+          singles: split.singles || '',
+          casePrice: r.case_price != null ? String(r.case_price) : '',
+        };
+      });
+      return;
+    }
+    const cl = closingRowFor(pid) || {};
+    if (cl.return_amount != null && Number(cl.return_amount) > 0) {
+      const split = splitCasesSingles(cl.return_amount, ups);
+      _rcnReturnLines = [{
+        lineId: rcnReturnLineId(),
+        supplierId: productSupplierId(pid) || '',
+        cases: split.cases,
+        singles: split.singles || '',
+        casePrice: '',
+      }];
+      return;
+    }
+    _rcnReturnLines = [{ lineId: rcnReturnLineId(), supplierId: '', cases: '', singles: '', casePrice: '' }];
+  }
+
+  function renderRcnReturnLines() {
+    const body = $('rcn-return-body');
+    if (!body || !_reconCtx) return;
+    const pid = _reconCtx.pid;
+    const options = supplierOptionsForProduct(pid);
+    if (!_rcnReturnLines.length) {
+      body.innerHTML = '<tr><td colspan="7" style="padding:10px;color:var(--muted-foreground)">Click “Add return line” to log a return.</td></tr>';
+      renderRcnReturnTotal();
+      return;
+    }
+    body.innerHTML = _rcnReturnLines.map((line) => {
+      const ups = Number(((_currentEvent.event_products || []).find((x) => x.product_id === pid) || {}).product || {}).units_per_case) || 1;
+      const price = rcnReturnLinePrice(line, pid);
+      const lineCases = rcnReturnLineCases(line, ups);
+      const lineVal = price != null ? price * lineCases : null;
+      const canPrint = line.supplierId && lineCases > 0;
+      const opts = '<option value="">— Supplier —</option>' + options.map((o) =>
+        '<option value="' + o.id + '"' + (line.supplierId === o.id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>'
+      ).join('');
+      return '<tr>' +
+        '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
+        '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="0" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>' +
+        '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>' +
+        '<td><input type="number" step="0.01" min="0" value="' + escapeHtml(line.casePrice ?? '') + '" placeholder="Auto" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'casePrice\',this.value)"></td>' +
+        '<td class="num">' + (lineVal != null ? money(lineVal) : '—') + '</td>' +
+        '<td><button type="button" class="btn btn-outline btn-sm btn-icon" onclick="openReturnDrawer(\'' + pid + '\',\'' + line.supplierId + '\')" title="Print pallet stickers"' + (canPrint ? '' : ' disabled') + '><i class="ph ph-printer"></i></button></td>' +
+        '<td><button type="button" class="btn btn-danger btn-sm btn-icon" onclick="removeRcnReturnLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
+        '</tr>';
+    }).join('');
+    renderRcnReturnTotal();
+  }
+
+  function renderRcnReturnTotal() {
+    const el = $('rcn-return-total');
+    if (!el || !_reconCtx) return;
+    const pid = _reconCtx.pid;
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
+    let totCases = 0;
+    let totVal = 0;
+    _rcnReturnLines.forEach((line) => {
+      const c = rcnReturnLineCases(line, ups);
+      totCases += c;
+      const p = rcnReturnLinePrice(line, pid);
+      if (p != null) totVal += p * c;
+    });
+    el.textContent = totCases > 0
+      ? 'Total return: ' + round1(totCases) + ' case' + (round1(totCases) === 1 ? '' : 's') +
+        (totVal ? ' · ' + money(totVal) : '')
+      : '';
+  }
+
+  function addRcnReturnLine() {
+    const pid = _reconCtx && _reconCtx.pid;
+    const delivered = pid ? deliveredBySupplierForProduct(pid) : [];
+    const used = new Set(_rcnReturnLines.map((l) => l.supplierId).filter(Boolean));
+    const next = delivered.find((d) => !used.has(d.supplier_id));
+    _rcnReturnLines.push({
+      lineId: rcnReturnLineId(),
+      supplierId: next ? next.supplier_id : '',
+      cases: '',
+      singles: '',
+      casePrice: next && next.price != null ? String(next.price) : '',
+    });
+    renderRcnReturnLines();
+    recalcReconDrawer();
+  }
+
+  function updateRcnReturnLine(lineId, field, value) {
+    const line = _rcnReturnLines.find((l) => l.lineId === lineId);
+    if (!line) return;
+    line[field] = value;
+    if (field === 'supplierId' && _reconCtx) {
+      const { price } = deliveryLineCasePrice(_reconCtx.pid, value || null);
+      if (price != null && (line.casePrice === '' || line.casePrice == null)) line.casePrice = String(price);
+    }
+    renderRcnReturnLines();
+    recalcReconDrawer();
+  }
+
+  function removeRcnReturnLine(lineId) {
+    _rcnReturnLines = _rcnReturnLines.filter((l) => l.lineId !== lineId);
+    if (!_rcnReturnLines.length) {
+      _rcnReturnLines.push({ lineId: rcnReturnLineId(), supplierId: '', cases: '', singles: '', casePrice: '' });
+    }
+    renderRcnReturnLines();
+    recalcReconDrawer();
+  }
+
+  function totalReturnCasesFromRcnLines(pid) {
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
+    return _rcnReturnLines.reduce((s, line) => s + rcnReturnLineCases(line, ups), 0);
   }
 
   async function editProductFromRecon() {
@@ -8067,6 +8386,7 @@
             ep.product.category = fresh.category;
             ep.product.category_id = fresh.category_id;
             ep.product.supplier_id = fresh.supplier_id;
+            ep.product.abv = fresh.abv;
           }
         }
         refreshReconDrawerProductFields();
@@ -8076,21 +8396,30 @@
     });
   }
 
-  function openReconDrawer(pid) {
+  async function openReconDrawer(pid) {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
     if (!ep) return;
+    try {
+      if (!_products.length) _products = (await DB.products.listFull()) || [];
+      await ensureDeliveriesData();
+      await ensureSupplierReturnsData();
+    } catch (err) { console.warn('openReconDrawer preload', err); }
     _reconCtx = { pid };
     const cl = closingRowFor(pid) || {};
+    const ups = Number(ep.product && ep.product.units_per_case) || 1;
     refreshReconDrawerProductFields();
-    $('rcn-invoice').value = ep.invoice_qty != null ? ep.invoice_qty : '';
+    const invSplit = ep.invoice_qty != null ? splitCasesSingles(ep.invoice_qty, ups) : null;
+    $('rcn-invoice-cases').value = invSplit ? invSplit.cases : '';
+    $('rcn-invoice-singles').value = invSplit && invSplit.singles ? invSplit.singles : '';
     $('rcn-price').value = ep.order_price_override != null ? ep.order_price_override : '';
     let casesVal = cl.closing_cases != null ? Number(cl.closing_cases) : '';
     let singlesVal = cl.closing_singles != null ? Number(cl.closing_singles) : '';
     if (casesVal === '' && singlesVal === '' && cl.close_count != null) casesVal = Number(cl.close_count);
     $('rcn-cl-cases').value = casesVal !== '' ? casesVal : '';
     $('rcn-cl-singles').value = singlesVal !== '' ? singlesVal : '';
-    $('rcn-return').value = cl.return_amount != null ? cl.return_amount : '';
+    initRcnReturnLines(pid);
+    renderRcnReturnLines();
     $('rcn-budget-method').value = cl.budget_method || 'auto';
     $('rcn-budget-override').value = cl.budget_override != null ? cl.budget_override : '';
     $('rcn-note').value = cl.recon_note || '';
@@ -8099,19 +8428,28 @@
     recalcReconDrawer();
     $('reconFormOverlay').classList.add('open');
     $('reconFormDrawer').classList.add('open');
-    setTimeout(() => { const el = $('rcn-invoice'); if (el) el.focus(); }, 50);
+    setTimeout(() => { const el = $('rcn-invoice-cases'); if (el) el.focus(); }, 50);
   }
 
   function closeReconDrawer() {
     _reconCtx = null;
+    _rcnReturnLines = [];
     $('reconFormOverlay').classList.remove('open');
     $('reconFormDrawer').classList.remove('open');
   }
 
   function reconDrawerDraft() {
     const priceRaw = $('rcn-price').value.trim();
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === (_reconCtx && _reconCtx.pid));
+    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
+    const invCasesRaw = $('rcn-invoice-cases').value;
+    const invSinglesRaw = $('rcn-invoice-singles').value;
+    const invSet = casesSinglesInputsSet(invCasesRaw, invSinglesRaw);
     return {
-      invoiced: $('rcn-invoice').value !== '' ? parseFloat($('rcn-invoice').value) : 0,
+      invoiceCases: parseFloat(invCasesRaw) || 0,
+      invoiceSingles: parseFloat(invSinglesRaw) || 0,
+      invoiced: invSet ? combineCasesSingles(invCasesRaw, invSinglesRaw, ups) : 0,
+      invoiceSet: invSet,
       casePrice: priceRaw !== '' ? parseFloat(priceRaw) : '',
       closingCases: parseFloat($('rcn-cl-cases').value) || 0,
       closingSingles: parseFloat($('rcn-cl-singles').value) || 0,
@@ -8130,6 +8468,13 @@
     const r = buildReconRow(ep, pluByPid, reconDrawerDraft());
     const manualOn = $('rcn-budget-method').value === 'manual';
     $('rcn-budget-override').disabled = !manualOn;
+    const ups = Number(ep.product && ep.product.units_per_case) || 1;
+    let returnValue = 0;
+    _rcnReturnLines.forEach((line) => {
+      const p = rcnReturnLinePrice(line, _reconCtx.pid);
+      if (p != null) returnValue += p * rcnReturnLineCases(line, ups);
+    });
+    r.returnValue = returnValue;
     $('rcn-preview').innerHTML =
       '<table><tbody>' +
         '<tr><td>On hand</td><td>' + reconQtyCell(r.onHand) + '</td></tr>' +
@@ -8140,8 +8485,10 @@
         '<tr><td>Consumption + loose</td><td>' + money(r.consumptionLooseCharge) + '</td></tr>' +
         '<tr><td>PLU charge</td><td>' + money(r.pluCharge) + '</td></tr>' +
         '<tr><td>Invoice charge</td><td>' + money(r.invoiceCharge) + '</td></tr>' +
+        '<tr><td>Return value</td><td>' + money(r.returnValue) + '</td></tr>' +
         '<tr><td>Budget cost</td><td>' + money(r.budgetCost) + '</td></tr>' +
       '</tbody></table>';
+    renderRcnReturnTotal();
   }
 
   async function saveReconDrawer() {
@@ -8158,15 +8505,36 @@
     const cases = Math.max(0, draft.closingCases);
     const singles = Math.max(0, draft.closingSingles);
     const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
-    const returnAmt = Math.max(0, parseFloat($('rcn-return').value) || 0);
+    const returnAmt = round1(totalReturnCasesFromRcnLines(pid));
     const priceRaw = $('rcn-price').value.trim();
+    const validReturnLines = _rcnReturnLines.filter((line) =>
+      line.supplierId && rcnReturnLineCases(line, ups) > 0
+    );
     try {
       await DB.eventProducts.setForEvent(_currentEvent.id, pid, {
-        invoice_qty: $('rcn-invoice').value !== '' ? roundN(draft.invoiced, 3) : null,
+        invoice_qty: draft.invoiceSet ? roundN(draft.invoiced, 3) : null,
         order_price_override: priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null,
       });
-      ep.invoice_qty = $('rcn-invoice').value !== '' ? roundN(draft.invoiced, 3) : null;
+      ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : null;
       ep.order_price_override = priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null;
+      try {
+        const returnRows = validReturnLines.map((line) => ({
+          event_id: _currentEvent.id,
+          product_id: pid,
+          supplier_id: line.supplierId,
+          qty: Math.max(0, Number(line.cases) || 0),
+          singles: Math.max(0, Number(line.singles) || 0),
+          case_price: line.casePrice !== '' && line.casePrice != null
+            ? roundN(parseFloat(line.casePrice), 2) : null,
+        }));
+        await DB.supplierReturns.replaceForProduct(_currentEvent.id, pid, returnRows);
+        _supplierReturns = (_supplierReturns || []).filter((r) => r.product_id !== pid).concat(returnRows);
+      } catch (retErr) {
+        console.warn('saveReconDrawer supplier returns', retErr);
+        if (/supplier_return_lines/i.test(retErr && retErr.message || '')) {
+          $('rcn-err').textContent = 'Saved recon but supplier returns need migration 027 applied.';
+        }
+      }
       const closingPatch = {
         closing_cases: cases,
         closing_singles: singles,
@@ -8227,6 +8595,8 @@
         DB.closing.forEvent(id),
         DB.tillImports.forEvent(id),
         DB.recipes.listFull(),
+        ensureDeliveriesData().catch(() => {}),
+        ensureSupplierReturnsData().catch(() => {}),
       ]);
       _closing = closing || [];
       _closingEventId = id;
@@ -8242,6 +8612,24 @@
       console.error('loadRecon', err);
       $('reconTableBody').innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
     }
+  }
+
+  function reconProductAbv(pid, p) {
+    let v = p && p.abv;
+    if (v == null || v === '') {
+      const lib = (_products || []).find((x) => x.id === pid);
+      v = lib && lib.abv;
+    }
+    return v != null && v !== '' ? (Number(v).toFixed(2) + '%') : '—';
+  }
+
+  function reconProductAbvRaw(pid, p) {
+    let v = p && p.abv;
+    if (v == null || v === '') {
+      const lib = (_products || []).find((x) => x.id === pid);
+      v = lib && lib.abv;
+    }
+    return v != null && v !== '' ? Number(v).toFixed(2) + '%' : '';
   }
 
   function reconQtyCell(n) {
@@ -8316,7 +8704,7 @@
     Object.keys(grouped).sort().forEach((cat) => {
       html += '<tr class="category-row"><td colspan="' + RECON_COL_COUNT + '">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
-        const abv = r.p.abv != null ? (Number(r.p.abv).toFixed(2) + '%') : '—';
+        const abv = reconProductAbv(r.pid, r.p);
         const caseSize = (r.p.case_size && String(r.p.case_size).trim()) || '';
         const noteHint = r.reconNote
           ? '<span class="recon-note-hint" title="' + escapeHtml(r.reconNote) + '">' + escapeHtml(r.reconNote) + '</span>' : '';
@@ -8378,7 +8766,7 @@
     ];
     const lines = [headers.map(csvEscape).join(',')];
     rows.slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
-      const abv = r.p.abv != null ? Number(r.p.abv).toFixed(2) + '%' : '';
+      const abv = reconProductAbvRaw(r.pid, r.p);
       const statusLabel = { red: 'Action', yellow: 'Review', green: 'Done' }[r.reconStatus] || '';
       const note = r.reconNote || '';
       lines.push([
@@ -8454,16 +8842,47 @@
   // then print one sticker per pallet to stick on the physical pallets.
   let _returnCtx = null;   // { pid }
 
-  function openReturnDrawer(pid) {
+  function openReturnDrawer(pid, supplierId) {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
-    const returnEl = $('cl-return-' + pid);
-    const returnAmt = returnEl ? (parseFloat(returnEl.value) || 0)
-      : (closingRowFor(pid) ? Number(closingRowFor(pid).return_amount) || 0 : 0);
+    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
+    let returnAmt = 0;
+    let resolvedSupplierId = supplierId || null;
+
+    const savedLines = (_supplierReturns || []).filter((r) => r.product_id === pid);
+    if (resolvedSupplierId) {
+      const fromSaved = savedLines.find((r) => r.supplier_id === resolvedSupplierId);
+      const fromDraft = (_rcnReturnLines || []).find((l) => l.supplierId === resolvedSupplierId);
+      if (fromDraft) {
+        returnAmt = rcnReturnLineCases(fromDraft, ups);
+      } else if (fromSaved) {
+        returnAmt = combineCasesSingles(fromSaved.qty, fromSaved.singles, ups);
+      }
+    } else if (savedLines.length === 1) {
+      resolvedSupplierId = savedLines[0].supplier_id;
+      returnAmt = combineCasesSingles(savedLines[0].qty, savedLines[0].singles, ups);
+    } else if (savedLines.length > 1) {
+      alert('Multiple supplier returns logged — open Financial Recon and use the print button on each return line.');
+      return;
+    } else {
+      const returnCasesEl = $('cl-return-cases-' + pid);
+      const returnSinglesEl = $('cl-return-singles-' + pid);
+      if (returnCasesEl || returnSinglesEl) {
+        returnAmt = combineCasesSingles(
+          parseFloat(returnCasesEl && returnCasesEl.value) || 0,
+          parseFloat(returnSinglesEl && returnSinglesEl.value) || 0,
+          ups
+        );
+      } else {
+        returnAmt = closingRowFor(pid) ? Number(closingRowFor(pid).return_amount) || 0 : 0;
+      }
+      resolvedSupplierId = productSupplierId(pid);
+    }
+
     if (!(returnAmt > 0)) { alert('Enter a return amount for this product first.'); return; }
-    _returnCtx = { pid };
+    _returnCtx = { pid, supplierId: resolvedSupplierId };
     $('rtn-product').textContent = (ep && ep.product && ep.product.name) || productNameById(pid);
-    $('rtn-supplier').textContent = supplierNameById(productSupplierId(pid));
+    $('rtn-supplier').textContent = supplierNameById(resolvedSupplierId);
     $('rtn-qty').value = round1(returnAmt);
     $('rtn-per-pallet').value = '';
     $('rtn-date').value = new Date().toISOString().slice(0, 10);
@@ -8521,7 +8940,7 @@
     const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
     const info = productInfoById(pid);
     const ctx = {
-      supplier: supplierNameById(productSupplierId(pid)),
+      supplier: supplierNameById(_returnCtx.supplierId || productSupplierId(pid)),
       eventName: (_currentEvent && _currentEvent.name) || '',
       productName: (ep && ep.product && ep.product.name) || info.name || productNameById(pid),
       caseSize: info.size || '',
