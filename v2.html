@@ -611,7 +611,24 @@
     .rcn-delivered-summary table { width:100%; border-collapse:collapse; }
     .rcn-delivered-summary th, .rcn-delivered-summary td { padding:7px 10px; border-bottom:1px solid var(--border); text-align:right; }
     .rcn-delivered-summary th:first-child, .rcn-delivered-summary td:first-child { text-align:left; }
-    .rcn-delivered-summary tr:last-child td { border-bottom:none; font-weight:600; background:var(--secondary); }
+    .rcn-delivered-summary tbody tr:last-child td { border-bottom:none; font-weight:600; background:var(--secondary); }
+    /* Drawer tables must not inherit page-level sticky thead (breaks inside scrollable drawer). */
+    #reconFormDrawer .rcn-delivered-summary thead th,
+    #reconFormDrawer .rcn-return-table thead th,
+    #reconFormDrawer .recon-preview thead th {
+      position: static;
+      top: auto;
+      z-index: auto;
+      background: var(--secondary);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+    #reconFormDrawer .rcn-return-table thead th { text-align: center; }
+    #reconFormDrawer .rcn-return-table thead th:first-child { text-align: left; }
     /* ── warehouse ── */
     #warehouseStockTable thead th { position:static; text-align:left; white-space:nowrap; }
     #warehouseStockTable tbody td:nth-child(4) { font-weight:700; }
