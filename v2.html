@@ -531,9 +531,47 @@
     #reconTable tbody td:first-child, #reconTable tbody td:nth-child(2), #reconTable tbody td:nth-child(3), #reconTable tbody td:nth-child(6) { text-align:left; }
     #reconTable tbody tr.category-row td { text-align:left; font-size:13px; }
     #reconTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
-    #reconTable tbody tr.row-investigate td:first-child { box-shadow:inset 3px 0 0 var(--warning); }
+    #reconTable tbody tr.row-investigate td:nth-child(2) { box-shadow:inset 3px 0 0 var(--warning); }
     #reconTable tbody tr.recon-row { cursor:pointer; }
     #reconTable tbody tr.recon-row:hover td { background:var(--secondary); }
+    #reconTable tbody tr.recon-row-status-red td { background:#fef2f2; }
+    #reconTable tbody tr.recon-row-status-red:hover td { background:#fee2e2; }
+    #reconTable tbody tr.recon-row-status-yellow td { background:#fffbeb; }
+    #reconTable tbody tr.recon-row-status-yellow:hover td { background:#fef3c7; }
+    #reconTable tbody tr.recon-row-status-green td { background:#f0fdf4; }
+    #reconTable tbody tr.recon-row-status-green:hover td { background:#dcfce7; }
+    #reconTable .recon-marker-cell { width:72px; padding:4px 6px !important; white-space:nowrap; }
+    .recon-markers { display:inline-flex; gap:4px; align-items:center; vertical-align:middle; }
+    .recon-marker {
+      width:14px; height:14px; padding:0; border:2px solid transparent; border-radius:999px;
+      cursor:pointer; opacity:.28; background:var(--muted-foreground); transition:opacity .12s, transform .12s, box-shadow .12s;
+    }
+    .recon-marker:hover { opacity:.65; transform:scale(1.12); }
+    .recon-marker.active { opacity:1; box-shadow:0 0 0 2px var(--background); }
+    .recon-marker-red { background:#ef4444; }
+    .recon-marker-yellow { background:#f59e0b; }
+    .recon-marker-green { background:#22c55e; }
+    .recon-marker-red.active { box-shadow:0 0 0 2px #fef2f2, 0 0 0 3px #ef4444; }
+    .recon-marker-yellow.active { box-shadow:0 0 0 2px #fffbeb, 0 0 0 3px #f59e0b; }
+    .recon-marker-green.active { box-shadow:0 0 0 2px #f0fdf4, 0 0 0 3px #22c55e; }
+    .recon-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; font-size:13px; }
+    .recon-filter-row .label { color:var(--muted-foreground); font-weight:500; margin-right:2px; }
+    .recon-filter {
+      display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border:1px solid var(--border);
+      border-radius:999px; background:var(--background); font:inherit; font-size:12px; font-weight:600;
+      cursor:pointer; color:var(--muted-foreground);
+    }
+    .recon-filter:hover { border-color:var(--ring); color:var(--foreground); }
+    .recon-filter.active { border-color:var(--foreground); color:var(--foreground); background:var(--secondary); }
+    .recon-filter-dot { width:8px; height:8px; border-radius:999px; flex-shrink:0; }
+    .recon-status-pick { display:flex; gap:10px; flex-wrap:wrap; }
+    .recon-status-pick .recon-marker { width:22px; height:22px; }
+    .recon-status-pick .recon-status-clear {
+      font:inherit; font-size:12px; font-weight:600; padding:6px 10px; border:1px solid var(--border);
+      border-radius:var(--radius); background:var(--background); cursor:pointer; color:var(--muted-foreground);
+    }
+    .recon-status-pick .recon-status-clear:hover { border-color:var(--ring); color:var(--foreground); }
+    .recon-status-pick .recon-status-clear.active { border-color:var(--foreground); color:var(--foreground); background:var(--secondary); }
     #reconTable .recon-flag { font-size:11px; font-weight:600; color:var(--warning); margin-left:6px; }
     #reconTable .recon-note-hint { display:block; font-size:11px; font-weight:400; color:var(--muted-foreground); margin-top:2px; max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .recon-preview { margin-top:4px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
@@ -1412,9 +1450,18 @@
   <div id="reconNoEvent" class="empty-state" style="display:none"><i class="ph ph-calendar-x icon"></i><p>Pick an event from the sidebar first.</p></div>
   <div id="reconContent">
     <div class="stats-row" id="reconStats" style="margin-bottom:20px"></div>
+    <div class="recon-filter-row" id="reconFilterRow">
+      <span class="label">Show</span>
+      <button type="button" class="recon-filter active" data-recon-filter="" onclick="setReconFilter('')">All</button>
+      <button type="button" class="recon-filter" data-recon-filter="red" onclick="setReconFilter('red')"><span class="recon-filter-dot" style="background:#ef4444"></span> Action</button>
+      <button type="button" class="recon-filter" data-recon-filter="yellow" onclick="setReconFilter('yellow')"><span class="recon-filter-dot" style="background:#f59e0b"></span> Review</button>
+      <button type="button" class="recon-filter" data-recon-filter="green" onclick="setReconFilter('green')"><span class="recon-filter-dot" style="background:#22c55e"></span> Done</button>
+      <button type="button" class="recon-filter" data-recon-filter="none" onclick="setReconFilter('none')">Unmarked</button>
+    </div>
     <div class="dist-table-wrap">
       <table id="reconTable">
         <thead><tr>
+          <th title="Red = action needed, yellow = review, green = done">Status</th>
           <th>Item</th>
           <th>ABV</th>
           <th>Size</th>
@@ -1439,7 +1486,7 @@
         <tbody id="reconTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Click a row to edit invoicing, closing counts, budget method and notes. Rows are flagged <strong>investigate</strong> when physical consumption and PLU differ by more than 8%.</p>
+    <p class="df-hint" style="margin-top:10px">Use the <strong>red / yellow / green</strong> dots to mark lines for follow-up (click a dot without opening the row). Click a row to edit details. Rows auto-flag <strong>investigate</strong> when consumption and PLU differ by more than 8%.</p>
   </div>
 </div>
 <!-- ===================== SQUARE (till mapping) ===================== -->
@@ -2034,7 +2081,17 @@
       <label for="rcn-return">Return amount (cases)</label>
       <input type="number" inputmode="decimal" min="0" step="any" id="rcn-return" oninput="recalcReconDrawer()">
     </div>
-    <div class="page-title" style="font-size:13px;margin:16px 0 8px">Budget &amp; notes</div>
+    <div class="page-title" style="font-size:13px;margin:16px 0 8px">Follow-up &amp; budget</div>
+    <div class="df-field">
+      <label>Status marker</label>
+      <div class="recon-status-pick" id="rcn-status-pick">
+        <button type="button" class="recon-marker recon-marker-red" title="Action needed" onclick="pickReconDrawerStatus('red')"></button>
+        <button type="button" class="recon-marker recon-marker-yellow" title="Review later" onclick="pickReconDrawerStatus('yellow')"></button>
+        <button type="button" class="recon-marker recon-marker-green" title="Done" onclick="pickReconDrawerStatus('green')"></button>
+        <button type="button" class="recon-status-clear active" id="rcn-status-clear" onclick="pickReconDrawerStatus('')">Clear</button>
+      </div>
+      <p class="df-hint">Red = come back to this. Yellow = needs a look. Green = reconciled.</p>
+    </div>
     <div class="df-grid2">
       <div class="df-field">
         <label for="rcn-budget-method">Budget method</label>
@@ -7635,10 +7692,109 @@
     const investigate = (consumption !== 0 || plu !== 0)
       && Math.abs(consumption - plu) / denom > 0.08;
     const reconNote = (draft && draft.reconNote != null ? draft.reconNote : cl.recon_note) || '';
+    const reconStatus = draft && draft.reconStatus !== undefined
+      ? (draft.reconStatus || null)
+      : getReconStatus(pid, cl);
     return Object.assign(charges, {
-      budgetCost, supplierName, investigate, reconNote,
+      budgetCost, supplierName, investigate, reconNote, reconStatus,
       budgetMethod: budgetCl.budget_method || 'auto',
     });
+  }
+
+  let _reconCtx = null;
+  let _reconStatusFilter = '';
+  let _reconDrawerStatus = '';
+
+  function reconStatusKey(pid) {
+    return (_currentEvent && _currentEvent.id ? _currentEvent.id : '') + ':' + pid;
+  }
+
+  function getReconStatus(pid, cl) {
+    if (cl && cl.recon_status) return cl.recon_status;
+    try {
+      const v = sessionStorage.getItem('reconStatus:' + reconStatusKey(pid));
+      return v || '';
+    } catch (_) { return ''; }
+  }
+
+  function stashReconStatus(pid, status) {
+    try {
+      const k = 'reconStatus:' + reconStatusKey(pid);
+      if (status) sessionStorage.setItem(k, status);
+      else sessionStorage.removeItem(k);
+    } catch (_) {}
+  }
+
+  function reconMarkerCell(pid, status) {
+    const s = status || '';
+    return '<td class="recon-marker-cell" onclick="event.stopPropagation()">' +
+      '<span class="recon-markers">' +
+      ['red', 'yellow', 'green'].map((c) =>
+        '<button type="button" class="recon-marker recon-marker-' + c + (s === c ? ' active' : '') +
+        '" title="' + ({ red: 'Action needed', yellow: 'Review', green: 'Done' }[c]) +
+        '" aria-label="' + c + '" onclick="setReconStatus(\'' + pid + '\',\'' + c + '\')"></button>'
+      ).join('') +
+      '</span></td>';
+  }
+
+  function syncReconDrawerStatusPick(status) {
+    _reconDrawerStatus = status || '';
+    ['red', 'yellow', 'green'].forEach((c) => {
+      document.querySelectorAll('#rcn-status-pick .recon-marker-' + c).forEach((el) => {
+        el.classList.toggle('active', _reconDrawerStatus === c);
+      });
+    });
+    const clearBtn = $('rcn-status-clear');
+    if (clearBtn) clearBtn.classList.toggle('active', !_reconDrawerStatus);
+  }
+
+  function pickReconDrawerStatus(status) {
+    syncReconDrawerStatusPick(status);
+  }
+
+  function setReconFilter(filter) {
+    _reconStatusFilter = filter || '';
+    document.querySelectorAll('.recon-filter[data-recon-filter]').forEach((btn) => {
+      btn.classList.toggle('active', (btn.dataset.reconFilter || '') === _reconStatusFilter);
+    });
+    renderRecon();
+  }
+
+  async function setReconStatus(pid, status) {
+    if (!_currentEvent) return;
+    const cl = closingRowFor(pid) || {};
+    const next = getReconStatus(pid, cl) === status ? null : status;
+    try {
+      const patch = {
+        recon_status: next,
+        closing_cases: cl.closing_cases != null ? cl.closing_cases : 0,
+        closing_singles: cl.closing_singles != null ? cl.closing_singles : 0,
+        close_count: cl.close_count != null ? cl.close_count : 0,
+        return_amount: cl.return_amount != null ? cl.return_amount : 0,
+      };
+      let saved;
+      try {
+        saved = await DB.closing.setForEvent(_currentEvent.id, pid, patch);
+      } catch (e1) {
+        stashReconStatus(pid, next);
+        saved = null;
+      }
+      let row = closingRowFor(pid);
+      if (!row) {
+        row = { event_id: _currentEvent.id, product_id: pid };
+        _closing.push(row);
+      }
+      if (saved) {
+        Object.assign(row, saved);
+        stashReconStatus(pid, null);
+      } else {
+        row.recon_status = next;
+        stashReconStatus(pid, next);
+      }
+      renderRecon();
+    } catch (err) {
+      console.warn('setReconStatus', err);
+    }
   }
 
   function computeReconRows() {
@@ -7647,8 +7803,6 @@
     const pluByPid = computePluCasesByProductId(eps);
     return eps.map((ep) => buildReconRow(ep, pluByPid, null));
   }
-
-  let _reconCtx = null;
 
   function openReconDrawer(pid) {
     if (!_currentEvent) { alert('Pick an event first'); return; }
@@ -7670,6 +7824,7 @@
     $('rcn-budget-method').value = cl.budget_method || 'auto';
     $('rcn-budget-override').value = cl.budget_override != null ? cl.budget_override : '';
     $('rcn-note').value = cl.recon_note || '';
+    syncReconDrawerStatusPick(getReconStatus(pid, cl));
     $('rcn-err').textContent = '';
     recalcReconDrawer();
     $('reconFormOverlay').classList.add('open');
@@ -7693,6 +7848,7 @@
       budgetMethod: $('rcn-budget-method').value,
       budgetOverride: $('rcn-budget-override').value !== '' ? parseFloat($('rcn-budget-override').value) : null,
       reconNote: $('rcn-note').value.trim(),
+      reconStatus: _reconDrawerStatus || null,
     };
   }
 
@@ -7748,6 +7904,7 @@
         return_amount: round1(returnAmt),
         carried_over: round1(Math.max(0, closeCount - returnAmt)),
         recon_note: draft.reconNote || null,
+        recon_status: draft.reconStatus || null,
         budget_method: draft.budgetMethod || 'auto',
         budget_override: draft.budgetMethod === 'manual' && draft.budgetOverride != null
           ? roundN(draft.budgetOverride, 2) : null,
@@ -7763,10 +7920,12 @@
           return_amount: closingPatch.return_amount,
           carried_over: closingPatch.carried_over,
         });
+        stashReconStatus(pid, draft.reconStatus || null);
       }
       let cl = closingRowFor(pid);
       if (!cl) { cl = { event_id: _currentEvent.id, product_id: pid }; _closing.push(cl); }
       Object.assign(cl, saved || closingPatch);
+      stashReconStatus(pid, null);
       closeReconDrawer();
       renderRecon();
       if ($('panel-closing').classList.contains('active')) renderClosing();
@@ -7809,7 +7968,7 @@
       renderRecon();
     } catch (err) {
       console.error('loadRecon', err);
-      $('reconTableBody').innerHTML = '<tr><td colspan="20"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
+      $('reconTableBody').innerHTML = '<tr><td colspan="21"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
     }
   }
 
@@ -7826,12 +7985,27 @@
   }
 
   function renderRecon() {
-    const rows = computeReconRows();
+    const allRows = computeReconRows();
     const body = $('reconTableBody');
     if (!body) return;
 
+    const statusCounts = { red: 0, yellow: 0, green: 0, none: 0 };
+    allRows.forEach((r) => {
+      const s = r.reconStatus || 'none';
+      if (statusCounts[s] != null) statusCounts[s]++;
+      else statusCounts.none++;
+    });
+
+    const rows = _reconStatusFilter
+      ? allRows.filter((r) => {
+          const s = r.reconStatus || '';
+          if (_reconStatusFilter === 'none') return !s;
+          return s === _reconStatusFilter;
+        })
+      : allRows;
+
     let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
-    rows.forEach((r) => {
+    allRows.forEach((r) => {
       totBudget += r.budgetCost || 0;
       totConsLoose += r.consumptionLooseCharge || 0;
       totInvoice += r.invoiceCharge || 0;
@@ -7842,13 +8016,18 @@
 
     $('reconStats').innerHTML =
       '<div class="stat-card"><div class="stat-label">Budget cost</div><div class="stat-value">' + money(totBudget) + '</div><div class="stat-sub">total to bill</div></div>' +
-      '<div class="stat-card"><div class="stat-label">Consumption + loose</div><div class="stat-value">' + money(totConsLoose) + '</div><div class="stat-sub">' + (pctOfConsLoose != null ? pctOfConsLoose.toFixed(2) + '% of budget' : 'physical stock') + '</div></div>' +
-      '<div class="stat-card"><div class="stat-label">Invoice charges</div><div class="stat-value">' + money(totInvoice) + '</div><div class="stat-sub">' + (pctOfInvoice != null ? pctOfInvoice.toFixed(2) + '% of budget' : 'supplier invoices') + '</div></div>' +
-      '<div class="stat-card"><div class="stat-label">PLU charges</div><div class="stat-value">' + money(totPlu) + '</div><div class="stat-sub">from Square + recipes</div></div>' +
-      '<div class="stat-card"><div class="stat-label">Square import</div><div class="stat-value">' + ((_squareImport && _squareImport.rows && _squareImport.rows.length) || 0) + '</div><div class="stat-sub">till lines mapped</div></div>';
+      '<div class="stat-card"><div class="stat-label">Action</div><div class="stat-value" style="color:#ef4444">' + statusCounts.red + '</div><div class="stat-sub">red markers</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Review</div><div class="stat-value" style="color:#f59e0b">' + statusCounts.yellow + '</div><div class="stat-sub">yellow markers</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Done</div><div class="stat-value" style="color:#22c55e">' + statusCounts.green + '</div><div class="stat-sub">green markers</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Unmarked</div><div class="stat-value">' + statusCounts.none + '</div><div class="stat-sub">no marker yet</div></div>';
+
+    if (!allRows.length) {
+      body.innerHTML = '<tr><td colspan="21"><div class="empty-state"><i class="ph ph-scales icon"></i><p>Add products and enter closing stock to begin.</p></div></td></tr>';
+      return;
+    }
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="20"><div class="empty-state"><i class="ph ph-scales icon"></i><p>Add products and enter closing stock to begin.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="21"><div class="empty-state"><i class="ph ph-funnel icon"></i><p>No lines match this filter.</p></div></td></tr>';
       return;
     }
 
@@ -7860,14 +8039,16 @@
 
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += '<tr class="category-row"><td colspan="20">' + escapeHtml(cat) + '</td></tr>';
+      html += '<tr class="category-row"><td colspan="21">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
         const abv = r.p.abv != null ? (Number(r.p.abv).toFixed(2) + '%') : '—';
         const size = r.p.unit_size || r.p.size || '—';
         const flag = r.investigate && !r.reconNote ? '<span class="recon-flag">investigate</span>' : '';
         const noteHint = r.reconNote
           ? '<span class="recon-note-hint" title="' + escapeHtml(r.reconNote) + '">' + escapeHtml(r.reconNote) + '</span>' : '';
-        html += '<tr class="recon-row ' + (r.investigate ? 'row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
+        const statusClass = r.reconStatus ? (' recon-row-status-' + r.reconStatus) : '';
+        html += '<tr class="recon-row' + statusClass + (r.investigate ? ' row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
+          reconMarkerCell(r.pid, r.reconStatus) +
           '<td style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + flag + noteHint + '</td>' +
           '<td>' + escapeHtml(abv) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(size) + '</td>' +
@@ -7893,7 +8074,7 @@
     });
 
     html += '<tr class="total-row">' +
-      '<td colspan="15">Total</td>' +
+      '<td colspan="16">Total</td>' +
       '<td>' + money(totConsLoose) + '</td>' +
       '<td></td>' +
       '<td>' + money(totPlu) + '</td>' +
@@ -7914,7 +8095,7 @@
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const rows = computeReconRows();
     const headers = [
-      'Item', 'ABV', 'Size', 'Case Size', 'Case Price', 'Supplier', 'Units per case',
+      'Status', 'Item', 'ABV', 'Size', 'Case Size', 'Case Price', 'Supplier', 'Units per case',
       'Delivered', 'Invoiced', 'On Hand', 'Closing (Cases)', 'Closing (Units in case format)',
       'Transferred', 'Consumption', 'PLU', 'Consumption Charge', 'Consumption + Loose Charge',
       'PLU Charge', 'Invoice Charge', '', 'Budget Cost', 'Notes',
@@ -7922,9 +8103,10 @@
     const lines = [headers.map(csvEscape).join(',')];
     rows.slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
       const abv = r.p.abv != null ? Number(r.p.abv).toFixed(2) + '%' : '';
+      const statusLabel = { red: 'Action', yellow: 'Review', green: 'Done' }[r.reconStatus] || '';
       const note = r.reconNote || (r.investigate ? 'investigate' : '');
       lines.push([
-        r.p.name, abv, r.p.unit_size || r.p.size || '', r.p.case_size || '',
+        statusLabel, r.p.name, abv, r.p.unit_size || r.p.size || '', r.p.case_size || '',
         r.casePrice ? '£' + r.casePrice.toFixed(2) : '', r.supplierName, r.ups || '',
         r.delivered || 0, r.invoiced || 0, r.onHand || 0,
         r.closingCases || 0, r.closingUnits || 0, r.transferred || 0,
@@ -7940,8 +8122,8 @@
       totConsLoose += r.consumptionLooseCharge || 0;
       totInvoice += r.invoiceCharge || 0;
     });
-    lines.push(Array(19).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
-    lines.push(Array(19).fill('').concat([
+    lines.push(Array(20).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
+    lines.push(Array(20).fill('').concat([
       totConsLoose.toFixed(2), totInvoice.toFixed(2),
       totConsLoose > 0 ? ((totBudget / totConsLoose) * 100).toFixed(2) + '%' : '',
       totInvoice > 0 ? ((totBudget / totInvoice) * 100).toFixed(2) + '%' : '',
