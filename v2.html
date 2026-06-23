@@ -3177,7 +3177,7 @@
         },
       ],
       values: p || {},
-      onDelete: p ? async () => { await DB.products.remove(p.id); await loadLibrary(); } : null,
+      onDelete: p ? async () => { await DB.products.deleteFull(p.id); await loadLibrary(); } : null,
       onSave: async (v) => {
         const poolName = (v.pool_name || '').trim() || null;
         let poolServings = null;

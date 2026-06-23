@@ -335,6 +335,27 @@
           case_price: numOrNull(input.case_price),
         };
       },
+      // Remove a product from the library together with every row that
+      // references it (events, deliveries, closing stock, etc.).
+      async deleteFull(productId) {
+        const id = enc(productId);
+        try {
+          return await rpc('delete_product', { p_id: productId });
+        } catch (e) {
+          const msg = e && e.message ? String(e.message) : '';
+          const rpcMissing = /delete_product|PGRST202|42883|does not exist/i.test(msg);
+          if (!rpcMissing) throw e;
+        }
+        const childTables = [
+          'stock_count_lines', 'wastage_lines', 'transfer_lines', 'delivery_lines',
+          'topup_lines', 'bar_products', 'distribution', 'closing_stock',
+          'event_products', 'warehouse_stock', 'product_suppliers',
+        ];
+        for (const table of childTables) {
+          await remove(table, 'product_id=eq.' + id);
+        }
+        return remove('products', eqId(productId));
+      },
     }
   );
 
