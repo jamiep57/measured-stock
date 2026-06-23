@@ -2138,10 +2138,10 @@
         <label for="rcn-price">Case price override (£)</label>
         <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
       </div>
-      <div class="df-field" id="rcn-unit-price-wrap" style="display:none">
-        <label for="rcn-unit-price">Bottle price override (£)</label>
+      <div class="df-field" id="rcn-unit-price-wrap">
+        <label for="rcn-unit-price" id="rcn-unit-price-label">Unit price override (£)</label>
         <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-unit-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
-        <p class="df-hint" id="rcn-unit-price-hint">Spirits — per bottle. Used when case override is blank.</p>
+        <p class="df-hint" id="rcn-unit-price-hint">Used when case override is blank.</p>
       </div>
     </div>
     <div class="df-field">
@@ -2330,6 +2330,11 @@
     if (categoryColourKeyOf(p) !== 'spirits') return false;
     const ml = packBottleMl(p.case_size);
     return ml != null && ml >= 500;
+  }
+
+  function reconUnitsPerCase(p) {
+    if (isSpiritBottle(p)) return spiritBottlesPerCase(p);
+    return Number(p && p.units_per_case) || 1;
   }
 
   function shotsPerBottle(p) {
@@ -7839,42 +7844,41 @@
     return rows.find((ps) => ps.is_preferred) || rows[0] || null;
   }
 
-  function defaultBottlePrice(ep) {
+  function defaultUnitPriceForRecon(ep) {
     const p = ep && ep.product;
     if (!p) return null;
     const offer = productOfferForEvent(ep);
     if (offer && offer.unit_price != null) return Number(offer.unit_price);
     if (p.unit_price != null) return Number(p.unit_price);
     const cp = p.case_price != null ? Number(p.case_price) : null;
-    const bpc = spiritBottlesPerCase(p);
-    if (cp != null && bpc > 0) return cp / bpc;
+    const upc = reconUnitsPerCase(p);
+    if (cp != null && upc > 0) return cp / upc;
     return null;
   }
 
   function reconCasePrice(ep, draft) {
     const p = ep.product;
-    const spirit = p && isSpiritBottle(p);
     if (draft) {
       if (draft.casePrice !== '' && draft.casePrice != null) return Number(draft.casePrice) || 0;
-      if (spirit && draft.unitPrice !== '' && draft.unitPrice != null) {
-        const bpc = spiritBottlesPerCase(p) || 1;
-        return (Number(draft.unitPrice) || 0) * bpc;
+      if (p && draft.unitPrice !== '' && draft.unitPrice != null) {
+        const upc = reconUnitsPerCase(p) || 1;
+        return (Number(draft.unitPrice) || 0) * upc;
       }
     }
     if (ep.order_price_override != null) return Number(ep.order_price_override) || 0;
-    if (spirit && ep.order_unit_price_override != null) {
-      const bpc = spiritBottlesPerCase(p) || 1;
-      return (Number(ep.order_unit_price_override) || 0) * bpc;
+    if (p && ep.order_unit_price_override != null) {
+      const upc = reconUnitsPerCase(p) || 1;
+      return (Number(ep.order_unit_price_override) || 0) * upc;
     }
     return p && p.case_price != null ? Number(p.case_price) || 0 : 0;
   }
 
-  function reconBottlePrice(ep, draft) {
+  function reconUnitPrice(ep, draft) {
     const p = ep && ep.product;
-    if (!p || !isSpiritBottle(p)) return null;
+    if (!p) return null;
     const caseP = reconCasePrice(ep, draft);
-    const bpc = spiritBottlesPerCase(p) || 1;
-    return bpc > 0 ? caseP / bpc : null;
+    const upc = reconUnitsPerCase(p) || 1;
+    return upc > 0 ? caseP / upc : null;
   }
 
   function reconBudgetCost(row, cl) {
@@ -8209,17 +8213,17 @@
   }
 
   function syncReconDrawerPriceFields(ep) {
-    const spirit = !!(ep && ep.product && isSpiritBottle(ep.product));
-    const unitWrap = $('rcn-unit-price-wrap');
-    const priceRow = $('rcn-price-row');
-    if (unitWrap) unitWrap.style.display = spirit ? '' : 'none';
-    if (priceRow) priceRow.classList.toggle('df-grid2', spirit);
+    const p = ep && ep.product;
+    const spirit = !!(p && isSpiritBottle(p));
+    const unitLabel = spirit ? 'Bottle' : 'Unit';
+    const labelEl = $('rcn-unit-price-label');
+    if (labelEl) labelEl.textContent = unitLabel + ' price override (£)';
     const hint = $('rcn-unit-price-hint');
-    if (hint && spirit) {
-      const def = defaultBottlePrice(ep);
+    if (hint) {
+      const def = defaultUnitPriceForRecon(ep);
       hint.textContent = def != null
-        ? 'Spirits — per bottle. Default ' + money(def) + '. Used when case override is blank.'
-        : 'Spirits — per bottle. Used when case override is blank.';
+        ? 'Per ' + unitLabel.toLowerCase() + '. Default ' + money(def) + '. Used when case override is blank.'
+        : 'Per ' + unitLabel.toLowerCase() + '. Used when case override is blank.';
     }
   }
 
@@ -8563,11 +8567,12 @@
       if (p != null) returnValue += p * rcnReturnLineCases(line, ups);
     });
     r.returnValue = returnValue;
-    const spirit = ep.product && isSpiritBottle(ep.product);
-    const bottleP = spirit ? reconBottlePrice(ep, reconDrawerDraft()) : null;
+    const p = ep.product;
+    const unitP = reconUnitPrice(ep, reconDrawerDraft());
+    const unitLabel = p && isSpiritBottle(p) ? 'Bottle' : 'Unit';
     $('rcn-preview').innerHTML =
       '<table><tbody>' +
-        (spirit ? '<tr><td>Bottle price (effective)</td><td>' + (bottleP != null ? money(bottleP) : '—') + '</td></tr>' : '') +
+        '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
         '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>' +
         '<tr><td>On hand</td><td>' + reconQtyCell(r.onHand) + '</td></tr>' +
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
