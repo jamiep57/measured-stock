@@ -2053,7 +2053,7 @@
   <div class="drawer-body drawer-body--block">
     <div class="df-grid2">
       <div class="df-field"><label>Product</label><div class="rf-readonly" id="rcn-product">—</div></div>
-      <div class="df-field"><label>Supplier</label><div class="rf-readonly" id="rcn-supplier">—</div></div>
+      <div class="df-field"><label>Supplier</label><div class="rf-readonly" id="rcn-supplier">—</div><p class="df-hint" id="rcn-case-size" style="margin-top:6px;margin-bottom:0"></p></div>
     </div>
     <div class="page-title" style="font-size:13px;margin:12px 0 8px">Stock &amp; invoicing</div>
     <div class="df-grid2">
@@ -7813,6 +7813,9 @@
     $('reconFormTitle').textContent = 'Edit recon — ' + ((ep.product && ep.product.name) || '');
     $('rcn-product').textContent = (ep.product && ep.product.name) || '—';
     $('rcn-supplier').textContent = supplierNameById(productSupplierId(pid));
+    const caseSizeEl = $('rcn-case-size');
+    const caseSize = (ep.product && ep.product.case_size) ? String(ep.product.case_size).trim() : '';
+    if (caseSizeEl) caseSizeEl.textContent = caseSize || '';
     $('rcn-invoice').value = ep.invoice_qty != null ? ep.invoice_qty : '';
     $('rcn-price').value = ep.order_price_override != null ? ep.order_price_override : '';
     let casesVal = cl.closing_cases != null ? Number(cl.closing_cases) : '';
