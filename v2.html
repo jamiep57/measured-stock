@@ -570,6 +570,20 @@
       color:var(--foreground); cursor:pointer; max-width:240px;
     }
     .recon-cat-select:focus { border-color:var(--ring); outline:none; box-shadow:0 0 0 3px rgba(24,24,27,.08); }
+    .recon-col-picker { position:relative; margin-left:auto; }
+    .recon-col-menu {
+      position:absolute; top:calc(100% + 6px); right:0; z-index:40; min-width:220px; max-height:320px; overflow-y:auto;
+      padding:8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--background);
+      box-shadow:0 10px 30px rgba(0,0,0,.12); display:none;
+    }
+    .recon-col-menu.open { display:block; }
+    .recon-col-menu-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:2px 4px 8px; border-bottom:1px solid var(--border); margin-bottom:6px; font-size:11px; font-weight:600; color:var(--muted-foreground); text-transform:uppercase; letter-spacing:.04em; }
+    .recon-col-menu-head button { font:inherit; font-size:11px; font-weight:600; color:var(--foreground); background:none; border:none; cursor:pointer; padding:2px 4px; border-radius:4px; }
+    .recon-col-menu-head button:hover { background:var(--secondary); }
+    .recon-col-option { display:flex; align-items:center; gap:8px; padding:6px 4px; font-size:12px; font-weight:500; cursor:pointer; border-radius:4px; user-select:none; }
+    .recon-col-option:hover { background:var(--secondary); }
+    .recon-col-option input { margin:0; accent-color:var(--foreground); }
+    #reconTable .recon-col-hidden { display:none; }
     .recon-status-pick { display:flex; gap:10px; flex-wrap:wrap; }
     .recon-status-pick .recon-marker { width:22px; height:22px; }
     .recon-status-pick .recon-status-clear {
@@ -740,6 +754,10 @@
       transform:translateX(100%); transition:transform .25s ease;
     }
     .drawer.open { transform:translateX(0); }
+    .drawer-backdrop.drawer-backdrop--stack { z-index:55; }
+    .drawer.drawer--stack { z-index:56; }
+    .df-label-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+    .df-label-row label { margin:0; }
     .drawer-head {
       display:flex; align-items:center; gap:12px; padding:18px 20px;
       border-bottom:1px solid var(--border); flex-shrink:0;
@@ -1465,31 +1483,35 @@
       <button type="button" class="recon-filter" data-recon-filter="none" onclick="setReconFilter('none')">Unmarked</button>
       <span class="label" style="margin-left:8px">Category</span>
       <select id="reconCatFilter" class="recon-cat-select" onchange="setReconCategoryFilter(this.value)"><option value="">All categories</option></select>
+      <div class="recon-col-picker" id="reconColPicker">
+        <button type="button" class="recon-filter" id="reconColBtn" onclick="toggleReconColMenu(event)" aria-expanded="false" aria-controls="reconColMenu" title="Choose which columns to show"><i class="ph ph-columns"></i> Columns</button>
+        <div class="recon-col-menu" id="reconColMenu" role="menu"></div>
+      </div>
     </div>
     <div class="dist-table-wrap">
       <table id="reconTable">
         <thead><tr>
-          <th title="Red = action needed, yellow = review, green = done">Status</th>
-          <th>Item</th>
-          <th>ABV</th>
-          <th>Size</th>
-          <th>Case size</th>
-          <th>Case price</th>
-          <th>Supplier</th>
-          <th>Units per case</th>
-          <th>Delivered</th>
-          <th>Invoiced</th>
-          <th>On hand</th>
-          <th>Closing (cases)</th>
-          <th>Closing (units)</th>
-          <th>Transferred</th>
-          <th>Consumption</th>
-          <th>PLU</th>
-          <th>Consumption charge</th>
-          <th>Consumption + loose</th>
-          <th>PLU charge</th>
-          <th>Invoice charge</th>
-          <th>Budget cost</th>
+          <th data-recon-col="status" title="Red = action needed, yellow = review, green = done">Status</th>
+          <th data-recon-col="item">Item</th>
+          <th data-recon-col="abv">ABV</th>
+          <th data-recon-col="size">Size</th>
+          <th data-recon-col="case_size">Case size</th>
+          <th data-recon-col="case_price">Case price</th>
+          <th data-recon-col="supplier">Supplier</th>
+          <th data-recon-col="units_per_case">Units per case</th>
+          <th data-recon-col="delivered">Delivered</th>
+          <th data-recon-col="invoiced">Invoiced</th>
+          <th data-recon-col="on_hand">On hand</th>
+          <th data-recon-col="closing_cases">Closing (cases)</th>
+          <th data-recon-col="closing_units">Closing (units)</th>
+          <th data-recon-col="transferred">Transferred</th>
+          <th data-recon-col="consumption">Consumption</th>
+          <th data-recon-col="plu">PLU</th>
+          <th data-recon-col="consumption_charge">Consumption charge</th>
+          <th data-recon-col="consumption_loose">Consumption + loose</th>
+          <th data-recon-col="plu_charge">PLU charge</th>
+          <th data-recon-col="invoice_charge">Invoice charge</th>
+          <th data-recon-col="budget_cost">Budget cost</th>
         </tr></thead>
         <tbody id="reconTableBody"></tbody>
       </table>
@@ -2062,7 +2084,14 @@
   <div class="drawer-body drawer-body--block">
     <div class="df-grid2">
       <div class="df-field"><label>Product</label><div class="rf-readonly" id="rcn-product">—</div></div>
-      <div class="df-field"><label>Supplier</label><div class="rf-readonly" id="rcn-supplier">—</div><p class="df-hint" id="rcn-case-size" style="margin-top:6px;margin-bottom:0"></p></div>
+      <div class="df-field">
+        <div class="df-label-row">
+          <label>Supplier</label>
+          <button type="button" class="btn btn-outline btn-sm" onclick="editProductFromRecon()" title="Edit SKU, case size &amp; supplier prices"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit</button>
+        </div>
+        <div class="rf-readonly" id="rcn-supplier">—</div>
+        <p class="df-hint" id="rcn-case-size" style="margin-top:6px;margin-bottom:0"></p>
+      </div>
     </div>
     <div class="page-title" style="font-size:13px;margin:12px 0 8px">Stock &amp; invoicing</div>
     <div class="df-grid2">
@@ -2930,6 +2959,8 @@
       el.save.textContent = cfg.saveLabel || 'Save';
       el.del.style.display = cfg.onDelete ? '' : 'none';
       el.del.textContent = cfg.deleteLabel || 'Delete';
+      el.backdrop.classList.toggle('drawer-backdrop--stack', !!cfg.stacked);
+      el.drawer.classList.toggle('drawer--stack', !!cfg.stacked);
       el.backdrop.classList.add('open');
       el.drawer.classList.add('open');
       // Let custom fields wire up their own event handlers now the DOM exists.
@@ -2943,8 +2974,8 @@
     }
 
     function close() {
-      el.backdrop.classList.remove('open');
-      el.drawer.classList.remove('open');
+      el.backdrop.classList.remove('open', 'drawer-backdrop--stack');
+      el.drawer.classList.remove('open', 'drawer--stack');
       current = null;
     }
 
@@ -3161,6 +3192,7 @@
     );
     Drawer.open({
       title: p ? 'Edit product' : 'New product',
+      stacked: opts && opts.stacked,
       fields: [
         { key: 'name', label: 'Name', type: 'text', full: true, required: true },
         { key: 'category_id', label: 'Category', type: 'select', options: catOpts, placeholder: '— none —' },
@@ -3180,7 +3212,7 @@
         },
       ],
       values: p || {},
-      onDelete: p ? async () => { await DB.products.deleteFull(p.id); await loadLibrary(); } : null,
+      onDelete: (p && !(opts && opts.stacked)) ? async () => { await DB.products.deleteFull(p.id); await loadLibrary(); } : null,
       deleteLabel: 'Delete from library',
       deleteConfirm: p
         ? ('Delete “' + p.name + '” from your product library? This removes it from every event and cannot be undone.')
@@ -7751,6 +7783,116 @@
   let _reconCategoryFilter = '';
   let _reconDrawerStatus = '';
 
+  const RECON_COLS = [
+    { id: 'status', label: 'Status' },
+    { id: 'item', label: 'Item' },
+    { id: 'abv', label: 'ABV' },
+    { id: 'size', label: 'Size' },
+    { id: 'case_size', label: 'Case size' },
+    { id: 'case_price', label: 'Case price' },
+    { id: 'supplier', label: 'Supplier' },
+    { id: 'units_per_case', label: 'Units per case' },
+    { id: 'delivered', label: 'Delivered' },
+    { id: 'invoiced', label: 'Invoiced' },
+    { id: 'on_hand', label: 'On hand' },
+    { id: 'closing_cases', label: 'Closing (cases)' },
+    { id: 'closing_units', label: 'Closing (units)' },
+    { id: 'transferred', label: 'Transferred' },
+    { id: 'consumption', label: 'Consumption' },
+    { id: 'plu', label: 'PLU' },
+    { id: 'consumption_charge', label: 'Consumption charge' },
+    { id: 'consumption_loose', label: 'Consumption + loose' },
+    { id: 'plu_charge', label: 'PLU charge' },
+    { id: 'invoice_charge', label: 'Invoice charge' },
+    { id: 'budget_cost', label: 'Budget cost' },
+  ];
+  const RECON_COL_COUNT = RECON_COLS.length;
+  let _reconColVisibility = loadReconColVisibility();
+  let _reconColMenuReady = false;
+
+  function loadReconColVisibility() {
+    const defaults = {};
+    RECON_COLS.forEach((c) => { defaults[c.id] = true; });
+    try {
+      const raw = localStorage.getItem('reconColVisibility');
+      if (!raw) return defaults;
+      const parsed = JSON.parse(raw);
+      RECON_COLS.forEach((c) => {
+        if (typeof parsed[c.id] === 'boolean') defaults[c.id] = parsed[c.id];
+      });
+    } catch (_) {}
+    return defaults;
+  }
+
+  function saveReconColVisibility() {
+    try { localStorage.setItem('reconColVisibility', JSON.stringify(_reconColVisibility)); } catch (_) {}
+  }
+
+  function initReconColMenu() {
+    if (_reconColMenuReady) return;
+    const menu = $('reconColMenu');
+    if (!menu) return;
+    menu.innerHTML =
+      '<div class="recon-col-menu-head"><span>Visible columns</span><button type="button" onclick="resetReconColumns()">Show all</button></div>' +
+      RECON_COLS.map((c) =>
+        '<label class="recon-col-option"><input type="checkbox" data-recon-col-toggle="' + c.id + '" onchange="toggleReconColumn(\'' + c.id + '\', this.checked)">' +
+        escapeHtml(c.label) + '</label>'
+      ).join('');
+    document.addEventListener('click', (e) => {
+      const picker = $('reconColPicker');
+      if (!picker || !picker.contains(e.target)) closeReconColMenu();
+    });
+    _reconColMenuReady = true;
+    syncReconColMenuChecks();
+  }
+
+  function syncReconColMenuChecks() {
+    RECON_COLS.forEach((c) => {
+      const cb = document.querySelector('#reconColMenu input[data-recon-col-toggle="' + c.id + '"]');
+      if (cb) cb.checked = _reconColVisibility[c.id] !== false;
+    });
+  }
+
+  function applyReconColVisibility() {
+    RECON_COLS.forEach((c) => {
+      const vis = _reconColVisibility[c.id] !== false;
+      document.querySelectorAll('#reconTable [data-recon-col="' + c.id + '"]').forEach((el) => {
+        el.classList.toggle('recon-col-hidden', !vis);
+      });
+    });
+    syncReconColMenuChecks();
+  }
+
+  function toggleReconColumn(colId, visible) {
+    _reconColVisibility[colId] = !!visible;
+    saveReconColVisibility();
+    applyReconColVisibility();
+  }
+
+  function resetReconColumns() {
+    RECON_COLS.forEach((c) => { _reconColVisibility[c.id] = true; });
+    saveReconColVisibility();
+    applyReconColVisibility();
+  }
+
+  function toggleReconColMenu(e) {
+    e.stopPropagation();
+    initReconColMenu();
+    const menu = $('reconColMenu');
+    const btn = $('reconColBtn');
+    if (!menu || !btn) return;
+    const open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function closeReconColMenu() {
+    const menu = $('reconColMenu');
+    const btn = $('reconColBtn');
+    if (menu) menu.classList.remove('open');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
   function reconStatusKey(pid) {
     return (_currentEvent && _currentEvent.id ? _currentEvent.id : '') + ':' + pid;
   }
@@ -7773,7 +7915,7 @@
 
   function reconMarkerCell(pid, status) {
     const s = status || '';
-    return '<td class="recon-marker-cell" onclick="event.stopPropagation()">' +
+    return '<td class="recon-marker-cell" data-recon-col="status" onclick="event.stopPropagation()">' +
       '<span class="recon-markers">' +
       ['red', 'yellow', 'green'].map((c) =>
         '<button type="button" class="recon-marker recon-marker-' + c + (s === c ? ' active' : '') +
@@ -7887,18 +8029,63 @@
     return eps.map((ep) => buildReconRow(ep, pluByPid, null));
   }
 
-  function openReconDrawer(pid) {
-    if (!_currentEvent) { alert('Pick an event first'); return; }
+  function refreshReconDrawerProductFields() {
+    if (!_reconCtx) return;
+    const pid = _reconCtx.pid;
     const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
     if (!ep) return;
-    _reconCtx = { pid };
-    const cl = closingRowFor(pid) || {};
     $('reconFormTitle').textContent = 'Edit recon — ' + ((ep.product && ep.product.name) || '');
     $('rcn-product').textContent = (ep.product && ep.product.name) || '—';
     $('rcn-supplier').textContent = supplierNameById(productSupplierId(pid));
     const caseSizeEl = $('rcn-case-size');
     const caseSize = (ep.product && ep.product.case_size) ? String(ep.product.case_size).trim() : '';
     if (caseSizeEl) caseSizeEl.textContent = caseSize || '';
+  }
+
+  async function editProductFromRecon() {
+    if (!_reconCtx || !_reconCtx.pid) return;
+    const productId = _reconCtx.pid;
+    try {
+      if (!_categories.length) _categories = (await DB.categories.list()) || [];
+      if (!_suppliers.length) _suppliers = (await DB.suppliers.list()) || [];
+      _products = (await DB.products.listFull()) || _products;
+    } catch (err) {
+      console.error('editProductFromRecon (load)', err);
+    }
+    openProductModal(productId, {
+      stacked: true,
+      afterSave: async (id) => {
+        try {
+          _products = (await DB.products.listFull()) || _products;
+        } catch (err) { console.error('editProductFromRecon (reload)', err); }
+        const fresh = (_products || []).find((p) => p.id === id);
+        if (fresh) {
+          const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === id);
+          if (ep && ep.product) {
+            ep.product.name = fresh.name;
+            ep.product.case_size = fresh.case_size;
+            ep.product.units_per_case = fresh.units_per_case;
+            ep.product.case_price = fresh.case_price;
+            ep.product.sku = fresh.sku;
+            ep.product.category = fresh.category;
+            ep.product.category_id = fresh.category_id;
+            ep.product.supplier_id = fresh.supplier_id;
+          }
+        }
+        refreshReconDrawerProductFields();
+        recalcReconDrawer();
+        renderRecon();
+      },
+    });
+  }
+
+  function openReconDrawer(pid) {
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    if (!ep) return;
+    _reconCtx = { pid };
+    const cl = closingRowFor(pid) || {};
+    refreshReconDrawerProductFields();
     $('rcn-invoice').value = ep.invoice_qty != null ? ep.invoice_qty : '';
     $('rcn-price').value = ep.order_price_override != null ? ep.order_price_override : '';
     let casesVal = cl.closing_cases != null ? Number(cl.closing_cases) : '';
@@ -8052,10 +8239,11 @@
       await ensureTransferData();
       await ensureEventStockData(true);
       refreshReconCatFilter();
+      initReconColMenu();
       renderRecon();
     } catch (err) {
       console.error('loadRecon', err);
-      $('reconTableBody').innerHTML = '<tr><td colspan="21"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
+      $('reconTableBody').innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
     }
   }
 
@@ -8104,12 +8292,14 @@
       '<div class="stat-card"><div class="stat-label">Unmarked</div><div class="stat-value">' + statusCounts.none + '</div><div class="stat-sub">no marker yet</div></div>';
 
     if (!allRows.length) {
-      body.innerHTML = '<tr><td colspan="21"><div class="empty-state"><i class="ph ph-scales icon"></i><p>Add products and enter closing stock to begin.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-scales icon"></i><p>Add products and enter closing stock to begin.</p></div></td></tr>';
+      applyReconColVisibility();
       return;
     }
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="21"><div class="empty-state"><i class="ph ph-funnel icon"></i><p>No lines match this filter.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-funnel icon"></i><p>No lines match this filter.</p></div></td></tr>';
+      applyReconColVisibility();
       return;
     }
 
@@ -8121,7 +8311,7 @@
 
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += '<tr class="category-row"><td colspan="21">' + escapeHtml(cat) + '</td></tr>';
+      html += '<tr class="category-row"><td colspan="' + RECON_COL_COUNT + '">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
         const abv = r.p.abv != null ? (Number(r.p.abv).toFixed(2) + '%') : '—';
         const size = r.p.unit_size || r.p.size || '—';
@@ -8130,40 +8320,44 @@
         const statusClass = r.reconStatus ? (' recon-row-status-' + r.reconStatus) : '';
         html += '<tr class="recon-row' + statusClass + (r.investigate ? ' row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
           reconMarkerCell(r.pid, r.reconStatus) +
-          '<td style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + noteHint + '</td>' +
-          '<td>' + escapeHtml(abv) + '</td>' +
-          '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(size) + '</td>' +
-          '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.p.case_size || '—') + '</td>' +
-          '<td>' + reconMoneyCell(r.casePrice) + '</td>' +
-          '<td>' + escapeHtml(r.supplierName) + '</td>' +
-          '<td>' + (r.ups || '—') + '</td>' +
-          '<td>' + reconQtyCell(r.delivered) + '</td>' +
-          '<td>' + reconQtyCell(r.invoiced) + '</td>' +
-          '<td>' + reconQtyCell(r.onHand) + '</td>' +
-          '<td>' + reconQtyCell(r.closingCases) + '</td>' +
-          '<td>' + reconQtyCell(r.closingUnits) + '</td>' +
-          '<td>' + reconQtyCell(r.transferred) + '</td>' +
-          '<td style="font-weight:600">' + reconQtyCell(r.consumption) + '</td>' +
-          '<td>' + reconQtyCell(r.plu) + '</td>' +
-          '<td>' + reconMoneyCell(r.consumptionCharge) + '</td>' +
-          '<td style="font-weight:600">' + reconMoneyCell(r.consumptionLooseCharge) + '</td>' +
-          '<td>' + reconMoneyCell(r.pluCharge) + '</td>' +
-          '<td>' + reconMoneyCell(r.invoiceCharge) + '</td>' +
-          '<td style="font-weight:700">' + reconMoneyCell(r.budgetCost) + '</td>' +
+          '<td data-recon-col="item" style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + noteHint + '</td>' +
+          '<td data-recon-col="abv">' + escapeHtml(abv) + '</td>' +
+          '<td data-recon-col="size" style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(size) + '</td>' +
+          '<td data-recon-col="case_size" style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.p.case_size || '—') + '</td>' +
+          '<td data-recon-col="case_price">' + reconMoneyCell(r.casePrice) + '</td>' +
+          '<td data-recon-col="supplier">' + escapeHtml(r.supplierName) + '</td>' +
+          '<td data-recon-col="units_per_case">' + (r.ups || '—') + '</td>' +
+          '<td data-recon-col="delivered">' + reconQtyCell(r.delivered) + '</td>' +
+          '<td data-recon-col="invoiced">' + reconQtyCell(r.invoiced) + '</td>' +
+          '<td data-recon-col="on_hand">' + reconQtyCell(r.onHand) + '</td>' +
+          '<td data-recon-col="closing_cases">' + reconQtyCell(r.closingCases) + '</td>' +
+          '<td data-recon-col="closing_units">' + reconQtyCell(r.closingUnits) + '</td>' +
+          '<td data-recon-col="transferred">' + reconQtyCell(r.transferred) + '</td>' +
+          '<td data-recon-col="consumption" style="font-weight:600">' + reconQtyCell(r.consumption) + '</td>' +
+          '<td data-recon-col="plu">' + reconQtyCell(r.plu) + '</td>' +
+          '<td data-recon-col="consumption_charge">' + reconMoneyCell(r.consumptionCharge) + '</td>' +
+          '<td data-recon-col="consumption_loose" style="font-weight:600">' + reconMoneyCell(r.consumptionLooseCharge) + '</td>' +
+          '<td data-recon-col="plu_charge">' + reconMoneyCell(r.pluCharge) + '</td>' +
+          '<td data-recon-col="invoice_charge">' + reconMoneyCell(r.invoiceCharge) + '</td>' +
+          '<td data-recon-col="budget_cost" style="font-weight:700">' + reconMoneyCell(r.budgetCost) + '</td>' +
         '</tr>';
       });
     });
 
     html += '<tr class="total-row">' +
-      '<td colspan="16">Total</td>' +
-      '<td>' + money(totConsLoose) + '</td>' +
-      '<td></td>' +
-      '<td>' + money(totPlu) + '</td>' +
-      '<td>' + money(totInvoice) + '</td>' +
-      '<td>' + money(totBudget) + '</td>' +
+      RECON_COLS.map((c) => {
+        let val = '';
+        if (c.id === 'item') val = 'Total';
+        else if (c.id === 'consumption_loose') val = money(totConsLoose);
+        else if (c.id === 'plu_charge') val = money(totPlu);
+        else if (c.id === 'invoice_charge') val = money(totInvoice);
+        else if (c.id === 'budget_cost') val = money(totBudget);
+        return '<td data-recon-col="' + c.id + '">' + val + '</td>';
+      }).join('') +
     '</tr>';
 
     body.innerHTML = html;
+    applyReconColVisibility();
   }
 
   function csvEscape(v) {
