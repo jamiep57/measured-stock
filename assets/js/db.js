@@ -445,6 +445,19 @@
           'event_id=eq.' + enc(eventId) + '&product_id=eq.' + enc(productId)
         );
       },
+      // Detach a product from one event only — keeps the library product and
+      // any delivery / transfer history on this event.
+      async removeFromEvent(eventId, productId) {
+        const eid = enc(eventId);
+        const pid = enc(productId);
+        const scoped = 'event_id=eq.' + eid + '&product_id=eq.' + pid;
+        await Promise.all([
+          remove('closing_stock', scoped),
+          remove('distribution', scoped),
+          remove('bar_products', scoped),
+          remove('event_products', scoped),
+        ]);
+      },
     }
   );
 

@@ -1194,7 +1194,7 @@
           <th class="num">Invoice</th>
           <th class="num">Delivered</th>
           <th class="num">Damaged</th>
-          <th style="width:64px"></th>
+          <th style="width:88px"></th>
         </tr>
       </thead>
       <tbody id="evBody"></tbody>
@@ -1781,6 +1781,7 @@
   </div>
   <div class="drawer-body drawer-body--block" id="productDetailBody"></div>
   <div class="drawer-foot">
+    <button class="btn btn-danger" id="productDetailRemoveBtn" onclick="removeProductFromEvent(_productDetailId)"><i class="ph ph-sign-out btn-leading-icon"></i> Remove from event</button>
     <span class="spacer"></span>
     <button class="btn btn-primary" id="productDetailEditBtn" onclick="editProductFromDetail()"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit product</button>
   </div>
@@ -2928,6 +2929,7 @@
         .map((f) => renderField(f, cfg.values ? cfg.values[f.key] : undefined)).join('');
       el.save.textContent = cfg.saveLabel || 'Save';
       el.del.style.display = cfg.onDelete ? '' : 'none';
+      el.del.textContent = cfg.deleteLabel || 'Delete';
       el.backdrop.classList.add('open');
       el.drawer.classList.add('open');
       // Let custom fields wire up their own event handlers now the DOM exists.
@@ -2980,7 +2982,8 @@
 
     async function doDelete() {
       if (!current || !current.onDelete) return;
-      if (!confirm('Delete this item? This cannot be undone.')) return;
+      const msg = current.deleteConfirm || 'Delete this item? This cannot be undone.';
+      if (!confirm(msg)) return;
       el.err.textContent = '';
       setBusy(true, 'Deleting…');
       try {
@@ -3178,6 +3181,10 @@
       ],
       values: p || {},
       onDelete: p ? async () => { await DB.products.deleteFull(p.id); await loadLibrary(); } : null,
+      deleteLabel: 'Delete from library',
+      deleteConfirm: p
+        ? ('Delete “' + p.name + '” from your product library? This removes it from every event and cannot be undone.')
+        : undefined,
       onSave: async (v) => {
         const poolName = (v.pool_name || '').trim() || null;
         let poolServings = null;
@@ -4104,8 +4111,9 @@
           '<button class="btn btn-outline btn-sm btn-icon" title="Cancel" onclick="cancelEventProductEdit()"><i class="ph ph-x"></i></button>' +
         '</td>';
       }
-      return '<td style="text-align:right" onclick="event.stopPropagation()">' +
-        '<button class="btn btn-outline btn-sm btn-icon" title="Edit ordered qty" onclick="editEventProductOrdered(\'' + pid + '\')"><i class="ph ph-pencil-simple"></i></button>' +
+      return '<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">' +
+        '<button class="btn btn-outline btn-sm btn-icon" title="Edit ordered qty" onclick="editEventProductOrdered(\'' + pid + '\')"><i class="ph ph-pencil-simple"></i></button> ' +
+        '<button class="btn btn-danger btn-sm btn-icon" title="Remove from this event" onclick="removeProductFromEvent(\'' + pid + '\')"><i class="ph ph-sign-out"></i></button>' +
       '</td>';
     };
 
@@ -4170,6 +4178,35 @@
     } catch (err) {
       console.error('saveEventProductOrdered', err);
       alert('Failed to save ordered qty: ' + (err.message || err));
+    }
+  }
+
+  async function removeProductFromEvent(productId) {
+    if (!_currentEvent || !productId) return;
+    const ep = (_evProducts || []).find((x) => x.product_id === productId);
+    const name = (ep && ep.product && ep.product.name) || productNameById(productId) || 'this product';
+    const msg = 'Remove “' + name + '” from this event only?\n\n' +
+      'The product stays in your library. Ordered quantities, closing stock, and bar allocations for this event will be cleared. Delivery records are kept.';
+    if (!confirm(msg)) return;
+    try {
+      setStatus('removing from event…');
+      await DB.eventProducts.removeFromEvent(_currentEvent.id, productId);
+      _currentEvent.event_products = (_currentEvent.event_products || []).filter((x) => x.product_id !== productId);
+      _evProducts = _evProducts.filter((x) => x.product_id !== productId);
+      if (_evEditingId === productId) _evEditingId = null;
+      if (_productDetailId === productId) closeProductDetail();
+      _stockDataEventId = null;
+      updateEventStats();
+      renderEventProducts();
+      try { await ensureEventStockData(true); } catch (_) {}
+      if ($('panel-recon') && $('panel-recon').classList.contains('active') && typeof loadRecon === 'function') {
+        loadRecon();
+      }
+      setStatus('● connected', 'ok');
+    } catch (err) {
+      console.error('removeProductFromEvent', err);
+      alert('Failed to remove product from event: ' + (err.message || err));
+      setStatus('✕ ' + err.message, 'err');
     }
   }
 
