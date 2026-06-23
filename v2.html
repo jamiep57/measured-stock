@@ -532,7 +532,15 @@
     #reconTable tbody tr.category-row td { text-align:left; font-size:13px; }
     #reconTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
     #reconTable tbody tr.row-investigate td:first-child { box-shadow:inset 3px 0 0 var(--warning); }
+    #reconTable tbody tr.recon-row { cursor:pointer; }
+    #reconTable tbody tr.recon-row:hover td { background:var(--secondary); }
     #reconTable .recon-flag { font-size:11px; font-weight:600; color:var(--warning); margin-left:6px; }
+    #reconTable .recon-note-hint { display:block; font-size:11px; font-weight:400; color:var(--muted-foreground); margin-top:2px; max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .recon-preview { margin-top:4px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+    .recon-preview table { width:100%; border-collapse:collapse; font-size:12px; }
+    .recon-preview th, .recon-preview td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:right; }
+    .recon-preview th:first-child, .recon-preview td:first-child { text-align:left; color:var(--muted-foreground); font-weight:500; }
+    .recon-preview tr:last-child td { border-bottom:none; font-weight:700; background:var(--secondary); }
     /* ── warehouse ── */
     #warehouseStockTable thead th { position:static; text-align:left; white-space:nowrap; }
     #warehouseStockTable tbody td:nth-child(4) { font-weight:700; }
@@ -1431,7 +1439,7 @@
         <tbody id="reconTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Rows flagged <strong>investigate</strong> when physical consumption and PLU (till) differ by more than 8%. Budget cost uses consumption + loose when invoiced, otherwise the higher of consumption + loose or PLU charge.</p>
+    <p class="df-hint" style="margin-top:10px">Click a row to edit invoicing, closing counts, budget method and notes. Rows are flagged <strong>investigate</strong> when physical consumption and PLU differ by more than 8%.</p>
   </div>
 </div>
 <!-- ===================== SQUARE (till mapping) ===================== -->
@@ -1985,6 +1993,79 @@
     <span class="err" id="rtn-err"></span>
     <button type="button" class="btn" onclick="closeReturnDrawer()">Cancel</button>
     <button type="button" class="btn btn-primary" id="rtn-print-btn" onclick="generatePalletStickers()"><i class="ph ph-printer btn-leading-icon"></i> Generate pallet stickers</button>
+  </div>
+</aside>
+
+<!-- ===================== FINANCIAL RECON LINE DRAWER ===================== -->
+<div class="drawer-backdrop" id="reconFormOverlay" onclick="closeReconDrawer()"></div>
+<aside class="drawer drawer--wide" id="reconFormDrawer" role="dialog" aria-modal="true" aria-labelledby="reconFormTitle">
+  <div class="drawer-head">
+    <h2 id="reconFormTitle">Edit recon line</h2>
+    <button class="x" onclick="closeReconDrawer()" aria-label="Close">&times;</button>
+  </div>
+  <div class="drawer-body drawer-body--block">
+    <div class="df-grid2">
+      <div class="df-field"><label>Product</label><div class="rf-readonly" id="rcn-product">—</div></div>
+      <div class="df-field"><label>Supplier</label><div class="rf-readonly" id="rcn-supplier">—</div></div>
+    </div>
+    <div class="page-title" style="font-size:13px;margin:12px 0 8px">Stock &amp; invoicing</div>
+    <div class="df-grid2">
+      <div class="df-field">
+        <label for="rcn-invoice">Invoiced (cases)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice" oninput="recalcReconDrawer()">
+      </div>
+      <div class="df-field">
+        <label for="rcn-price">Case price override (£)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+      </div>
+    </div>
+    <div class="df-grid2">
+      <div class="df-field">
+        <label for="rcn-cl-cases">Closing count (cases)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-cases" oninput="recalcReconDrawer()">
+      </div>
+      <div class="df-field">
+        <label for="rcn-cl-singles">Closing count (singles)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-singles" oninput="recalcReconDrawer()">
+        <p class="df-hint">Loose units — added as a fraction of a case in the recon.</p>
+      </div>
+    </div>
+    <div class="df-field">
+      <label for="rcn-return">Return amount (cases)</label>
+      <input type="number" inputmode="decimal" min="0" step="any" id="rcn-return" oninput="recalcReconDrawer()">
+    </div>
+    <div class="page-title" style="font-size:13px;margin:16px 0 8px">Budget &amp; notes</div>
+    <div class="df-grid2">
+      <div class="df-field">
+        <label for="rcn-budget-method">Budget method</label>
+        <select id="rcn-budget-method" onchange="recalcReconDrawer()">
+          <option value="auto">Auto (invoiced → consumption + loose, else max)</option>
+          <option value="consumption_loose">Consumption + loose charge</option>
+          <option value="consumption">Consumption charge</option>
+          <option value="plu">PLU charge</option>
+          <option value="invoice">Invoice charge</option>
+          <option value="manual">Manual override</option>
+        </select>
+      </div>
+      <div class="df-field">
+        <label for="rcn-budget-override">Manual budget (£)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-budget-override" placeholder="Only when manual" oninput="recalcReconDrawer()">
+      </div>
+    </div>
+    <div class="df-field">
+      <label for="rcn-note">Notes</label>
+      <textarea id="rcn-note" rows="2" placeholder="e.g. investigate — 10% wastage?"></textarea>
+    </div>
+    <div class="df-field">
+      <label>Calculated figures</label>
+      <div class="recon-preview" id="rcn-preview"></div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <span class="err" id="rcn-err"></span>
+    <button type="button" class="btn btn-outline btn-sm" onclick="showPanel('closing')">Open closing stock</button>
+    <button type="button" class="btn" onclick="closeReconDrawer()">Cancel</button>
+    <button type="button" class="btn btn-primary" id="rcn-save-btn" onclick="saveReconDrawer()">Save</button>
   </div>
 </aside>
 
@@ -7498,46 +7579,204 @@
     return p && p.case_price != null ? Number(p.case_price) || 0 : 0;
   }
 
+  function reconBudgetCost(row, cl) {
+    const method = (cl && cl.budget_method) || 'auto';
+    if (method === 'manual' && cl && cl.budget_override != null) return Number(cl.budget_override) || 0;
+    if (method === 'consumption_loose') return row.consumptionLooseCharge;
+    if (method === 'consumption') return row.consumptionCharge;
+    if (method === 'plu') return row.pluCharge;
+    if (method === 'invoice') return row.invoiceCharge;
+    if (row.invoiced > 0) return row.consumptionLooseCharge;
+    return Math.max(row.consumptionLooseCharge || 0, row.pluCharge || 0);
+  }
+
+  function buildReconRow(ep, pluByPid, draft) {
+    const pid = ep.product_id;
+    const p = ep.product;
+    const ups = Number(p.units_per_case) || 1;
+    const delivered = ep.delivered_qty != null ? Number(ep.delivered_qty)
+      : (ep.qty_ordered != null ? Number(ep.qty_ordered) : 0);
+    const cl = closingRowFor(pid) || {};
+    const invoiced = draft && draft.invoiced != null ? Number(draft.invoiced) : closingInvoiceQty(ep);
+    const onHand = siteAvailable(pid);
+    let closingCases = draft && draft.closingCases != null ? Number(draft.closingCases)
+      : (cl.closing_cases != null ? Number(cl.closing_cases) : 0);
+    let closingSingles = draft && draft.closingSingles != null ? Number(draft.closingSingles)
+      : (cl.closing_singles != null ? Number(cl.closing_singles) : 0);
+    if (draft == null && cl.closing_cases == null && cl.closing_singles == null && cl.close_count != null) {
+      closingCases = Number(cl.close_count) || 0;
+    }
+    const closingUnits = ups > 0 ? closingSingles / ups : 0;
+    const transferred = summaryTransferOut(pid);
+    const consumption = roundN(delivered - closingCases - closingUnits - transferred + onHand, 2);
+    const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
+    let casePrice = reconCasePrice(ep);
+    if (draft && draft.casePrice != null && draft.casePrice !== '') {
+      casePrice = Number(draft.casePrice) || 0;
+    } else if (draft && draft.casePrice === '') {
+      casePrice = p && p.case_price != null ? Number(p.case_price) || 0 : 0;
+    }
+    const consumptionCharge = consumption * casePrice;
+    const consumptionLooseCharge = (consumption + closingUnits) * casePrice;
+    const pluCharge = plu * casePrice;
+    const invoiceCharge = invoiced * casePrice;
+    const budgetCl = {
+      budget_method: draft && draft.budgetMethod != null ? draft.budgetMethod : cl.budget_method,
+      budget_override: draft && draft.budgetOverride != null ? draft.budgetOverride : cl.budget_override,
+    };
+    const charges = {
+      ep, pid, p, ups, delivered, invoiced, onHand, closingCases, closingUnits, closingSingles,
+      transferred, consumption, plu, casePrice, consumptionCharge, consumptionLooseCharge,
+      pluCharge, invoiceCharge,
+    };
+    const budgetCost = reconBudgetCost(charges, budgetCl);
+    const supplierName = supplierNameById(productSupplierId(pid));
+    const denom = Math.max(Math.abs(consumption), Math.abs(plu), 0.01);
+    const investigate = (consumption !== 0 || plu !== 0)
+      && Math.abs(consumption - plu) / denom > 0.08;
+    const reconNote = (draft && draft.reconNote != null ? draft.reconNote : cl.recon_note) || '';
+    return Object.assign(charges, {
+      budgetCost, supplierName, investigate, reconNote,
+      budgetMethod: budgetCl.budget_method || 'auto',
+    });
+  }
+
   function computeReconRows() {
     const eps = ((_currentEvent && _currentEvent.event_products) || [])
       .filter((ep) => ep.product && ep.product.name);
     const pluByPid = computePluCasesByProductId(eps);
-    return eps.map((ep) => {
-      const pid = ep.product_id;
-      const p = ep.product;
-      const ups = Number(p.units_per_case) || 1;
-      const delivered = ep.delivered_qty != null ? Number(ep.delivered_qty)
-        : (ep.qty_ordered != null ? Number(ep.qty_ordered) : 0);
-      const invoiced = closingInvoiceQty(ep);
-      const onHand = siteAvailable(pid);
-      const cl = closingRowFor(pid) || {};
-      let closingCases = cl.closing_cases != null ? Number(cl.closing_cases) : 0;
-      let closingSingles = cl.closing_singles != null ? Number(cl.closing_singles) : 0;
-      if (cl.closing_cases == null && cl.closing_singles == null && cl.close_count != null) {
-        closingCases = Number(cl.close_count) || 0;
-      }
-      const closingUnits = ups > 0 ? closingSingles / ups : 0;
-      const transferred = summaryTransferOut(pid);
-      const consumption = roundN(delivered - closingCases - closingUnits - transferred + onHand, 2);
-      const plu = roundN(pluByPid[pid] || 0, 2);
-      const casePrice = reconCasePrice(ep);
-      const consumptionCharge = consumption * casePrice;
-      const consumptionLooseCharge = (consumption + closingUnits) * casePrice;
-      const pluCharge = plu * casePrice;
-      const invoiceCharge = invoiced * casePrice;
-      const budgetCost = invoiced > 0
-        ? consumptionLooseCharge
-        : Math.max(consumptionLooseCharge || 0, pluCharge || 0);
-      const supplierName = supplierNameById(productSupplierId(pid));
-      const denom = Math.max(Math.abs(consumption), Math.abs(plu), 0.01);
-      const investigate = (consumption !== 0 || plu !== 0)
-        && Math.abs(consumption - plu) / denom > 0.08;
-      return {
-        ep, pid, p, ups, delivered, invoiced, onHand, closingCases, closingUnits,
-        transferred, consumption, plu, casePrice, consumptionCharge, consumptionLooseCharge,
-        pluCharge, invoiceCharge, budgetCost, supplierName, investigate,
+    return eps.map((ep) => buildReconRow(ep, pluByPid, null));
+  }
+
+  let _reconCtx = null;
+
+  function openReconDrawer(pid) {
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    if (!ep) return;
+    _reconCtx = { pid };
+    const cl = closingRowFor(pid) || {};
+    $('reconFormTitle').textContent = 'Edit recon — ' + ((ep.product && ep.product.name) || '');
+    $('rcn-product').textContent = (ep.product && ep.product.name) || '—';
+    $('rcn-supplier').textContent = supplierNameById(productSupplierId(pid));
+    $('rcn-invoice').value = ep.invoice_qty != null ? ep.invoice_qty : '';
+    $('rcn-price').value = ep.order_price_override != null ? ep.order_price_override : '';
+    let casesVal = cl.closing_cases != null ? Number(cl.closing_cases) : '';
+    let singlesVal = cl.closing_singles != null ? Number(cl.closing_singles) : '';
+    if (casesVal === '' && singlesVal === '' && cl.close_count != null) casesVal = Number(cl.close_count);
+    $('rcn-cl-cases').value = casesVal !== '' ? casesVal : '';
+    $('rcn-cl-singles').value = singlesVal !== '' ? singlesVal : '';
+    $('rcn-return').value = cl.return_amount != null ? cl.return_amount : '';
+    $('rcn-budget-method').value = cl.budget_method || 'auto';
+    $('rcn-budget-override').value = cl.budget_override != null ? cl.budget_override : '';
+    $('rcn-note').value = cl.recon_note || '';
+    $('rcn-err').textContent = '';
+    recalcReconDrawer();
+    $('reconFormOverlay').classList.add('open');
+    $('reconFormDrawer').classList.add('open');
+    setTimeout(() => { const el = $('rcn-invoice'); if (el) el.focus(); }, 50);
+  }
+
+  function closeReconDrawer() {
+    _reconCtx = null;
+    $('reconFormOverlay').classList.remove('open');
+    $('reconFormDrawer').classList.remove('open');
+  }
+
+  function reconDrawerDraft() {
+    const priceRaw = $('rcn-price').value.trim();
+    return {
+      invoiced: $('rcn-invoice').value !== '' ? parseFloat($('rcn-invoice').value) : 0,
+      casePrice: priceRaw !== '' ? parseFloat(priceRaw) : '',
+      closingCases: parseFloat($('rcn-cl-cases').value) || 0,
+      closingSingles: parseFloat($('rcn-cl-singles').value) || 0,
+      budgetMethod: $('rcn-budget-method').value,
+      budgetOverride: $('rcn-budget-override').value !== '' ? parseFloat($('rcn-budget-override').value) : null,
+      reconNote: $('rcn-note').value.trim(),
+    };
+  }
+
+  function recalcReconDrawer() {
+    if (!_reconCtx) return;
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === _reconCtx.pid);
+    if (!ep) return;
+    const pluByPid = computePluCasesByProductId([ep]);
+    const r = buildReconRow(ep, pluByPid, reconDrawerDraft());
+    const manualOn = $('rcn-budget-method').value === 'manual';
+    $('rcn-budget-override').disabled = !manualOn;
+    $('rcn-preview').innerHTML =
+      '<table><tbody>' +
+        '<tr><td>On hand</td><td>' + reconQtyCell(r.onHand) + '</td></tr>' +
+        '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
+        '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
+        '<tr><td>PLU (till)</td><td>' + reconQtyCell(r.plu) + '</td></tr>' +
+        '<tr><td>Consumption charge</td><td>' + money(r.consumptionCharge) + '</td></tr>' +
+        '<tr><td>Consumption + loose</td><td>' + money(r.consumptionLooseCharge) + '</td></tr>' +
+        '<tr><td>PLU charge</td><td>' + money(r.pluCharge) + '</td></tr>' +
+        '<tr><td>Invoice charge</td><td>' + money(r.invoiceCharge) + '</td></tr>' +
+        '<tr><td>Budget cost</td><td>' + money(r.budgetCost) + '</td></tr>' +
+      '</tbody></table>';
+  }
+
+  async function saveReconDrawer() {
+    if (!_reconCtx || !_currentEvent) return;
+    const pid = _reconCtx.pid;
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    if (!ep) return;
+    const btn = $('rcn-save-btn');
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saving…';
+    $('rcn-err').textContent = '';
+    const draft = reconDrawerDraft();
+    const ups = Number(ep.product && ep.product.units_per_case) || 1;
+    const cases = Math.max(0, draft.closingCases);
+    const singles = Math.max(0, draft.closingSingles);
+    const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
+    const returnAmt = Math.max(0, parseFloat($('rcn-return').value) || 0);
+    const priceRaw = $('rcn-price').value.trim();
+    try {
+      await DB.eventProducts.setForEvent(_currentEvent.id, pid, {
+        invoice_qty: $('rcn-invoice').value !== '' ? roundN(draft.invoiced, 3) : null,
+        order_price_override: priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null,
+      });
+      ep.invoice_qty = $('rcn-invoice').value !== '' ? roundN(draft.invoiced, 3) : null;
+      ep.order_price_override = priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null;
+      const closingPatch = {
+        closing_cases: cases,
+        closing_singles: singles,
+        close_count: closeCount,
+        return_amount: round1(returnAmt),
+        carried_over: round1(Math.max(0, closeCount - returnAmt)),
+        recon_note: draft.reconNote || null,
+        budget_method: draft.budgetMethod || 'auto',
+        budget_override: draft.budgetMethod === 'manual' && draft.budgetOverride != null
+          ? roundN(draft.budgetOverride, 2) : null,
       };
-    });
+      let saved;
+      try {
+        saved = await DB.closing.setForEvent(_currentEvent.id, pid, closingPatch);
+      } catch (e1) {
+        saved = await DB.closing.setForEvent(_currentEvent.id, pid, {
+          closing_cases: closingPatch.closing_cases,
+          closing_singles: closingPatch.closing_singles,
+          close_count: closingPatch.close_count,
+          return_amount: closingPatch.return_amount,
+          carried_over: closingPatch.carried_over,
+        });
+      }
+      let cl = closingRowFor(pid);
+      if (!cl) { cl = { event_id: _currentEvent.id, product_id: pid }; _closing.push(cl); }
+      Object.assign(cl, saved || closingPatch);
+      closeReconDrawer();
+      renderRecon();
+      if ($('panel-closing').classList.contains('active')) renderClosing();
+      if ($('panel-summary').classList.contains('active')) renderSummary();
+    } catch (err) {
+      console.error('saveReconDrawer', err);
+      $('rcn-err').textContent = (err.message || 'Save failed').slice(0, 120);
+    } finally {
+      btn.disabled = false; btn.textContent = prev;
+    }
   }
 
   async function loadRecon() {
@@ -7625,9 +7864,11 @@
       grouped[cat].slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
         const abv = r.p.abv != null ? (Number(r.p.abv).toFixed(2) + '%') : '—';
         const size = r.p.unit_size || r.p.size || '—';
-        const flag = r.investigate ? '<span class="recon-flag">investigate</span>' : '';
-        html += '<tr class="' + (r.investigate ? 'row-investigate' : '') + '">' +
-          '<td style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + flag + '</td>' +
+        const flag = r.investigate && !r.reconNote ? '<span class="recon-flag">investigate</span>' : '';
+        const noteHint = r.reconNote
+          ? '<span class="recon-note-hint" title="' + escapeHtml(r.reconNote) + '">' + escapeHtml(r.reconNote) + '</span>' : '';
+        html += '<tr class="recon-row ' + (r.investigate ? 'row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
+          '<td style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + flag + noteHint + '</td>' +
           '<td>' + escapeHtml(abv) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(size) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.p.case_size || '—') + '</td>' +
@@ -7681,7 +7922,7 @@
     const lines = [headers.map(csvEscape).join(',')];
     rows.slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
       const abv = r.p.abv != null ? Number(r.p.abv).toFixed(2) + '%' : '';
-      const note = r.investigate ? 'investigate' : '';
+      const note = r.reconNote || (r.investigate ? 'investigate' : '');
       lines.push([
         r.p.name, abv, r.p.unit_size || r.p.size || '', r.p.case_size || '',
         r.casePrice ? '£' + r.casePrice.toFixed(2) : '', r.supplierName, r.ups || '',
