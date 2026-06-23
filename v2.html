@@ -524,6 +524,15 @@
     #supplierSummaryTable tbody td:first-child { text-align:left; }
     #summaryTable tbody tr.category-row td { text-align:left; }
     #supplierSummaryTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
+    /* ── financial recon ── */
+    #reconTable thead th { position:static; text-align:center; white-space:nowrap; font-size:11px; }
+    #reconTable thead th:first-child, #reconTable thead th:nth-child(2), #reconTable thead th:nth-child(3) { text-align:left; }
+    #reconTable tbody td { text-align:center; vertical-align:middle; font-variant-numeric:tabular-nums; font-size:12px; }
+    #reconTable tbody td:first-child, #reconTable tbody td:nth-child(2), #reconTable tbody td:nth-child(3), #reconTable tbody td:nth-child(6) { text-align:left; }
+    #reconTable tbody tr.category-row td { text-align:left; font-size:13px; }
+    #reconTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
+    #reconTable tbody tr.row-investigate td:first-child { box-shadow:inset 3px 0 0 var(--warning); }
+    #reconTable .recon-flag { font-size:11px; font-weight:600; color:var(--warning); margin-left:6px; }
     /* ── warehouse ── */
     #warehouseStockTable thead th { position:static; text-align:left; white-space:nowrap; }
     #warehouseStockTable tbody td:nth-child(4) { font-weight:700; }
@@ -850,6 +859,11 @@
         <i class="ph ph-chart-bar nav-icon"></i>
         <span class="nav-label">Summary</span>
         <span class="nav-status-dot" title="Built — panel is functional"></span>
+      </button>
+      <button class="nav-item" data-panel="recon" onclick="showPanel('recon')" title="Financial Recon">
+        <i class="ph ph-scales nav-icon"></i>
+        <span class="nav-label">Financial Recon</span>
+        <span class="nav-status-dot" title="Built — post-event financial close"></span>
       </button>
       <button class="nav-item" data-panel="square" onclick="showPanel('square')" title="Square">
         <i class="ph ph-cash-register nav-icon"></i>
@@ -1225,7 +1239,7 @@
         <tbody id="openingTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px"><strong>Counted in</strong> is the total cases logged across all deliveries on the Deliveries tab. Counts auto-save as you type. Damaged cases are subtracted from opening stock automatically.</p>
+    <p class="df-hint" style="margin-top:10px"><strong>Counted in</strong> is the total logged across all deliveries on the Deliveries tab. Counts auto-save as you type. Damaged stock is subtracted from opening stock automatically. Spirit bottles are shown and entered in <strong>bottles</strong>; everything else in <strong>cases</strong>.</p>
   </div>
 </div>
 <!-- ===================== DISTRIBUTION ===================== -->
@@ -1278,7 +1292,7 @@
       </div>
       <div class="dist-table-wrap">
         <table id="countTable">
-          <thead><tr><th style="width:30px"></th><th>Product</th><th>Pack size</th><th id="countBarHeader">Bar</th><th class="cnt-num">Cases</th><th class="cnt-num">Singles</th></tr></thead>
+          <thead><tr><th style="width:30px"></th><th>Product</th><th>Pack size</th><th id="countBarHeader">Bar</th><th class="cnt-num" title="Cases — but spirits are counted as decimal bottles">Cases / Bottles</th><th class="cnt-num" title="Loose individual units (not used for spirits)">Singles</th></tr></thead>
           <tbody id="countTableBody"></tbody>
         </table>
       </div>
@@ -1373,6 +1387,51 @@
         <tbody id="supplierSummaryBody"></tbody>
       </table>
     </div>
+  </div>
+</div>
+<!-- ===================== FINANCIAL RECON ===================== -->
+<div id="panel-recon" class="panel">
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div style="min-width:0;flex:1">
+      <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Transferred + On hand. Charges use case price. Import Square sales for PLU figures.</p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
+      <button class="btn btn-primary btn-sm" id="reconCloseBtn" onclick="markEventReconciled()" title="Set event status to Reconciled"><i class="ph ph-seal-check btn-leading-icon"></i> Mark reconciled</button>
+    </div>
+  </div>
+  <div id="reconNoEvent" class="empty-state" style="display:none"><i class="ph ph-calendar-x icon"></i><p>Pick an event from the sidebar first.</p></div>
+  <div id="reconContent">
+    <div class="stats-row" id="reconStats" style="margin-bottom:20px"></div>
+    <div class="dist-table-wrap">
+      <table id="reconTable">
+        <thead><tr>
+          <th>Item</th>
+          <th>ABV</th>
+          <th>Size</th>
+          <th>Case size</th>
+          <th>Case price</th>
+          <th>Supplier</th>
+          <th>Units per case</th>
+          <th>Delivered</th>
+          <th>Invoiced</th>
+          <th>On hand</th>
+          <th>Closing (cases)</th>
+          <th>Closing (units)</th>
+          <th>Transferred</th>
+          <th>Consumption</th>
+          <th>PLU</th>
+          <th>Consumption charge</th>
+          <th>Consumption + loose</th>
+          <th>PLU charge</th>
+          <th>Invoice charge</th>
+          <th>Budget cost</th>
+        </tr></thead>
+        <tbody id="reconTableBody"></tbody>
+      </table>
+    </div>
+    <p class="df-hint" style="margin-top:10px">Rows flagged <strong>investigate</strong> when physical consumption and PLU (till) differ by more than 8%. Budget cost uses consumption + loose when invoiced, otherwise the higher of consumption + loose or PLU charge.</p>
   </div>
 </div>
 <!-- ===================== SQUARE (till mapping) ===================== -->
@@ -1683,7 +1742,7 @@
       <label>Products delivered</label>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:38%">Product</th><th>Cases</th><th title="Loose individual units">Singles</th><th title="Unusable / damaged cases">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:38%">Product</th><th title="Cases — but spirits are entered as decimal bottles">Cases / Bottles</th><th title="Loose individual units (not used for spirits)">Singles</th><th title="Unusable / damaged — spirits in bottles, others in cases">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
           <tbody id="df-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2103,12 +2162,42 @@
     return spc > 0 ? spc : 28;
   }
 
+  // ---------- spirits: present & enter stock in decimal bottles ----------
+  // Internally stock is ALWAYS stored in cases. For a spirit bottle the UI
+  // shows and accepts BOTTLES as a decimal (e.g. 34.8). One case holds
+  // spiritBottlesPerCase bottles, so bottles = cases × bpc and the inverse
+  // cases = bottles ÷ bpc. Conversion happens only at the UI boundary; every
+  // stored value and downstream case calculation is unchanged.
+  function spiritBottlesFromCases(p, cases) {
+    return (Number(cases) || 0) * spiritBottlesPerCase(p);
+  }
+  function spiritCasesFromBottles(p, bottles) {
+    const bpc = spiritBottlesPerCase(p) || 1;
+    return (Number(bottles) || 0) / bpc;
+  }
+  // True when this product id should be shown / entered in bottles.
+  function showInBottles(pid) {
+    const p = spiritProductById(pid);
+    return !!(p && isSpiritBottle(p));
+  }
+  // Present a cases quantity in the product's natural unit: bottles (1 dp) for
+  // spirits, cases otherwise. Returns { n, unit, short } for flexible display.
+  function stockQtyDisplay(pid, cases) {
+    if (showInBottles(pid)) {
+      const p = spiritProductById(pid);
+      const b = round1(spiritBottlesFromCases(p, cases));
+      return { n: b, unit: b === 1 ? 'bottle' : 'bottles', short: 'btl' };
+    }
+    const c = round1(Number(cases) || 0);
+    return { n: c, unit: c === 1 ? 'case' : 'cases', short: 'cs' };
+  }
+
   // ---------- panels / sidebar ----------
   const PANEL_TITLES = {
     setup: 'Event Setup', products: 'Products', library: 'Product Library',
     'stock-levels': 'Stock Levels', deliveries: 'Deliveries', opening: 'Opening Stock',
     distribution: 'Distribution', counts: 'Stock Counts', transfers: 'Transfers',
-    wastage: 'Wastage', closing: 'Closing Stock', summary: 'Summary', square: 'Square', modifiers: 'Modifiers', suppliers: 'Suppliers',
+    wastage: 'Wastage', closing: 'Closing Stock', summary: 'Summary', recon: 'Financial Recon', square: 'Square', modifiers: 'Modifiers', suppliers: 'Suppliers',
     warehouse: 'Warehouse', settings: 'Settings', bugs: 'Bug & Feature Reports',
   };
 
@@ -2140,6 +2229,7 @@
     if (name === 'wastage') loadWastage();
     if (name === 'closing') loadClosing();
     if (name === 'summary') loadSummary();
+    if (name === 'recon') loadRecon();
     if (name === 'square') loadSquare();
     if (name === 'modifiers') loadModifiers();
     if (name === 'suppliers') loadSuppliers();
@@ -3390,7 +3480,7 @@
   // on every render, so the generic DOM sorter would fight it).
   const SORTABLE_TABLE_IDS = [
     'evTable', 'slTable', 'openingTable', 'distTable', 'countTable',
-    'closingTable', 'summaryTable', 'supplierSummaryTable',
+    'closingTable', 'summaryTable', 'supplierSummaryTable', 'reconTable',
     'warehouseStockTable',
   ];
 
@@ -4301,6 +4391,11 @@
     body.innerHTML = _delLines.map((line) => {
       const { price } = deliveryLineCasePrice(line.productId, supplierId);
       const lineCost = (line.productId && price != null) ? price * delFormLineCases(line) : null;
+      const spirit = showInBottles(line.productId);
+      const qtyCell = '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="' + (spirit ? 'bottles' : '0') + '" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>';
+      const singlesCell = spirit
+        ? '<td style="text-align:center;color:var(--muted-foreground)" title="Spirits are entered as decimal bottles in the Cases/Bottles column">—</td>'
+        : '<td><input type="number" step="1" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
       return '<tr>' +
       '<td style="position:relative"><input type="text" class="df-combo-input" id="df-combo-input-' + line.lineId + '" autocomplete="off"' +
         ' value="' + escapeHtml(deliveryLineProductName(line.productId)) + '"' +
@@ -4308,8 +4403,8 @@
         ' onfocus="openDeliveryCombo(\'' + line.lineId + '\')"' +
         ' oninput="filterDeliveryCombo(\'' + line.lineId + '\')"' +
         ' onkeydown="deliveryComboKey(event,\'' + line.lineId + '\')"></td>' +
-      '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>' +
-      '<td><input type="number" step="1" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>' +
+      qtyCell +
+      singlesCell +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
       '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
       '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeDeliveryLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
@@ -4321,8 +4416,19 @@
   // Total cases for an in-progress form line: whole cases plus loose singles
   // expressed as a fraction of a case (uses the product's units/case).
   function delFormLineCases(line) {
+    // Spirits: the qty field holds decimal BOTTLES (singles unused).
+    if (showInBottles(line.productId)) {
+      return spiritCasesFromBottles(spiritProductById(line.productId), line.qty);
+    }
     const ups = unitsPerCaseFor(line.productId) || 1;
     return (Number(line.qty) || 0) + (Number(line.singles) || 0) / ups;
+  }
+  // Unusable/damaged for a form line, in cases (spirits enter it in bottles).
+  function delFormLineDamagedCases(line) {
+    if (showInBottles(line.productId)) {
+      return spiritCasesFromBottles(spiritProductById(line.productId), line.damagedQty);
+    }
+    return Number(line.damagedQty) || 0;
   }
 
   // Live total + supplier-price hint under the delivery form's line table.
@@ -4338,7 +4444,8 @@
       const { price, matched } = deliveryLineCasePrice(line.productId, supplierId);
       if (price == null) { anyMissing = true; return; }
       if (!matched) anyFallback = true;
-      total += price * (Number(line.qty) || 0);
+      // Spirits: qty is bottles, so cost from cases; others keep whole-case cost.
+      total += price * (showInBottles(line.productId) ? delFormLineCases(line) : (Number(line.qty) || 0));
     });
     totalEl.textContent = money(total) || '£0.00';
     const hint = $('df-cost-hint');
@@ -4657,7 +4764,19 @@
     _delEditingId = id;
     const lines = d.lines || [];
     _delLines = lines.length
-      ? lines.map((l) => ({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), singles: (l.singles != null && Number(l.singles) !== 0) ? String(l.singles) : '', damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' }))
+      ? lines.map((l) => {
+          // Spirits are edited in decimal bottles; fold any stored loose singles
+          // into the total cases first, then present as bottles.
+          if (showInBottles(l.product_id)) {
+            const p = spiritProductById(l.product_id);
+            const ups = unitsPerCaseFor(l.product_id) || 1;
+            const cases = (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
+            const bottles = round1(spiritBottlesFromCases(p, cases));
+            const dmgBottles = round1(spiritBottlesFromCases(p, Number(l.damaged_qty) || 0));
+            return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: bottles ? String(bottles) : '', singles: '', damagedQty: dmgBottles ? String(dmgBottles) : '' };
+          }
+          return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), singles: (l.singles != null && Number(l.singles) !== 0) ? String(l.singles) : '', damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' };
+        })
       : [{ lineId: 'l1', productId: '', qty: '', singles: '', damagedQty: '' }];
     _delNote = d.delivery_note_url ? { url: d.delivery_note_url } : null;
     _delPhotos = (d.photo_urls || []).map((u) => ({ id: 'p' + Math.random().toString(36).slice(2, 8), url: u }));
@@ -4695,7 +4814,18 @@
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const valid = _delLines
       .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.singles) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
-      .map((l) => ({ product_id: l.productId, qty: round1(l.qty), singles: Math.round(Number(l.singles) || 0), damaged_qty: round1(l.damagedQty) }));
+      .map((l) => {
+        // Spirits: qty/damaged are decimal bottles → store as fractional cases.
+        if (showInBottles(l.productId)) {
+          return {
+            product_id: l.productId,
+            qty: roundN(delFormLineCases(l), 4),
+            singles: 0,
+            damaged_qty: roundN(delFormLineDamagedCases(l), 4),
+          };
+        }
+        return { product_id: l.productId, qty: round1(l.qty), singles: Math.round(Number(l.singles) || 0), damaged_qty: round1(l.damagedQty) };
+      });
     if (!valid.length) { $('df-err').textContent = 'Add at least one product with a quantity.'; return; }
 
     const btn = $('df-save-btn');
@@ -5164,22 +5294,29 @@
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const p = ep.product || {};
-        const inv = ep.invoice_qty != null ? ep.invoice_qty : '';
-        const dmg = ep.damaged_qty ?? 0;
-        const countedIn = round1(_openingCountedIn[pid] || 0);
-        const opening = round1(countedIn - Number(dmg || 0));
-        const variance = round1(countedIn - (Number(ep.qty_ordered) || 0));
+        const spirit = showInBottles(pid);
+        // Spirits present every column in bottles; storage stays in cases.
+        const disp = (cases) => spirit ? round1(spiritBottlesFromCases(p, cases)) : round1(cases);
+        const invCases = ep.invoice_qty != null ? ep.invoice_qty : '';
+        const dmgCases = ep.damaged_qty ?? 0;
+        const inv = invCases === '' ? '' : disp(invCases);
+        const dmg = dmgCases ? disp(dmgCases) : '';
+        const countedInCases = _openingCountedIn[pid] || 0;
+        const countedIn = disp(countedInCases);
+        const opening = disp(countedInCases - Number(dmgCases || 0));
+        const variance = disp(countedInCases - (Number(ep.qty_ordered) || 0));
         const vc = variance > 0 ? 'pos' : variance < 0 ? 'neg' : 'zero';
         const vt = (variance > 0 ? '+' : '') + variance;
-        html += '<tr>' +
+        const unitTitle = spirit ? 'In bottles' : 'In cases';
+        html += '<tr' + (spirit ? ' data-spirit="1"' : '') + '>' +
           '<td>' + escapeHtml(p.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(p.case_size || '—') + '</td>' +
-          '<td style="font-weight:600">' + round1(ep.qty_ordered || 0) + '</td>' +
-          '<td><input type="text" value="' + escapeHtml(inv) + '" placeholder="0" id="o-inv-' + pid + '" onblur="evalMathInput(this)" oninput="recalcOpeningRow(\'' + pid + '\')"></td>' +
-          '<td style="font-weight:600" title="Total cases logged on the Deliveries tab" id="o-cin-' + pid + '">' + countedIn + '</td>' +
+          '<td style="font-weight:600" title="' + unitTitle + '">' + disp(ep.qty_ordered || 0) + '</td>' +
+          '<td><input type="text" value="' + escapeHtml(inv) + '" placeholder="0" title="' + unitTitle + '" id="o-inv-' + pid + '" onblur="evalMathInput(this)" oninput="recalcOpeningRow(\'' + pid + '\')"></td>' +
+          '<td style="font-weight:600" title="Total logged on the Deliveries tab — ' + unitTitle.toLowerCase() + '" id="o-cin-' + pid + '">' + countedIn + '</td>' +
           '<td><span class="' + vc + '" id="o-var-' + pid + '" style="font-weight:700">' + vt + '</span></td>' +
-          '<td><input type="text" value="' + (dmg ? escapeHtml(dmg) : '') + '" placeholder="0" id="o-dmg-' + pid + '" onblur="evalMathInput(this)" oninput="recalcOpeningRow(\'' + pid + '\')"></td>' +
-          '<td style="font-weight:700" id="o-open-' + pid + '">' + opening + '</td>' +
+          '<td><input type="text" value="' + (dmg !== '' ? escapeHtml(dmg) : '') + '" placeholder="0" title="' + unitTitle + '" id="o-dmg-' + pid + '" onblur="evalMathInput(this)" oninput="recalcOpeningRow(\'' + pid + '\')"></td>' +
+          '<td style="font-weight:700" title="' + unitTitle + '" id="o-open-' + pid + '">' + opening + '</td>' +
         '</tr>';
       });
     });
@@ -5192,15 +5329,21 @@
     if (!ep) return;
     const invEl = $('o-inv-' + productId);
     const dmgEl = $('o-dmg-' + productId);
-    const dmg = dmgEl ? (parseFloat(dmgEl.value) || 0) : 0;
-    const countedIn = round1(_openingCountedIn[productId] || 0);
+    const spirit = showInBottles(productId);
+    const p = ep.product || {};
+    // Inputs are bottles for spirits → convert to cases for storage & maths.
+    const toCases = (v) => spirit ? spiritCasesFromBottles(p, v) : v;
+    const disp = (cases) => spirit ? round1(spiritBottlesFromCases(p, cases)) : round1(cases);
+    const dmgInput = dmgEl ? (parseFloat(dmgEl.value) || 0) : 0;
+    const dmgCases = toCases(dmgInput);
+    const countedInCases = _openingCountedIn[productId] || 0;
     const varEl = $('o-var-' + productId);
     const openEl = $('o-open-' + productId);
-    const v = round1(countedIn - (Number(ep.qty_ordered) || 0));
+    const v = disp(countedInCases - (Number(ep.qty_ordered) || 0));
     if (varEl) { varEl.textContent = (v > 0 ? '+' : '') + v; varEl.className = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'; }
-    if (openEl) openEl.textContent = round1(countedIn - dmg);
-    ep.invoice_qty = invEl && invEl.value !== '' ? (parseFloat(invEl.value) ?? null) : null;
-    ep.damaged_qty = dmg;
+    if (openEl) openEl.textContent = disp(countedInCases - dmgCases);
+    ep.invoice_qty = invEl && invEl.value !== '' ? toCases(parseFloat(invEl.value) || 0) : null;
+    ep.damaged_qty = dmgCases;
     clearTimeout(_openingTimers[productId]);
     _openingTimers[productId] = setTimeout(() => {
       DB.eventProducts.setForEvent(_currentEvent.id, productId, {
@@ -5221,11 +5364,14 @@
       const rows = eps.map((ep) => {
         const invEl = $('o-inv-' + ep.product_id);
         const dmgEl = $('o-dmg-' + ep.product_id);
+        const spirit = showInBottles(ep.product_id);
+        const p = ep.product || {};
+        const toCases = (v) => spirit ? spiritCasesFromBottles(p, v) : v;
         const patch = {
           event_id: _currentEvent.id,
           product_id: ep.product_id,
-          invoice_qty: invEl && invEl.value !== '' ? parseFloat(invEl.value) : null,
-          damaged_qty: dmgEl ? (parseFloat(dmgEl.value) || 0) : 0,
+          invoice_qty: invEl && invEl.value !== '' ? toCases(parseFloat(invEl.value) || 0) : null,
+          damaged_qty: dmgEl ? toCases(parseFloat(dmgEl.value) || 0) : 0,
         };
         Object.assign(ep, patch);
         return patch;
@@ -5761,17 +5907,22 @@
       html += '<tr class="category-row"><td colspan="' + totalCols + '">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].forEach((r) => {
         const goodsNeg = r.goodsIn < 0 ? ';color:var(--danger)' : '';
-        html += '<tr>' +
-          '<td>' + escapeHtml(r.name) + '</td>' +
+        const spirit = showInBottles(r.pid);
+        const sp = spirit ? spiritProductById(r.pid) : null;
+        const disp = (cases) => spirit ? round1(spiritBottlesFromCases(sp, cases)) : round1(cases);
+        const unitTitle = spirit ? 'bottles' : 'cases';
+        html += '<tr' + (spirit ? ' title="In bottles"' : '') + '>' +
+          '<td>' + escapeHtml(r.name) + (spirit ? ' <span style="font-size:10px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">btl</span>' : '') + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.case_size || '—') + '</td>' +
           '<td>' + catBadge(r.cat) + '</td>' +
           r.barQtys.map((q, i) => {
             const div = i === 0 ? ' stock-col-divider' : '';
             if (q == null) return '<td class="' + div.trim() + '" style="color:var(--muted-foreground);font-size:12px" title="Not on this bar\u2019s menu">\u2014</td>';
-            return '<td class="' + div.trim() + '" style="font-weight:500">' + (q > 0 ? q : '<span style="color:var(--muted-foreground)">0</span>') + '</td>';
+            const dv = disp(q);
+            return '<td class="' + div.trim() + '" style="font-weight:500" title="' + unitTitle + '">' + (dv > 0 ? dv : '<span style="color:var(--muted-foreground)">0</span>') + '</td>';
           }).join('') +
-          '<td class="stock-col-divider" style="font-weight:700' + goodsNeg + '">' + r.goodsIn + '</td>' +
-          '<td style="font-weight:700">' + r.total + '</td>' +
+          '<td class="stock-col-divider" style="font-weight:700' + goodsNeg + '" title="' + unitTitle + '">' + disp(r.goodsIn) + '</td>' +
+          '<td style="font-weight:700" title="' + unitTitle + '">' + disp(r.total) + '</td>' +
         '</tr>';
       });
     });
@@ -5925,13 +6076,24 @@
         const pid = ep.product_id;
         const line = lines.find((l) => l.product_id === pid && l.bar_id === barId);
         const counted = !!(line && ((line.cases != null && line.cases !== 0) || (line.singles != null && line.singles !== 0)));
-        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (counted ? ' class="counted"' : '') + '>' +
+        const spirit = showInBottles(pid);
+        // Spirits: collapse stored cases (+ any loose singles) into decimal bottles.
+        let casesCellVal = (line && line.cases != null ? line.cases : '');
+        if (spirit) {
+          const ups = unitsPerCaseFor(pid) || 1;
+          const totCases = line ? ((Number(line.cases) || 0) + (Number(line.singles) || 0) / ups) : 0;
+          casesCellVal = totCases ? round1(spiritBottlesFromCases(spiritProductById(pid), totCases)) : '';
+        }
+        const singlesCell = spirit
+          ? '<td class="cnt-num" style="color:var(--muted-foreground)" title="Spirits are counted as decimal bottles in the Cases/Bottles column">—</td>'
+          : '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>';
+        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (spirit ? ' data-spirit="1"' : '') + (counted ? ' class="counted"' : '') + '>' +
           '<td class="cnt-status" id="cnt-status-' + pid + '">' + (counted ? '<i class="ph ph-check-circle"></i>' : '') + '</td>' +
           '<td>' + escapeHtml(ep.product.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + (barId ? escapeHtml(barNameById(barId)) : '—') + '</td>' +
-          '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + (line && line.cases != null ? line.cases : '') + '" placeholder="0" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
-          '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
+          '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + casesCellVal + '" placeholder="' + (spirit ? 'bottles' : '0') + '" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
+          singlesCell +
         '</tr>';
       });
     });
@@ -5954,7 +6116,13 @@
       tr.classList.toggle('counted', isCounted);
       const status = tr.querySelector('.cnt-status');
       if (status) status.innerHTML = isCounted ? '<i class="ph ph-check-circle"></i>' : '';
-      cases += c; singles += s;
+      // For spirits the Cases/Bottles cell holds bottles; convert to cases so the
+      // mixed "Cases" stat stays in cases. Singles stat excludes spirits.
+      if (tr.getAttribute('data-spirit')) {
+        cases += spiritCasesFromBottles(spiritProductById(tr.getAttribute('data-pid')), c);
+      } else {
+        cases += c; singles += s;
+      }
     });
     const pv = $('countProgressVal'); if (pv) pv.textContent = counted + '/' + total;
     const cv = $('countCasesVal'); if (cv) cv.textContent = Math.round(cases * 100) / 100;
@@ -6004,8 +6172,15 @@
     const barId = _activeCountBar || session.bar_id;
     const casesEl = $('cnt-cases-' + pid);
     const singlesEl = $('cnt-singles-' + pid);
-    const cases = parseFloat(casesEl && casesEl.value) || 0;
-    const singles = parseFloat(singlesEl && singlesEl.value) || 0;
+    let cases, singles;
+    if (showInBottles(pid)) {
+      // Spirits: the cases cell holds decimal bottles → store as fractional cases.
+      cases = roundN(spiritCasesFromBottles(spiritProductById(pid), parseFloat(casesEl && casesEl.value) || 0), 4);
+      singles = 0;
+    } else {
+      cases = parseFloat(casesEl && casesEl.value) || 0;
+      singles = parseFloat(singlesEl && singlesEl.value) || 0;
+    }
     const lines = _countLines[_activeCountId] || [];
     let line = lines.find((l) => l.product_id === pid && l.bar_id === barId);
     try {
@@ -7249,6 +7424,308 @@
           '<td>' + money(tot.cost) + '</td>' +
           '<td>' + round1(tot.returns) + '</td>' +
         '</tr>';
+    }
+  }
+
+  // ===================== FINANCIAL RECON =====================
+  // Post-event financial close — mirrors the Gottwood recon spreadsheet.
+  // Consumption = Delivered − Closing(cases) − Closing(units as cases) − Transferred + On hand
+  // Consumption + loose charge = (Consumption + closing units fraction) × case price
+
+  function computePluCasesByProductId(eps) {
+    const rows = (_squareImport && _squareImport.rows) || [];
+    const byName = {};
+    const byPool = {};
+    rows.forEach((r) => {
+      const recipe = findRecipeFor(r.name, r.variation);
+      if (!recipe) return;
+      const sold = Number(r.items_sold) || 0;
+      (recipe.ingredients || []).forEach((ig) => {
+        const qty = Number(ig.qty) || 0;
+        if (!(qty > 0)) return;
+        if (ig.pool_name) {
+          const key = normPoolName(ig.pool_name);
+          if (!key) return;
+          if (!byPool[key]) byPool[key] = 0;
+          byPool[key] += sold * qty;
+          return;
+        }
+        const key = normProductName(ig.product_name);
+        if (!key) return;
+        if (!byName[key]) byName[key] = 0;
+        byName[key] += sold * qty;
+      });
+    });
+
+    const pluByPid = {};
+    (eps || []).forEach((ep) => {
+      if (!(ep.product && ep.product.name)) return;
+      pluByPid[ep.product_id] = byName[normProductName(ep.product.name)] || 0;
+    });
+
+    Object.keys(byPool).forEach((poolKey) => {
+      const servings = byPool[poolKey];
+      const poolEps = (eps || []).filter((ep) => {
+        const p = ep.product;
+        return p && p.pool_name && normPoolName(p.pool_name) === poolKey;
+      });
+      if (!poolEps.length) return;
+      let totalWeight = 0;
+      const weights = poolEps.map((ep) => {
+        const p = ep.product;
+        const spu = Number(p.pool_servings_per_unit) || 0;
+        const opening = epOpeningStock(ep);
+        const bpc = spiritBottlesPerCase(p) || 1;
+        const w = opening * bpc * spu;
+        totalWeight += w;
+        return { ep, w, spu, bpc };
+      });
+      poolEps.forEach((ep, i) => {
+        const { w, spu, bpc } = weights[i];
+        if (!(totalWeight > 0 && spu > 0 && bpc > 0)) return;
+        const allocServings = servings * (w / totalWeight);
+        const cases = allocServings / (spu * bpc);
+        pluByPid[ep.product_id] = (pluByPid[ep.product_id] || 0) + cases;
+      });
+    });
+
+    return pluByPid;
+  }
+
+  function reconCasePrice(ep) {
+    const p = ep.product;
+    if (ep.order_price_override != null) return Number(ep.order_price_override) || 0;
+    return p && p.case_price != null ? Number(p.case_price) || 0 : 0;
+  }
+
+  function computeReconRows() {
+    const eps = ((_currentEvent && _currentEvent.event_products) || [])
+      .filter((ep) => ep.product && ep.product.name);
+    const pluByPid = computePluCasesByProductId(eps);
+    return eps.map((ep) => {
+      const pid = ep.product_id;
+      const p = ep.product;
+      const ups = Number(p.units_per_case) || 1;
+      const delivered = ep.delivered_qty != null ? Number(ep.delivered_qty)
+        : (ep.qty_ordered != null ? Number(ep.qty_ordered) : 0);
+      const invoiced = closingInvoiceQty(ep);
+      const onHand = siteAvailable(pid);
+      const cl = closingRowFor(pid) || {};
+      let closingCases = cl.closing_cases != null ? Number(cl.closing_cases) : 0;
+      let closingSingles = cl.closing_singles != null ? Number(cl.closing_singles) : 0;
+      if (cl.closing_cases == null && cl.closing_singles == null && cl.close_count != null) {
+        closingCases = Number(cl.close_count) || 0;
+      }
+      const closingUnits = ups > 0 ? closingSingles / ups : 0;
+      const transferred = summaryTransferOut(pid);
+      const consumption = roundN(delivered - closingCases - closingUnits - transferred + onHand, 2);
+      const plu = roundN(pluByPid[pid] || 0, 2);
+      const casePrice = reconCasePrice(ep);
+      const consumptionCharge = consumption * casePrice;
+      const consumptionLooseCharge = (consumption + closingUnits) * casePrice;
+      const pluCharge = plu * casePrice;
+      const invoiceCharge = invoiced * casePrice;
+      const budgetCost = invoiced > 0
+        ? consumptionLooseCharge
+        : Math.max(consumptionLooseCharge || 0, pluCharge || 0);
+      const supplierName = supplierNameById(productSupplierId(pid));
+      const denom = Math.max(Math.abs(consumption), Math.abs(plu), 0.01);
+      const investigate = (consumption !== 0 || plu !== 0)
+        && Math.abs(consumption - plu) / denom > 0.08;
+      return {
+        ep, pid, p, ups, delivered, invoiced, onHand, closingCases, closingUnits,
+        transferred, consumption, plu, casePrice, consumptionCharge, consumptionLooseCharge,
+        pluCharge, invoiceCharge, budgetCost, supplierName, investigate,
+      };
+    });
+  }
+
+  async function loadRecon() {
+    const id = $('eventPick').value;
+    $('reconNoEvent').style.display = id ? 'none' : '';
+    $('reconContent').style.display = id ? '' : 'none';
+    const exportBtn = $('reconExportBtn');
+    const closeBtn = $('reconCloseBtn');
+    if (exportBtn) exportBtn.style.display = id ? '' : 'none';
+    if (closeBtn) closeBtn.style.display = id ? '' : 'none';
+    if (!id) return;
+    try {
+      if (!_currentEvent || _currentEvent.id !== id) {
+        _currentEvent = await DB.events.getFull(id);
+      }
+      if (!_suppliers.length) _suppliers = (await DB.suppliers.list()) || [];
+      if (!_products.length) _products = (await DB.products.listFull()) || [];
+      const [closing, imp, recipes] = await Promise.all([
+        DB.closing.forEvent(id),
+        DB.tillImports.forEvent(id),
+        DB.recipes.listFull(),
+      ]);
+      _closing = closing || [];
+      _closingEventId = id;
+      _squareImport = imp;
+      _recipes = recipes || [];
+      _transfersEventId = null;
+      await ensureTransferData();
+      await ensureEventStockData(true);
+      renderRecon();
+    } catch (err) {
+      console.error('loadRecon', err);
+      $('reconTableBody').innerHTML = '<tr><td colspan="20"><div class="empty-state"><i class="ph ph-warning icon"></i><p>' + escapeHtml(err.message) + '</p></div></td></tr>';
+    }
+  }
+
+  function reconQtyCell(n) {
+    const v = Number(n) || 0;
+    if (!v) return '—';
+    return Number.isInteger(v) ? String(v) : roundN(v, 2).toString();
+  }
+
+  function reconMoneyCell(n) {
+    const v = Number(n) || 0;
+    if (!v) return '£0.00';
+    return money(v);
+  }
+
+  function renderRecon() {
+    const rows = computeReconRows();
+    const body = $('reconTableBody');
+    if (!body) return;
+
+    let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
+    rows.forEach((r) => {
+      totBudget += r.budgetCost || 0;
+      totConsLoose += r.consumptionLooseCharge || 0;
+      totInvoice += r.invoiceCharge || 0;
+      totPlu += r.pluCharge || 0;
+    });
+    const pctOfConsLoose = totConsLoose > 0 ? (totBudget / totConsLoose) * 100 : null;
+    const pctOfInvoice = totInvoice > 0 ? (totBudget / totInvoice) * 100 : null;
+
+    $('reconStats').innerHTML =
+      '<div class="stat-card"><div class="stat-label">Budget cost</div><div class="stat-value">' + money(totBudget) + '</div><div class="stat-sub">total to bill</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Consumption + loose</div><div class="stat-value">' + money(totConsLoose) + '</div><div class="stat-sub">' + (pctOfConsLoose != null ? pctOfConsLoose.toFixed(2) + '% of budget' : 'physical stock') + '</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Invoice charges</div><div class="stat-value">' + money(totInvoice) + '</div><div class="stat-sub">' + (pctOfInvoice != null ? pctOfInvoice.toFixed(2) + '% of budget' : 'supplier invoices') + '</div></div>' +
+      '<div class="stat-card"><div class="stat-label">PLU charges</div><div class="stat-value">' + money(totPlu) + '</div><div class="stat-sub">from Square + recipes</div></div>' +
+      '<div class="stat-card"><div class="stat-label">Square import</div><div class="stat-value">' + ((_squareImport && _squareImport.rows && _squareImport.rows.length) || 0) + '</div><div class="stat-sub">till lines mapped</div></div>';
+
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="20"><div class="empty-state"><i class="ph ph-scales icon"></i><p>Add products and enter closing stock to begin.</p></div></td></tr>';
+      return;
+    }
+
+    const grouped = {};
+    rows.forEach((r) => {
+      const cat = productCategoryName(r.pid);
+      (grouped[cat] = grouped[cat] || []).push(r);
+    });
+
+    let html = '';
+    Object.keys(grouped).sort().forEach((cat) => {
+      html += '<tr class="category-row"><td colspan="20">' + escapeHtml(cat) + '</td></tr>';
+      grouped[cat].slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
+        const abv = r.p.abv != null ? (Number(r.p.abv).toFixed(2) + '%') : '—';
+        const size = r.p.unit_size || r.p.size || '—';
+        const flag = r.investigate ? '<span class="recon-flag">investigate</span>' : '';
+        html += '<tr class="' + (r.investigate ? 'row-investigate' : '') + '">' +
+          '<td style="font-weight:500;white-space:nowrap">' + escapeHtml(r.p.name) + flag + '</td>' +
+          '<td>' + escapeHtml(abv) + '</td>' +
+          '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(size) + '</td>' +
+          '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.p.case_size || '—') + '</td>' +
+          '<td>' + reconMoneyCell(r.casePrice) + '</td>' +
+          '<td>' + escapeHtml(r.supplierName) + '</td>' +
+          '<td>' + (r.ups || '—') + '</td>' +
+          '<td>' + reconQtyCell(r.delivered) + '</td>' +
+          '<td>' + reconQtyCell(r.invoiced) + '</td>' +
+          '<td>' + reconQtyCell(r.onHand) + '</td>' +
+          '<td>' + reconQtyCell(r.closingCases) + '</td>' +
+          '<td>' + reconQtyCell(r.closingUnits) + '</td>' +
+          '<td>' + reconQtyCell(r.transferred) + '</td>' +
+          '<td style="font-weight:600">' + reconQtyCell(r.consumption) + '</td>' +
+          '<td>' + reconQtyCell(r.plu) + '</td>' +
+          '<td>' + reconMoneyCell(r.consumptionCharge) + '</td>' +
+          '<td style="font-weight:600">' + reconMoneyCell(r.consumptionLooseCharge) + '</td>' +
+          '<td>' + reconMoneyCell(r.pluCharge) + '</td>' +
+          '<td>' + reconMoneyCell(r.invoiceCharge) + '</td>' +
+          '<td style="font-weight:700">' + reconMoneyCell(r.budgetCost) + '</td>' +
+        '</tr>';
+      });
+    });
+
+    html += '<tr class="total-row">' +
+      '<td colspan="15">Total</td>' +
+      '<td>' + money(totConsLoose) + '</td>' +
+      '<td></td>' +
+      '<td>' + money(totPlu) + '</td>' +
+      '<td>' + money(totInvoice) + '</td>' +
+      '<td>' + money(totBudget) + '</td>' +
+    '</tr>';
+
+    body.innerHTML = html;
+  }
+
+  function csvEscape(v) {
+    const s = String(v == null ? '' : v);
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function exportReconCsv() {
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    const rows = computeReconRows();
+    const headers = [
+      'Item', 'ABV', 'Size', 'Case Size', 'Case Price', 'Supplier', 'Units per case',
+      'Delivered', 'Invoiced', 'On Hand', 'Closing (Cases)', 'Closing (Units in case format)',
+      'Transferred', 'Consumption', 'PLU', 'Consumption Charge', 'Consumption + Loose Charge',
+      'PLU Charge', 'Invoice Charge', '', 'Budget Cost', 'Notes',
+    ];
+    const lines = [headers.map(csvEscape).join(',')];
+    rows.slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
+      const abv = r.p.abv != null ? Number(r.p.abv).toFixed(2) + '%' : '';
+      const note = r.investigate ? 'investigate' : '';
+      lines.push([
+        r.p.name, abv, r.p.unit_size || r.p.size || '', r.p.case_size || '',
+        r.casePrice ? '£' + r.casePrice.toFixed(2) : '', r.supplierName, r.ups || '',
+        r.delivered || 0, r.invoiced || 0, r.onHand || 0,
+        r.closingCases || 0, r.closingUnits || 0, r.transferred || 0,
+        r.consumption || 0, r.plu || 0,
+        r.consumptionCharge || 0, r.consumptionLooseCharge || 0,
+        r.pluCharge || 0, r.invoiceCharge || 0, '',
+        r.budgetCost || 0, note,
+      ].map(csvEscape).join(','));
+    });
+    let totBudget = 0, totConsLoose = 0, totInvoice = 0;
+    rows.forEach((r) => {
+      totBudget += r.budgetCost || 0;
+      totConsLoose += r.consumptionLooseCharge || 0;
+      totInvoice += r.invoiceCharge || 0;
+    });
+    lines.push(Array(19).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
+    lines.push(Array(19).fill('').concat([
+      totConsLoose.toFixed(2), totInvoice.toFixed(2),
+      totConsLoose > 0 ? ((totBudget / totConsLoose) * 100).toFixed(2) + '%' : '',
+      totInvoice > 0 ? ((totBudget / totInvoice) * 100).toFixed(2) + '%' : '',
+    ]).map(csvEscape).join(','));
+
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = ((_currentEvent.name || 'event') + ' Post Event Recon.csv').replace(/[^\w\s.-]/g, '');
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function markEventReconciled() {
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    if (!confirm('Mark "' + (_currentEvent.name || 'this event') + '" as financially reconciled?')) return;
+    try {
+      await DB.events.update(_currentEvent.id, { status: 'reconciled' });
+      _currentEvent.status = 'reconciled';
+      const sel = $('evStatus');
+      if (sel) sel.value = 'reconciled';
+      flashSaved('status', false);
+      alert('Event marked as reconciled.');
+    } catch (err) {
+      alert('Failed to update status: ' + (err.message || err));
     }
   }
 
