@@ -530,7 +530,7 @@
     /* ── financial recon ── */
     #reconTable thead th {
       position:static; text-align:center; white-space:normal; vertical-align:bottom;
-      line-height:1.25; font-size:11px; hyphens:auto; overflow-wrap:anywhere;
+      line-height:1.2; font-size:10px; hyphens:auto; overflow-wrap:anywhere;
     }
     #reconTable thead th[data-recon-col="units_per_case"] {
       width:2.6rem; max-width:2.6rem; padding:8px 3px;
@@ -642,8 +642,15 @@
     .recon-status-pick .recon-status-clear:hover { border-color:var(--ring); color:var(--foreground); }
     .recon-status-pick .recon-status-clear.active { border-color:var(--foreground); color:var(--foreground); background:var(--secondary); }
     #reconTable .recon-flag { font-size:11px; font-weight:600; color:var(--warning); margin-left:6px; }
-    #reconTable .recon-note-hint { display:block; font-size:11px; font-weight:400; color:var(--muted-foreground); margin-top:2px; max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    #reconTable .recon-item-case { margin-left:8px; font-size:11px; font-weight:500; color:var(--muted-foreground); white-space:nowrap; }
+    #reconTable .recon-note-hint { display:block; font-size:11px; font-weight:400; color:var(--muted-foreground); margin-top:2px; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #reconTable thead th[data-recon-col="item"],
+    #reconTable tbody td[data-recon-col="item"] {
+      width:10rem; max-width:10rem; padding-left:8px; padding-right:8px;
+    }
+    #reconTable tbody td[data-recon-col="item"] { font-weight:500; }
+    #reconTable .recon-item-line { display:flex; align-items:baseline; gap:6px; min-width:0; }
+    #reconTable .recon-item-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+    #reconTable .recon-item-case { margin-left:0; flex-shrink:0; font-size:11px; font-weight:500; color:var(--muted-foreground); white-space:nowrap; }
     .recon-preview { margin-top:4px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
     .recon-preview table { width:100%; border-collapse:collapse; font-size:12px; }
     .recon-preview th, .recon-preview td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:right; }
@@ -1211,6 +1218,7 @@
         <th class="lib-sel-col"></th>
         <th data-sort="name">Product <span class="arrow"></span></th>
         <th data-sort="case_size">Case size <span class="arrow"></span></th>
+        <th data-sort="stock_unit">Count as <span class="arrow"></span></th>
         <th data-sort="category">Category <span class="arrow"></span></th>
         <th data-sort="supplier">Supplier <span class="arrow"></span></th>
         <th class="num" data-sort="units_per_case">Units/case <span class="arrow"></span></th>
@@ -1281,6 +1289,7 @@
         <tr>
           <th>Product</th>
           <th>Case size</th>
+          <th>Count as</th>
           <th>Category</th>
           <th class="num">Ordered</th>
           <th class="num" title="Live total on site — Bone Yard plus every bar (same as Stock Levels)">Stock level</th>
@@ -1409,7 +1418,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0">
       <div class="page-title">Stock Counts <span class="feature-dot green" title="Active — saves to the v2 tables"></span></div>
-      <p class="page-subtitle">Record physical counts (cases + singles) per bar.</p>
+      <p class="page-subtitle">Record physical counts per bar using each product's configured unit (cases + singles, bottles, or units).</p>
     </div>
     <button class="btn btn-primary btn-sm" id="newCountBtn" onclick="openNewCountSession()"><i class="ph ph-plus btn-leading-icon"></i> New count session</button>
   </div>
@@ -2526,6 +2535,7 @@
 
   // A product we count in bottles+shots: a spirits-category bottle (≥500ml),
   // which excludes spirit RTD/mixer cans (e.g. 12x250ml).
+  // Used only when stock_unit is unset (auto-detect).
   function isSpiritBottle(p) {
     if (!p) return false;
     if (categoryColourKeyOf(p) !== 'spirits') return false;
@@ -2534,8 +2544,56 @@
   }
 
   function reconUnitsPerCase(p) {
-    if (isSpiritBottle(p)) return spiritBottlesPerCase(p);
+    if (productStockUnit(p) === 'bottle') return spiritBottlesPerCase(p);
     return Number(p && p.units_per_case) || 1;
+  }
+
+  const STOCK_UNIT_OPTS = [
+    { value: '', label: 'Auto — detect from category & pack size' },
+    { value: 'case', label: 'Cases + singles' },
+    { value: 'bottle', label: 'Bottles (decimal)' },
+    { value: 'unit', label: 'Units (decimal)' },
+  ];
+
+  // Resolved stock unit: explicit library setting, or legacy auto-detect.
+  function productStockUnit(p) {
+    if (!p) return 'case';
+    if (p.stock_unit === 'case' || p.stock_unit === 'bottle' || p.stock_unit === 'unit') return p.stock_unit;
+    return isSpiritBottle(p) ? 'bottle' : 'case';
+  }
+
+  function stockUnitLabel(unit, plural) {
+    const labels = {
+      case: plural ? 'cases' : 'case',
+      bottle: plural ? 'bottles' : 'bottle',
+      unit: plural ? 'units' : 'unit',
+    };
+    return labels[unit] || (plural ? 'cases' : 'case');
+  }
+
+  function productStockUnitLabel(p, plural) {
+    return stockUnitLabel(productStockUnit(p), plural);
+  }
+
+  function displayFactorPerCase(p) {
+    const u = productStockUnit(p);
+    if (u === 'bottle') return spiritBottlesPerCase(p) || 1;
+    if (u === 'unit') return Number(p && p.units_per_case) || 1;
+    return 1;
+  }
+
+  function casesToDisplayQty(p, cases) {
+    return (Number(cases) || 0) * displayFactorPerCase(p);
+  }
+
+  function displayQtyToCases(p, displayQty) {
+    const f = displayFactorPerCase(p) || 1;
+    return (Number(displayQty) || 0) / f;
+  }
+
+  function usesDecimalPrimaryUnit(pid) {
+    const u = productStockUnit(spiritProductById(pid));
+    return u === 'bottle' || u === 'unit';
   }
 
   function shotsPerBottle(p) {
@@ -2554,24 +2612,24 @@
     return upc > 0 ? upc : 1;
   }
 
-  // Delivery log display unit: spirits show bottles (cases × bottles-per-case),
-  // everything else stays in cases. The stored value is always cases.
+  // Delivery log display unit: uses the product's configured stock unit.
+  // The stored value is always cases.
   function deliveryDisplayQty(pid, qtyCases) {
     const p = spiritProductById(pid);
     const n = Number(qtyCases) || 0;
-    if (p && isSpiritBottle(p)) {
-      const b = round1(n * spiritBottlesPerCase(p));
-      return { n: b, unit: b === 1 ? 'bottle' : 'bottles' };
+    const u = productStockUnit(p);
+    if (u === 'bottle' || u === 'unit') {
+      const d = round1(casesToDisplayQty(p, n));
+      return { n: d, unit: stockUnitLabel(u, d !== 1) };
     }
     return { n: round1(n), unit: 'cases' };
   }
 
-  // Human label for a delivery line's quantity. Spirits collapse to bottles
-  // (cases × bottles-per-case); everything else shows whole cases and any
-  // loose singles separately ("3 cases · 5 singles").
+  // Human label for a delivery line's quantity.
   function deliveryLineQtyLabel(l) {
     const p = spiritProductById(l.product_id);
-    if (p && isSpiritBottle(p)) {
+    const u = productStockUnit(p);
+    if (u === 'bottle' || u === 'unit') {
       const cases = delLineCases(l);
       const d = deliveryDisplayQty(l.product_id, cases);
       const c = round1(cases);
@@ -2602,31 +2660,29 @@
     return spc > 0 ? spc : 28;
   }
 
-  // ---------- spirits: present & enter stock in decimal bottles ----------
-  // Internally stock is ALWAYS stored in cases. For a spirit bottle the UI
-  // shows and accepts BOTTLES as a decimal (e.g. 34.8). One case holds
-  // spiritBottlesPerCase bottles, so bottles = cases × bpc and the inverse
-  // cases = bottles ÷ bpc. Conversion happens only at the UI boundary; every
-  // stored value and downstream case calculation is unchanged.
+  // ---------- decimal primary units (bottles / units) at UI boundary ----------
+  // Internally stock is ALWAYS stored in cases. Bottle/unit products show and
+  // accept decimal values in their primary unit; conversion uses displayFactorPerCase.
   function spiritBottlesFromCases(p, cases) {
-    return (Number(cases) || 0) * spiritBottlesPerCase(p);
+    return casesToDisplayQty(p, cases);
   }
   function spiritCasesFromBottles(p, bottles) {
-    const bpc = spiritBottlesPerCase(p) || 1;
-    return (Number(bottles) || 0) / bpc;
+    return displayQtyToCases(p, bottles);
   }
-  // True when this product id should be shown / entered in bottles.
+  // True when this product id should be shown / entered in bottles (legacy name).
   function showInBottles(pid) {
-    const p = spiritProductById(pid);
-    return !!(p && isSpiritBottle(p));
+    return productStockUnit(spiritProductById(pid)) === 'bottle';
   }
-  // Present a cases quantity in the product's natural unit: bottles (1 dp) for
-  // spirits, cases otherwise. Returns { n, unit, short } for flexible display.
+  function showInUnits(pid) {
+    return productStockUnit(spiritProductById(pid)) === 'unit';
+  }
+  // Present a cases quantity in the product's natural unit.
   function stockQtyDisplay(pid, cases) {
-    if (showInBottles(pid)) {
-      const p = spiritProductById(pid);
-      const b = round1(spiritBottlesFromCases(p, cases));
-      return { n: b, unit: b === 1 ? 'bottle' : 'bottles', short: 'btl' };
+    const p = spiritProductById(pid);
+    const u = productStockUnit(p);
+    if (u === 'bottle' || u === 'unit') {
+      const n = round1(casesToDisplayQty(p, cases));
+      return { n, unit: stockUnitLabel(u, n !== 1), short: u === 'bottle' ? 'btl' : 'u' };
     }
     const c = round1(Number(cases) || 0);
     return { n: c, unit: c === 1 ? 'case' : 'cases', short: 'cs' };
@@ -2841,6 +2897,7 @@
       case 'category': return (p.category && p.category.name) || '';
       case 'supplier': return (p.supplier && p.supplier.name) || '';
       case 'units_per_case': return Number(p.units_per_case) || 0;
+      case 'stock_unit': return productStockUnitLabel(p, false);
       case 'case_price': return Number(p.case_price) || 0;
       case 'unit_price': return Number(p.unit_price) || 0;
       default: return String(p[key] || '').toLowerCase();
@@ -2875,6 +2932,8 @@
           'onclick="toggleLibRowSel(\'' + p.id + '\', this.checked)"></td>' +
         '<td>' + escapeHtml(p.name) + '</td>' +
         '<td>' + escapeHtml(p.case_size || '') + '</td>' +
+        '<td style="font-size:12px">' + escapeHtml(productStockUnitLabel(p, false)) +
+          (p.stock_unit ? '' : ' <span class="muted" title="Auto-detected">auto</span>') + '</td>' +
         '<td>' + catBadge(p.category) + '</td>' +
         '<td>' + supplierCell(p) + '</td>' +
         '<td class="num">' + num(p.units_per_case) + '</td>' +
@@ -2962,12 +3021,13 @@
     { key: 'category_id', label: 'Category', display: (p) => (p.category && p.category.name) || '—', value: (p) => p.category_id || null },
     { key: 'case_size', label: 'Case size', display: (p) => p.case_size || '—', value: (p) => p.case_size || null },
     { key: 'units_per_case', label: 'Units / case', display: (p) => (p.units_per_case != null ? String(p.units_per_case) : '—'), value: (p) => (p.units_per_case != null ? p.units_per_case : null) },
+    { key: 'stock_unit', label: 'Count as', display: (p) => productStockUnitLabel(p, false) + (p.stock_unit ? '' : ' (auto)'), value: (p) => p.stock_unit || null },
     { key: 'sku', label: 'SKU', display: (p) => p.sku || '—', value: (p) => p.sku || null },
     { key: 'abv', label: 'ABV (%)', display: (p) => (p.abv != null ? String(p.abv) : '—'), value: (p) => (p.abv != null ? p.abv : null) },
   ];
 
   function mergeProductScore(p) {
-    return ['supplier_id', 'category_id', 'case_size', 'units_per_case', 'case_price', 'unit_price', 'sku', 'abv']
+    return ['supplier_id', 'category_id', 'case_size', 'units_per_case', 'stock_unit', 'case_price', 'unit_price', 'sku', 'abv']
       .reduce((s, k) => s + (p[k] != null && p[k] !== '' ? 1 : 0), 0);
   }
 
@@ -3486,6 +3546,7 @@
         { key: 'category_id', label: 'Category', type: 'select', options: catOpts, placeholder: '— none —' },
         { key: 'case_size', label: 'Case size', type: 'text', placeholder: 'e.g. 24x330ml' },
         { key: 'units_per_case', label: 'Units / case', type: 'number', min: 0 },
+        { key: 'stock_unit', label: 'Count stock as', type: 'select', options: STOCK_UNIT_OPTS, placeholder: 'Auto' },
         { key: 'sku', label: 'SKU', type: 'text' },
         { key: 'abv', label: 'ABV (%)', type: 'number', min: 0 },
         { key: 'pool_name', label: 'Volume pool', type: 'text', full: true, placeholder: 'e.g. House Vodka — groups interchangeable bottle sizes' },
@@ -3522,6 +3583,7 @@
           category_id: v.category_id || null,
           case_size: v.case_size || null,
           units_per_case: v.units_per_case != null ? v.units_per_case : 1,
+          stock_unit: v.stock_unit || null,
           sku: v.sku || null,
           abv: v.abv,
           pool_name: poolName,
@@ -4478,6 +4540,7 @@
       '<tr style="cursor:pointer" title="View supplier prices & deliveries" onclick="openProductDetail(\'' + ep.product_id + '\')">' +
       '<td class="ev-name">' + escapeHtml((ep.product && ep.product.name) || '(unknown)') + '</td>' +
       '<td>' + ((ep.product && ep.product.case_size) ? escapeHtml(ep.product.case_size) : '<span class="muted">—</span>') + '</td>' +
+      '<td style="font-size:12px">' + (ep.product ? escapeHtml(productStockUnitLabel(ep.product, false)) : '—') + '</td>' +
       '<td>' + catBadge(ep.product && ep.product.category) + '</td>' +
       orderedCell(ep) +
       cell(siteAvailable(ep.product_id)) +
@@ -4486,7 +4549,7 @@
       cell(ep.damaged_qty, { danger: true }) +
       actionCell(ep) +
       '</tr>'
-    )).join('') || '<tr><td colspan="9" class="empty">No products match.</td></tr>';
+    )).join('') || '<tr><td colspan="10" class="empty">No products match.</td></tr>';
 
     if (_evEditingId) { const inp = $('ev-ord-' + _evEditingId); if (inp) { inp.focus(); inp.select(); } }
 
@@ -4497,7 +4560,7 @@
     };
     $('evFoot').innerHTML = rows.length
       ? ('<tr>' +
-          '<td>Totals</td><td></td><td></td>' +
+          '<td>Totals</td><td></td><td></td><td></td>' +
           footCell(sum('qty_ordered')) +
           footCell(rows.reduce((s, ep) => s + siteAvailable(ep.product_id), 0)) +
           footCell(sum('invoice_qty')) +
@@ -4678,7 +4741,7 @@
           totalCases += (Number(line.qty) || 0);
           const qty = deliveryDisplayQty(productId, line.qty);
           const prod = spiritProductById(productId);
-          const casesTag = (prod && isSpiritBottle(prod))
+          const casesTag = (prod && usesDecimalPrimaryUnit(productId))
             ? ' / ' + round1(Number(line.qty) || 0) + ' ' + (round1(Number(line.qty) || 0) === 1 ? 'case' : 'cases')
             : '';
           const dmg = Number(line.damaged_qty) || 0;
@@ -4706,7 +4769,7 @@
       ? ('Deliveries · ' + round1(totalCases) + ' case' + (round1(totalCases) === 1 ? '' : 's') + ' across ' + rel.length + ' deliver' + (rel.length === 1 ? 'y' : 'ies'))
       : 'Deliveries';
 
-    const sizeBits = [product && product.case_size, product && product.category && product.category.name]
+    const sizeBits = [product && product.case_size, product && productStockUnitLabel(product, false), product && product.category && product.category.name]
       .filter(Boolean).map(escapeHtml).join(' · ');
 
     body.innerHTML =
@@ -4975,7 +5038,6 @@
     body.innerHTML = _delLines.map((line) => {
       const { price } = deliveryLineCasePrice(line.productId, supplierId);
       const lineCost = (line.productId && price != null) ? price * delFormLineCases(line) : null;
-      const spirit = showInBottles(line.productId);
       const qtyCells = stockQtyCellsHtml(line.productId, line, {
         casesKey: 'qty',
         onCasesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)',
@@ -5002,8 +5064,8 @@
   }
   // Unusable/damaged for a form line, in cases (spirits enter it in bottles).
   function delFormLineDamagedCases(line) {
-    if (showInBottles(line.productId)) {
-      return spiritCasesFromBottles(spiritProductById(line.productId), line.damagedQty);
+    if (usesDecimalPrimaryUnit(line.productId)) {
+      return displayQtyToCases(spiritProductById(line.productId), line.damagedQty);
     }
     return Number(line.damagedQty) || 0;
   }
@@ -5022,7 +5084,7 @@
       if (price == null) { anyMissing = true; return; }
       if (!matched) anyFallback = true;
       // Spirits: qty is bottles, so cost from cases; others keep whole-case cost.
-      total += price * (showInBottles(line.productId) ? delFormLineCases(line) : (Number(line.qty) || 0));
+      total += price * (usesDecimalPrimaryUnit(line.productId) ? delFormLineCases(line) : (Number(line.qty) || 0));
     });
     totalEl.textContent = money(total) || '£0.00';
     const hint = $('df-cost-hint');
@@ -5244,13 +5306,13 @@
       ? lines.map((l) => {
           // Spirits are edited in decimal bottles; fold any stored loose singles
           // into the total cases first, then present as bottles.
-          if (showInBottles(l.product_id)) {
+          if (usesDecimalPrimaryUnit(l.product_id)) {
             const p = spiritProductById(l.product_id);
             const ups = unitsPerCaseFor(l.product_id) || 1;
             const cases = (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
-            const bottles = round1(spiritBottlesFromCases(p, cases));
-            const dmgBottles = round1(spiritBottlesFromCases(p, Number(l.damaged_qty) || 0));
-            return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: bottles ? String(bottles) : '', singles: '', damagedQty: dmgBottles ? String(dmgBottles) : '' };
+            const displayQty = round1(casesToDisplayQty(p, cases));
+            const dmgDisplay = round1(casesToDisplayQty(p, Number(l.damaged_qty) || 0));
+            return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: displayQty ? String(displayQty) : '', singles: '', damagedQty: dmgDisplay ? String(dmgDisplay) : '' };
           }
           return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), singles: (l.singles != null && Number(l.singles) !== 0) ? String(l.singles) : '', damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' };
         })
@@ -5293,7 +5355,7 @@
       .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.singles) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
       .map((l) => {
         // Spirits: qty/damaged are decimal bottles → store as fractional cases.
-        if (showInBottles(l.productId)) {
+        if (usesDecimalPrimaryUnit(l.productId)) {
           return {
             product_id: l.productId,
             qty: roundN(delFormLineCases(l), 4),
@@ -5414,10 +5476,10 @@
   function wastageLineFromSaved(l, batch) {
     const pid = l.product_id;
     const ups = unitsPerCaseFor(pid);
-    if (showInBottles(pid)) {
+    if (usesDecimalPrimaryUnit(pid)) {
       const stored = batchLineCases(batch, l);
-      const bottles = round1(spiritBottlesFromCases(spiritProductById(pid), stored));
-      return { lineId: wstLineId(), productId: pid, cases: bottles ? String(bottles) : '', singles: '' };
+      const displayQty = round1(casesToDisplayQty(spiritProductById(pid), stored));
+      return { lineId: wstLineId(), productId: pid, cases: displayQty ? String(displayQty) : '', singles: '' };
     }
     if (batch && batch.unit === 'units' && (l.singles == null || Number(l.singles) === 0)) {
       const split = splitCasesSingles((Number(l.qty) || 0) / ups, ups);
@@ -5435,7 +5497,7 @@
   }
 
   function wastageLineToDb(l) {
-    if (showInBottles(l.productId)) {
+    if (usesDecimalPrimaryUnit(l.productId)) {
       const stored = wstFormLineCases(l);
       const split = splitCasesSingles(stored, unitsPerCaseFor(l.productId));
       return { product_id: l.productId, qty: split.cases, singles: split.singles || 0 };
@@ -5845,9 +5907,8 @@
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const p = ep.product || {};
-        const spirit = showInBottles(pid);
-        // Spirits present every column in bottles; storage stays in cases.
-        const disp = (cases) => spirit ? round1(spiritBottlesFromCases(p, cases)) : round1(cases);
+        const decUnit = usesDecimalPrimaryUnit(pid);
+        const disp = (cases) => decUnit ? round1(casesToDisplayQty(p, cases)) : round1(cases);
         const invCases = ep.invoice_qty != null ? ep.invoice_qty : '';
         const dmgCases = ep.damaged_qty ?? 0;
         const inv = invCases === '' ? '' : disp(invCases);
@@ -5858,8 +5919,8 @@
         const variance = disp(countedInCases - (Number(ep.qty_ordered) || 0));
         const vc = variance > 0 ? 'pos' : variance < 0 ? 'neg' : 'zero';
         const vt = (variance > 0 ? '+' : '') + variance;
-        const unitTitle = spirit ? 'In bottles' : 'In cases';
-        html += '<tr' + (spirit ? ' data-spirit="1"' : '') + '>' +
+        const unitTitle = 'In ' + productStockUnitLabel(p, true);
+        html += '<tr' + (decUnit ? ' data-dec-unit="1"' : '') + '>' +
           '<td>' + escapeHtml(p.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(p.case_size || '—') + '</td>' +
           '<td style="font-weight:600" title="' + unitTitle + '">' + disp(ep.qty_ordered || 0) + '</td>' +
@@ -5880,11 +5941,10 @@
     if (!ep) return;
     const invEl = $('o-inv-' + productId);
     const dmgEl = $('o-dmg-' + productId);
-    const spirit = showInBottles(productId);
+    const decUnit = usesDecimalPrimaryUnit(productId);
     const p = ep.product || {};
-    // Inputs are bottles for spirits → convert to cases for storage & maths.
-    const toCases = (v) => spirit ? spiritCasesFromBottles(p, v) : v;
-    const disp = (cases) => spirit ? round1(spiritBottlesFromCases(p, cases)) : round1(cases);
+    const toCases = (v) => decUnit ? displayQtyToCases(p, v) : v;
+    const disp = (cases) => decUnit ? round1(casesToDisplayQty(p, cases)) : round1(cases);
     const dmgInput = dmgEl ? (parseFloat(dmgEl.value) || 0) : 0;
     const dmgCases = toCases(dmgInput);
     const countedInCases = _openingCountedIn[productId] || 0;
@@ -5915,9 +5975,9 @@
       const rows = eps.map((ep) => {
         const invEl = $('o-inv-' + ep.product_id);
         const dmgEl = $('o-dmg-' + ep.product_id);
-        const spirit = showInBottles(ep.product_id);
+        const decUnit = usesDecimalPrimaryUnit(ep.product_id);
         const p = ep.product || {};
-        const toCases = (v) => spirit ? spiritCasesFromBottles(p, v) : v;
+        const toCases = (v) => decUnit ? displayQtyToCases(p, v) : v;
         const patch = {
           event_id: _currentEvent.id,
           product_id: ep.product_id,
@@ -6191,7 +6251,7 @@
         const allocated = distAllocatedToBars(pid, bars);
         const lta = round1(opening - allocated);
         const ltaClass = lta < 0 ? 'lta-over' : lta === 0 ? 'lta-neutral' : 'lta-ok';
-        const boneStock = boneYardAvailable(pid, bars, openingByPid);
+        const boneStock = goodsInDisplay(pid, bars, openingByPid);
         const boneNeg = boneStock < 0 ? ';color:var(--danger)' : '';
         html += '<tr>' +
           '<td style="white-space:nowrap">' + escapeHtml(ep.product.name) + '</td>' +
@@ -6372,12 +6432,31 @@
     return barStockAvailable(barId, pid);
   }
 
+  // Total on site from the ledger (deliveries, transfers, wastage, allocations).
+  // Ignores physical counts; Bone Yard + bars always sums to this when every
+  // column uses distribution-based figures.
+  function siteStockLedgerTotal(pid, bars, openingByPid) {
+    const bone = boneYardAvailable(pid, bars, openingByPid);
+    const inBars = bars.reduce((n, b) => {
+      if (!barServesProduct(b.id, pid)) return n;
+      return n + barStockAvailable(b.id, pid);
+    }, 0);
+    return round1(bone + inBars);
+  }
+
   // Bone Yard / goods-in column: prefer a physical count at the Bone Yard bar.
+  // When any bar has a physical count, derive Bone Yard as ledger total minus
+  // bar counts — otherwise allocation-based Bone Yard + physical bars double-counts.
   function goodsInDisplay(pid, bars, openingByPid) {
     const by = boneYardBar();
     if (by) {
       const physical = latestPhysicalCount(by.id, pid);
       if (physical != null) return physical;
+    }
+    const servingBars = bars.filter((b) => barServesProduct(b.id, pid));
+    if (servingBars.some((b) => latestPhysicalCount(b.id, pid) != null)) {
+      const barSum = servingBars.reduce((n, b) => n + (barLevelDisplay(b.id, pid) || 0), 0);
+      return round1(siteStockLedgerTotal(pid, bars, openingByPid) - barSum);
     }
     return boneYardAvailable(pid, bars, openingByPid);
   }
@@ -6452,12 +6531,13 @@
       html += '<tr class="category-row"><td colspan="' + totalCols + '">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].forEach((r) => {
         const goodsNeg = r.goodsIn < 0 ? ';color:var(--danger)' : '';
-        const spirit = showInBottles(r.pid);
-        const sp = spirit ? spiritProductById(r.pid) : null;
-        const disp = (cases) => spirit ? round1(spiritBottlesFromCases(sp, cases)) : round1(cases);
-        const unitTitle = spirit ? 'bottles' : 'cases';
-        html += '<tr' + (spirit ? ' title="In bottles"' : '') + '>' +
-          '<td>' + escapeHtml(r.name) + (spirit ? ' <span style="font-size:10px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">btl</span>' : '') + '</td>' +
+        const decUnit = usesDecimalPrimaryUnit(r.pid);
+        const sp = decUnit ? spiritProductById(r.pid) : null;
+        const disp = (cases) => decUnit ? round1(casesToDisplayQty(sp, cases)) : round1(cases);
+        const unitTitle = productStockUnitLabel(sp || {}, true);
+        const unitBadge = decUnit ? ' <span style="font-size:10px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">' + escapeHtml(stockQtyDisplay(r.pid, 0).short) + '</span>' : '';
+        html += '<tr' + (decUnit ? ' title="In ' + escapeHtml(unitTitle) + '"' : '') + '>' +
+          '<td>' + escapeHtml(r.name) + unitBadge + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.case_size || '—') + '</td>' +
           '<td>' + catBadge(r.cat) + '</td>' +
           r.barQtys.map((q, i) => {
@@ -6621,23 +6701,25 @@
         const pid = ep.product_id;
         const line = lines.find((l) => l.product_id === pid && l.bar_id === barId);
         const counted = !!(line && ((line.cases != null && line.cases !== 0) || (line.singles != null && line.singles !== 0)));
-        const spirit = showInBottles(pid);
-        // Spirits: collapse stored cases (+ any loose singles) into decimal bottles.
+        const decUnit = usesDecimalPrimaryUnit(pid);
+        // Decimal-primary products: collapse stored cases (+ singles) into display units.
         let casesCellVal = (line && line.cases != null ? line.cases : '');
-        if (spirit) {
+        if (decUnit) {
           const ups = unitsPerCaseFor(pid) || 1;
           const totCases = line ? ((Number(line.cases) || 0) + (Number(line.singles) || 0) / ups) : 0;
-          casesCellVal = totCases ? round1(spiritBottlesFromCases(spiritProductById(pid), totCases)) : '';
+          casesCellVal = totCases ? round1(casesToDisplayQty(spiritProductById(pid), totCases)) : '';
         }
-        const singlesCell = spirit
-          ? '<td class="cnt-num" style="color:var(--muted-foreground)" title="Spirits are counted as decimal bottles in the Cases/Bottles column">—</td>'
+        const pUnit = spiritProductById(pid);
+        const primaryLabel = productStockUnitLabel(pUnit, true);
+        const singlesCell = decUnit
+          ? '<td class="cnt-num" style="color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
           : '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>';
-        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (spirit ? ' data-spirit="1"' : '') + (counted ? ' class="counted"' : '') + '>' +
+        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (decUnit ? ' data-dec-unit="1"' : '') + (counted ? ' class="counted"' : '') + '>' +
           '<td class="cnt-status" id="cnt-status-' + pid + '">' + (counted ? '<i class="ph ph-check-circle"></i>' : '') + '</td>' +
           '<td>' + escapeHtml(ep.product.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + (barId ? escapeHtml(barNameById(barId)) : '—') + '</td>' +
-          '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + casesCellVal + '" placeholder="' + (spirit ? 'bottles' : '0') + '" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
+          '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + casesCellVal + '" placeholder="' + (decUnit ? primaryLabel : '0') + '" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
           singlesCell +
         '</tr>';
       });
@@ -6661,10 +6743,9 @@
       tr.classList.toggle('counted', isCounted);
       const status = tr.querySelector('.cnt-status');
       if (status) status.innerHTML = isCounted ? '<i class="ph ph-check-circle"></i>' : '';
-      // For spirits the Cases/Bottles cell holds bottles; convert to cases so the
-      // mixed "Cases" stat stays in cases. Singles stat excludes spirits.
-      if (tr.getAttribute('data-spirit')) {
-        cases += spiritCasesFromBottles(spiritProductById(tr.getAttribute('data-pid')), c);
+      // Decimal-primary rows hold display units in the first column; convert to cases.
+      if (tr.getAttribute('data-dec-unit')) {
+        cases += displayQtyToCases(spiritProductById(tr.getAttribute('data-pid')), c);
       } else {
         cases += c; singles += s;
       }
@@ -6718,9 +6799,9 @@
     const casesEl = $('cnt-cases-' + pid);
     const singlesEl = $('cnt-singles-' + pid);
     let cases, singles;
-    if (showInBottles(pid)) {
-      // Spirits: the cases cell holds decimal bottles → store as fractional cases.
-      cases = roundN(spiritCasesFromBottles(spiritProductById(pid), parseFloat(casesEl && casesEl.value) || 0), 4);
+    if (usesDecimalPrimaryUnit(pid)) {
+      // Decimal-primary: the first column holds display units → store as fractional cases.
+      cases = roundN(displayQtyToCases(spiritProductById(pid), parseFloat(casesEl && casesEl.value) || 0), 4);
       singles = 0;
     } else {
       cases = parseFloat(casesEl && casesEl.value) || 0;
@@ -7624,8 +7705,8 @@
     const casesKey = opts.casesKey || 'cases';
     const singlesKey = opts.singlesKey || 'singles';
     const casesVal = line[casesKey] ?? line.qty;
-    if (productId && showInBottles(productId)) {
-      return spiritCasesFromBottles(spiritProductById(productId), casesVal);
+    if (productId && usesDecimalPrimaryUnit(productId)) {
+      return displayQtyToCases(spiritProductById(productId), casesVal);
     }
     return combineCasesSingles(casesVal, line[singlesKey], unitsPerCaseFor(productId));
   }
@@ -7638,17 +7719,19 @@
     const casesVal = line[casesKey] ?? '';
     const singlesVal = line[singlesKey] ?? '';
     const inputType = opts.inputType || 'number';
-    const spirit = productId && showInBottles(productId);
+    const decUnit = productId && usesDecimalPrimaryUnit(productId);
+    const p = productId ? spiritProductById(productId) : null;
     const ups = productId ? unitsPerCaseFor(productId) : 1;
+    const primaryLabel = p ? productStockUnitLabel(p, true) : 'units';
     const casesType = inputType === 'text' ? ' type="text"' : ' type="number" step="any" min="0"';
     const singlesType = inputType === 'text' ? ' type="text"' : ' type="number" step="1" min="0"';
     const casesCell = '<td' + (opts.casesTdStyle ? ' style="' + opts.casesTdStyle + '"' : '') + '><input' + casesType +
-      ' value="' + escapeHtml(casesVal) + '" placeholder="' + (spirit ? 'bottles' : '0') + '"' +
+      ' value="' + escapeHtml(casesVal) + '" placeholder="' + (decUnit ? primaryLabel : '0') + '"' +
       (opts.casesStyle ? ' style="' + opts.casesStyle + '"' : '') +
       (opts.onCasesChange ? ' onchange="' + opts.onCasesChange + '"' : '') +
       (opts.onCasesBlur ? ' onblur="' + opts.onCasesBlur + '"' : '') + '></td>';
-    const singlesCell = spirit
-      ? '<td style="text-align:center;color:var(--muted-foreground)" title="Spirits — enter decimal bottles in the Cases / Bottles column">—</td>'
+    const singlesCell = decUnit
+      ? '<td style="text-align:center;color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
       : '<td' + (opts.singlesTdStyle ? ' style="' + opts.singlesTdStyle + '"' : '') + '><input' + singlesType +
         ' value="' + escapeHtml(singlesVal) + '" placeholder="0"' +
         (opts.singlesStyle ? ' style="' + opts.singlesStyle + '"' : '') +
@@ -7661,7 +7744,7 @@
 
   // Human label for a saved qty + singles pair, e.g. "3 cases · 5 singles".
   function stockLineQtyLabel(productId, qty, singles) {
-    if (productId && showInBottles(productId)) {
+    if (productId && usesDecimalPrimaryUnit(productId)) {
       const stored = combineCasesSingles(qty, singles, unitsPerCaseFor(productId));
       const d = deliveryDisplayQty(productId, stored);
       return d.n + ' ' + d.unit;
@@ -8468,19 +8551,21 @@
   }
 
   function syncReconDrawerReturnFields(pid) {
-    const spirit = showInBottles(pid);
+    const p = spiritProductById(pid);
+    const u = productStockUnit(p);
+    const decUnit = u === 'bottle' || u === 'unit';
     const casesH = $('rcn-return-cases-h');
     const singlesH = $('rcn-return-singles-h');
     const priceH = $('rcn-return-price-h');
-    if (casesH) casesH.textContent = spirit ? 'Bottles' : 'Cases';
-    if (singlesH) singlesH.textContent = spirit ? '—' : 'Singles';
-    if (priceH) priceH.textContent = spirit ? '£/case' : '£/case';
+    if (casesH) casesH.textContent = decUnit ? (u === 'bottle' ? 'Bottles' : 'Units') : 'Cases';
+    if (singlesH) singlesH.textContent = decUnit ? '—' : 'Singles';
+    if (priceH) priceH.textContent = '£/case';
   }
 
   function syncReconDrawerPriceFields(ep) {
     const p = ep && ep.product;
-    const spirit = !!(p && isSpiritBottle(p));
-    const unitLabel = spirit ? 'Bottle' : 'Unit';
+    const u = productStockUnit(p);
+    const unitLabel = u === 'bottle' ? 'Bottle' : u === 'unit' ? 'Unit' : 'Unit';
     const labelEl = $('rcn-unit-price-label');
     if (labelEl) labelEl.textContent = unitLabel + ' price override (£)';
     const hint = $('rcn-unit-price-hint');
@@ -8568,8 +8653,8 @@
 
   // Stored supplier-case total for a return line (UI may show bottles for spirits).
   function rcnReturnLineStoredCases(line, pid) {
-    if (showInBottles(pid)) {
-      return spiritCasesFromBottles(spiritProductById(pid), line.cases);
+    if (usesDecimalPrimaryUnit(pid)) {
+      return displayQtyToCases(spiritProductById(pid), line.cases);
     }
     const ups = unitsPerCaseFor(pid) || 1;
     return combineCasesSingles(line.cases, line.singles, ups);
@@ -8578,17 +8663,17 @@
   function rcnReturnLineDisplayFromSaved(r, pid) {
     const ups = unitsPerCaseFor(pid) || 1;
     const stored = combineCasesSingles(r.qty, r.singles, ups);
-    if (showInBottles(pid)) {
-      const bottles = round1(spiritBottlesFromCases(spiritProductById(pid), stored));
-      return { cases: bottles || '', singles: '' };
+    if (usesDecimalPrimaryUnit(pid)) {
+      const displayQty = round1(casesToDisplayQty(spiritProductById(pid), stored));
+      return { cases: displayQty || '', singles: '' };
     }
     const split = splitCasesSingles(stored, ups);
     return { cases: split.cases || '', singles: split.singles || '' };
   }
 
   function rcnReturnLineToDbQty(line, pid) {
-    if (showInBottles(pid)) {
-      const stored = spiritCasesFromBottles(spiritProductById(pid), line.cases);
+    if (usesDecimalPrimaryUnit(pid)) {
+      const stored = displayQtyToCases(spiritProductById(pid), line.cases);
       const split = splitCasesSingles(stored, unitsPerCaseFor(pid) || 1);
       return { qty: split.cases, singles: split.singles || 0 };
     }
@@ -8654,7 +8739,9 @@
       return;
     }
     body.innerHTML = _rcnReturnLines.map((line) => {
-      const spirit = showInBottles(pid);
+      const p = spiritProductById(pid);
+      const decUnit = usesDecimalPrimaryUnit(pid);
+      const primaryLabel = productStockUnitLabel(p, true);
       const draft = reconDrawerDraft();
       const price = rcnReturnLinePrice(line, pid, draft);
       const lineCases = rcnReturnLineStoredCases(line, pid);
@@ -8663,12 +8750,12 @@
       const opts = '<option value="">— Supplier —</option>' + options.map((o) =>
         '<option value="' + o.id + '"' + (line.supplierId === o.id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>'
       ).join('');
-      const singlesCell = spirit
-        ? '<td style="text-align:center;color:var(--muted-foreground)" title="Spirits — enter bottles in the Bottles column">—</td>'
+      const singlesCell = decUnit
+        ? '<td style="text-align:center;color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
         : '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
       return '<tr>' +
         '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
-        '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="' + (spirit ? 'bottles' : '0') + '" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>' +
+        '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="' + (decUnit ? primaryLabel : '0') + '" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>' +
         singlesCell +
         '<td><input type="number" step="0.01" min="0" value="' + escapeHtml(line.casePrice ?? '') + '" placeholder="Auto" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'casePrice\',this.value)"></td>' +
         '<td class="num">' + (lineVal != null ? money(lineVal) : '—') + '</td>' +
@@ -8864,7 +8951,7 @@
     r.returnValue = returnValue;
     const p = ep.product;
     const unitP = reconUnitPrice(ep, reconDrawerDraft());
-    const unitLabel = p && isSpiritBottle(p) ? 'Bottle' : 'Unit';
+    const unitLabel = p ? (productStockUnit(p) === 'bottle' ? 'Bottle' : 'Unit') : 'Unit';
     $('rcn-preview').innerHTML =
       '<table><tbody>' +
         '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
@@ -9048,7 +9135,9 @@
   function reconItemCell(name, caseSize, noteHint) {
     const cs = caseSize
       ? '<span class="recon-item-case">' + escapeHtml(caseSize) + '</span>' : '';
-    return escapeHtml(name) + cs + (noteHint || '');
+    return '<span class="recon-item-line" title="' + escapeHtml(name) + '">' +
+      '<span class="recon-item-name">' + escapeHtml(name) + '</span>' + cs + '</span>' +
+      (noteHint || '');
   }
 
   function renderRecon() {
@@ -9118,7 +9207,7 @@
         const statusClass = r.reconStatus ? (' recon-row-status-' + r.reconStatus) : '';
         html += '<tr class="recon-row' + statusClass + (_reconShowHidden ? ' recon-row-hidden' : '') + (r.investigate ? ' row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
           reconMarkerCell(r.pid, r.reconStatus) +
-          '<td data-recon-col="item" style="font-weight:500;white-space:nowrap">' + reconItemCell(r.p.name, caseSize, noteHint) + '</td>' +
+          '<td data-recon-col="item">' + reconItemCell(r.p.name, caseSize, noteHint) + '</td>' +
           '<td data-recon-col="abv">' + escapeHtml(abv) + '</td>' +
           '<td data-recon-col="case_price">' + reconMoneyCell(r.casePrice) + '</td>' +
           '<td data-recon-col="supplier">' + escapeHtml(r.supplierName) + '</td>' +

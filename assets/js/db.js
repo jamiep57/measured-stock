@@ -331,6 +331,7 @@
           sku: input.sku || null,
           case_size: input.case_size || null,
           units_per_case: numOrZero(input.units_per_case) || 1,
+          stock_unit: input.stock_unit || null,
           unit_price: numOrNull(input.unit_price),
           case_price: numOrNull(input.case_price),
         };
