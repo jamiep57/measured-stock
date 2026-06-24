@@ -532,8 +532,13 @@
       position:static; text-align:center; white-space:normal; vertical-align:bottom;
       line-height:1.25; font-size:11px; hyphens:auto;
     }
+    #reconTable thead th[data-recon-col="units_per_case"] {
+      width:2.6rem; max-width:2.6rem; padding:8px 3px;
+    }
+    #reconTable tbody td[data-recon-col="units_per_case"] {
+      width:2.6rem; max-width:2.6rem; padding:9px 3px; text-align:center;
+    }
     #reconTable thead th[data-recon-col="abv"],
-    #reconTable thead th[data-recon-col="units_per_case"],
     #reconTable thead th[data-recon-col="delivered"],
     #reconTable thead th[data-recon-col="invoiced"],
     #reconTable thead th[data-recon-col="on_hand"],
@@ -545,7 +550,6 @@
       max-width:3.75rem; padding-left:6px; padding-right:6px;
     }
     #reconTable tbody td[data-recon-col="abv"],
-    #reconTable tbody td[data-recon-col="units_per_case"],
     #reconTable tbody td[data-recon-col="delivered"],
     #reconTable tbody td[data-recon-col="invoiced"],
     #reconTable tbody td[data-recon-col="on_hand"],
@@ -558,7 +562,7 @@
     }
     #reconTable thead th:first-child, #reconTable thead th:nth-child(2), #reconTable thead th:nth-child(3) { text-align:left; }
     #reconTable tbody td { text-align:center; vertical-align:middle; font-variant-numeric:tabular-nums; font-size:12px; }
-    #reconTable tbody td:first-child, #reconTable tbody td:nth-child(2), #reconTable tbody td:nth-child(3), #reconTable tbody td:nth-child(6) { text-align:left; }
+    #reconTable tbody td:first-child, #reconTable tbody td:nth-child(2), #reconTable tbody td:nth-child(3) { text-align:left; }
     #reconTable tbody tr.category-row td { text-align:left; font-size:13px; }
     #reconTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
     #reconTable tbody tr.row-investigate td:nth-child(2) { box-shadow:inset 3px 0 0 var(--warning); }
@@ -1560,7 +1564,7 @@
           <th data-recon-col="abv">ABV</th>
           <th data-recon-col="case_price">Case price</th>
           <th data-recon-col="supplier">Supplier</th>
-          <th data-recon-col="units_per_case">Units per case</th>
+          <th data-recon-col="units_per_case">Units<br>per case</th>
           <th data-recon-col="delivered">Delivered</th>
           <th data-recon-col="invoiced">Invoiced</th>
           <th data-recon-col="on_hand">On hand</th>
