@@ -2606,8 +2606,27 @@
     warehouse: 'Warehouse', settings: 'Settings', bugs: 'Bug & Feature Reports',
   };
 
-  function showPanel(name) {
-    try { localStorage.setItem('v2_panel', name); } catch (e) {}
+  function panelFromUrl() {
+    const hash = (location.hash || '').replace(/^#/, '').trim();
+    if (hash && Object.prototype.hasOwnProperty.call(PANEL_TITLES, hash)) return hash;
+    const q = new URLSearchParams(location.search).get('page');
+    if (q && Object.prototype.hasOwnProperty.call(PANEL_TITLES, q)) return q;
+    return 'library';
+  }
+
+  function syncPanelUrl(name) {
+    const hash = '#' + name;
+    if (location.hash === hash) return;
+    try {
+      history.replaceState(null, '', location.pathname + location.search + hash);
+    } catch (e) {
+      location.hash = name;
+    }
+  }
+
+  function showPanel(name, opts) {
+    if (!Object.prototype.hasOwnProperty.call(PANEL_TITLES, name)) name = 'library';
+    if (!(opts && opts.skipUrl)) syncPanelUrl(name);
     document.querySelectorAll('.nav-item[data-panel]').forEach((b) =>
       b.classList.toggle('active', b.dataset.panel === name));
     document.querySelectorAll('.sidebar-event-cog[data-panel]').forEach((b) =>
@@ -2643,6 +2662,10 @@
     if (name === 'settings') loadSettings();
     if (name === 'bugs') loadBugs();
   }
+
+  window.addEventListener('hashchange', () => {
+    showPanel(panelFromUrl(), { skipUrl: true });
+  });
 
   // ---------- in-page search ----------
   // Filters the rows/items on the currently visible panel by free text.
@@ -6892,7 +6915,7 @@
   }
 
   function removeTransferLine(lineId) {
-    if (_tfComboLine === lineId) closeTransferCombo();
+    ProductPicker.close();
     _xferLines = _xferLines.filter((l) => l.lineId !== lineId);
     renderTransferLines();
   }
@@ -6950,18 +6973,6 @@
   }
 
   // ---- Searchable product picker for transfer lines ----------------------
-  let _tfComboLine = null;
-  let _tfComboItems = [];
-  let _tfComboHi = -1;
-  let _tfComboWired = false;
-
-  function transferLineProductName(pid) {
-    if (!pid) return '';
-    const opt = transferSourceProductOptions().find((o) => o.id === pid);
-    if (opt) return opt.name;
-    return productNameById(pid);
-  }
-
   function transferProductForOption(o) {
     const ep = ((_currentEvent && _currentEvent.event_products) || []).find((e) => e.product_id === o.id);
     if (ep && ep.product) return ep.product;
@@ -6969,119 +6980,34 @@
     return p || { id: o.id, name: o.name, case_size: o.case_size || '' };
   }
 
-  function wireTransferCombo() {
-    if (_tfComboWired) return;
-    _tfComboWired = true;
-    document.addEventListener('mousedown', (e) => {
-      if (_tfComboLine == null) return;
-      const menu = $('tf-combo-menu');
-      const input = document.getElementById('tf-combo-input-' + _tfComboLine);
-      if ((menu && menu.contains(e.target)) || (input && input === e.target)) return;
-      closeTransferCombo();
-    });
-    const reposition = () => { if (_tfComboLine != null) positionTransferCombo(_tfComboLine); };
-    window.addEventListener('scroll', reposition, true);
-    window.addEventListener('resize', reposition);
-  }
-
-  function positionTransferCombo(lineId) {
-    const input = document.getElementById('tf-combo-input-' + lineId);
-    const menu = $('tf-combo-menu');
-    if (!input || !menu) return;
-    const r = input.getBoundingClientRect();
-    menu.style.left = r.left + 'px';
-    menu.style.top = (r.bottom + 4) + 'px';
-    menu.style.width = r.width + 'px';
-  }
-
-  function openTransferCombo(lineId) {
-    wireTransferCombo();
-    _tfComboLine = lineId;
-    _tfComboHi = -1;
-    renderTransferComboMenu(lineId);
-    positionTransferCombo(lineId);
-    $('tf-combo-menu').classList.add('open');
-  }
-
-  function closeTransferCombo() {
-    const lineId = _tfComboLine;
-    _tfComboLine = null;
-    _tfComboItems = [];
-    _tfComboHi = -1;
-    const menu = $('tf-combo-menu');
-    if (menu) { menu.classList.remove('open'); menu.innerHTML = ''; }
-    if (lineId != null) {
+  ProductPicker.register('transfer', {
+    inputId: (lineId) => 'tf-combo-input-' + lineId,
+    buildItems(lineId) {
+      const input = document.getElementById('tf-combo-input-' + lineId);
+      const q = (input && input.value || '').trim();
+      const items = transferSourceProductOptions()
+        .map((o) => ({ id: o.id, name: o.name, case_size: o.case_size || '', p: transferProductForOption(o) }))
+        .filter((it) => ProductPicker.matches(it.p, q))
+        .sort((a, b) => a.name.localeCompare(b.name) || (a.case_size || '').localeCompare(b.case_size || ''));
+      return { items };
+    },
+    onPick(lineId, it) {
+      const line = _xferLines.find((l) => l.lineId === lineId);
+      if (!line) return;
+      line.productId = it.id;
+      renderTransferLines();
+    },
+    onClose(lineId) {
       const input = document.getElementById('tf-combo-input-' + lineId);
       const line = _xferLines.find((l) => l.lineId === lineId);
-      if (input && line) input.value = transferLineProductName(line.productId);
-    }
-  }
+      if (input && line) input.value = productPickerDisplayById(line.productId);
+    },
+  });
 
-  function filterTransferCombo(lineId) {
-    if (_tfComboLine !== lineId) { openTransferCombo(lineId); return; }
-    _tfComboHi = -1;
-    renderTransferComboMenu(lineId);
-  }
-
-  function transferComboCandidates(lineId) {
-    const input = document.getElementById('tf-combo-input-' + lineId);
-    const q = (input && input.value || '').trim().toLowerCase();
-    const matches = (p) => {
-      if (!q) return true;
-      const hay = [p.name, p.sku, p.case_size, p.supplier && p.supplier.name, p.category && p.category.name]
-        .filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
-    };
-    return transferSourceProductOptions()
-      .map((o) => ({ id: o.id, name: o.name, case_size: o.case_size || '', p: transferProductForOption(o) }))
-      .filter((it) => matches(it.p))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  function renderTransferComboMenu(lineId) {
-    const menu = $('tf-combo-menu');
-    if (!menu) return;
-    _tfComboItems = transferComboCandidates(lineId);
-    if (!_tfComboItems.length) {
-      menu.innerHTML = '<div class="df-combo-empty">No products match your search.</div>';
-      return;
-    }
-    menu.innerHTML = _tfComboItems.map((it, idx) => {
-      const meta = it.case_size ? '<span class="ci-meta">' + escapeHtml(it.case_size) + '</span>' : '';
-      return '<div class="df-combo-item' + (idx === _tfComboHi ? ' active' : '') + '" role="option"' +
-        ' onmousedown="event.preventDefault();transferComboSelect(\'' + lineId + '\',\'' + it.id + '\')">' +
-        '<span class="ci-name">' + escapeHtml(it.name) + '</span>' + meta +
-      '</div>';
-    }).join('');
-  }
-
-  function transferComboKey(e, lineId) {
-    const menuOpen = _tfComboLine === lineId && $('tf-combo-menu') && $('tf-combo-menu').classList.contains('open');
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuOpen) {
-      e.preventDefault();
-      if (!_tfComboItems.length) return;
-      const dir = e.key === 'ArrowDown' ? 1 : -1;
-      _tfComboHi = (_tfComboHi + dir + _tfComboItems.length) % _tfComboItems.length;
-      renderTransferComboMenu(lineId);
-      const active = $('tf-combo-menu').querySelector('.df-combo-item.active');
-      if (active) active.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter' && menuOpen) {
-      if (_tfComboHi >= 0 && _tfComboItems[_tfComboHi]) {
-        e.preventDefault();
-        transferComboSelect(lineId, _tfComboItems[_tfComboHi].id);
-      }
-    } else if (e.key === 'Escape') {
-      if (_tfComboLine === lineId) { e.preventDefault(); closeTransferCombo(); }
-    }
-  }
-
-  function transferComboSelect(lineId, productId) {
-    const line = _xferLines.find((l) => l.lineId === lineId);
-    if (!line) return;
-    line.productId = productId;
-    closeTransferCombo();
-    renderTransferLines();
-  }
+  function openTransferCombo(lineId) { ProductPicker.open('transfer', lineId); }
+  function closeTransferCombo() { ProductPicker.close(); }
+  function filterTransferCombo(lineId) { ProductPicker.filter('transfer', lineId); }
+  function transferComboKey(e, lineId) { ProductPicker.keydown(e, 'transfer', lineId); }
 
   async function onTransferSourceChange() {
     closeTransferCombo();
@@ -7145,15 +7071,6 @@
         '<div style="padding-top:4px;border-top:1px solid var(--border)">' + (itemRows || '<span style="color:var(--muted-foreground);font-size:12px">No items</span>') + '</div>' +
       '</div>';
     }).join('');
-  }
-
-  function productInfoById(pid) {
-    const eps = (_currentEvent && _currentEvent.event_products) || [];
-    const ep = eps.find((x) => x.product_id === pid);
-    if (ep && ep.product) return { name: ep.product.name || '', size: ep.product.case_size || '' };
-    const p = _products.find((x) => x.id === pid);
-    if (p) return { name: p.name || '', size: p.case_size || '' };
-    return { name: productNameById(pid), size: '' };
   }
 
   async function downloadTransferNote(transferId) {
@@ -10532,9 +10449,7 @@
       '<input type="text" class="rf-product df-combo-input" id="rf-prod-' + rowId + '" autocomplete="off"' +
         ' placeholder="Search products\u2026"' +
         ' value="' + (productName != null ? escapeHtml(productName) : '') + '"' +
-        ' onfocus="openRecipeCombo(\'' + rowId + '\')"' +
-        ' oninput="filterRecipeCombo(\'' + rowId + '\')"' +
-        ' onkeydown="recipeComboKey(event,\'' + rowId + '\')">' +
+        ProductPicker.inputAttrs('recipe', rowId) + '>' +
       '<div class="rf-qty-cell">' +
         '<input type="text" class="rf-qty" placeholder="e.g. 1/12" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
         '<div class="shot-btns">' +
@@ -10591,10 +10506,29 @@
     qtyEl.value = String(n);
   }
 
-  function recipeProductByName(name) {
-    const n = String(name || '').trim().toLowerCase();
-    if (!n) return null;
-    return (_products || []).find((p) => (p.name || '').trim().toLowerCase() === n) || null;
+  function recipeProductByName(nameOrLabel) {
+    const raw = String(nameOrLabel || '').trim();
+    if (!raw) return null;
+    const nLower = raw.toLowerCase();
+    const exact = (_products || []).find((p) =>
+      ProductPicker.label(p.name, p.case_size).toLowerCase() === nLower);
+    if (exact) return exact;
+    const dash = raw.indexOf(' \u2014 ');
+    if (dash > 0) {
+      const name = raw.slice(0, dash).trim().toLowerCase();
+      const cs = raw.slice(dash + 3).trim().toLowerCase();
+      const byPack = (_products || []).find((p) =>
+        (p.name || '').trim().toLowerCase() === name &&
+        (p.case_size || '').trim().toLowerCase() === cs);
+      if (byPack) return byPack;
+    }
+    const byName = (_products || []).filter((p) => (p.name || '').trim().toLowerCase() === nLower);
+    return byName.length === 1 ? byName[0] : (byName[0] || null);
+  }
+
+  function recipeIngredientDisplayName(storedName) {
+    const p = recipeProductByName(storedName);
+    return p ? ProductPicker.label(p.name, p.case_size) : (storedName || '');
   }
 
   // +Single (n=1) / +Double (n=2): add a 25ml serving to a recipe ingredient
@@ -10616,123 +10550,31 @@
   }
 
   // ---- Searchable product picker for recipe ingredients ------------------
-  // Each ingredient row uses a text input + a shared #rf-combo-menu dropdown,
-  // mirroring the delivery-line combo. The selected product name is written
-  // straight into the input, which collectRecipeIngredients() reads.
-  let _rcRow = null;     // rowId whose dropdown is currently open
-  let _rcItems = [];     // filtered product list (for keyboard nav)
-  let _rcHi = -1;        // highlighted index within _rcItems
-  let _rcWired = false;  // document listeners attached once
-
-  function wireRecipeCombo() {
-    if (_rcWired) return;
-    _rcWired = true;
-    document.addEventListener('mousedown', (e) => {
-      if (_rcRow == null) return;
-      const menu = $('rf-combo-menu');
-      const input = document.getElementById('rf-prod-' + _rcRow);
-      if ((menu && menu.contains(e.target)) || (input && input === e.target)) return;
-      closeRecipeCombo();
-    });
-    const reposition = () => { if (_rcRow != null) positionRecipeCombo(_rcRow); };
-    window.addEventListener('scroll', reposition, true);
-    window.addEventListener('resize', reposition);
-  }
-
-  function positionRecipeCombo(rowId) {
-    const input = document.getElementById('rf-prod-' + rowId);
-    const menu = $('rf-combo-menu');
-    if (!input || !menu) return;
-    const r = input.getBoundingClientRect();
-    menu.style.left = r.left + 'px';
-    menu.style.top = (r.bottom + 4) + 'px';
-    menu.style.width = r.width + 'px';
-  }
-
-  function openRecipeCombo(rowId) {
-    wireRecipeCombo();
-    _rcRow = rowId;
-    _rcHi = -1;
-    renderRecipeComboMenu(rowId);
-    positionRecipeCombo(rowId);
-    $('rf-combo-menu').classList.add('open');
-  }
-
-  function closeRecipeCombo() {
-    _rcRow = null;
-    _rcItems = [];
-    _rcHi = -1;
-    const menu = $('rf-combo-menu');
-    if (menu) { menu.classList.remove('open'); menu.innerHTML = ''; }
-  }
-
-  function filterRecipeCombo(rowId) {
-    if (_rcRow !== rowId) { openRecipeCombo(rowId); return; }
-    _rcHi = -1;
-    renderRecipeComboMenu(rowId);
-  }
-
-  function recipeComboCandidates(rowId) {
-    const input = document.getElementById('rf-prod-' + rowId);
-    const q = (input && input.value || '').trim().toLowerCase();
-    const matches = (p) => {
-      if (!q) return true;
-      const hay = [p.name, p.sku, p.case_size, p.supplier && p.supplier.name, p.category && p.category.name]
-        .filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
-    };
-    return (_products || [])
-      .filter((p) => p.name && matches(p))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }
-
-  function renderRecipeComboMenu(rowId) {
-    const menu = $('rf-combo-menu');
-    if (!menu) return;
-    _rcItems = recipeComboCandidates(rowId);
-    if (!_rcItems.length) {
-      menu.innerHTML = '<div class="df-combo-empty">No products match your search.</div>';
-      return;
-    }
-    menu.innerHTML = _rcItems.map((p, idx) => {
-      const meta = p.case_size ? '<span class="ci-meta">' + escapeHtml(p.case_size) + '</span>' : '';
-      return '<div class="df-combo-item' + (idx === _rcHi ? ' active' : '') + '" role="option"' +
-        ' onmousedown="event.preventDefault();recipeComboSelect(\'' + rowId + '\',' + idx + ')">' +
-        '<span class="ci-name">' + escapeHtml(p.name) + '</span>' + meta +
-      '</div>';
-    }).join('');
-  }
-
-  function recipeComboKey(e, rowId) {
-    const menuOpen = _rcRow === rowId && $('rf-combo-menu') && $('rf-combo-menu').classList.contains('open');
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuOpen) {
-      e.preventDefault();
-      if (!_rcItems.length) return;
-      const dir = e.key === 'ArrowDown' ? 1 : -1;
-      _rcHi = (_rcHi + dir + _rcItems.length) % _rcItems.length;
-      renderRecipeComboMenu(rowId);
-      const active = $('rf-combo-menu').querySelector('.df-combo-item.active');
-      if (active) active.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter' && menuOpen) {
-      if (_rcHi >= 0 && _rcItems[_rcHi]) {
-        e.preventDefault();
-        recipeComboSelect(rowId, _rcHi);
+  ProductPicker.register('recipe', {
+    inputId: (rowId) => 'rf-prod-' + rowId,
+    buildItems(rowId) {
+      const input = document.getElementById('rf-prod-' + rowId);
+      const q = (input && input.value || '').trim();
+      const items = (_products || [])
+        .filter((p) => p.name && ProductPicker.matches(p, q))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || '') || (a.case_size || '').localeCompare(b.case_size || ''))
+        .map((p) => ({ id: p.id, name: p.name, case_size: p.case_size || '', p }));
+      return { items };
+    },
+    onPick(rowId, it) {
+      const input = document.getElementById('rf-prod-' + rowId);
+      if (it && input) input.value = ProductPicker.label(it.name, it.case_size);
+      if (input && input.parentElement) {
+        const qty = input.parentElement.querySelector('.rf-qty');
+        if (qty) qty.focus();
       }
-    } else if (e.key === 'Escape') {
-      if (_rcRow === rowId) { e.preventDefault(); closeRecipeCombo(); }
-    }
-  }
+    },
+  });
 
-  function recipeComboSelect(rowId, idx) {
-    const p = _rcItems[idx];
-    const input = document.getElementById('rf-prod-' + rowId);
-    if (p && input) input.value = p.name;
-    closeRecipeCombo();
-    if (input && input.parentElement) {
-      const qty = input.parentElement.querySelector('.rf-qty');
-      if (qty) qty.focus();
-    }
-  }
+  function openRecipeCombo(rowId) { ProductPicker.open('recipe', rowId); }
+  function closeRecipeCombo() { ProductPicker.close(); }
+  function filterRecipeCombo(rowId) { ProductPicker.filter('recipe', rowId); }
+  function recipeComboKey(e, rowId) { ProductPicker.keydown(e, 'recipe', rowId); }
 
   function openRecipeModal(name, variation, recipeId, kind) {
     _editingRecipeId = recipeId || null;
@@ -10755,7 +10597,7 @@
       recipe.ingredients.slice().sort((a, b) => (a.position || 0) - (b.position || 0))
         .forEach((ig) => {
           if (ig.pool_name) addRecipePoolRow(ig.pool_name, ig.qty);
-          else addRecipeIngredientRow(ig.product_name, ig.qty);
+          else addRecipeIngredientRow(recipeIngredientDisplayName(ig.product_name), ig.qty);
         });
     } else {
       addRecipeIngredientRow();
@@ -11046,10 +10888,7 @@
     }
 
     function isComboMenuOpen() {
-      return ['df-combo-menu', 'tf-combo-menu', 'rf-combo-menu'].some((id) => {
-        const m = $(id);
-        return m && m.classList.contains('open');
-      });
+      return ProductPicker.isOpen();
     }
 
     function gridColumns(container) {
@@ -11220,6 +11059,7 @@
     wireEventDetailEditors();
     try { _activeWarehouseId = localStorage.getItem('v2_warehouse') || null; } catch (e) {}
     await Promise.all([loadLibrary(), loadEventList(), refreshWarehouses()]);
+    showPanel(panelFromUrl(), { skipUrl: !!location.hash });
     // Background: light fetch just to surface the open-reports dot in the nav.
     DB.bugs.list().then((rows) => { _bugs = rows || []; updateBugDot(); }).catch(() => {});
   })();
