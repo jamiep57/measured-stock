@@ -534,8 +534,8 @@
     #reconTable thead th {
       position:sticky; top:0; z-index:20; background:var(--secondary);
       text-align:center; white-space:normal; vertical-align:bottom;
-      line-height:1.2; font-size:10px; hyphens:auto; overflow-wrap:anywhere;
-      box-shadow:0 1px 0 var(--border);
+      line-height:1.15; font-size:9px; font-weight:600; hyphens:auto; overflow-wrap:anywhere;
+      padding:6px 4px; box-shadow:0 1px 0 var(--border);
     }
     #reconTable thead th[data-recon-col="units_per_case"] {
       width:2.6rem; max-width:2.6rem; padding:8px 3px;
@@ -1428,7 +1428,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0">
       <div class="page-title">Stock Counts <span class="feature-dot green" title="Active — saves to the v2 tables"></span></div>
-      <p class="page-subtitle">Record physical counts per bar using each product's configured unit (cases + singles, bottles, or units).</p>
+      <p class="page-subtitle">Record physical counts per bar. Enter quantity in each product's stock unit (set in the Product Library).</p>
     </div>
     <button class="btn btn-primary btn-sm" id="newCountBtn" onclick="openNewCountSession()"><i class="ph ph-plus btn-leading-icon"></i> New count session</button>
   </div>
@@ -1456,7 +1456,7 @@
       </div>
       <div class="dist-table-wrap">
         <table id="countTable">
-          <thead><tr><th style="width:30px"></th><th>Product</th><th>Pack size</th><th id="countBarHeader">Bar</th><th class="cnt-num" title="Cases — but spirits are counted as decimal bottles">Cases / Bottles</th><th class="cnt-num" title="Loose individual units (not used for spirits)">Singles</th></tr></thead>
+          <thead><tr><th style="width:30px"></th><th>Product</th><th>Pack size</th><th id="countBarHeader">Bar</th><th class="cnt-num">Quantity</th></tr></thead>
           <tbody id="countTableBody"></tbody>
         </table>
       </div>
@@ -1483,7 +1483,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Closing Stock <span class="feature-dot green" title="Built — cases and singles match the live app"></span></div>
-      <p class="page-subtitle">Enter whole cases and loose singles separately, like the live app. SOR % and max returnable are calculated automatically.</p>
+      <p class="page-subtitle">Enter closing stock and returns in each product's stock unit. SOR % and max returnable are calculated automatically.</p>
     </div>
     <button class="btn btn-primary btn-sm" id="closingSaveBtn" onclick="saveClosing()"><i class="ph ph-check btn-leading-icon"></i> Save closing stock</button>
   </div>
@@ -1497,17 +1497,15 @@
           <th>Supplier</th>
           <th>SOR %</th>
           <th title="Invoiced / ordered quantity">Invoice qty</th>
-          <th title="Whole cases counted at close">Closing count (cases)</th>
-          <th title="Loose units counted at close — a fraction of a case">Closing count (singles)</th>
+          <th title="Physical count at close">Closing count</th>
           <th title="Invoice qty × SOR %">Max returnable</th>
-          <th title="Whole cases being returned">Return (cases)</th>
-          <th title="Loose units being returned">Return (singles)</th>
+          <th title="Qty being returned to supplier">Return qty</th>
           <th title="Close count − return amount">Carried over</th>
         </tr></thead>
         <tbody id="closingTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Enter whole cases and loose singles separately — total = cases + singles ÷ units per case (closing count and return amount). <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
+    <p class="df-hint" style="margin-top:10px">Counts auto-save as you type. Quantities use each product's stock unit from the Product Library. <strong>Max returnable</strong> = invoice qty × supplier SOR %. <strong>Carried over</strong> = close count − return amount.</p>
   </div>
 </div>
 <!-- ===================== SUMMARY (COGS) ===================== -->
@@ -1922,7 +1920,7 @@
       <label>Products delivered</label>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:38%">Product</th><th title="Cases — but spirits are entered as decimal bottles">Cases / Bottles</th><th title="Loose individual units (not used for spirits)">Singles</th><th title="Unusable / damaged — spirits in bottles, others in cases">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:38%">Product</th><th>Quantity</th><th title="Unusable / damaged stock">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
           <tbody id="df-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -1996,7 +1994,7 @@
       <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:46%">Product</th><th title="Cases — but spirits are entered as decimal bottles">Cases / Bottles</th><th title="Loose individual units (not used for spirits)">Singles</th><th class="num" style="width:84px">Value</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:46%">Product</th><th>Quantity</th><th class="num" style="width:84px">Value</th><th style="width:36px"></th></tr></thead>
           <tbody id="wf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2101,7 +2099,7 @@
       <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:36%">Product</th><th>Pack size</th><th title="Cases — but spirits are entered as decimal bottles">Cases / Bottles</th><th title="Loose individual units (not used for spirits)">Singles</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:36%">Product</th><th>Pack size</th><th>Quantity</th><th style="width:36px"></th></tr></thead>
           <tbody id="tf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border)">
@@ -2181,13 +2179,12 @@
     <div class="page-title" style="font-size:13px;margin:12px 0 8px">Stock &amp; invoicing</div>
     <div class="df-grid2">
       <div class="df-field">
-        <label for="rcn-invoice-cases">Invoiced (cases)</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-cases" oninput="recalcReconDrawer()">
+        <label for="rcn-invoice-qty" id="rcn-invoice-qty-label">Invoiced qty</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-qty" oninput="recalcReconDrawer()">
       </div>
       <div class="df-field">
-        <label for="rcn-invoice-singles">Invoiced (singles)</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-singles" oninput="recalcReconDrawer()">
-        <p class="df-hint">Loose units — added as a fraction of a case in the recon.</p>
+        <label for="rcn-cl-qty" id="rcn-cl-qty-label">Closing count</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-qty" oninput="recalcReconDrawer()">
       </div>
     </div>
     <div class="df-grid2" id="rcn-price-row">
@@ -2205,25 +2202,13 @@
       <label>Delivered this event (by supplier)</label>
       <div id="rcn-delivered-by-supplier" class="rcn-delivered-summary"></div>
     </div>
-    <div class="df-grid2">
-      <div class="df-field">
-        <label for="rcn-cl-cases">Closing count (cases)</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-cases" oninput="recalcReconDrawer()">
-      </div>
-      <div class="df-field">
-        <label for="rcn-cl-singles">Closing count (singles)</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-singles" oninput="recalcReconDrawer()">
-        <p class="df-hint">Loose units — added as a fraction of a case in the recon.</p>
-      </div>
-    </div>
     <div class="page-title" style="font-size:13px;margin:16px 0 8px">Returns to suppliers</div>
     <p class="df-hint" style="margin-top:0">Add a line per supplier you are returning stock to — each can use a different case price.</p>
     <div style="overflow-x:auto">
       <table class="rcn-return-table" id="rcn-return-table">
         <thead><tr>
           <th style="min-width:120px">Supplier</th>
-          <th style="width:72px" id="rcn-return-cases-h">Cases</th>
-          <th style="width:72px" id="rcn-return-singles-h">Singles</th>
+          <th style="width:88px" id="rcn-return-qty-h">Quantity</th>
           <th style="width:88px" id="rcn-return-price-h">£/case</th>
           <th style="width:72px">Value</th>
           <th style="width:36px" title="Print pallet stickers"></th>
@@ -5063,12 +5048,12 @@
     const body = $('df-lines-body');
     const options = deliveryProductOptions();
     if (!_delLines.length) {
-      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
       renderDeliveryCostSummary();
       return;
     }
     if (!options.length && !(_products || []).length) {
-      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
       renderDeliveryCostSummary();
       return;
     }
@@ -5076,17 +5061,16 @@
     body.innerHTML = _delLines.map((line) => {
       const { price } = deliveryLineCasePrice(line.productId, supplierId);
       const lineCost = (line.productId && price != null) ? price * delFormLineCases(line) : null;
-      const qtyCells = stockQtyCellsHtml(line.productId, line, {
-        casesKey: 'qty',
-        onCasesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)',
-        onSinglesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)',
+      const qtyCell = stockQtyCellHtml(line.productId, line, {
+        qtyKey: 'qty',
+        onChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)',
       });
       return '<tr>' +
       '<td style="position:relative"><input type="text" class="df-combo-input" id="df-combo-input-' + line.lineId + '" autocomplete="off"' +
         ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
         ' placeholder="Search products\u2026"' +
         ProductPicker.inputAttrs('delivery', line.lineId) + '></td>' +
-      qtyCells +
+      qtyCell +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
       '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
       '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeDeliveryLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
@@ -5102,13 +5086,7 @@
   }
   // Unusable/damaged for a form line, in cases (spirits enter it in bottles).
   function delFormLineDamagedCases(line) {
-    if (usesSinglesOnlyUnit(line.productId)) {
-      return combineCasesSingles(0, line.damagedQty, unitsPerCaseFor(line.productId));
-    }
-    if (usesDecimalPrimaryUnit(line.productId)) {
-      return displayQtyToCases(spiritProductById(line.productId), line.damagedQty);
-    }
-    return Number(line.damagedQty) || 0;
+    return displayToStoredCases(line.productId, line.damagedQty);
   }
 
   // Live total + supplier-price hint under the delivery form's line table.
@@ -5125,7 +5103,7 @@
       if (price == null) { anyMissing = true; return; }
       if (!matched) anyFallback = true;
       // Spirits: qty is bottles, so cost from cases; others keep whole-case cost.
-      total += price * (usesAlternateQtyEntry(line.productId) ? delFormLineCases(line) : (Number(line.qty) || 0));
+      total += price * delFormLineCases(line);
     });
     totalEl.textContent = money(total) || '£0.00';
     const hint = $('df-cost-hint');
@@ -5143,7 +5121,7 @@
   }
 
   function addDeliveryLine() {
-    _delLines.push({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', singles: '', damagedQty: '' });
+    _delLines.push({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', damagedQty: '' });
     renderDeliveryLines();
   }
   function removeDeliveryLine(lineId) {
@@ -5345,27 +5323,12 @@
     const lines = d.lines || [];
     _delLines = lines.length
       ? lines.map((l) => {
-          // Spirits are edited in decimal bottles; fold any stored loose singles
-          // into the total cases first, then present as bottles.
-          if (usesDecimalPrimaryUnit(l.product_id)) {
-            const p = spiritProductById(l.product_id);
-            const ups = unitsPerCaseFor(l.product_id) || 1;
-            const cases = (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
-            const displayQty = round1(casesToDisplayQty(p, cases));
-            const dmgDisplay = round1(casesToDisplayQty(p, Number(l.damaged_qty) || 0));
-            return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: displayQty ? String(displayQty) : '', singles: '', damagedQty: dmgDisplay ? String(dmgDisplay) : '' };
-          }
-          if (usesSinglesOnlyUnit(l.product_id)) {
-            const p = spiritProductById(l.product_id);
-            const ups = unitsPerCaseFor(l.product_id) || 1;
-            const cases = (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
-            const displayQty = round1(casesToDisplayQty(p, cases));
-            const dmgDisplay = round1(casesToDisplayQty(p, Number(l.damaged_qty) || 0));
-            return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: '', singles: displayQty ? String(displayQty) : '', damagedQty: dmgDisplay ? String(dmgDisplay) : '' };
-          }
-          return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), singles: (l.singles != null && Number(l.singles) !== 0) ? String(l.singles) : '', damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' };
+          const stored = lineStoredCases(l, l.product_id);
+          const displayQty = stored ? String(storedCasesToDisplay(l.product_id, stored)) : '';
+          const dmgDisplay = l.damaged_qty ? String(storedCasesToDisplay(l.product_id, Number(l.damaged_qty) || 0)) : '';
+          return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: displayQty, damagedQty: dmgDisplay };
         })
-      : [{ lineId: 'l1', productId: '', qty: '', singles: '', damagedQty: '' }];
+      : [{ lineId: 'l1', productId: '', qty: '', damagedQty: '' }];
     _delNote = d.delivery_note_url ? { url: d.delivery_note_url } : null;
     _delPhotos = (d.photo_urls || []).map((u) => ({ id: 'p' + Math.random().toString(36).slice(2, 8), url: u }));
     _delDamages = (d.damages_photo_urls || []).map((u) => ({ id: 'd' + Math.random().toString(36).slice(2, 8), url: u }));
@@ -5401,19 +5364,13 @@
   async function saveDelivery() {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const valid = _delLines
-      .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.singles) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
-      .map((l) => {
-        // Spirits: qty/damaged are decimal bottles → store as fractional cases.
-        if (usesAlternateQtyEntry(l.productId)) {
-          return {
-            product_id: l.productId,
-            qty: roundN(delFormLineCases(l), 4),
-            singles: 0,
-            damaged_qty: roundN(delFormLineDamagedCases(l), 4),
-          };
-        }
-        return { product_id: l.productId, qty: round1(l.qty), singles: Math.round(Number(l.singles) || 0), damaged_qty: round1(l.damagedQty) };
-      });
+      .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
+      .map((l) => ({
+        product_id: l.productId,
+        qty: roundN(delFormLineCases(l), 4),
+        singles: 0,
+        damaged_qty: roundN(delFormLineDamagedCases(l), 4),
+      }));
     if (!valid.length) { $('df-err').textContent = 'Add at least one product with a quantity.'; return; }
 
     const btn = $('df-save-btn');
@@ -6795,32 +6752,20 @@
   function updateCountStats() {
     const body = $('countTableBody');
     if (!body) return;
-    let total = 0, counted = 0, cases = 0, singles = 0;
+    let total = 0, counted = 0, qtyTotal = 0;
     body.querySelectorAll('tr[data-pid]').forEach((tr) => {
       total++;
-      const c = parseFloat((tr.querySelector('.cnt-cases') || {}).value) || 0;
-      const s = parseFloat((tr.querySelector('.cnt-singles') || {}).value) || 0;
-      const isCounted = !!(c || s);
+      const pid = tr.getAttribute('data-pid');
+      const q = parseFloat((tr.querySelector('.cnt-qty') || {}).value) || 0;
+      const isCounted = !!q;
       if (isCounted) counted++;
       tr.classList.toggle('counted', isCounted);
       const status = tr.querySelector('.cnt-status');
       if (status) status.innerHTML = isCounted ? '<i class="ph ph-check-circle"></i>' : '';
-      // Decimal-primary rows hold display units in the first column; convert to cases.
-      if (tr.getAttribute('data-alt-unit')) {
-        const pid = tr.getAttribute('data-pid');
-        const u = productStockUnit(spiritProductById(pid));
-        if (u === 'single') {
-          cases += displayQtyToCases(spiritProductById(pid), parseFloat((tr.querySelector('.cnt-singles') || {}).value) || 0);
-        } else {
-          cases += displayQtyToCases(spiritProductById(pid), c);
-        }
-      } else {
-        cases += c; singles += s;
-      }
+      qtyTotal += displayToStoredCases(pid, q);
     });
     const pv = $('countProgressVal'); if (pv) pv.textContent = counted + '/' + total;
-    const cv = $('countCasesVal'); if (cv) cv.textContent = Math.round(cases * 100) / 100;
-    const sv = $('countSinglesVal'); if (sv) sv.textContent = Math.round(singles * 100) / 100;
+    const qv = $('countQtyVal'); if (qv) qv.textContent = Math.round(qtyTotal * 100) / 100;
     const fill = $('countProgressFill'); if (fill) fill.style.width = (total ? Math.round((counted / total) * 100) : 0) + '%';
   }
 
@@ -6864,20 +6809,9 @@
     const session = _counts.find((c) => c.id === _activeCountId);
     if (!session) return;
     const barId = _activeCountBar || session.bar_id;
-    const casesEl = $('cnt-cases-' + pid);
-    const singlesEl = $('cnt-singles-' + pid);
-    let cases, singles;
-    if (usesSinglesOnlyUnit(pid)) {
-      cases = roundN(displayQtyToCases(spiritProductById(pid), parseFloat(singlesEl && singlesEl.value) || 0), 4);
-      singles = 0;
-    } else if (usesDecimalPrimaryUnit(pid)) {
-      // Decimal-primary: the first column holds display units → store as fractional cases.
-      cases = roundN(displayQtyToCases(spiritProductById(pid), parseFloat(casesEl && casesEl.value) || 0), 4);
-      singles = 0;
-    } else {
-      cases = parseFloat(casesEl && casesEl.value) || 0;
-      singles = parseFloat(singlesEl && singlesEl.value) || 0;
-    }
+    const qtyEl = $('cnt-qty-' + pid);
+    const cases = roundN(displayToStoredCases(pid, parseFloat(qtyEl && qtyEl.value) || 0), 4);
+    const singles = 0;
     const lines = _countLines[_activeCountId] || [];
     let line = lines.find((l) => l.product_id === pid && l.bar_id === barId);
     try {
