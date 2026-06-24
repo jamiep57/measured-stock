@@ -423,6 +423,7 @@
     .df-combo-item .ci-name { font-weight:600; color:var(--foreground); }
     .df-combo-item .ci-meta { font-size:11px; color:var(--muted-foreground); white-space:nowrap; }
     .df-combo-item .ci-add { display:inline-flex; align-items:center; gap:3px; font-size:11px; color:var(--primary); white-space:nowrap; font-weight:600; }
+    .df-combo-item .ci-right { display:inline-flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
     .df-combo-empty { padding:10px 8px; color:var(--muted-foreground); }
     .df-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .df-field { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
@@ -1906,8 +1907,8 @@
     <button class="btn btn-primary" id="df-save-btn" onclick="saveDelivery()">Save Delivery</button>
   </div>
 </aside>
-<!-- Shared searchable product dropdown for delivery lines (top-level so it is not clipped by the drawer) -->
-<div class="df-combo-menu" id="df-combo-menu" role="listbox"></div>
+<!-- Shared searchable product picker (top-level so menus are not clipped by drawers) -->
+<div class="df-combo-menu" id="product-combo-menu" role="listbox"></div>
 
 <!-- ===================== WASTAGE FORM DRAWER ===================== -->
 <div class="drawer-backdrop" id="wastageFormOverlay" onclick="closeWastageForm()"></div>
@@ -2019,8 +2020,6 @@
     <button class="btn btn-primary" id="rf-save-btn" onclick="saveRecipeMapping()">Save recipe</button>
   </div>
 </aside>
-<!-- Shared searchable product dropdown for recipe ingredients (top-level so it is not clipped by the drawer) -->
-<div class="df-combo-menu" id="rf-combo-menu" role="listbox"></div>
 
 <!-- ===================== TRANSFER FORM DRAWER ===================== -->
 <div class="drawer-backdrop" id="transferFormOverlay" onclick="closeTransferForm()"></div>
@@ -2068,8 +2067,6 @@
     <button type="button" class="btn btn-primary" id="tf-save-note-btn" onclick="logTransfer(true)">Log &amp; Download Note</button>
   </div>
 </aside>
-<!-- Shared searchable product dropdown for transfer lines (top-level so it is not clipped by the drawer) -->
-<div class="df-combo-menu" id="tf-combo-menu" role="listbox"></div>
 
 <!-- ===================== RETURN TO SUPPLIER DRAWER ===================== -->
 <div class="drawer-backdrop" id="returnFormOverlay" onclick="closeReturnDrawer()"></div>
@@ -2308,6 +2305,160 @@
     ));
   }
 
+  // Reusable searchable product picker — every line-item dropdown shows name + case size.
+  const ProductPicker = (function() {
+    let active = null;
+    let items = [];
+    let hi = -1;
+    let wired = false;
+    const reg = Object.create(null);
+
+    function menuEl() { return $('product-combo-menu'); }
+
+    function label(name, caseSize) {
+      const n = String(name || '').trim();
+      const cs = String(caseSize || '').trim();
+      return cs ? n + ' \u2014 ' + cs : n;
+    }
+
+    function matches(p, q) {
+      if (!q) return true;
+      const hay = [p.name, p.sku, p.case_size, p.supplier && p.supplier.name, p.category && p.category.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(String(q).trim().toLowerCase());
+    }
+
+    function itemHtml(idx, it) {
+      const cs = it.case_size || (it.p && it.p.case_size) || '';
+      const meta = it.rightHtml != null ? it.rightHtml
+        : (cs ? '<span class="ci-meta">' + escapeHtml(cs) + '</span>' : '');
+      return '<div class="df-combo-item' + (idx === hi ? ' active' : '') + '" role="option"' +
+        ' onmousedown="event.preventDefault();ProductPicker.pick(' + idx + ')">' +
+        '<span class="ci-name">' + escapeHtml(it.name || (it.p && it.p.name) || '') + '</span>' + meta +
+      '</div>';
+    }
+
+    function register(prefix, handler) { reg[prefix] = handler; }
+
+    function wire() {
+      if (wired) return;
+      wired = true;
+      document.addEventListener('mousedown', (e) => {
+        if (!active) return;
+        const h = reg[active.prefix];
+        const menu = menuEl();
+        const input = document.getElementById(h.inputId(active.ctxId));
+        if ((menu && menu.contains(e.target)) || (input && input === e.target)) return;
+        close();
+      });
+      const repos = () => { if (active) position(); };
+      window.addEventListener('scroll', repos, true);
+      window.addEventListener('resize', repos);
+    }
+
+    function position() {
+      if (!active) return;
+      const h = reg[active.prefix];
+      const input = document.getElementById(h.inputId(active.ctxId));
+      const menu = menuEl();
+      if (!input || !menu) return;
+      const r = input.getBoundingClientRect();
+      menu.style.left = r.left + 'px';
+      menu.style.top = (r.bottom + 4) + 'px';
+      menu.style.width = r.width + 'px';
+    }
+
+    function renderMenu() {
+      const menu = menuEl();
+      if (!menu || !active) return;
+      const h = reg[active.prefix];
+      const built = h.buildItems(active.ctxId);
+      items = built.items || [];
+      if (!items.length) {
+        menu.innerHTML = '<div class="df-combo-empty">No products match your search.</div>';
+        return;
+      }
+      let html = '';
+      if (built.groups && built.groups.length) {
+        let idx = 0;
+        built.groups.forEach((g) => {
+          if (g.label) html += '<div class="df-combo-group">' + escapeHtml(g.label) + '</div>';
+          g.items.forEach((it) => { html += itemHtml(idx, it); idx++; });
+        });
+      } else {
+        html = items.map((it, i) => itemHtml(i, it)).join('');
+      }
+      menu.innerHTML = html;
+    }
+
+    function open(prefix, ctxId) {
+      if (!reg[prefix]) return;
+      wire();
+      if (active && (active.prefix !== prefix || active.ctxId !== ctxId)) close();
+      active = { prefix, ctxId };
+      hi = -1;
+      renderMenu();
+      position();
+      menuEl().classList.add('open');
+    }
+
+    function close() {
+      const prev = active;
+      active = null;
+      items = [];
+      hi = -1;
+      const menu = menuEl();
+      if (menu) { menu.classList.remove('open'); menu.innerHTML = ''; }
+      if (prev && reg[prev.prefix] && reg[prev.prefix].onClose) reg[prev.prefix].onClose(prev.ctxId);
+    }
+
+    function filter(prefix, ctxId) {
+      if (!active || active.prefix !== prefix || active.ctxId !== ctxId) { open(prefix, ctxId); return; }
+      hi = -1;
+      renderMenu();
+    }
+
+    async function pick(idx) {
+      if (!active || idx < 0 || !items[idx]) return;
+      const h = reg[active.prefix];
+      const ctxId = active.ctxId;
+      const it = items[idx];
+      const keepOpen = (await Promise.resolve(h.onPick(ctxId, it))) === false;
+      if (!keepOpen && active && active.ctxId === ctxId) close();
+    }
+
+    function keydown(e, prefix, ctxId) {
+      const menu = menuEl();
+      const menuOpen = active && active.prefix === prefix && active.ctxId === ctxId && menu && menu.classList.contains('open');
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuOpen) {
+        e.preventDefault();
+        if (!items.length) return;
+        const dir = e.key === 'ArrowDown' ? 1 : -1;
+        hi = (hi + dir + items.length) % items.length;
+        renderMenu();
+        const act = menu.querySelector('.df-combo-item.active');
+        if (act) act.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' && menuOpen) {
+        if (hi >= 0 && items[hi]) { e.preventDefault(); pick(hi); }
+      } else if (e.key === 'Escape') {
+        if (active && active.prefix === prefix && active.ctxId === ctxId) { e.preventDefault(); close(); }
+      }
+    }
+
+    function inputAttrs(prefix, ctxId) {
+      return ' onfocus="ProductPicker.open(\'' + prefix + '\',\'' + ctxId + '\')"' +
+        ' oninput="ProductPicker.filter(\'' + prefix + '\',\'' + ctxId + '\')"' +
+        ' onkeydown="ProductPicker.keydown(event,\'' + prefix + '\',\'' + ctxId + '\')"';
+    }
+
+    function isOpen() {
+      const menu = menuEl();
+      return !!(menu && menu.classList.contains('open'));
+    }
+
+    return { register, open, close, filter, pick, keydown, label, matches, inputAttrs, isOpen };
+  })();
+
   // ---------- spirits: count loose bottles + shots ----------
   // For spirits we work in the SINGLES column (= loose bottles). A part-used
   // bottle is entered in 25ml shots, where 1 shot = 1/(shots per bottle) of a
@@ -2456,6 +2607,7 @@
   };
 
   function showPanel(name) {
+    try { localStorage.setItem('v2_panel', name); } catch (e) {}
     document.querySelectorAll('.nav-item[data-panel]').forEach((b) =>
       b.classList.toggle('active', b.dataset.panel === name));
     document.querySelectorAll('.sidebar-event-cog[data-panel]').forEach((b) =>
@@ -4643,6 +4795,21 @@
     return (p && p.case_size) || '';
   }
 
+  function productInfoById(pid) {
+    if (!pid) return { name: '', size: '' };
+    const eps = (_currentEvent && _currentEvent.event_products) || [];
+    const ep = eps.find((x) => x.product_id === pid);
+    if (ep && ep.product) return { name: ep.product.name || '', size: ep.product.case_size || '' };
+    const p = (_products || []).find((x) => x.id === pid);
+    if (p) return { name: p.name || '', size: p.case_size || '' };
+    return { name: productNameById(pid), size: productSizeById(pid) || '' };
+  }
+
+  function productPickerDisplayById(pid) {
+    const info = productInfoById(pid);
+    return ProductPicker.label(info.name, info.size);
+  }
+
   // Case price for a delivery line from the delivering supplier's purchase
   // options. When several offers exist for that supplier, prefer: global
   // preferred row (if same supplier) → pack size matching product.case_size →
@@ -4678,9 +4845,13 @@
   function deliveryProductOptions() {
     const eps = (_currentEvent && _currentEvent.event_products) || [];
     return eps
-      .map((ep) => ({ id: ep.product_id, name: (ep.product && ep.product.name) || productNameById(ep.product_id) }))
+      .map((ep) => ({
+        id: ep.product_id,
+        name: (ep.product && ep.product.name) || productNameById(ep.product_id),
+        case_size: (ep.product && ep.product.case_size) || productSizeById(ep.product_id) || '',
+      }))
       .filter((o) => o.name && o.name !== '(unknown)')
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name) || (a.case_size || '').localeCompare(b.case_size || ''));
   }
 
   function renderDeliverySupplierSelect() {
@@ -4716,11 +4887,9 @@
         : '<td><input type="number" step="1" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
       return '<tr>' +
       '<td style="position:relative"><input type="text" class="df-combo-input" id="df-combo-input-' + line.lineId + '" autocomplete="off"' +
-        ' value="' + escapeHtml(deliveryLineProductName(line.productId)) + '"' +
+        ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
         ' placeholder="Search products\u2026"' +
-        ' onfocus="openDeliveryCombo(\'' + line.lineId + '\')"' +
-        ' oninput="filterDeliveryCombo(\'' + line.lineId + '\')"' +
-        ' onkeydown="deliveryComboKey(event,\'' + line.lineId + '\')"></td>' +
+        ProductPicker.inputAttrs('delivery', line.lineId) + '></td>' +
       qtyCell +
       singlesCell +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
@@ -4797,174 +4966,74 @@
   }
 
   // ---- Searchable product picker for delivery lines ----------------------
-  // Each delivery line uses a text input + a shared #df-combo-menu dropdown.
-  // It searches both products already on the event and the whole product
-  // library; choosing a library-only product auto-adds it to the event.
-  let _delComboLine = null;   // lineId whose dropdown is currently open
-  let _delComboItems = [];    // flat list of selectable items (for keyboard nav)
-  let _delComboHi = -1;       // highlighted index within _delComboItems
-  let _delComboWired = false; // document listeners attached once
-
-  function deliveryLineProductName(pid) {
-    if (!pid) return '';
-    const ep = ((_currentEvent && _currentEvent.event_products) || []).find((e) => e.product_id === pid);
-    if (ep && ep.product && ep.product.name) return ep.product.name;
-    const p = (_products || []).find((x) => x.id === pid);
-    return p ? (p.name || '') : '';
-  }
-
-  function wireDeliveryCombo() {
-    if (_delComboWired) return;
-    _delComboWired = true;
-    // Close when clicking outside the input + menu.
-    document.addEventListener('mousedown', (e) => {
-      if (_delComboLine == null) return;
-      const menu = $('df-combo-menu');
-      const input = document.getElementById('df-combo-input-' + _delComboLine);
-      if ((menu && menu.contains(e.target)) || (input && input === e.target)) return;
-      closeDeliveryCombo();
-    });
-    // Keep the floating menu aligned with its input while scrolling/resizing.
-    const reposition = () => { if (_delComboLine != null) positionDeliveryCombo(_delComboLine); };
-    window.addEventListener('scroll', reposition, true);
-    window.addEventListener('resize', reposition);
-  }
-
-  function positionDeliveryCombo(lineId) {
-    const input = document.getElementById('df-combo-input-' + lineId);
-    const menu = $('df-combo-menu');
-    if (!input || !menu) return;
-    const r = input.getBoundingClientRect();
-    menu.style.left = r.left + 'px';
-    menu.style.top = (r.bottom + 4) + 'px';
-    menu.style.width = r.width + 'px';
-  }
-
-  function openDeliveryCombo(lineId) {
-    wireDeliveryCombo();
-    _delComboLine = lineId;
-    _delComboHi = -1;
-    renderDeliveryComboMenu(lineId);
-    positionDeliveryCombo(lineId);
-    $('df-combo-menu').classList.add('open');
-  }
-
-  function closeDeliveryCombo() {
-    const lineId = _delComboLine;
-    _delComboLine = null;
-    _delComboItems = [];
-    _delComboHi = -1;
-    const menu = $('df-combo-menu');
-    if (menu) { menu.classList.remove('open'); menu.innerHTML = ''; }
-    // Restore the input text to the selected product's name (discard any
-    // half-typed search term that wasn't used to pick a product).
-    if (lineId != null) {
-      const input = document.getElementById('df-combo-input-' + lineId);
-      const line = _delLines.find((l) => l.lineId === lineId);
-      if (input && line) input.value = deliveryLineProductName(line.productId);
-    }
-  }
-
-  function filterDeliveryCombo(lineId) {
-    if (_delComboLine !== lineId) { openDeliveryCombo(lineId); return; }
-    _delComboHi = -1;
-    renderDeliveryComboMenu(lineId);
-  }
-
-  // Build the (event + library) candidate list, filtered by the input text.
   function deliveryComboCandidates(lineId) {
     const input = document.getElementById('df-combo-input-' + lineId);
-    const q = (input && input.value || '').trim().toLowerCase();
+    const q = (input && input.value || '').trim();
     const onEvent = new Set(((_currentEvent && _currentEvent.event_products) || []).map((ep) => ep.product_id));
-    const matches = (p) => {
-      if (!q) return true;
-      const hay = [p.name, p.sku, p.case_size, p.supplier && p.supplier.name, p.category && p.category.name]
-        .filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
-    };
     const eventItems = [];
     const libraryItems = [];
     deliveryProductOptions().forEach((o) => {
-      const p = (_products || []).find((x) => x.id === o.id) || { id: o.id, name: o.name };
-      if (matches(p)) eventItems.push({ id: o.id, name: o.name, onEvent: true, p });
+      const p = (_products || []).find((x) => x.id === o.id) || { id: o.id, name: o.name, case_size: o.case_size };
+      if (!ProductPicker.matches(p, q)) return;
+      eventItems.push({ id: o.id, name: o.name, case_size: o.case_size || p.case_size || '', onEvent: true, p });
     });
     (_products || []).forEach((p) => {
-      if (onEvent.has(p.id) || !p.name) return;
-      if (matches(p)) libraryItems.push({ id: p.id, name: p.name, onEvent: false, p });
+      if (onEvent.has(p.id) || !p.name || !ProductPicker.matches(p, q)) return;
+      libraryItems.push({ id: p.id, name: p.name, case_size: p.case_size || '', onEvent: false, p });
     });
-    eventItems.sort((a, b) => a.name.localeCompare(b.name));
-    libraryItems.sort((a, b) => a.name.localeCompare(b.name));
+    eventItems.sort((a, b) => a.name.localeCompare(b.name) || (a.case_size || '').localeCompare(b.case_size || ''));
+    libraryItems.sort((a, b) => a.name.localeCompare(b.name) || (a.case_size || '').localeCompare(b.case_size || ''));
     return { eventItems, libraryItems };
   }
 
-  function renderDeliveryComboMenu(lineId) {
-    const menu = $('df-combo-menu');
-    if (!menu) return;
-    const { eventItems, libraryItems } = deliveryComboCandidates(lineId);
-    _delComboItems = eventItems.concat(libraryItems);
-    if (!_delComboItems.length) {
-      menu.innerHTML = '<div class="df-combo-empty">No products match your search.</div>';
-      return;
-    }
-    const itemHtml = (it, idx) => {
-      const meta = it.p && it.p.case_size ? '<span class="ci-meta">' + escapeHtml(it.p.case_size) + '</span>' : '';
-      const right = it.onEvent ? meta : '<span class="ci-add"><i class="ph ph-plus"></i> Add to event</span>';
-      return '<div class="df-combo-item' + (idx === _delComboHi ? ' active' : '') + '" role="option"' +
-        ' onmousedown="event.preventDefault();deliveryComboSelect(\'' + lineId + '\',\'' + it.id + '\')">' +
-        '<span class="ci-name">' + escapeHtml(it.name) + '</span>' + right +
-      '</div>';
-    };
-    let html = '';
-    let idx = 0;
-    if (eventItems.length) {
-      html += '<div class="df-combo-group">On this event</div>';
-      eventItems.forEach((it) => { html += itemHtml(it, idx); idx++; });
-    }
-    if (libraryItems.length) {
-      html += '<div class="df-combo-group">Product library</div>';
-      libraryItems.forEach((it) => { html += itemHtml(it, idx); idx++; });
-    }
-    menu.innerHTML = html;
+  function deliveryComboItem(it) {
+    if (it.onEvent) return it;
+    const cs = (it.p && it.p.case_size) || it.case_size || '';
+    return Object.assign({}, it, {
+      rightHtml: '<span class="ci-right">' +
+        (cs ? '<span class="ci-meta">' + escapeHtml(cs) + '</span>' : '') +
+        '<span class="ci-add"><i class="ph ph-plus"></i> Add to event</span></span>',
+    });
   }
 
-  function deliveryComboKey(e, lineId) {
-    const menuOpen = _delComboLine === lineId && $('df-combo-menu') && $('df-combo-menu').classList.contains('open');
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuOpen) {
-      e.preventDefault();
-      if (!_delComboItems.length) return;
-      const dir = e.key === 'ArrowDown' ? 1 : -1;
-      _delComboHi = (_delComboHi + dir + _delComboItems.length) % _delComboItems.length;
-      renderDeliveryComboMenu(lineId);
-      const active = $('df-combo-menu').querySelector('.df-combo-item.active');
-      if (active) active.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter' && menuOpen) {
-      if (_delComboHi >= 0 && _delComboItems[_delComboHi]) {
-        e.preventDefault();
-        deliveryComboSelect(lineId, _delComboItems[_delComboHi].id);
+  ProductPicker.register('delivery', {
+    inputId: (lineId) => 'df-combo-input-' + lineId,
+    buildItems(lineId) {
+      const { eventItems, libraryItems } = deliveryComboCandidates(lineId);
+      const map = deliveryComboItem;
+      const groups = [];
+      if (eventItems.length) groups.push({ label: 'On this event', items: eventItems.map(map) });
+      if (libraryItems.length) groups.push({ label: 'Product library', items: libraryItems.map(map) });
+      return { groups, items: eventItems.concat(libraryItems).map(map) };
+    },
+    async onPick(lineId, it) {
+      const line = _delLines.find((l) => l.lineId === lineId);
+      if (!line) return;
+      const onEvent = ((_currentEvent && _currentEvent.event_products) || []).some((ep) => ep.product_id === it.id);
+      if (!onEvent) {
+        try {
+          await ensureProductOnEvent(it.id);
+        } catch (err) {
+          console.error('deliveryComboSelect', err);
+          $('df-err').textContent = err.message || 'Failed to add product to the event.';
+          return false;
+        }
       }
-    } else if (e.key === 'Escape') {
-      if (_delComboLine === lineId) { e.preventDefault(); closeDeliveryCombo(); }
-    }
-  }
+      line.productId = it.id;
+      renderDeliveryLines();
+      if (!onEvent) { try { updateEventStats(); renderEventProducts(); } catch (_) {} }
+    },
+    onClose(lineId) {
+      const input = document.getElementById('df-combo-input-' + lineId);
+      const line = _delLines.find((l) => l.lineId === lineId);
+      if (input && line) input.value = productPickerDisplayById(line.productId);
+    },
+  });
 
-  async function deliveryComboSelect(lineId, productId) {
-    const line = _delLines.find((l) => l.lineId === lineId);
-    if (!line) return;
-    const onEvent = ((_currentEvent && _currentEvent.event_products) || []).some((ep) => ep.product_id === productId);
-    if (!onEvent) {
-      try {
-        await ensureProductOnEvent(productId);
-      } catch (err) {
-        console.error('deliveryComboSelect', err);
-        $('df-err').textContent = err.message || 'Failed to add product to the event.';
-        return;
-      }
-    }
-    line.productId = productId;
-    closeDeliveryCombo();
-    renderDeliveryLines();
-    if (!onEvent) { try { updateEventStats(); renderEventProducts(); } catch (_) {} }
-  }
+  function openDeliveryCombo(lineId) { ProductPicker.open('delivery', lineId); }
+  function closeDeliveryCombo() { ProductPicker.close(); }
+  function filterDeliveryCombo(lineId) { ProductPicker.filter('delivery', lineId); }
+  function deliveryComboKey(e, lineId) { ProductPicker.keydown(e, 'delivery', lineId); }
 
   // Add a library product to the current event with no ordered qty, so it can
   // immediately be used on a delivery line. Mirrors addProductToEvent().
@@ -5404,10 +5473,10 @@
         : 0;
       const lineCost = (line.productId && price != null) ? price * cases : null;
       return '<tr>' +
-        '<td><select onchange="updateWastageLine(\'' + line.lineId + '\',\'productId\',this.value)">' +
-          '<option value="">— Select product —</option>' +
-          options.map((o) => '<option value="' + o.id + '"' + (o.id === line.productId ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>').join('') +
-        '</select></td>' +
+        '<td style="position:relative"><input type="text" class="df-combo-input" id="wf-combo-input-' + line.lineId + '" autocomplete="off"' +
+          ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
+          ' placeholder="Search products\u2026"' +
+          ProductPicker.inputAttrs('wastage', line.lineId) + '></td>' +
         '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateWastageLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>' +
         '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
         '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeWastageLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
@@ -5435,6 +5504,7 @@
     renderWastageLines();
   }
   function removeWastageLine(lineId) {
+    ProductPicker.close();
     _wstLines = _wstLines.filter((l) => l.lineId !== lineId);
     renderWastageLines();
   }
@@ -5464,10 +5534,38 @@
     setTimeout(() => $('wf-date').focus(), 50);
   }
   function closeWastageForm() {
+    ProductPicker.close();
     $('wastageFormOverlay').classList.remove('open');
     $('wastageFormDrawer').classList.remove('open');
     _wstEditingId = null;
   }
+
+  ProductPicker.register('wastage', {
+    inputId: (lineId) => 'wf-combo-input-' + lineId,
+    buildItems(lineId) {
+      const input = document.getElementById('wf-combo-input-' + lineId);
+      const q = (input && input.value || '').trim();
+      const items = deliveryProductOptions()
+        .map((o) => {
+          const p = (_products || []).find((x) => x.id === o.id) || { id: o.id, name: o.name, case_size: o.case_size };
+          return { id: o.id, name: o.name, case_size: o.case_size || p.case_size || '', p };
+        })
+        .filter((it) => ProductPicker.matches(it.p, q))
+        .sort((a, b) => a.name.localeCompare(b.name) || (a.case_size || '').localeCompare(b.case_size || ''));
+      return { items };
+    },
+    onPick(lineId, it) {
+      const line = _wstLines.find((l) => l.lineId === lineId);
+      if (!line) return;
+      line.productId = it.id;
+      renderWastageLines();
+    },
+    onClose(lineId) {
+      const input = document.getElementById('wf-combo-input-' + lineId);
+      const line = _wstLines.find((l) => l.lineId === lineId);
+      if (input && line) input.value = productPickerDisplayById(line.productId);
+    },
+  });
 
   function editWastage(id) {
     const b = _wastage.find((x) => x.id === id);
@@ -6840,11 +6938,9 @@
       const singlesHint = (line.productId && ups > 1) ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + ups + ' per case</div>' : '';
       return '<tr>' +
         '<td style="padding:6px 10px;position:relative"><input type="text" class="df-combo-input" id="tf-combo-input-' + line.lineId + '" autocomplete="off"' +
-          ' value="' + escapeHtml(transferLineProductName(line.productId)) + '"' +
+          ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
           ' placeholder="Search products\u2026"' +
-          ' onfocus="openTransferCombo(\'' + line.lineId + '\')"' +
-          ' oninput="filterTransferCombo(\'' + line.lineId + '\')"' +
-          ' onkeydown="transferComboKey(event,\'' + line.lineId + '\')">' + availLabel + '</td>' +
+          ProductPicker.inputAttrs('transfer', line.lineId) + '>' + availLabel + '</td>' +
         '<td style="padding:6px 10px;font-size:12px;color:var(--muted-foreground)">' + (packSize ? escapeHtml(packSize) : '—') + '</td>' +
         '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.cases || '') + '" placeholder="0" style="width:80px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'cases\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',\'cases\',this)"></td>' +
         '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.singles || '') + '" placeholder="0" style="width:80px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'singles\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',\'singles\',this)">' + singlesHint + '</td>' +
