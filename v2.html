@@ -543,6 +543,13 @@
     #reconTable tbody td[data-recon-col="units_per_case"] {
       width:2.6rem; max-width:2.6rem; padding:9px 3px; text-align:center;
     }
+    #reconTable thead th[data-recon-col="supplier"],
+    #reconTable tbody td[data-recon-col="supplier"] {
+      width:1%; max-width:3.75rem; padding-left:4px; padding-right:4px; text-align:left;
+    }
+    #reconTable tbody td[data-recon-col="supplier"] {
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
     #reconTable thead th[data-recon-col="abv"],
     #reconTable thead th[data-recon-col="delivered"],
     #reconTable thead th[data-recon-col="invoiced"],
@@ -648,7 +655,7 @@
     #reconTable .recon-note-hint { display:block; font-size:11px; font-weight:400; color:var(--muted-foreground); margin-top:2px; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     #reconTable thead th[data-recon-col="item"],
     #reconTable tbody td[data-recon-col="item"] {
-      width:10rem; max-width:10rem; padding-left:8px; padding-right:8px;
+      min-width:14rem; width:auto; max-width:none; padding-left:8px; padding-right:8px;
     }
     #reconTable tbody td[data-recon-col="item"] { font-weight:500; }
     #reconTable .recon-item-line { display:flex; align-items:baseline; gap:6px; min-width:0; }
@@ -2550,27 +2557,46 @@
     return Number(p && p.units_per_case) || 1;
   }
 
+  const STOCK_UNIT_VALUES = ['case', 'single', 'bottle', 'keg', 'unit'];
+
   const STOCK_UNIT_OPTS = [
-    { value: '', label: 'Auto — detect from category & pack size' },
-    { value: 'case', label: 'Cases + singles' },
-    { value: 'bottle', label: 'Bottles (decimal)' },
-    { value: 'unit', label: 'Units (decimal)' },
+    { value: '', label: 'Auto-detect' },
+    { value: 'case', label: 'Cases' },
+    { value: 'single', label: 'Singles' },
+    { value: 'bottle', label: 'Bottles' },
+    { value: 'keg', label: 'Kegs' },
+    { value: 'unit', label: 'Units' },
   ];
+
+  function isKnownStockUnit(u) {
+    return STOCK_UNIT_VALUES.indexOf(u) !== -1;
+  }
+
+  function isDecimalStockUnit(u) {
+    return u === 'bottle' || u === 'keg' || u === 'unit' || u === 'single';
+  }
 
   // Resolved stock unit: explicit library setting, or legacy auto-detect.
   function productStockUnit(p) {
     if (!p) return 'case';
-    if (p.stock_unit === 'case' || p.stock_unit === 'bottle' || p.stock_unit === 'unit') return p.stock_unit;
+    if (isKnownStockUnit(p.stock_unit)) return p.stock_unit;
     return isSpiritBottle(p) ? 'bottle' : 'case';
   }
 
   function stockUnitLabel(unit, plural) {
     const labels = {
       case: plural ? 'cases' : 'case',
+      single: plural ? 'singles' : 'single',
       bottle: plural ? 'bottles' : 'bottle',
+      keg: plural ? 'kegs' : 'keg',
       unit: plural ? 'units' : 'unit',
     };
     return labels[unit] || (plural ? 'cases' : 'case');
+  }
+
+  function stockUnitTitle(unit) {
+    const titles = { case: 'Case', single: 'Single', bottle: 'Bottle', keg: 'Keg', unit: 'Unit' };
+    return titles[unit] || 'Unit';
   }
 
   function productStockUnitLabel(p, plural) {
@@ -2580,7 +2606,7 @@
   function displayFactorPerCase(p) {
     const u = productStockUnit(p);
     if (u === 'bottle') return spiritBottlesPerCase(p) || 1;
-    if (u === 'unit') return Number(p && p.units_per_case) || 1;
+    if (u === 'single' || u === 'keg' || u === 'unit') return Number(p && p.units_per_case) || 1;
     return 1;
   }
 
@@ -2594,8 +2620,20 @@
   }
 
   function usesDecimalPrimaryUnit(pid) {
-    const u = productStockUnit(spiritProductById(pid));
-    return u === 'bottle' || u === 'unit';
+    return isDecimalStockUnit(productStockUnit(spiritProductById(pid)));
+  }
+
+  function usesSinglesOnlyUnit(pid) {
+    return productStockUnit(spiritProductById(pid)) === 'single';
+  }
+
+  function usesAlternateQtyEntry(pid) {
+    return true;
+  }
+
+  function qtyInputLabel(productId, plural) {
+    const p = productId ? spiritProductById(productId) : null;
+    return p ? productStockUnitLabel(p, plural !== false) : 'qty';
   }
 
   function shotsPerBottle(p) {
@@ -2614,35 +2652,18 @@
     return upc > 0 ? upc : 1;
   }
 
-  // Delivery log display unit: uses the product's configured stock unit.
-  // The stored value is always cases.
+  // Delivery log display — always in the product's configured unit.
   function deliveryDisplayQty(pid, qtyCases) {
     const p = spiritProductById(pid);
-    const n = Number(qtyCases) || 0;
+    const n = round1(casesToDisplayQty(p, qtyCases));
     const u = productStockUnit(p);
-    if (u === 'bottle' || u === 'unit') {
-      const d = round1(casesToDisplayQty(p, n));
-      return { n: d, unit: stockUnitLabel(u, d !== 1) };
-    }
-    return { n: round1(n), unit: 'cases' };
+    return { n, unit: stockUnitLabel(u, n !== 1) };
   }
 
-  // Human label for a delivery line's quantity.
   function deliveryLineQtyLabel(l) {
-    const p = spiritProductById(l.product_id);
-    const u = productStockUnit(p);
-    if (u === 'bottle' || u === 'unit') {
-      const cases = delLineCases(l);
-      const d = deliveryDisplayQty(l.product_id, cases);
-      const c = round1(cases);
-      return d.n + ' ' + d.unit + ' / ' + c + ' ' + (c === 1 ? 'case' : 'cases');
-    }
-    const cases = round1(l.qty);
-    const singles = Math.round(Number(l.singles) || 0);
-    const parts = [];
-    if (cases || !singles) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
-    if (singles) parts.push(singles + ' ' + (singles === 1 ? 'single' : 'singles'));
-    return parts.join(' \u00b7 ');
+    const stored = lineStoredCases(l, l.product_id);
+    const d = stockQtyDisplay(l.product_id, stored);
+    return d.n + ' ' + d.unit;
   }
 
   function spiritProductById(pid) {
@@ -2662,32 +2683,47 @@
     return spc > 0 ? spc : 28;
   }
 
-  // ---------- decimal primary units (bottles / units) at UI boundary ----------
-  // Internally stock is ALWAYS stored in cases. Bottle/unit products show and
-  // accept decimal values in their primary unit; conversion uses displayFactorPerCase.
+  // ---------- unified stock quantity (stored as fractional cases) ----------
+  // Every product uses one quantity field in the UI. The stock-unit dropdown
+  // only changes the label (cases, bottles, kegs, singles, units).
+  function lineStoredCases(line, productId) {
+    if (!line) return 0;
+    const ups = unitsPerCaseFor(productId) || 1;
+    return combineCasesSingles(Number(line.qty) || 0, Number(line.singles) || 0, ups);
+  }
+
+  function storedCasesToDisplay(productId, storedCases) {
+    const p = spiritProductById(productId);
+    return round1(casesToDisplayQty(p, storedCases));
+  }
+
+  function displayToStoredCases(productId, displayVal) {
+    if (!productId) return Number(displayVal) || 0;
+    return roundN(displayQtyToCases(spiritProductById(productId), displayVal), 4);
+  }
+
   function spiritBottlesFromCases(p, cases) {
     return casesToDisplayQty(p, cases);
   }
   function spiritCasesFromBottles(p, bottles) {
     return displayQtyToCases(p, bottles);
   }
-  // True when this product id should be shown / entered in bottles (legacy name).
   function showInBottles(pid) {
     return productStockUnit(spiritProductById(pid)) === 'bottle';
   }
   function showInUnits(pid) {
     return productStockUnit(spiritProductById(pid)) === 'unit';
   }
-  // Present a cases quantity in the product's natural unit.
+
   function stockQtyDisplay(pid, cases) {
     const p = spiritProductById(pid);
     const u = productStockUnit(p);
-    if (u === 'bottle' || u === 'unit') {
-      const n = round1(casesToDisplayQty(p, cases));
-      return { n, unit: stockUnitLabel(u, n !== 1), short: u === 'bottle' ? 'btl' : 'u' };
-    }
-    const c = round1(Number(cases) || 0);
-    return { n: c, unit: c === 1 ? 'case' : 'cases', short: 'cs' };
+    const n = round1(casesToDisplayQty(p, cases));
+    return {
+      n,
+      unit: stockUnitLabel(u, n !== 1),
+      short: ({ case: 'cs', single: 'sgl', bottle: 'btl', keg: 'keg', unit: 'u' }[u] || 'cs'),
+    };
   }
 
   // ---------- panels / sidebar ----------
@@ -3548,7 +3584,7 @@
         { key: 'category_id', label: 'Category', type: 'select', options: catOpts, placeholder: '— none —' },
         { key: 'case_size', label: 'Case size', type: 'text', placeholder: 'e.g. 24x330ml' },
         { key: 'units_per_case', label: 'Units / case', type: 'number', min: 0 },
-        { key: 'stock_unit', label: 'Count stock as', type: 'select', options: STOCK_UNIT_OPTS, placeholder: 'Auto' },
+        { key: 'stock_unit', label: 'Stock unit', type: 'select', full: true, options: STOCK_UNIT_OPTS, placeholder: 'Auto-detect' },
         { key: 'sku', label: 'SKU', type: 'text' },
         { key: 'abv', label: 'ABV (%)', type: 'number', min: 0 },
         { key: 'pool_name', label: 'Volume pool', type: 'text', full: true, placeholder: 'e.g. House Vodka — groups interchangeable bottle sizes' },
@@ -4743,7 +4779,7 @@
           totalCases += (Number(line.qty) || 0);
           const qty = deliveryDisplayQty(productId, line.qty);
           const prod = spiritProductById(productId);
-          const casesTag = (prod && usesDecimalPrimaryUnit(productId))
+          const casesTag = (prod && usesAlternateQtyEntry(productId))
             ? ' / ' + round1(Number(line.qty) || 0) + ' ' + (round1(Number(line.qty) || 0) === 1 ? 'case' : 'cases')
             : '';
           const dmg = Number(line.damaged_qty) || 0;
@@ -5066,6 +5102,9 @@
   }
   // Unusable/damaged for a form line, in cases (spirits enter it in bottles).
   function delFormLineDamagedCases(line) {
+    if (usesSinglesOnlyUnit(line.productId)) {
+      return combineCasesSingles(0, line.damagedQty, unitsPerCaseFor(line.productId));
+    }
     if (usesDecimalPrimaryUnit(line.productId)) {
       return displayQtyToCases(spiritProductById(line.productId), line.damagedQty);
     }
@@ -5086,7 +5125,7 @@
       if (price == null) { anyMissing = true; return; }
       if (!matched) anyFallback = true;
       // Spirits: qty is bottles, so cost from cases; others keep whole-case cost.
-      total += price * (usesDecimalPrimaryUnit(line.productId) ? delFormLineCases(line) : (Number(line.qty) || 0));
+      total += price * (usesAlternateQtyEntry(line.productId) ? delFormLineCases(line) : (Number(line.qty) || 0));
     });
     totalEl.textContent = money(total) || '£0.00';
     const hint = $('df-cost-hint');
@@ -5316,6 +5355,14 @@
             const dmgDisplay = round1(casesToDisplayQty(p, Number(l.damaged_qty) || 0));
             return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: displayQty ? String(displayQty) : '', singles: '', damagedQty: dmgDisplay ? String(dmgDisplay) : '' };
           }
+          if (usesSinglesOnlyUnit(l.product_id)) {
+            const p = spiritProductById(l.product_id);
+            const ups = unitsPerCaseFor(l.product_id) || 1;
+            const cases = (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
+            const displayQty = round1(casesToDisplayQty(p, cases));
+            const dmgDisplay = round1(casesToDisplayQty(p, Number(l.damaged_qty) || 0));
+            return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: '', singles: displayQty ? String(displayQty) : '', damagedQty: dmgDisplay ? String(dmgDisplay) : '' };
+          }
           return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), singles: (l.singles != null && Number(l.singles) !== 0) ? String(l.singles) : '', damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' };
         })
       : [{ lineId: 'l1', productId: '', qty: '', singles: '', damagedQty: '' }];
@@ -5357,7 +5404,7 @@
       .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.singles) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
       .map((l) => {
         // Spirits: qty/damaged are decimal bottles → store as fractional cases.
-        if (usesDecimalPrimaryUnit(l.productId)) {
+        if (usesAlternateQtyEntry(l.productId)) {
           return {
             product_id: l.productId,
             qty: roundN(delFormLineCases(l), 4),
@@ -5478,9 +5525,12 @@
   function wastageLineFromSaved(l, batch) {
     const pid = l.product_id;
     const ups = unitsPerCaseFor(pid);
-    if (usesDecimalPrimaryUnit(pid)) {
+    if (usesAlternateQtyEntry(pid)) {
       const stored = batchLineCases(batch, l);
       const displayQty = round1(casesToDisplayQty(spiritProductById(pid), stored));
+      if (usesSinglesOnlyUnit(pid)) {
+        return { lineId: wstLineId(), productId: pid, cases: '', singles: displayQty ? String(displayQty) : '' };
+      }
       return { lineId: wstLineId(), productId: pid, cases: displayQty ? String(displayQty) : '', singles: '' };
     }
     if (batch && batch.unit === 'units' && (l.singles == null || Number(l.singles) === 0)) {
@@ -5499,7 +5549,7 @@
   }
 
   function wastageLineToDb(l) {
-    if (usesDecimalPrimaryUnit(l.productId)) {
+    if (usesAlternateQtyEntry(l.productId)) {
       const stored = wstFormLineCases(l);
       const split = splitCasesSingles(stored, unitsPerCaseFor(l.productId));
       return { product_id: l.productId, qty: split.cases, singles: split.singles || 0 };
@@ -5909,8 +5959,8 @@
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const p = ep.product || {};
-        const decUnit = usesDecimalPrimaryUnit(pid);
-        const disp = (cases) => decUnit ? round1(casesToDisplayQty(p, cases)) : round1(cases);
+        const altUnit = usesAlternateQtyEntry(pid);
+        const disp = (cases) => altUnit ? round1(casesToDisplayQty(p, cases)) : round1(cases);
         const invCases = ep.invoice_qty != null ? ep.invoice_qty : '';
         const dmgCases = ep.damaged_qty ?? 0;
         const inv = invCases === '' ? '' : disp(invCases);
@@ -5922,7 +5972,7 @@
         const vc = variance > 0 ? 'pos' : variance < 0 ? 'neg' : 'zero';
         const vt = (variance > 0 ? '+' : '') + variance;
         const unitTitle = 'In ' + productStockUnitLabel(p, true);
-        html += '<tr' + (decUnit ? ' data-dec-unit="1"' : '') + '>' +
+        html += '<tr' + (altUnit ? ' data-alt-unit="' + productStockUnit(p) + '"' : '') + '>' +
           '<td>' + escapeHtml(p.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(p.case_size || '—') + '</td>' +
           '<td style="font-weight:600" title="' + unitTitle + '">' + disp(ep.qty_ordered || 0) + '</td>' +
@@ -5943,10 +5993,10 @@
     if (!ep) return;
     const invEl = $('o-inv-' + productId);
     const dmgEl = $('o-dmg-' + productId);
-    const decUnit = usesDecimalPrimaryUnit(productId);
+    const altUnit = usesAlternateQtyEntry(productId);
     const p = ep.product || {};
-    const toCases = (v) => decUnit ? displayQtyToCases(p, v) : v;
-    const disp = (cases) => decUnit ? round1(casesToDisplayQty(p, cases)) : round1(cases);
+    const toCases = (v) => altUnit ? displayQtyToCases(p, v) : v;
+    const disp = (cases) => altUnit ? round1(casesToDisplayQty(p, cases)) : round1(cases);
     const dmgInput = dmgEl ? (parseFloat(dmgEl.value) || 0) : 0;
     const dmgCases = toCases(dmgInput);
     const countedInCases = _openingCountedIn[productId] || 0;
@@ -5977,9 +6027,9 @@
       const rows = eps.map((ep) => {
         const invEl = $('o-inv-' + ep.product_id);
         const dmgEl = $('o-dmg-' + ep.product_id);
-        const decUnit = usesDecimalPrimaryUnit(ep.product_id);
+        const altUnit = usesAlternateQtyEntry(ep.product_id);
         const p = ep.product || {};
-        const toCases = (v) => decUnit ? displayQtyToCases(p, v) : v;
+        const toCases = (v) => altUnit ? displayQtyToCases(p, v) : v;
         const patch = {
           event_id: _currentEvent.id,
           product_id: ep.product_id,
@@ -6533,12 +6583,12 @@
       html += '<tr class="category-row"><td colspan="' + totalCols + '">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].forEach((r) => {
         const goodsNeg = r.goodsIn < 0 ? ';color:var(--danger)' : '';
-        const decUnit = usesDecimalPrimaryUnit(r.pid);
-        const sp = decUnit ? spiritProductById(r.pid) : null;
-        const disp = (cases) => decUnit ? round1(casesToDisplayQty(sp, cases)) : round1(cases);
+        const altUnit = usesAlternateQtyEntry(r.pid);
+        const sp = altUnit ? spiritProductById(r.pid) : null;
+        const disp = (cases) => altUnit ? round1(casesToDisplayQty(sp, cases)) : round1(cases);
         const unitTitle = productStockUnitLabel(sp || {}, true);
-        const unitBadge = decUnit ? ' <span style="font-size:10px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">' + escapeHtml(stockQtyDisplay(r.pid, 0).short) + '</span>' : '';
-        html += '<tr' + (decUnit ? ' title="In ' + escapeHtml(unitTitle) + '"' : '') + '>' +
+        const unitBadge = altUnit ? ' <span style="font-size:10px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.4px">' + escapeHtml(stockQtyDisplay(r.pid, 0).short) + '</span>' : '';
+        html += '<tr' + (altUnit ? ' title="In ' + escapeHtml(unitTitle) + '"' : '') + '>' +
           '<td>' + escapeHtml(r.name) + unitBadge + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(r.case_size || '—') + '</td>' +
           '<td>' + catBadge(r.cat) + '</td>' +
@@ -6703,25 +6753,35 @@
         const pid = ep.product_id;
         const line = lines.find((l) => l.product_id === pid && l.bar_id === barId);
         const counted = !!(line && ((line.cases != null && line.cases !== 0) || (line.singles != null && line.singles !== 0)));
-        const decUnit = usesDecimalPrimaryUnit(pid);
-        // Decimal-primary products: collapse stored cases (+ singles) into display units.
+    const decUnit = usesDecimalPrimaryUnit(pid);
+        const singlesOnly = usesSinglesOnlyUnit(pid);
+        const altUnit = decUnit || singlesOnly;
+        // Decimal-primary / singles-only: collapse stored cases (+ singles) into display units.
         let casesCellVal = (line && line.cases != null ? line.cases : '');
+        let singlesCellVal = (line && line.singles != null ? line.singles : '');
         if (decUnit) {
           const ups = unitsPerCaseFor(pid) || 1;
           const totCases = line ? ((Number(line.cases) || 0) + (Number(line.singles) || 0) / ups) : 0;
           casesCellVal = totCases ? round1(casesToDisplayQty(spiritProductById(pid), totCases)) : '';
+        } else if (singlesOnly) {
+          const ups = unitsPerCaseFor(pid) || 1;
+          const totCases = line ? ((Number(line.cases) || 0) + (Number(line.singles) || 0) / ups) : 0;
+          singlesCellVal = totCases ? round1(casesToDisplayQty(spiritProductById(pid), totCases)) : '';
+          casesCellVal = '';
         }
         const pUnit = spiritProductById(pid);
         const primaryLabel = productStockUnitLabel(pUnit, true);
         const singlesCell = decUnit
           ? '<td class="cnt-num" style="color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
-          : '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + (line && line.singles != null ? line.singles : '') + '" placeholder="0" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>';
-        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (decUnit ? ' data-dec-unit="1"' : '') + (counted ? ' class="counted"' : '') + '>' +
+          : '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + singlesCellVal + '" placeholder="' + (singlesOnly ? primaryLabel : '0') + '" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>';
+        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (altUnit ? ' data-alt-unit="' + productStockUnit(pUnit) + '"' : '') + (counted ? ' class="counted"' : '') + '>' +
           '<td class="cnt-status" id="cnt-status-' + pid + '">' + (counted ? '<i class="ph ph-check-circle"></i>' : '') + '</td>' +
           '<td>' + escapeHtml(ep.product.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + (barId ? escapeHtml(barNameById(barId)) : '—') + '</td>' +
-          '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + casesCellVal + '" placeholder="' + (decUnit ? primaryLabel : '0') + '" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
+          (singlesOnly
+            ? '<td class="cnt-num" style="color:var(--muted-foreground)" title="Singles only — use the Singles column">—</td>'
+            : '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + casesCellVal + '" placeholder="' + (decUnit ? primaryLabel : '0') + '" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>') +
           singlesCell +
         '</tr>';
       });
@@ -6746,8 +6806,14 @@
       const status = tr.querySelector('.cnt-status');
       if (status) status.innerHTML = isCounted ? '<i class="ph ph-check-circle"></i>' : '';
       // Decimal-primary rows hold display units in the first column; convert to cases.
-      if (tr.getAttribute('data-dec-unit')) {
-        cases += displayQtyToCases(spiritProductById(tr.getAttribute('data-pid')), c);
+      if (tr.getAttribute('data-alt-unit')) {
+        const pid = tr.getAttribute('data-pid');
+        const u = productStockUnit(spiritProductById(pid));
+        if (u === 'single') {
+          cases += displayQtyToCases(spiritProductById(pid), parseFloat((tr.querySelector('.cnt-singles') || {}).value) || 0);
+        } else {
+          cases += displayQtyToCases(spiritProductById(pid), c);
+        }
       } else {
         cases += c; singles += s;
       }
@@ -6801,7 +6867,10 @@
     const casesEl = $('cnt-cases-' + pid);
     const singlesEl = $('cnt-singles-' + pid);
     let cases, singles;
-    if (usesDecimalPrimaryUnit(pid)) {
+    if (usesSinglesOnlyUnit(pid)) {
+      cases = roundN(displayQtyToCases(spiritProductById(pid), parseFloat(singlesEl && singlesEl.value) || 0), 4);
+      singles = 0;
+    } else if (usesDecimalPrimaryUnit(pid)) {
       // Decimal-primary: the first column holds display units → store as fractional cases.
       cases = roundN(displayQtyToCases(spiritProductById(pid), parseFloat(casesEl && casesEl.value) || 0), 4);
       singles = 0;
@@ -7701,62 +7770,49 @@
       || String(singlesVal != null ? singlesVal : '').trim() !== '';
   }
 
-  // Total cases from a form line's cases (+ optional singles) fields.
+  // Total cases from a form line's single quantity field (display unit → stored cases).
   function formLineCases(productId, line, opts) {
     opts = opts || {};
-    const casesKey = opts.casesKey || 'cases';
-    const singlesKey = opts.singlesKey || 'singles';
-    const casesVal = line[casesKey] ?? line.qty;
-    if (productId && usesDecimalPrimaryUnit(productId)) {
-      return displayQtyToCases(spiritProductById(productId), casesVal);
-    }
-    return combineCasesSingles(casesVal, line[singlesKey], unitsPerCaseFor(productId));
+    const qtyKey = opts.qtyKey || opts.casesKey || 'qty';
+    const val = line[qtyKey] ?? line.cases ?? '';
+    return displayToStoredCases(productId, val);
   }
 
-  // Standard cases + singles table cells for line-item stock entry forms.
+  // One quantity input — label comes from the product's stock unit.
+  function stockQtyCellHtml(productId, line, opts) {
+    opts = opts || {};
+    const qtyKey = opts.qtyKey || opts.casesKey || 'qty';
+    const val = line[qtyKey] ?? line.cases ?? '';
+    const inputType = opts.inputType || 'number';
+    const p = productId ? spiritProductById(productId) : null;
+    const label = qtyInputLabel(productId, true);
+    const inputTypeAttr = inputType === 'text' ? ' type="text"' : ' type="number" step="any" min="0"';
+    return '<td' + (opts.tdStyle ? ' style="' + opts.tdStyle + '"' : '') + '><input' + inputTypeAttr +
+      ' value="' + escapeHtml(val) + '" placeholder="' + escapeHtml(label) + '"' +
+      (opts.inputStyle ? ' style="' + opts.inputStyle + '"' : '') +
+      (opts.onChange ? ' onchange="' + opts.onChange + '"' : '') +
+      (opts.onBlur ? ' onblur="' + opts.onBlur + '"' : '') +
+      (opts.onInput ? ' oninput="' + opts.onInput + '"' : '') + '></td>';
+  }
+
+  // Back-compat alias — returns a single qty cell (second column removed app-wide).
   function stockQtyCellsHtml(productId, line, opts) {
     opts = opts || {};
-    const casesKey = opts.casesKey || 'cases';
-    const singlesKey = opts.singlesKey || 'singles';
-    const casesVal = line[casesKey] ?? '';
-    const singlesVal = line[singlesKey] ?? '';
-    const inputType = opts.inputType || 'number';
-    const decUnit = productId && usesDecimalPrimaryUnit(productId);
-    const p = productId ? spiritProductById(productId) : null;
-    const ups = productId ? unitsPerCaseFor(productId) : 1;
-    const primaryLabel = p ? productStockUnitLabel(p, true) : 'units';
-    const casesType = inputType === 'text' ? ' type="text"' : ' type="number" step="any" min="0"';
-    const singlesType = inputType === 'text' ? ' type="text"' : ' type="number" step="1" min="0"';
-    const casesCell = '<td' + (opts.casesTdStyle ? ' style="' + opts.casesTdStyle + '"' : '') + '><input' + casesType +
-      ' value="' + escapeHtml(casesVal) + '" placeholder="' + (decUnit ? primaryLabel : '0') + '"' +
-      (opts.casesStyle ? ' style="' + opts.casesStyle + '"' : '') +
-      (opts.onCasesChange ? ' onchange="' + opts.onCasesChange + '"' : '') +
-      (opts.onCasesBlur ? ' onblur="' + opts.onCasesBlur + '"' : '') + '></td>';
-    const singlesCell = decUnit
-      ? '<td style="text-align:center;color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
-      : '<td' + (opts.singlesTdStyle ? ' style="' + opts.singlesTdStyle + '"' : '') + '><input' + singlesType +
-        ' value="' + escapeHtml(singlesVal) + '" placeholder="0"' +
-        (opts.singlesStyle ? ' style="' + opts.singlesStyle + '"' : '') +
-        (opts.onSinglesChange ? ' onchange="' + opts.onSinglesChange + '"' : '') +
-        (opts.onSinglesBlur ? ' onblur="' + opts.onSinglesBlur + '"' : '') + '>' +
-        (opts.singlesHint !== false && ups > 1 ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + ups + ' per case</div>' : '') +
-        '</td>';
-    return casesCell + singlesCell;
+    return stockQtyCellHtml(productId, line, {
+      qtyKey: opts.casesKey || 'qty',
+      inputType: opts.inputType,
+      tdStyle: opts.casesTdStyle || opts.casesStyle,
+      inputStyle: opts.casesStyle,
+      onChange: opts.onCasesChange,
+      onBlur: opts.onCasesBlur,
+      onInput: opts.onCasesInput,
+    });
   }
 
-  // Human label for a saved qty + singles pair, e.g. "3 cases · 5 singles".
   function stockLineQtyLabel(productId, qty, singles) {
-    if (productId && usesDecimalPrimaryUnit(productId)) {
-      const stored = combineCasesSingles(qty, singles, unitsPerCaseFor(productId));
-      const d = deliveryDisplayQty(productId, stored);
-      return d.n + ' ' + d.unit;
-    }
-    const cases = round1(qty);
-    const loose = Math.round(Number(singles) || 0);
-    const parts = [];
-    if (cases || !loose) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
-    if (loose) parts.push(loose + ' ' + (loose === 1 ? 'single' : 'singles'));
-    return parts.join(' \u00b7 ');
+    const stored = lineStoredCases({ qty, singles }, productId);
+    const d = stockQtyDisplay(productId, stored);
+    return d.n + ' ' + d.unit;
   }
 
   function renderClosing() {
@@ -8552,19 +8608,19 @@
   function syncReconDrawerReturnFields(pid) {
     const p = spiritProductById(pid);
     const u = productStockUnit(p);
-    const decUnit = u === 'bottle' || u === 'unit';
+    const decUnit = isDecimalStockUnit(u);
+    const singlesOnly = u === 'single';
     const casesH = $('rcn-return-cases-h');
     const singlesH = $('rcn-return-singles-h');
     const priceH = $('rcn-return-price-h');
-    if (casesH) casesH.textContent = decUnit ? (u === 'bottle' ? 'Bottles' : 'Units') : 'Cases';
-    if (singlesH) singlesH.textContent = decUnit ? '—' : 'Singles';
+    if (casesH) casesH.textContent = singlesOnly ? '—' : (decUnit ? stockUnitTitle(u) + 's' : 'Cases');
+    if (singlesH) singlesH.textContent = singlesOnly ? 'Singles' : (decUnit ? '—' : 'Singles');
     if (priceH) priceH.textContent = '£/case';
   }
 
   function syncReconDrawerPriceFields(ep) {
     const p = ep && ep.product;
-    const u = productStockUnit(p);
-    const unitLabel = u === 'bottle' ? 'Bottle' : u === 'unit' ? 'Unit' : 'Unit';
+    const unitLabel = stockUnitTitle(productStockUnit(p));
     const labelEl = $('rcn-unit-price-label');
     if (labelEl) labelEl.textContent = unitLabel + ' price override (£)';
     const hint = $('rcn-unit-price-hint');
@@ -8652,6 +8708,9 @@
 
   // Stored supplier-case total for a return line (UI may show bottles for spirits).
   function rcnReturnLineStoredCases(line, pid) {
+    if (usesSinglesOnlyUnit(pid)) {
+      return combineCasesSingles(0, line.singles, unitsPerCaseFor(pid) || 1);
+    }
     if (usesDecimalPrimaryUnit(pid)) {
       return displayQtyToCases(spiritProductById(pid), line.cases);
     }
@@ -8666,11 +8725,20 @@
       const displayQty = round1(casesToDisplayQty(spiritProductById(pid), stored));
       return { cases: displayQty || '', singles: '' };
     }
+    if (usesSinglesOnlyUnit(pid)) {
+      const displayQty = round1(casesToDisplayQty(spiritProductById(pid), stored));
+      return { cases: '', singles: displayQty || '' };
+    }
     const split = splitCasesSingles(stored, ups);
     return { cases: split.cases || '', singles: split.singles || '' };
   }
 
   function rcnReturnLineToDbQty(line, pid) {
+    if (usesSinglesOnlyUnit(pid)) {
+      const stored = combineCasesSingles(0, line.singles, unitsPerCaseFor(pid) || 1);
+      const split = splitCasesSingles(stored, unitsPerCaseFor(pid) || 1);
+      return { qty: split.cases, singles: split.singles || 0 };
+    }
     if (usesDecimalPrimaryUnit(pid)) {
       const stored = displayQtyToCases(spiritProductById(pid), line.cases);
       const split = splitCasesSingles(stored, unitsPerCaseFor(pid) || 1);
@@ -8740,6 +8808,7 @@
     body.innerHTML = _rcnReturnLines.map((line) => {
       const p = spiritProductById(pid);
       const decUnit = usesDecimalPrimaryUnit(pid);
+      const singlesOnly = usesSinglesOnlyUnit(pid);
       const primaryLabel = productStockUnitLabel(p, true);
       const draft = reconDrawerDraft();
       const price = rcnReturnLinePrice(line, pid, draft);
@@ -8749,12 +8818,15 @@
       const opts = '<option value="">— Supplier —</option>' + options.map((o) =>
         '<option value="' + o.id + '"' + (line.supplierId === o.id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>'
       ).join('');
+      const casesCell = singlesOnly
+        ? '<td style="text-align:center;color:var(--muted-foreground)" title="Singles only — use the Singles column">—</td>'
+        : '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="' + (decUnit ? primaryLabel : '0') + '" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>';
       const singlesCell = decUnit
         ? '<td style="text-align:center;color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
-        : '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
+        : '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="' + (singlesOnly ? primaryLabel : '0') + '" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
       return '<tr>' +
         '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
-        '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="' + (decUnit ? primaryLabel : '0') + '" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>' +
+        casesCell +
         singlesCell +
         '<td><input type="number" step="0.01" min="0" value="' + escapeHtml(line.casePrice ?? '') + '" placeholder="Auto" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'casePrice\',this.value)"></td>' +
         '<td class="num">' + (lineVal != null ? money(lineVal) : '—') + '</td>' +
@@ -8950,7 +9022,7 @@
     r.returnValue = returnValue;
     const p = ep.product;
     const unitP = reconUnitPrice(ep, reconDrawerDraft());
-    const unitLabel = p ? (productStockUnit(p) === 'bottle' ? 'Bottle' : 'Unit') : 'Unit';
+    const unitLabel = stockUnitTitle(productStockUnit(p));
     $('rcn-preview').innerHTML =
       '<table><tbody>' +
         '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
@@ -9228,7 +9300,7 @@
           '<td data-recon-col="item">' + reconItemCell(r.p.name, caseSize, noteHint) + '</td>' +
           '<td data-recon-col="abv">' + escapeHtml(abv) + '</td>' +
           '<td data-recon-col="case_price">' + reconMoneyCell(r.casePrice) + '</td>' +
-          '<td data-recon-col="supplier">' + escapeHtml(r.supplierName) + '</td>' +
+          '<td data-recon-col="supplier" title="' + escapeHtml(r.supplierName) + '">' + escapeHtml(r.supplierName) + '</td>' +
           '<td data-recon-col="units_per_case">' + (r.ups || '—') + '</td>' +
           '<td data-recon-col="delivered">' + reconQtyCell(r.delivered) + '</td>' +
           '<td data-recon-col="invoiced">' + reconQtyCell(r.invoiced) + '</td>' +
