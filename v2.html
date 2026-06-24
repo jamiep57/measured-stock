@@ -528,13 +528,11 @@
     #summaryTable tbody tr.category-row td { text-align:left; }
     #supplierSummaryTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
     /* ── financial recon ── */
-    #reconTableWrap { overflow:visible; }
-    #reconTable { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }
-    #reconTable thead, #reconTable tbody {
-      display:table; width:max-content; min-width:100%; table-layout:auto; border-collapse:collapse;
+    #reconTableWrap {
+      overflow:auto; -webkit-overflow-scrolling:touch;
     }
     #reconTable thead th {
-      position:sticky; top:52px; z-index:20; background:var(--secondary);
+      position:sticky; top:0; z-index:20; background:var(--secondary);
       text-align:center; white-space:normal; vertical-align:bottom;
       line-height:1.2; font-size:10px; hyphens:auto; overflow-wrap:anywhere;
       box-shadow:0 1px 0 var(--border);
@@ -9140,6 +9138,24 @@
       (noteHint || '');
   }
 
+  function layoutReconTableScroll() {
+    const wrap = $('reconTableWrap');
+    const panel = $('panel-recon');
+    if (!wrap || !panel || !panel.classList.contains('active') || wrap.offsetParent === null) return;
+    const top = wrap.getBoundingClientRect().top;
+    wrap.style.maxHeight = Math.max(240, window.innerHeight - top - 24) + 'px';
+  }
+
+  function scheduleReconTableLayout() {
+    requestAnimationFrame(layoutReconTableScroll);
+  }
+
+  let _reconLayoutTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(_reconLayoutTimer);
+    _reconLayoutTimer = setTimeout(layoutReconTableScroll, 100);
+  });
+
   function renderRecon() {
     const allRows = computeReconRows();
     const totalRows = computeReconTotalRows();
@@ -9181,12 +9197,14 @@
         : 'Add products and enter closing stock to begin.';
       body.innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-scales icon"></i><p>' + emptyMsg + '</p></div></td></tr>';
       applyReconColVisibility();
+      scheduleReconTableLayout();
       return;
     }
 
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-funnel icon"></i><p>No lines match this filter.</p></div></td></tr>';
       applyReconColVisibility();
+      scheduleReconTableLayout();
       return;
     }
 
@@ -9242,6 +9260,7 @@
 
     body.innerHTML = html;
     applyReconColVisibility();
+    scheduleReconTableLayout();
   }
 
   function csvEscape(v) {
