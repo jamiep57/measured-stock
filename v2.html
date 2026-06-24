@@ -530,7 +530,7 @@
     /* ── financial recon ── */
     #reconTable thead th {
       position:static; text-align:center; white-space:normal; vertical-align:bottom;
-      line-height:1.25; font-size:11px; hyphens:auto;
+      line-height:1.25; font-size:11px; hyphens:auto; overflow-wrap:anywhere;
     }
     #reconTable thead th[data-recon-col="units_per_case"] {
       width:2.6rem; max-width:2.6rem; padding:8px 3px;
@@ -544,10 +544,20 @@
     #reconTable thead th[data-recon-col="on_hand"],
     #reconTable thead th[data-recon-col="closing_cases"],
     #reconTable thead th[data-recon-col="closing_units"],
-    #reconTable thead th[data-recon-col="transferred"],
-    #reconTable thead th[data-recon-col="consumption"],
     #reconTable thead th[data-recon-col="plu"] {
-      max-width:3.75rem; padding-left:6px; padding-right:6px;
+      min-width:3.75rem; padding-left:6px; padding-right:6px;
+    }
+    #reconTable thead th[data-recon-col="transferred"],
+    #reconTable thead th[data-recon-col="consumption"] {
+      min-width:4.75rem; padding-left:6px; padding-right:6px;
+    }
+    #reconTable thead th[data-recon-col="case_price"],
+    #reconTable thead th[data-recon-col="consumption_charge"],
+    #reconTable thead th[data-recon-col="consumption_loose"],
+    #reconTable thead th[data-recon-col="plu_charge"],
+    #reconTable thead th[data-recon-col="invoice_charge"],
+    #reconTable thead th[data-recon-col="budget_cost"] {
+      min-width:4.5rem; padding-left:6px; padding-right:6px;
     }
     #reconTable tbody td[data-recon-col="abv"],
     #reconTable tbody td[data-recon-col="delivered"],
@@ -1562,22 +1572,22 @@
           <th data-recon-col="status" title="Red = action needed, yellow = review, green = done, blue = none returned">Status</th>
           <th data-recon-col="item">Item</th>
           <th data-recon-col="abv">ABV</th>
-          <th data-recon-col="case_price">Case price</th>
+          <th data-recon-col="case_price">Case<br>price</th>
           <th data-recon-col="supplier">Supplier</th>
           <th data-recon-col="units_per_case">Units<br>per case</th>
           <th data-recon-col="delivered">Delivered</th>
           <th data-recon-col="invoiced">Invoiced</th>
-          <th data-recon-col="on_hand">On hand</th>
-          <th data-recon-col="closing_cases">Closing (cases)</th>
-          <th data-recon-col="closing_units">Closing (units)</th>
+          <th data-recon-col="on_hand">On<br>hand</th>
+          <th data-recon-col="closing_cases">Closing<br>(cases)</th>
+          <th data-recon-col="closing_units">Closing<br>(units)</th>
           <th data-recon-col="transferred">Transferred</th>
           <th data-recon-col="consumption">Consumption</th>
           <th data-recon-col="plu">PLU</th>
-          <th data-recon-col="consumption_charge">Consumption charge</th>
-          <th data-recon-col="consumption_loose">Consumption + loose</th>
-          <th data-recon-col="plu_charge">PLU charge</th>
-          <th data-recon-col="invoice_charge">Invoice charge</th>
-          <th data-recon-col="budget_cost">Budget cost</th>
+          <th data-recon-col="consumption_charge">Consumption<br>charge</th>
+          <th data-recon-col="consumption_loose">Consumption<br>+ loose</th>
+          <th data-recon-col="plu_charge">PLU<br>charge</th>
+          <th data-recon-col="invoice_charge">Invoice<br>charge</th>
+          <th data-recon-col="budget_cost">Budget<br>cost</th>
         </tr></thead>
         <tbody id="reconTableBody"></tbody>
       </table>
