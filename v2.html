@@ -1530,7 +1530,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
-      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Transferred + On hand. Charges use case price. Import Square sales for PLU figures.</p>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Returns − Transferred (+ pre-event on hand if any). The <strong>On hand</strong> column shows live stock for reference only. Charges use case price. Import Square sales for PLU figures.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
@@ -3489,7 +3489,7 @@
           validate: (rows) => editor.validate(rows),
         },
       ],
-      values: p || {},
+      values: p || (opts && opts.values) || {},
       onDelete: (p && !(opts && opts.stacked)) ? async () => { await DB.products.deleteFull(p.id); await loadLibrary(); } : null,
       deleteLabel: 'Delete from library',
       deleteConfirm: p
@@ -4321,7 +4321,20 @@
     rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     $('ap-count').textContent = rows.length + ' product' + (rows.length === 1 ? '' : 's') + '.';
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="3" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">No products match your search.</td></tr>';
+      const createBtn = '<button type="button" class="btn btn-outline btn-sm" onclick="openCreateProductFromAddEvent()">' +
+        '<i class="ph ph-plus btn-leading-icon"></i> Create new product</button>';
+      let msg;
+      if (q) {
+        msg = 'No products match <strong style="color:var(--foreground)">“' + escapeHtml(q) + '”</strong>.';
+      } else if (!(_products || []).length) {
+        msg = 'Your product library is empty.';
+      } else {
+        msg = 'No products match your search.';
+      }
+      body.innerHTML = '<tr><td colspan="3" style="padding:20px 12px;text-align:center">' +
+        '<div style="color:var(--muted-foreground);font-size:12px;margin-bottom:10px;line-height:1.5">' + msg + '</div>' +
+        createBtn +
+        '</td></tr>';
       return;
     }
     body.innerHTML = rows.map((p) => {
@@ -4339,6 +4352,30 @@
         '<td style="text-align:right">' + action + '</td>' +
       '</tr>';
     }).join('');
+  }
+
+  async function openCreateProductFromAddEvent() {
+    const nameHint = ($('ap-search').value || '').trim();
+    try {
+      if (!_categories.length) _categories = (await DB.categories.list()) || [];
+      if (!_suppliers.length) _suppliers = (await DB.suppliers.list()) || [];
+    } catch (err) { console.error('openCreateProductFromAddEvent (load)', err); }
+    openProductModal(null, {
+      stacked: true,
+      values: nameHint ? { name: nameHint } : {},
+      afterSave: async (productId) => {
+        try {
+          _products = (await DB.products.listFull()) || _products;
+        } catch (err) { console.error('openCreateProductFromAddEvent (reload)', err); }
+        const fresh = (_products || []).find((p) => p.id === productId);
+        if (fresh) $('ap-search').value = fresh.name;
+        renderAddProductList();
+        setTimeout(() => {
+          const qtyEl = $('ap-qty-' + productId);
+          if (qtyEl) qtyEl.focus();
+        }, 50);
+      },
+    });
   }
 
   async function addProductToEvent(productId) {
@@ -7920,7 +7957,8 @@
 
   // ===================== FINANCIAL RECON =====================
   // Post-event financial close — mirrors the Gottwood recon spreadsheet.
-  // Consumption = Delivered − Returns to suppliers − Transferred + On hand
+  // Consumption = Delivered + pre-event on hand − Closing − Returns to suppliers − Transferred
+  // (On hand column = live site stock for reference; not added into consumption.)
 
   function reconDeliveredQty(ep) {
     return ep.delivered_qty != null ? Number(ep.delivered_qty) || 0 : 0;
@@ -8075,13 +8113,15 @@
       closingCases = Number(cl.close_count) || 0;
     }
     const closingUnits = ups > 0 ? closingSingles / ups : 0;
+    const closingTotal = closingCases + closingUnits;
+    const preEventOnHand = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
     const supplierReturns = supplierReturnCasesForProduct(pid);
     const transferred = summaryTransferOut(pid);
-    const consumption = roundN(delivered - supplierReturns - transferred + onHand, 2);
+    const consumption = roundN(delivered + preEventOnHand - supplierReturns - closingTotal - transferred, 2);
     const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
     const casePrice = reconCasePrice(ep, draft);
     const consumptionCharge = consumption * casePrice;
-    const consumptionLooseCharge = consumptionCharge;
+    const consumptionLooseCharge = (consumption + closingUnits) * casePrice;
     const pluCharge = plu * casePrice;
     const invoiceCharge = invoiced * casePrice;
     const budgetCl = {
