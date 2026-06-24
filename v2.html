@@ -528,7 +528,34 @@
     #summaryTable tbody tr.category-row td { text-align:left; }
     #supplierSummaryTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
     /* ── financial recon ── */
-    #reconTable thead th { position:static; text-align:center; white-space:nowrap; font-size:11px; }
+    #reconTable thead th {
+      position:static; text-align:center; white-space:normal; vertical-align:bottom;
+      line-height:1.25; font-size:11px; hyphens:auto;
+    }
+    #reconTable thead th[data-recon-col="abv"],
+    #reconTable thead th[data-recon-col="units_per_case"],
+    #reconTable thead th[data-recon-col="delivered"],
+    #reconTable thead th[data-recon-col="invoiced"],
+    #reconTable thead th[data-recon-col="on_hand"],
+    #reconTable thead th[data-recon-col="closing_cases"],
+    #reconTable thead th[data-recon-col="closing_units"],
+    #reconTable thead th[data-recon-col="transferred"],
+    #reconTable thead th[data-recon-col="consumption"],
+    #reconTable thead th[data-recon-col="plu"] {
+      max-width:3.75rem; padding-left:6px; padding-right:6px;
+    }
+    #reconTable tbody td[data-recon-col="abv"],
+    #reconTable tbody td[data-recon-col="units_per_case"],
+    #reconTable tbody td[data-recon-col="delivered"],
+    #reconTable tbody td[data-recon-col="invoiced"],
+    #reconTable tbody td[data-recon-col="on_hand"],
+    #reconTable tbody td[data-recon-col="closing_cases"],
+    #reconTable tbody td[data-recon-col="closing_units"],
+    #reconTable tbody td[data-recon-col="transferred"],
+    #reconTable tbody td[data-recon-col="consumption"],
+    #reconTable tbody td[data-recon-col="plu"] {
+      width:1%; white-space:nowrap; padding-left:6px; padding-right:6px;
+    }
     #reconTable thead th:first-child, #reconTable thead th:nth-child(2), #reconTable thead th:nth-child(3) { text-align:left; }
     #reconTable tbody td { text-align:center; vertical-align:middle; font-variant-numeric:tabular-nums; font-size:12px; }
     #reconTable tbody td:first-child, #reconTable tbody td:nth-child(2), #reconTable tbody td:nth-child(3), #reconTable tbody td:nth-child(6) { text-align:left; }
@@ -1933,17 +1960,11 @@
       </div>
     </div>
     <div class="df-field">
-      <label>Unit</label>
-      <div class="transfer-unit-toggle">
-        <button type="button" id="wf-unit-cases" class="active" onclick="setWastageUnit('cases')">Cases</button>
-        <button type="button" id="wf-unit-units" onclick="setWastageUnit('units')">Units</button>
-      </div>
-    </div>
-    <div class="df-field">
       <label>Products wasted</label>
+      <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:52%">Product</th><th id="wf-qty-head">Qty (cases)</th><th class="num" style="width:84px">Value</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:46%">Product</th><th title="Cases — but spirits are entered as decimal bottles">Cases / Bottles</th><th title="Loose individual units (not used for spirits)">Singles</th><th class="num" style="width:84px">Value</th><th style="width:36px"></th></tr></thead>
           <tbody id="wf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2048,7 +2069,7 @@
       <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:36%">Product</th><th>Pack size</th><th>Cases</th><th>Singles</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:36%">Product</th><th>Pack size</th><th title="Cases — but spirits are entered as decimal bottles">Cases / Bottles</th><th title="Loose individual units (not used for spirits)">Singles</th><th style="width:36px"></th></tr></thead>
           <tbody id="tf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border)">
@@ -4904,17 +4925,17 @@
       const { price } = deliveryLineCasePrice(line.productId, supplierId);
       const lineCost = (line.productId && price != null) ? price * delFormLineCases(line) : null;
       const spirit = showInBottles(line.productId);
-      const qtyCell = '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="' + (spirit ? 'bottles' : '0') + '" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>';
-      const singlesCell = spirit
-        ? '<td style="text-align:center;color:var(--muted-foreground)" title="Spirits are entered as decimal bottles in the Cases/Bottles column">—</td>'
-        : '<td><input type="number" step="1" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
+      const qtyCells = stockQtyCellsHtml(line.productId, line, {
+        casesKey: 'qty',
+        onCasesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)',
+        onSinglesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)',
+      });
       return '<tr>' +
       '<td style="position:relative"><input type="text" class="df-combo-input" id="df-combo-input-' + line.lineId + '" autocomplete="off"' +
         ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
         ' placeholder="Search products\u2026"' +
         ProductPicker.inputAttrs('delivery', line.lineId) + '></td>' +
-      qtyCell +
-      singlesCell +
+      qtyCells +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
       '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
       '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeDeliveryLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
@@ -4926,12 +4947,7 @@
   // Total cases for an in-progress form line: whole cases plus loose singles
   // expressed as a fraction of a case (uses the product's units/case).
   function delFormLineCases(line) {
-    // Spirits: the qty field holds decimal BOTTLES (singles unused).
-    if (showInBottles(line.productId)) {
-      return spiritCasesFromBottles(spiritProductById(line.productId), line.qty);
-    }
-    const ups = unitsPerCaseFor(line.productId) || 1;
-    return (Number(line.qty) || 0) + (Number(line.singles) || 0) / ups;
+    return formLineCases(line.productId, line, { casesKey: 'qty', singlesKey: 'singles' });
   }
   // Unusable/damaged for a form line, in cases (spirits enter it in bottles).
   function delFormLineDamagedCases(line) {
@@ -5335,11 +5351,50 @@
   // Stock Levels, Distribution availability and transfer checks.
   let _wastage = [];            // wastage_batches (with lines) for the current event
   let _wastageEventId = null;   // cache guard for _wastage
-  let _wstLines = [];           // form line state
+  let _wstLines = [];           // form line state [{lineId, productId, cases, singles}]
   let _wstEditingId = null;
-  let _wstUnit = 'cases';
 
   function wstLineId() { return 'w' + Math.random().toString(36).slice(2, 8); }
+
+  function wstFormLineCases(line) {
+    return formLineCases(line.productId, line);
+  }
+
+  function wastageLineFromSaved(l, batch) {
+    const pid = l.product_id;
+    const ups = unitsPerCaseFor(pid);
+    if (showInBottles(pid)) {
+      const stored = batchLineCases(batch, l);
+      const bottles = round1(spiritBottlesFromCases(spiritProductById(pid), stored));
+      return { lineId: wstLineId(), productId: pid, cases: bottles ? String(bottles) : '', singles: '' };
+    }
+    if (batch && batch.unit === 'units' && (l.singles == null || Number(l.singles) === 0)) {
+      const split = splitCasesSingles((Number(l.qty) || 0) / ups, ups);
+      return {
+        lineId: wstLineId(), productId: pid,
+        cases: split.cases ? String(split.cases) : '',
+        singles: split.singles ? String(split.singles) : '',
+      };
+    }
+    return {
+      lineId: wstLineId(), productId: pid,
+      cases: l.qty != null && Number(l.qty) !== 0 ? String(l.qty) : '',
+      singles: l.singles != null && Number(l.singles) !== 0 ? String(l.singles) : '',
+    };
+  }
+
+  function wastageLineToDb(l) {
+    if (showInBottles(l.productId)) {
+      const stored = wstFormLineCases(l);
+      const split = splitCasesSingles(stored, unitsPerCaseFor(l.productId));
+      return { product_id: l.productId, qty: split.cases, singles: split.singles || 0 };
+    }
+    return {
+      product_id: l.productId,
+      qty: Math.max(0, Number(l.cases) || 0),
+      singles: Math.max(0, Number(l.singles) || 0),
+    };
+  }
 
   async function ensureWastageData() {
     if (!_currentEvent) return;
@@ -5366,11 +5421,13 @@
     return null;
   }
 
-  // Convert one wastage line to cases, respecting the batch's unit.
+  // Convert one wastage line to total cases (qty + singles / units per case).
   function batchLineCases(batch, line) {
-    const qty = Number(line.qty) || 0;
-    if (batch && batch.unit === 'units') return qty / unitsPerCaseFor(line.product_id);
-    return qty;
+    const ups = unitsPerCaseFor(line.product_id) || 1;
+    if (batch && batch.unit === 'units' && (line.singles == null || Number(line.singles) === 0)) {
+      return (Number(line.qty) || 0) / ups;
+    }
+    return combineCasesSingles(line.qty, line.singles, ups);
   }
   function wastageBatchCases(b) {
     return (b.lines || []).reduce((s, l) => s + batchLineCases(b, l), 0);
@@ -5426,7 +5483,6 @@
       const dt = when
         ? new Date(when).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         : '—';
-      const unitLabel = b.unit === 'units' ? 'units' : 'cases';
       const cases = round1(wastageBatchCases(b));
       const val = wastageBatchValue(b);
       const reason = b.reason ? '<span class="delivery-log-ref">' + escapeHtml(b.reason) + '</span>' : '';
@@ -5438,7 +5494,7 @@
             const price = wastageCasePrice(l.product_id);
             const lineCost = price != null ? price * batchLineCases(b, l) : null;
             const costTag = lineCost != null ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">· ' + money(lineCost) + '</span>' : '';
-            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + '</span><span style="font-weight:700">' + round1(l.qty) + ' ' + unitLabel + costTag + '</span></div>';
+            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + '</span><span style="font-weight:700">' + stockLineQtyLabel(l.product_id, l.qty, l.singles) + costTag + '</span></div>';
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const valMeta = val > 0 ? ' · <span style="font-weight:700;color:var(--foreground)">' + money(val) + '</span>' : '';
@@ -5465,42 +5521,34 @@
     if (_ps && _ps.value.trim()) pageSearch(_ps.value);
   }
 
-  function setWastageUnit(u) {
-    _wstUnit = (u === 'units') ? 'units' : 'cases';
-    const cb = $('wf-unit-cases'); const ub = $('wf-unit-units');
-    if (cb) cb.classList.toggle('active', _wstUnit === 'cases');
-    if (ub) ub.classList.toggle('active', _wstUnit === 'units');
-    const head = $('wf-qty-head');
-    if (head) head.textContent = _wstUnit === 'units' ? 'Qty (units)' : 'Qty (cases)';
-    renderWastageLines();
-  }
-
   function renderWastageLines() {
     const body = $('wf-lines-body');
     if (!body) return;
     const options = deliveryProductOptions();
     if (!_wstLines.length) {
-      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
       renderWastageCostSummary();
       return;
     }
     if (!options.length) {
-      body.innerHTML = '<tr><td colspan="4" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
       renderWastageCostSummary();
       return;
     }
     body.innerHTML = _wstLines.map((line) => {
+      const lineCases = line.productId ? wstFormLineCases(line) : 0;
       const price = wastageCasePrice(line.productId);
-      const cases = line.productId
-        ? (_wstUnit === 'units' ? (Number(line.qty) || 0) / unitsPerCaseFor(line.productId) : (Number(line.qty) || 0))
-        : 0;
-      const lineCost = (line.productId && price != null) ? price * cases : null;
+      const lineCost = (line.productId && price != null) ? price * lineCases : null;
+      const qtyCells = stockQtyCellsHtml(line.productId, line, {
+        onCasesChange: 'updateWastageLine(\'' + line.lineId + '\',\'cases\',this.value)',
+        onSinglesChange: 'updateWastageLine(\'' + line.lineId + '\',\'singles\',this.value)',
+      });
       return '<tr>' +
         '<td style="position:relative"><input type="text" class="df-combo-input" id="wf-combo-input-' + line.lineId + '" autocomplete="off"' +
           ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
           ' placeholder="Search products\u2026"' +
           ProductPicker.inputAttrs('wastage', line.lineId) + '></td>' +
-        '<td><input type="number" step="any" min="0" value="' + (line.qty ?? '') + '" placeholder="0" onchange="updateWastageLine(\'' + line.lineId + '\',\'qty\',this.value)"></td>' +
+        qtyCells +
         '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
         '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeWastageLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
       '</tr>';
@@ -5516,14 +5564,13 @@
       if (!line.productId) return;
       const price = wastageCasePrice(line.productId);
       if (price == null) return;
-      const cases = _wstUnit === 'units' ? (Number(line.qty) || 0) / unitsPerCaseFor(line.productId) : (Number(line.qty) || 0);
-      total += price * cases;
+      total += price * wstFormLineCases(line);
     });
     totalEl.textContent = money(total) || '£0.00';
   }
 
   function addWastageLine() {
-    _wstLines.push({ lineId: wstLineId(), productId: '', qty: '' });
+    _wstLines.push({ lineId: wstLineId(), productId: '', cases: '', singles: '' });
     renderWastageLines();
   }
   function removeWastageLine(lineId) {
@@ -5539,13 +5586,13 @@
 
   function clearWastageForm() {
     _wstEditingId = null;
-    _wstLines = [{ lineId: wstLineId(), productId: '', qty: '' }];
+    _wstLines = [{ lineId: wstLineId(), productId: '', cases: '', singles: '' }];
     const now = new Date();
     $('wf-date').value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     $('wf-reason').value = ''; $('wf-notes').value = ''; $('wf-err').textContent = '';
     $('wastageFormTitle').textContent = 'Log Wastage';
     $('wf-save-btn').textContent = 'Save Wastage';
-    setWastageUnit('cases');
+    renderWastageLines();
   }
 
   function openWastageForm() {
@@ -5596,8 +5643,8 @@
     _wstEditingId = id;
     const lines = b.lines || [];
     _wstLines = lines.length
-      ? lines.map((l) => ({ lineId: wstLineId(), productId: l.product_id, qty: String(l.qty ?? '') }))
-      : [{ lineId: wstLineId(), productId: '', qty: '' }];
+      ? lines.map((l) => wastageLineFromSaved(l, b))
+      : [{ lineId: wstLineId(), productId: '', cases: '', singles: '' }];
     const when = b.recorded_at || b.created_at;
     if (when) { const dt = new Date(when); $('wf-date').value = new Date(dt - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
     // Reason may be a free-text value not in the preset list; add it so it shows.
@@ -5610,7 +5657,6 @@
     $('wf-err').textContent = '';
     $('wastageFormTitle').textContent = 'Edit Wastage';
     $('wf-save-btn').textContent = 'Update Wastage';
-    setWastageUnit(b.unit === 'units' ? 'units' : 'cases');
     $('wastageFormOverlay').classList.add('open');
     $('wastageFormDrawer').classList.add('open');
   }
@@ -5618,8 +5664,8 @@
   async function saveWastage() {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const valid = _wstLines
-      .filter((l) => l.productId && (Number(l.qty) || 0) > 0)
-      .map((l) => ({ product_id: l.productId, qty: round1(l.qty) }));
+      .filter((l) => l.productId && wstFormLineCases(l) > 0)
+      .map((l) => wastageLineToDb(l));
     if (!valid.length) { $('wf-err').textContent = 'Add at least one product with a quantity.'; return; }
 
     const btn = $('wf-save-btn');
@@ -5630,7 +5676,7 @@
     try {
       const head = {
         event_id: _currentEvent.id,
-        unit: _wstUnit === 'units' ? 'units' : 'cases',
+        unit: 'cases',
         reason: ($('wf-reason').value || '').trim() || null,
         recorded_at: $('wf-date').value ? new Date($('wf-date').value).toISOString() : new Date().toISOString(),
         notes: ($('wf-notes').value || '').trim() || null,
@@ -5644,7 +5690,22 @@
         const created = await DB.wastage.create(head);
         batchId = created.id;
       }
-      await DB.wastage.addLines(valid.map((v) => ({ batch_id: batchId, product_id: v.product_id, qty: v.qty })));
+      try {
+        await DB.wastage.addLines(valid.map((v) => ({
+          batch_id: batchId,
+          product_id: v.product_id,
+          qty: round1(v.qty),
+          singles: Math.round(Number(v.singles) || 0),
+        })));
+      } catch (lineErr) {
+        if (/singles/i.test(lineErr && lineErr.message || '')) {
+          await DB.wastage.addLines(valid.map((v) => ({
+            batch_id: batchId,
+            product_id: v.product_id,
+            qty: roundN(v.qty + v.singles / (unitsPerCaseFor(v.product_id) || 1), 4),
+          })));
+        } else throw lineErr;
+      }
 
       _wastageEventId = null;
       await loadWastage();
@@ -5946,16 +6007,10 @@
   }
   // Human label for a saved transfer line, e.g. "3 cases + 5 singles".
   function transferLineQtyLabel(t, l) {
-    const cases = Number(l.qty) || 0;
-    const singles = Number(l.singles) || 0;
-    if (singles > 0) {
-      const parts = [];
-      if (cases > 0) parts.push(round1(cases) + ' case' + (cases === 1 ? '' : 's'));
-      parts.push(Math.round(singles) + ' single' + (Math.round(singles) === 1 ? '' : 's'));
-      return parts.join(' + ');
+    if (t && t.unit === 'units' && !(Number(l.singles) > 0)) {
+      return round1(l.qty) + ' units';
     }
-    if (t && t.unit === 'units') return round1(cases) + ' units';
-    return round1(cases) + ' case' + (cases === 1 ? '' : 's');
+    return stockLineQtyLabel(l.product_id, l.qty, l.singles);
   }
   // Which bar (within the event) a transfer left from. Prefers the real
   // from_bar_id column (post-migration / cutover); falls back to a marker we
@@ -6899,8 +6954,7 @@
   // Total cases for a transfer form line: whole cases plus loose singles
   // expressed as a fraction of a case (uses the product's units/case).
   function transferFormLineCases(line) {
-    const ups = unitsPerCaseFor(line.productId) || 1;
-    return (Number(line.cases) || 0) + (Number(line.singles) || 0) / ups;
+    return formLineCases(line.productId, line);
   }
 
   function addTransferLine() {
@@ -6958,15 +7012,24 @@
       const requested = line.productId ? transferFormLineCases(line) : 0;
       const over = avail != null && requested > avail;
       const overStyle = over ? ';border-color:var(--danger);color:var(--danger)' : '';
-      const singlesHint = (line.productId && ups > 1) ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + ups + ' per case</div>' : '';
+      const qtyCells = stockQtyCellsHtml(line.productId, line, {
+        inputType: 'text',
+        casesTdStyle: 'padding:6px 10px',
+        singlesTdStyle: 'padding:6px 10px',
+        casesStyle: 'width:80px' + overStyle,
+        singlesStyle: 'width:80px' + overStyle,
+        onCasesChange: 'updateTransferLine(\'' + line.lineId + '\',\'cases\',this.value)',
+        onCasesBlur: 'evalTransferLineQty(\'' + line.lineId + '\',\'cases\',this)',
+        onSinglesChange: 'updateTransferLine(\'' + line.lineId + '\',\'singles\',this.value)',
+        onSinglesBlur: 'evalTransferLineQty(\'' + line.lineId + '\',\'singles\',this)',
+      });
       return '<tr>' +
         '<td style="padding:6px 10px;position:relative"><input type="text" class="df-combo-input" id="tf-combo-input-' + line.lineId + '" autocomplete="off"' +
           ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
           ' placeholder="Search products\u2026"' +
           ProductPicker.inputAttrs('transfer', line.lineId) + '>' + availLabel + '</td>' +
         '<td style="padding:6px 10px;font-size:12px;color:var(--muted-foreground)">' + (packSize ? escapeHtml(packSize) : '—') + '</td>' +
-        '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.cases || '') + '" placeholder="0" style="width:80px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'cases\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',\'cases\',this)"></td>' +
-        '<td style="padding:6px 10px"><input type="text" value="' + escapeHtml(line.singles || '') + '" placeholder="0" style="width:80px' + overStyle + '" onchange="updateTransferLine(\'' + line.lineId + '\',\'singles\',this.value)" onblur="evalTransferLineQty(\'' + line.lineId + '\',\'singles\',this)">' + singlesHint + '</td>' +
+        qtyCells +
         '<td style="padding:6px 8px;text-align:center"><button type="button" class="btn btn-danger btn-sm btn-icon" onclick="removeTransferLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
       '</tr>';
     }).join('');
@@ -7502,6 +7565,62 @@
   function casesSinglesInputsSet(casesVal, singlesVal) {
     return String(casesVal != null ? casesVal : '').trim() !== ''
       || String(singlesVal != null ? singlesVal : '').trim() !== '';
+  }
+
+  // Total cases from a form line's cases (+ optional singles) fields.
+  function formLineCases(productId, line, opts) {
+    opts = opts || {};
+    const casesKey = opts.casesKey || 'cases';
+    const singlesKey = opts.singlesKey || 'singles';
+    const casesVal = line[casesKey] ?? line.qty;
+    if (productId && showInBottles(productId)) {
+      return spiritCasesFromBottles(spiritProductById(productId), casesVal);
+    }
+    return combineCasesSingles(casesVal, line[singlesKey], unitsPerCaseFor(productId));
+  }
+
+  // Standard cases + singles table cells for line-item stock entry forms.
+  function stockQtyCellsHtml(productId, line, opts) {
+    opts = opts || {};
+    const casesKey = opts.casesKey || 'cases';
+    const singlesKey = opts.singlesKey || 'singles';
+    const casesVal = line[casesKey] ?? '';
+    const singlesVal = line[singlesKey] ?? '';
+    const inputType = opts.inputType || 'number';
+    const spirit = productId && showInBottles(productId);
+    const ups = productId ? unitsPerCaseFor(productId) : 1;
+    const casesType = inputType === 'text' ? ' type="text"' : ' type="number" step="any" min="0"';
+    const singlesType = inputType === 'text' ? ' type="text"' : ' type="number" step="1" min="0"';
+    const casesCell = '<td' + (opts.casesTdStyle ? ' style="' + opts.casesTdStyle + '"' : '') + '><input' + casesType +
+      ' value="' + escapeHtml(casesVal) + '" placeholder="' + (spirit ? 'bottles' : '0') + '"' +
+      (opts.casesStyle ? ' style="' + opts.casesStyle + '"' : '') +
+      (opts.onCasesChange ? ' onchange="' + opts.onCasesChange + '"' : '') +
+      (opts.onCasesBlur ? ' onblur="' + opts.onCasesBlur + '"' : '') + '></td>';
+    const singlesCell = spirit
+      ? '<td style="text-align:center;color:var(--muted-foreground)" title="Spirits — enter decimal bottles in the Cases / Bottles column">—</td>'
+      : '<td' + (opts.singlesTdStyle ? ' style="' + opts.singlesTdStyle + '"' : '') + '><input' + singlesType +
+        ' value="' + escapeHtml(singlesVal) + '" placeholder="0"' +
+        (opts.singlesStyle ? ' style="' + opts.singlesStyle + '"' : '') +
+        (opts.onSinglesChange ? ' onchange="' + opts.onSinglesChange + '"' : '') +
+        (opts.onSinglesBlur ? ' onblur="' + opts.onSinglesBlur + '"' : '') + '>' +
+        (opts.singlesHint !== false && ups > 1 ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + ups + ' per case</div>' : '') +
+        '</td>';
+    return casesCell + singlesCell;
+  }
+
+  // Human label for a saved qty + singles pair, e.g. "3 cases · 5 singles".
+  function stockLineQtyLabel(productId, qty, singles) {
+    if (productId && showInBottles(productId)) {
+      const stored = combineCasesSingles(qty, singles, unitsPerCaseFor(productId));
+      const d = deliveryDisplayQty(productId, stored);
+      return d.n + ' ' + d.unit;
+    }
+    const cases = round1(qty);
+    const loose = Math.round(Number(singles) || 0);
+    const parts = [];
+    if (cases || !loose) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
+    if (loose) parts.push(loose + ' ' + (loose === 1 ? 'single' : 'singles'));
+    return parts.join(' \u00b7 ');
   }
 
   function renderClosing() {
