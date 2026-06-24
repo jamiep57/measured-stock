@@ -2165,9 +2165,9 @@
       <table class="rcn-return-table" id="rcn-return-table">
         <thead><tr>
           <th style="min-width:120px">Supplier</th>
-          <th style="width:72px">Cases</th>
-          <th style="width:72px">Singles</th>
-          <th style="width:88px">£/case</th>
+          <th style="width:72px" id="rcn-return-cases-h">Cases</th>
+          <th style="width:72px" id="rcn-return-singles-h">Singles</th>
+          <th style="width:88px" id="rcn-return-price-h">£/case</th>
           <th style="width:72px">Value</th>
           <th style="width:36px" title="Print pallet stickers"></th>
           <th style="width:32px"></th>
@@ -7769,8 +7769,24 @@
 
   // ===================== FINANCIAL RECON =====================
   // Post-event financial close — mirrors the Gottwood recon spreadsheet.
-  // Consumption = Delivered − Closing(cases) − Closing(units as cases) − Transferred + On hand
-  // Consumption + loose charge = (Consumption + closing units fraction) × case price
+  // Consumption = Delivered − Returns to suppliers − Transferred + On hand
+
+  function reconDeliveredQty(ep) {
+    return ep.delivered_qty != null ? Number(ep.delivered_qty) || 0 : 0;
+  }
+
+  function supplierReturnCasesForProduct(pid) {
+    if (_reconCtx && _reconCtx.pid === pid && _rcnReturnLines.length) {
+      return roundN(totalReturnCasesFromRcnLines(pid), 2);
+    }
+    const ups = unitsPerCaseFor(pid) || 1;
+    const lines = (_supplierReturns || []).filter((r) => r.product_id === pid);
+    if (lines.length) {
+      return roundN(lines.reduce((s, r) => s + combineCasesSingles(r.qty, r.singles, ups), 0), 2);
+    }
+    const cl = closingRowFor(pid) || {};
+    return roundN(Number(cl.return_amount) || 0, 2);
+  }
 
   function computePluCasesByProductId(eps) {
     const rows = (_squareImport && _squareImport.rows) || [];
@@ -7896,8 +7912,7 @@
     const pid = ep.product_id;
     const p = ep.product;
     const ups = Number(p.units_per_case) || 1;
-    const delivered = ep.delivered_qty != null ? Number(ep.delivered_qty)
-      : (ep.qty_ordered != null ? Number(ep.qty_ordered) : 0);
+    const delivered = reconDeliveredQty(ep);
     const cl = closingRowFor(pid) || {};
     const invoiced = draft && draft.invoiced != null ? Number(draft.invoiced) : closingInvoiceQty(ep);
     const onHand = siteAvailable(pid);
@@ -7909,12 +7924,13 @@
       closingCases = Number(cl.close_count) || 0;
     }
     const closingUnits = ups > 0 ? closingSingles / ups : 0;
+    const supplierReturns = supplierReturnCasesForProduct(pid);
     const transferred = summaryTransferOut(pid);
-    const consumption = roundN(delivered - closingCases - closingUnits - transferred + onHand, 2);
+    const consumption = roundN(delivered - supplierReturns - transferred + onHand, 2);
     const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
     const casePrice = reconCasePrice(ep, draft);
     const consumptionCharge = consumption * casePrice;
-    const consumptionLooseCharge = (consumption + closingUnits) * casePrice;
+    const consumptionLooseCharge = consumptionCharge;
     const pluCharge = plu * casePrice;
     const invoiceCharge = invoiced * casePrice;
     const budgetCl = {
@@ -7923,7 +7939,7 @@
     };
     const charges = {
       ep, pid, p, ups, delivered, invoiced, onHand, closingCases, closingUnits, closingSingles,
-      transferred, consumption, plu, casePrice, consumptionCharge, consumptionLooseCharge,
+      supplierReturns, transferred, consumption, plu, casePrice, consumptionCharge, consumptionLooseCharge,
       pluCharge, invoiceCharge,
     };
     const budgetCost = reconBudgetCost(charges, budgetCl);
@@ -8210,6 +8226,17 @@
     }
     renderRcnDeliveredSummary(pid);
     syncReconDrawerPriceFields(ep);
+    syncReconDrawerReturnFields(pid);
+  }
+
+  function syncReconDrawerReturnFields(pid) {
+    const spirit = showInBottles(pid);
+    const casesH = $('rcn-return-cases-h');
+    const singlesH = $('rcn-return-singles-h');
+    const priceH = $('rcn-return-price-h');
+    if (casesH) casesH.textContent = spirit ? 'Bottles' : 'Cases';
+    if (singlesH) singlesH.textContent = spirit ? '—' : 'Singles';
+    if (priceH) priceH.textContent = spirit ? '£/case' : '£/case';
   }
 
   function syncReconDrawerPriceFields(ep) {
@@ -8301,8 +8328,36 @@
 
   function rcnReturnLineId() { return 'rr' + Math.random().toString(36).slice(2, 8); }
 
-  function rcnReturnLineCases(line, ups) {
+  // Stored supplier-case total for a return line (UI may show bottles for spirits).
+  function rcnReturnLineStoredCases(line, pid) {
+    if (showInBottles(pid)) {
+      return spiritCasesFromBottles(spiritProductById(pid), line.cases);
+    }
+    const ups = unitsPerCaseFor(pid) || 1;
     return combineCasesSingles(line.cases, line.singles, ups);
+  }
+
+  function rcnReturnLineDisplayFromSaved(r, pid) {
+    const ups = unitsPerCaseFor(pid) || 1;
+    const stored = combineCasesSingles(r.qty, r.singles, ups);
+    if (showInBottles(pid)) {
+      const bottles = round1(spiritBottlesFromCases(spiritProductById(pid), stored));
+      return { cases: bottles || '', singles: '' };
+    }
+    const split = splitCasesSingles(stored, ups);
+    return { cases: split.cases || '', singles: split.singles || '' };
+  }
+
+  function rcnReturnLineToDbQty(line, pid) {
+    if (showInBottles(pid)) {
+      const stored = spiritCasesFromBottles(spiritProductById(pid), line.cases);
+      const split = splitCasesSingles(stored, unitsPerCaseFor(pid) || 1);
+      return { qty: split.cases, singles: split.singles || 0 };
+    }
+    return {
+      qty: Math.max(0, Number(line.cases) || 0),
+      singles: Math.max(0, Number(line.singles) || 0),
+    };
   }
 
   function rcnReturnLinePrice(line, pid, draft) {
@@ -8321,17 +8376,15 @@
   }
 
   function initRcnReturnLines(pid) {
-    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
-    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
     const saved = (_supplierReturns || []).filter((r) => r.product_id === pid);
     if (saved.length) {
       _rcnReturnLines = saved.map((r) => {
-        const split = splitCasesSingles(combineCasesSingles(r.qty, r.singles, ups), ups);
+        const display = rcnReturnLineDisplayFromSaved(r, pid);
         return {
           lineId: r.id || rcnReturnLineId(),
           supplierId: r.supplier_id || '',
-          cases: split.cases || '',
-          singles: split.singles || '',
+          cases: display.cases,
+          singles: display.singles,
           casePrice: r.case_price != null ? String(r.case_price) : '',
         };
       });
@@ -8339,12 +8392,12 @@
     }
     const cl = closingRowFor(pid) || {};
     if (cl.return_amount != null && Number(cl.return_amount) > 0) {
-      const split = splitCasesSingles(cl.return_amount, ups);
+      const display = rcnReturnLineDisplayFromSaved({ qty: cl.return_amount, singles: 0 }, pid);
       _rcnReturnLines = [{
         lineId: rcnReturnLineId(),
         supplierId: productSupplierId(pid) || '',
-        cases: split.cases,
-        singles: split.singles || '',
+        cases: display.cases,
+        singles: display.singles,
         casePrice: '',
       }];
       return;
@@ -8363,19 +8416,22 @@
       return;
     }
     body.innerHTML = _rcnReturnLines.map((line) => {
-      const ups = Number((((_currentEvent.event_products || []).find((x) => x.product_id === pid) || {}).product || {}).units_per_case) || 1;
+      const spirit = showInBottles(pid);
       const draft = reconDrawerDraft();
       const price = rcnReturnLinePrice(line, pid, draft);
-      const lineCases = rcnReturnLineCases(line, ups);
+      const lineCases = rcnReturnLineStoredCases(line, pid);
       const lineVal = price != null ? price * lineCases : null;
       const canPrint = line.supplierId && lineCases > 0;
       const opts = '<option value="">— Supplier —</option>' + options.map((o) =>
         '<option value="' + o.id + '"' + (line.supplierId === o.id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>'
       ).join('');
+      const singlesCell = spirit
+        ? '<td style="text-align:center;color:var(--muted-foreground)" title="Spirits — enter bottles in the Bottles column">—</td>'
+        : '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
       return '<tr>' +
         '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
-        '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="0" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>' +
-        '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>' +
+        '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="' + (spirit ? 'bottles' : '0') + '" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>' +
+        singlesCell +
         '<td><input type="number" step="0.01" min="0" value="' + escapeHtml(line.casePrice ?? '') + '" placeholder="Auto" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'casePrice\',this.value)"></td>' +
         '<td class="num">' + (lineVal != null ? money(lineVal) : '—') + '</td>' +
         '<td><button type="button" class="btn btn-outline btn-sm btn-icon" onclick="openReturnDrawer(\'' + pid + '\',\'' + line.supplierId + '\')" title="Print pallet stickers"' + (canPrint ? '' : ' disabled') + '><i class="ph ph-printer"></i></button></td>' +
@@ -8389,21 +8445,21 @@
     const el = $('rcn-return-total');
     if (!el || !_reconCtx) return;
     const pid = _reconCtx.pid;
-    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
-    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
-    let totCases = 0;
+    let totStored = 0;
     let totVal = 0;
     const draft = reconDrawerDraft();
     _rcnReturnLines.forEach((line) => {
-      const c = rcnReturnLineCases(line, ups);
-      totCases += c;
+      const c = rcnReturnLineStoredCases(line, pid);
+      totStored += c;
       const p = rcnReturnLinePrice(line, pid, draft);
       if (p != null) totVal += p * c;
     });
-    el.textContent = totCases > 0
-      ? 'Total return: ' + round1(totCases) + ' case' + (round1(totCases) === 1 ? '' : 's') +
-        (totVal ? ' · ' + money(totVal) : '')
-      : '';
+    if (totStored > 0) {
+      const d = stockQtyDisplay(pid, totStored);
+      el.textContent = 'Total return: ' + d.n + ' ' + d.unit + (totVal ? ' · ' + money(totVal) : '');
+    } else {
+      el.textContent = '';
+    }
   }
 
   function addRcnReturnLine() {
@@ -8440,9 +8496,7 @@
   }
 
   function totalReturnCasesFromRcnLines(pid) {
-    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
-    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
-    return _rcnReturnLines.reduce((s, line) => s + rcnReturnLineCases(line, ups), 0);
+    return _rcnReturnLines.reduce((s, line) => s + rcnReturnLineStoredCases(line, pid), 0);
   }
 
   async function editProductFromRecon() {
@@ -8564,7 +8618,7 @@
     const draft = reconDrawerDraft();
     _rcnReturnLines.forEach((line) => {
       const p = rcnReturnLinePrice(line, _reconCtx.pid, draft);
-      if (p != null) returnValue += p * rcnReturnLineCases(line, ups);
+      if (p != null) returnValue += p * rcnReturnLineStoredCases(line, _reconCtx.pid);
     });
     r.returnValue = returnValue;
     const p = ep.product;
@@ -8575,6 +8629,7 @@
         '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
         '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>' +
         '<tr><td>On hand</td><td>' + reconQtyCell(r.onHand) + '</td></tr>' +
+        '<tr><td>Returns to suppliers</td><td>' + reconQtyCell(r.supplierReturns) + '</td></tr>' +
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
         '<tr><td>PLU (till)</td><td>' + reconQtyCell(r.plu) + '</td></tr>' +
@@ -8606,7 +8661,7 @@
     const priceRaw = $('rcn-price').value.trim();
     const unitPriceRaw = ($('rcn-unit-price') && $('rcn-unit-price').value || '').trim();
     const validReturnLines = _rcnReturnLines.filter((line) =>
-      line.supplierId && rcnReturnLineCases(line, ups) > 0
+      line.supplierId && rcnReturnLineStoredCases(line, pid) > 0
     );
     try {
       await DB.eventProducts.setForEvent(_currentEvent.id, pid, {
@@ -8618,15 +8673,18 @@
       ep.order_price_override = priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null;
       ep.order_unit_price_override = unitPriceRaw !== '' ? roundN(parseFloat(unitPriceRaw), 2) : null;
       try {
-        const returnRows = validReturnLines.map((line) => ({
-          event_id: _currentEvent.id,
-          product_id: pid,
-          supplier_id: line.supplierId,
-          qty: Math.max(0, Number(line.cases) || 0),
-          singles: Math.max(0, Number(line.singles) || 0),
-          case_price: line.casePrice !== '' && line.casePrice != null
-            ? roundN(parseFloat(line.casePrice), 2) : null,
-        }));
+        const returnRows = validReturnLines.map((line) => {
+          const qtyParts = rcnReturnLineToDbQty(line, pid);
+          return {
+            event_id: _currentEvent.id,
+            product_id: pid,
+            supplier_id: line.supplierId,
+            qty: qtyParts.qty,
+            singles: qtyParts.singles,
+            case_price: line.casePrice !== '' && line.casePrice != null
+              ? roundN(parseFloat(line.casePrice), 2) : null,
+          };
+        });
         await DB.supplierReturns.replaceForProduct(_currentEvent.id, pid, returnRows);
         _supplierReturns = (_supplierReturns || []).filter((r) => r.product_id !== pid).concat(returnRows);
       } catch (retErr) {
@@ -8954,7 +9012,7 @@
       const fromSaved = savedLines.find((r) => r.supplier_id === resolvedSupplierId);
       const fromDraft = (_rcnReturnLines || []).find((l) => l.supplierId === resolvedSupplierId);
       if (fromDraft) {
-        returnAmt = rcnReturnLineCases(fromDraft, ups);
+        returnAmt = rcnReturnLineStoredCases(fromDraft, pid);
       } else if (fromSaved) {
         returnAmt = combineCasesSingles(fromSaved.qty, fromSaved.singles, ups);
       }
