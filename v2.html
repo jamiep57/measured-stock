@@ -528,9 +528,16 @@
     #summaryTable tbody tr.category-row td { text-align:left; }
     #supplierSummaryTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
     /* ── financial recon ── */
+    #reconTableWrap { overflow:visible; }
+    #reconTable { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    #reconTable thead, #reconTable tbody {
+      display:table; width:max-content; min-width:100%; table-layout:auto; border-collapse:collapse;
+    }
     #reconTable thead th {
-      position:static; text-align:center; white-space:normal; vertical-align:bottom;
+      position:sticky; top:52px; z-index:20; background:var(--secondary);
+      text-align:center; white-space:normal; vertical-align:bottom;
       line-height:1.2; font-size:10px; hyphens:auto; overflow-wrap:anywhere;
+      box-shadow:0 1px 0 var(--border);
     }
     #reconTable thead th[data-recon-col="units_per_case"] {
       width:2.6rem; max-width:2.6rem; padding:8px 3px;
@@ -541,7 +548,6 @@
     #reconTable thead th[data-recon-col="abv"],
     #reconTable thead th[data-recon-col="delivered"],
     #reconTable thead th[data-recon-col="invoiced"],
-    #reconTable thead th[data-recon-col="on_hand"],
     #reconTable thead th[data-recon-col="closing_cases"],
     #reconTable thead th[data-recon-col="closing_units"],
     #reconTable thead th[data-recon-col="plu"] {
@@ -562,7 +568,6 @@
     #reconTable tbody td[data-recon-col="abv"],
     #reconTable tbody td[data-recon-col="delivered"],
     #reconTable tbody td[data-recon-col="invoiced"],
-    #reconTable tbody td[data-recon-col="on_hand"],
     #reconTable tbody td[data-recon-col="closing_cases"],
     #reconTable tbody td[data-recon-col="closing_units"],
     #reconTable tbody td[data-recon-col="transferred"],
@@ -1549,7 +1554,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
-      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Returns − Transferred (+ pre-event on hand if any). The <strong>On hand</strong> column shows live stock for reference only. Charges use case price. Import Square sales for PLU figures.</p>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Returns − Transferred (+ pre-event on hand if any). Charges use case price. Import Square sales for PLU figures.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
@@ -1575,7 +1580,7 @@
         <div class="recon-col-menu" id="reconColMenu" role="menu"></div>
       </div>
     </div>
-    <div class="dist-table-wrap">
+    <div class="dist-table-wrap" id="reconTableWrap">
       <table id="reconTable">
         <thead><tr>
           <th data-recon-col="status" title="Red = action needed, yellow = review, green = done, blue = none returned">Status</th>
@@ -1586,7 +1591,6 @@
           <th data-recon-col="units_per_case">Units<br>per case</th>
           <th data-recon-col="delivered">Delivered</th>
           <th data-recon-col="invoiced">Invoiced</th>
-          <th data-recon-col="on_hand">On<br>hand</th>
           <th data-recon-col="closing_cases">Closing<br>(cases)</th>
           <th data-recon-col="closing_units">Closing<br>(units)</th>
           <th data-recon-col="transferred">Transferred</th>
@@ -8051,7 +8055,6 @@
   // ===================== FINANCIAL RECON =====================
   // Post-event financial close — mirrors the Gottwood recon spreadsheet.
   // Consumption = Delivered + pre-event on hand − Closing − Returns to suppliers − Transferred
-  // (On hand column = live site stock for reference; not added into consumption.)
 
   function reconDeliveredQty(ep) {
     return ep.delivered_qty != null ? Number(ep.delivered_qty) || 0 : 0;
@@ -8197,7 +8200,6 @@
     const delivered = reconDeliveredQty(ep);
     const cl = closingRowFor(pid) || {};
     const invoiced = draft && draft.invoiced != null ? Number(draft.invoiced) : closingInvoiceQty(ep);
-    const onHand = siteAvailable(pid);
     let closingCases = draft && draft.closingCases != null ? Number(draft.closingCases)
       : (cl.closing_cases != null ? Number(cl.closing_cases) : 0);
     let closingSingles = draft && draft.closingSingles != null ? Number(draft.closingSingles)
@@ -8222,7 +8224,7 @@
       budget_override: draft && draft.budgetOverride != null ? draft.budgetOverride : cl.budget_override,
     };
     const charges = {
-      ep, pid, p, ups, delivered, invoiced, onHand, closingCases, closingUnits, closingSingles,
+      ep, pid, p, ups, delivered, invoiced, closingCases, closingUnits, closingSingles,
       supplierReturns, transferred, consumption, plu, casePrice, consumptionCharge, consumptionLooseCharge,
       pluCharge, invoiceCharge,
     };
@@ -8263,7 +8265,6 @@
     { id: 'units_per_case', label: 'Units per case' },
     { id: 'delivered', label: 'Delivered' },
     { id: 'invoiced', label: 'Invoiced' },
-    { id: 'on_hand', label: 'On hand' },
     { id: 'closing_cases', label: 'Closing (cases)' },
     { id: 'closing_units', label: 'Closing (units)' },
     { id: 'transferred', label: 'Transferred' },
@@ -8956,7 +8957,6 @@
       '<table><tbody>' +
         '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
         '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>' +
-        '<tr><td>On hand</td><td>' + reconQtyCell(r.onHand) + '</td></tr>' +
         '<tr><td>Returns to suppliers</td><td>' + reconQtyCell(r.supplierReturns) + '</td></tr>' +
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
@@ -9214,7 +9214,6 @@
           '<td data-recon-col="units_per_case">' + (r.ups || '—') + '</td>' +
           '<td data-recon-col="delivered">' + reconQtyCell(r.delivered) + '</td>' +
           '<td data-recon-col="invoiced">' + reconQtyCell(r.invoiced) + '</td>' +
-          '<td data-recon-col="on_hand">' + reconQtyCell(r.onHand) + '</td>' +
           '<td data-recon-col="closing_cases">' + reconQtyCell(r.closingCases) + '</td>' +
           '<td data-recon-col="closing_units">' + reconQtyCell(r.closingUnits) + '</td>' +
           '<td data-recon-col="transferred">' + reconQtyCell(r.transferred) + '</td>' +
@@ -9256,7 +9255,7 @@
     const rows = computeReconTotalRows();
     const headers = [
       'Status', 'Item', 'Case Size', 'ABV', 'Case Price', 'Supplier', 'Units per case',
-      'Delivered', 'Invoiced', 'On Hand', 'Closing (Cases)', 'Closing (Units in case format)',
+      'Delivered', 'Invoiced', 'Closing (Cases)', 'Closing (Units in case format)',
       'Transferred', 'Consumption', 'PLU', 'Consumption Charge', 'Consumption + Loose Charge',
       'PLU Charge', 'Invoice Charge', '', 'Budget Cost', 'Notes',
     ];
@@ -9268,7 +9267,7 @@
       lines.push([
         statusLabel, r.p.name, r.p.case_size || '', abv,
         r.casePrice ? '£' + r.casePrice.toFixed(2) : '', r.supplierName, r.ups || '',
-        r.delivered || 0, r.invoiced || 0, r.onHand || 0,
+        r.delivered || 0, r.invoiced || 0,
         r.closingCases || 0, r.closingUnits || 0, r.transferred || 0,
         r.consumption || 0, r.plu || 0,
         r.consumptionCharge || 0, r.consumptionLooseCharge || 0,
