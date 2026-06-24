@@ -542,7 +542,10 @@
     #reconTable tbody tr.recon-row-status-yellow:hover td { background:#fef3c7; }
     #reconTable tbody tr.recon-row-status-green td { background:#f0fdf4; }
     #reconTable tbody tr.recon-row-status-green:hover td { background:#dcfce7; }
-    #reconTable .recon-marker-cell { width:72px; padding:4px 6px !important; white-space:nowrap; }
+    #reconTable tbody tr.recon-row-status-blue td { background:#eff6ff; }
+    #reconTable tbody tr.recon-row-status-blue:hover td { background:#dbeafe; }
+    #reconTable tbody tr.recon-row-hidden td { opacity:.55; }
+    #reconTable .recon-marker-cell { width:96px; padding:4px 6px !important; white-space:nowrap; }
     .recon-markers { display:inline-flex; gap:4px; align-items:center; vertical-align:middle; }
     .recon-marker {
       width:14px; height:14px; padding:0; border:2px solid transparent; border-radius:999px;
@@ -553,9 +556,11 @@
     .recon-marker-red { background:#ef4444; }
     .recon-marker-yellow { background:#f59e0b; }
     .recon-marker-green { background:#22c55e; }
+    .recon-marker-blue { background:#3b82f6; }
     .recon-marker-red.active { box-shadow:0 0 0 2px #fef2f2, 0 0 0 3px #ef4444; }
     .recon-marker-yellow.active { box-shadow:0 0 0 2px #fffbeb, 0 0 0 3px #f59e0b; }
     .recon-marker-green.active { box-shadow:0 0 0 2px #f0fdf4, 0 0 0 3px #22c55e; }
+    .recon-marker-blue.active { box-shadow:0 0 0 2px #eff6ff, 0 0 0 3px #3b82f6; }
     .recon-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; font-size:13px; }
     .recon-filter-row .label { color:var(--muted-foreground); font-weight:500; margin-right:2px; }
     .recon-filter {
@@ -1509,8 +1514,10 @@
       <button type="button" class="recon-filter" data-recon-filter="red" onclick="setReconFilter('red')"><span class="recon-filter-dot" style="background:#ef4444"></span> Action</button>
       <button type="button" class="recon-filter" data-recon-filter="yellow" onclick="setReconFilter('yellow')"><span class="recon-filter-dot" style="background:#f59e0b"></span> Review</button>
       <button type="button" class="recon-filter" data-recon-filter="green" onclick="setReconFilter('green')"><span class="recon-filter-dot" style="background:#22c55e"></span> Done</button>
+      <button type="button" class="recon-filter" data-recon-filter="blue" onclick="setReconFilter('blue')"><span class="recon-filter-dot" style="background:#3b82f6"></span> None returned</button>
       <button type="button" class="recon-filter" data-recon-filter="none" onclick="setReconFilter('none')">Unmarked</button>
       <span class="label" style="margin-left:8px">Category</span>
+      <button type="button" class="recon-filter" id="reconHiddenToggle" onclick="toggleReconHidden()" title="Show products excluded from recon">Hidden</button>
       <select id="reconCatFilter" class="recon-cat-select" onchange="setReconCategoryFilter(this.value)"><option value="">All categories</option></select>
       <div class="recon-col-picker" id="reconColPicker">
         <button type="button" class="recon-filter" id="reconColBtn" onclick="toggleReconColMenu(event)" aria-expanded="false" aria-controls="reconColMenu" title="Choose which columns to show"><i class="ph ph-columns"></i> Columns</button>
@@ -1520,7 +1527,7 @@
     <div class="dist-table-wrap">
       <table id="reconTable">
         <thead><tr>
-          <th data-recon-col="status" title="Red = action needed, yellow = review, green = done">Status</th>
+          <th data-recon-col="status" title="Red = action needed, yellow = review, green = done, blue = none returned">Status</th>
           <th data-recon-col="item">Item</th>
           <th data-recon-col="abv">ABV</th>
           <th data-recon-col="case_price">Case price</th>
@@ -1543,7 +1550,7 @@
         <tbody id="reconTableBody"></tbody>
       </table>
     </div>
-    <p class="df-hint" style="margin-top:10px">Use the <strong>red / yellow / green</strong> dots to mark lines for follow-up (click a dot without opening the row). Click a row to edit details.</p>
+    <p class="df-hint" style="margin-top:10px">Use the status dots to mark lines for follow-up (click a dot without opening the row). <strong>Blue</strong> = none returned. Click a row to edit details or exclude a product from recon.</p>
   </div>
 </div>
 <!-- ===================== SQUARE (till mapping) ===================== -->
@@ -2184,9 +2191,17 @@
         <button type="button" class="recon-marker recon-marker-red" title="Action needed" onclick="pickReconDrawerStatus('red')"></button>
         <button type="button" class="recon-marker recon-marker-yellow" title="Review later" onclick="pickReconDrawerStatus('yellow')"></button>
         <button type="button" class="recon-marker recon-marker-green" title="Done" onclick="pickReconDrawerStatus('green')"></button>
+        <button type="button" class="recon-marker recon-marker-blue" title="None returned" onclick="pickReconDrawerStatus('blue')"></button>
         <button type="button" class="recon-status-clear active" id="rcn-status-clear" onclick="pickReconDrawerStatus('')">Clear</button>
       </div>
-      <p class="df-hint">Red = come back to this. Yellow = needs a look. Green = reconciled.</p>
+      <p class="df-hint">Red = come back to this. Yellow = needs a look. Green = reconciled. Blue = none returned.</p>
+    </div>
+    <div class="df-field">
+      <label class="recon-col-option" style="padding:0">
+        <input type="checkbox" id="rcn-hidden" onchange="recalcReconDrawer()">
+        Exclude from recon
+      </label>
+      <p class="df-hint" style="margin-top:4px">Hide this product from the recon table and totals — for items that don&apos;t need reconciling.</p>
     </div>
     <div class="df-grid2">
       <div class="df-field">
@@ -4913,17 +4928,17 @@
   }
 
   function deliveryComboKey(e, lineId) {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const menuOpen = _delComboLine === lineId && $('df-combo-menu') && $('df-combo-menu').classList.contains('open');
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuOpen) {
       e.preventDefault();
-      if (_delComboLine !== lineId) openDeliveryCombo(lineId);
       if (!_delComboItems.length) return;
       const dir = e.key === 'ArrowDown' ? 1 : -1;
       _delComboHi = (_delComboHi + dir + _delComboItems.length) % _delComboItems.length;
       renderDeliveryComboMenu(lineId);
       const active = $('df-combo-menu').querySelector('.df-combo-item.active');
       if (active) active.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter') {
-      if (_delComboLine === lineId && _delComboHi >= 0 && _delComboItems[_delComboHi]) {
+    } else if (e.key === 'Enter' && menuOpen) {
+      if (_delComboHi >= 0 && _delComboItems[_delComboHi]) {
         e.preventDefault();
         deliveryComboSelect(lineId, _delComboItems[_delComboHi].id);
       }
@@ -6945,17 +6960,17 @@
   }
 
   function transferComboKey(e, lineId) {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const menuOpen = _tfComboLine === lineId && $('tf-combo-menu') && $('tf-combo-menu').classList.contains('open');
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuOpen) {
       e.preventDefault();
-      if (_tfComboLine !== lineId) openTransferCombo(lineId);
       if (!_tfComboItems.length) return;
       const dir = e.key === 'ArrowDown' ? 1 : -1;
       _tfComboHi = (_tfComboHi + dir + _tfComboItems.length) % _tfComboItems.length;
       renderTransferComboMenu(lineId);
       const active = $('tf-combo-menu').querySelector('.df-combo-item.active');
       if (active) active.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter') {
-      if (_tfComboLine === lineId && _tfComboHi >= 0 && _tfComboItems[_tfComboHi]) {
+    } else if (e.key === 'Enter' && menuOpen) {
+      if (_tfComboHi >= 0 && _tfComboItems[_tfComboHi]) {
         e.preventDefault();
         transferComboSelect(lineId, _tfComboItems[_tfComboHi].id);
       }
@@ -7951,16 +7966,24 @@
     const reconStatus = draft && draft.reconStatus !== undefined
       ? (draft.reconStatus || null)
       : getReconStatus(pid, cl);
+    const reconHidden = draft && draft.reconHidden !== undefined
+      ? !!draft.reconHidden
+      : isReconHidden(ep);
     return Object.assign(charges, {
-      budgetCost, supplierName, investigate, reconNote, reconStatus,
+      budgetCost, supplierName, investigate, reconNote, reconStatus, reconHidden,
       budgetMethod: budgetCl.budget_method || 'auto',
     });
+  }
+
+  function isReconHidden(ep) {
+    return !!(ep && ep.recon_hidden);
   }
 
   let _reconCtx = null;
   let _reconStatusFilter = '';
   let _reconCategoryFilter = '';
   let _reconDrawerStatus = '';
+  let _reconShowHidden = false;
 
   const RECON_COLS = [
     { id: 'status', label: 'Status' },
@@ -8070,6 +8093,26 @@
     if (btn) btn.setAttribute('aria-expanded', 'false');
   }
 
+  function reconHiddenCount() {
+    return (((_currentEvent && _currentEvent.event_products) || [])
+      .filter((ep) => ep.product && ep.product.name && isReconHidden(ep)).length);
+  }
+
+  function syncReconHiddenToggle() {
+    const btn = $('reconHiddenToggle');
+    if (!btn) return;
+    const n = reconHiddenCount();
+    btn.textContent = n ? ('Hidden (' + n + ')') : 'Hidden';
+    btn.classList.toggle('active', _reconShowHidden);
+    btn.style.display = n || _reconShowHidden ? '' : 'none';
+  }
+
+  function toggleReconHidden() {
+    _reconShowHidden = !_reconShowHidden;
+    syncReconHiddenToggle();
+    renderRecon();
+  }
+
   function reconStatusKey(pid) {
     return (_currentEvent && _currentEvent.id ? _currentEvent.id : '') + ':' + pid;
   }
@@ -8092,11 +8135,12 @@
 
   function reconMarkerCell(pid, status) {
     const s = status || '';
+    const titles = { red: 'Action needed', yellow: 'Review', green: 'Done', blue: 'None returned' };
     return '<td class="recon-marker-cell" data-recon-col="status" onclick="event.stopPropagation()">' +
       '<span class="recon-markers">' +
-      ['red', 'yellow', 'green'].map((c) =>
+      ['red', 'yellow', 'green', 'blue'].map((c) =>
         '<button type="button" class="recon-marker recon-marker-' + c + (s === c ? ' active' : '') +
-        '" title="' + ({ red: 'Action needed', yellow: 'Review', green: 'Done' }[c]) +
+        '" title="' + titles[c] +
         '" aria-label="' + c + '" onclick="setReconStatus(\'' + pid + '\',\'' + c + '\')"></button>'
       ).join('') +
       '</span></td>';
@@ -8104,7 +8148,7 @@
 
   function syncReconDrawerStatusPick(status) {
     _reconDrawerStatus = status || '';
-    ['red', 'yellow', 'green'].forEach((c) => {
+    ['red', 'yellow', 'green', 'blue'].forEach((c) => {
       document.querySelectorAll('#rcn-status-pick .recon-marker-' + c).forEach((el) => {
         el.classList.toggle('active', _reconDrawerStatus === c);
       });
@@ -8201,7 +8245,15 @@
 
   function computeReconRows() {
     const eps = ((_currentEvent && _currentEvent.event_products) || [])
-      .filter((ep) => ep.product && ep.product.name);
+      .filter((ep) => ep.product && ep.product.name)
+      .filter((ep) => _reconShowHidden ? isReconHidden(ep) : !isReconHidden(ep));
+    const pluByPid = computePluCasesByProductId(eps);
+    return eps.map((ep) => buildReconRow(ep, pluByPid, null));
+  }
+
+  function computeReconTotalRows() {
+    const eps = ((_currentEvent && _currentEvent.event_products) || [])
+      .filter((ep) => ep.product && ep.product.name && !isReconHidden(ep));
     const pluByPid = computePluCasesByProductId(eps);
     return eps.map((ep) => buildReconRow(ep, pluByPid, null));
   }
@@ -8566,6 +8618,8 @@
     $('rcn-budget-method').value = cl.budget_method || 'auto';
     $('rcn-budget-override').value = cl.budget_override != null ? cl.budget_override : '';
     $('rcn-note').value = cl.recon_note || '';
+    const hiddenEl = $('rcn-hidden');
+    if (hiddenEl) hiddenEl.checked = isReconHidden(ep);
     syncReconDrawerStatusPick(getReconStatus(pid, cl));
     $('rcn-err').textContent = '';
     recalcReconDrawer();
@@ -8602,6 +8656,7 @@
       budgetOverride: $('rcn-budget-override').value !== '' ? parseFloat($('rcn-budget-override').value) : null,
       reconNote: $('rcn-note').value.trim(),
       reconStatus: _reconDrawerStatus || null,
+      reconHidden: !!($('rcn-hidden') && $('rcn-hidden').checked),
     };
   }
 
@@ -8668,10 +8723,12 @@
         invoice_qty: draft.invoiceSet ? roundN(draft.invoiced, 3) : null,
         order_price_override: priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null,
         order_unit_price_override: unitPriceRaw !== '' ? roundN(parseFloat(unitPriceRaw), 2) : null,
+        recon_hidden: draft.reconHidden,
       });
       ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : null;
       ep.order_price_override = priceRaw !== '' ? roundN(parseFloat(priceRaw), 2) : null;
       ep.order_unit_price_override = unitPriceRaw !== '' ? roundN(parseFloat(unitPriceRaw), 2) : null;
+      ep.recon_hidden = draft.reconHidden;
       try {
         const returnRows = validReturnLines.map((line) => {
           const qtyParts = rcnReturnLineToDbQty(line, pid);
@@ -8810,20 +8867,22 @@
 
   function renderRecon() {
     const allRows = computeReconRows();
+    const totalRows = computeReconTotalRows();
     const body = $('reconTableBody');
     if (!body) return;
 
-    const statusCounts = { red: 0, yellow: 0, green: 0, none: 0 };
-    allRows.forEach((r) => {
+    const statusCounts = { red: 0, yellow: 0, green: 0, blue: 0, none: 0 };
+    totalRows.forEach((r) => {
       const s = r.reconStatus || 'none';
       if (statusCounts[s] != null) statusCounts[s]++;
       else statusCounts.none++;
     });
+    syncReconHiddenToggle();
 
     const rows = filterReconRows(allRows);
 
     let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
-    const totalSource = (_reconStatusFilter || _reconCategoryFilter) ? rows : allRows;
+    const totalSource = (_reconStatusFilter || _reconCategoryFilter) ? rows : totalRows;
     totalSource.forEach((r) => {
       totBudget += r.budgetCost || 0;
       totConsLoose += r.consumptionLooseCharge || 0;
@@ -8838,10 +8897,14 @@
       '<div class="stat-card"><div class="stat-label">Action</div><div class="stat-value" style="color:#ef4444">' + statusCounts.red + '</div><div class="stat-sub">red markers</div></div>' +
       '<div class="stat-card"><div class="stat-label">Review</div><div class="stat-value" style="color:#f59e0b">' + statusCounts.yellow + '</div><div class="stat-sub">yellow markers</div></div>' +
       '<div class="stat-card"><div class="stat-label">Done</div><div class="stat-value" style="color:#22c55e">' + statusCounts.green + '</div><div class="stat-sub">green markers</div></div>' +
+      '<div class="stat-card"><div class="stat-label">None returned</div><div class="stat-value" style="color:#3b82f6">' + statusCounts.blue + '</div><div class="stat-sub">blue markers</div></div>' +
       '<div class="stat-card"><div class="stat-label">Unmarked</div><div class="stat-value">' + statusCounts.none + '</div><div class="stat-sub">no marker yet</div></div>';
 
     if (!allRows.length) {
-      body.innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-scales icon"></i><p>Add products and enter closing stock to begin.</p></div></td></tr>';
+      const emptyMsg = _reconShowHidden
+        ? 'No products are excluded from recon.'
+        : 'Add products and enter closing stock to begin.';
+      body.innerHTML = '<tr><td colspan="' + RECON_COL_COUNT + '"><div class="empty-state"><i class="ph ph-scales icon"></i><p>' + emptyMsg + '</p></div></td></tr>';
       applyReconColVisibility();
       return;
     }
@@ -8867,7 +8930,7 @@
         const noteHint = r.reconNote
           ? '<span class="recon-note-hint" title="' + escapeHtml(r.reconNote) + '">' + escapeHtml(r.reconNote) + '</span>' : '';
         const statusClass = r.reconStatus ? (' recon-row-status-' + r.reconStatus) : '';
-        html += '<tr class="recon-row' + statusClass + (r.investigate ? ' row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
+        html += '<tr class="recon-row' + statusClass + (_reconShowHidden ? ' recon-row-hidden' : '') + (r.investigate ? ' row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
           reconMarkerCell(r.pid, r.reconStatus) +
           '<td data-recon-col="item" style="font-weight:500;white-space:nowrap">' + reconItemCell(r.p.name, caseSize, noteHint) + '</td>' +
           '<td data-recon-col="abv">' + escapeHtml(abv) + '</td>' +
@@ -8915,7 +8978,7 @@
 
   function exportReconCsv() {
     if (!_currentEvent) { alert('Pick an event first'); return; }
-    const rows = computeReconRows();
+    const rows = computeReconTotalRows();
     const headers = [
       'Status', 'Item', 'Case Size', 'ABV', 'Case Price', 'Supplier', 'Units per case',
       'Delivered', 'Invoiced', 'On Hand', 'Closing (Cases)', 'Closing (Units in case format)',
@@ -8925,7 +8988,7 @@
     const lines = [headers.map(csvEscape).join(',')];
     rows.slice().sort((a, b) => (a.p.name || '').localeCompare(b.p.name || '')).forEach((r) => {
       const abv = reconProductAbvRaw(r.pid, r.p);
-      const statusLabel = { red: 'Action', yellow: 'Review', green: 'Done' }[r.reconStatus] || '';
+      const statusLabel = { red: 'Action', yellow: 'Review', green: 'Done', blue: 'None returned' }[r.reconStatus] || '';
       const note = r.reconNote || '';
       lines.push([
         statusLabel, r.p.name, r.p.case_size || '', abv,
@@ -10545,17 +10608,17 @@
   }
 
   function recipeComboKey(e, rowId) {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const menuOpen = _rcRow === rowId && $('rf-combo-menu') && $('rf-combo-menu').classList.contains('open');
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuOpen) {
       e.preventDefault();
-      if (_rcRow !== rowId) openRecipeCombo(rowId);
       if (!_rcItems.length) return;
       const dir = e.key === 'ArrowDown' ? 1 : -1;
       _rcHi = (_rcHi + dir + _rcItems.length) % _rcItems.length;
       renderRecipeComboMenu(rowId);
       const active = $('rf-combo-menu').querySelector('.df-combo-item.active');
       if (active) active.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter') {
-      if (_rcRow === rowId && _rcHi >= 0 && _rcItems[_rcHi]) {
+    } else if (e.key === 'Enter' && menuOpen) {
+      if (_rcHi >= 0 && _rcItems[_rcHi]) {
         e.preventDefault();
         recipeComboSelect(rowId, _rcHi);
       }
@@ -10827,6 +10890,231 @@
     const ingredients = [{ productName: primary.name, qty: qtyFor(pourKind, primary) }, ...secondary];
     return { ingredients, notes: 'Auto-mapped (' + pourLabel + (secondary.length ? ' + mixer' : '') + ') — review' };
   }
+
+  // ============================================================
+  // SPREADSHEET-STYLE KEYBOARD NAVIGATION
+  // Tables, drawer grids, and settings forms: arrow keys move
+  // between inputs; Enter moves down; Shift+Enter moves up.
+  // ============================================================
+  (function setupSpreadsheetNav() {
+    const NAV_SELECTOR = [
+      'input:not([type="date"])',
+      ':not([type="time"])',
+      ':not([type="datetime-local"])',
+      ':not([type="file"])',
+      ':not([type="checkbox"])',
+      ':not([type="radio"])',
+      ':not([type="color"])',
+      ':not([type="range"])',
+      ':not([disabled])',
+      ':not([readonly])'
+    ].join('') + ', select:not([disabled]), textarea:not([disabled]):not([readonly])';
+    const FIELD_CELL = '.settings-field, .field, .df-field';
+
+    function isNavTarget(el) {
+      return el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA');
+    }
+
+    function isTextLikeInput(el) {
+      if (!el) return false;
+      if (el.tagName === 'TEXTAREA') return true;
+      if (el.tagName !== 'INPUT') return false;
+      const t = (el.type || 'text').toLowerCase();
+      return t === 'text' || t === 'number' || t === 'search' || t === 'tel' || t === 'url' || t === 'email' || t === 'password' || t === '';
+    }
+
+    function caretAtStart(el) {
+      if (!isTextLikeInput(el)) return true;
+      try {
+        if (typeof el.selectionStart !== 'number') return true;
+        return el.selectionStart === 0 && el.selectionEnd === 0;
+      } catch (_) { return true; }
+    }
+
+    function caretAtEnd(el) {
+      if (!isTextLikeInput(el)) return true;
+      try {
+        if (typeof el.selectionStart !== 'number') return true;
+        const len = (el.value || '').length;
+        return el.selectionStart === len && el.selectionEnd === len;
+      } catch (_) { return true; }
+    }
+
+    function focusableIn(cell) {
+      if (!cell) return null;
+      for (const el of cell.querySelectorAll(NAV_SELECTOR)) {
+        if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') continue;
+        return el;
+      }
+      return null;
+    }
+
+    function isComboMenuOpen() {
+      return ['df-combo-menu', 'tf-combo-menu', 'rf-combo-menu'].some((id) => {
+        const m = $(id);
+        return m && m.classList.contains('open');
+      });
+    }
+
+    function gridColumns(container) {
+      const cols = getComputedStyle(container).gridTemplateColumns;
+      if (!cols || cols === 'none') return 1;
+      return Math.max(1, cols.split(' ').filter(Boolean).length);
+    }
+
+    function gridFieldPositions(fields, columns) {
+      const positions = [];
+      let row = 0;
+      let col = 0;
+      fields.forEach((field) => {
+        const full = field.classList.contains('full');
+        if (full && col > 0) { row++; col = 0; }
+        positions.push({ field, row, col, full });
+        if (full) { row++; col = 0; }
+        else {
+          col++;
+          if (col >= columns) { col = 0; row++; }
+        }
+      });
+      return positions;
+    }
+
+    function getCellInfo(el) {
+      const td = el.closest('td, th');
+      if (td) {
+        const row = td.parentElement;
+        if (row && row.tagName === 'TR') {
+          return {
+            kind: 'table',
+            row,
+            colIndex: Array.from(row.children).indexOf(td),
+          };
+        }
+      }
+
+      const fieldCell = el.closest(FIELD_CELL);
+      if (!fieldCell) return null;
+
+      const grid = fieldCell.closest('.settings-fields, .drawer-body:not(.drawer-body--block)');
+      if (grid) {
+        const fields = Array.from(grid.querySelectorAll(FIELD_CELL)).filter((f) => focusableIn(f));
+        const positions = gridFieldPositions(fields, gridColumns(grid));
+        const pos = positions.find((p) => p.field === fieldCell);
+        if (!pos) return null;
+        return { kind: 'grid', positions, pos };
+      }
+
+      const stack = fieldCell.closest('.drawer-body--block, .drawer-body, .settings-section');
+      if (!stack) return null;
+      const fields = Array.from(stack.querySelectorAll(FIELD_CELL)).filter((f) => focusableIn(f));
+      const index = fields.indexOf(fieldCell);
+      if (index < 0) return null;
+      return { kind: 'stack', fields, index };
+    }
+
+    function findInColumn(info, direction) {
+      if (info.kind === 'table') {
+        let row = info.row;
+        while (true) {
+          row = direction > 0 ? row.nextElementSibling : row.previousElementSibling;
+          if (!row) return null;
+          if (row.tagName !== 'TR') continue;
+          const target = focusableIn(row.children[info.colIndex]);
+          if (target) return target;
+        }
+      }
+      if (info.kind === 'grid') {
+        const targetRow = info.pos.row + direction;
+        const match = info.positions.find((p) => p.row === targetRow && p.col === info.pos.col);
+        return match ? focusableIn(match.field) : null;
+      }
+      if (info.kind === 'stack') {
+        const next = info.fields[info.index + direction];
+        return next ? focusableIn(next) : null;
+      }
+      return null;
+    }
+
+    function findInRow(info, direction) {
+      if (info.kind === 'table') {
+        const cells = Array.from(info.row.children);
+        let i = info.colIndex + direction;
+        while (i >= 0 && i < cells.length) {
+          const target = focusableIn(cells[i]);
+          if (target) return target;
+          i += direction;
+        }
+        return null;
+      }
+      if (info.kind === 'grid') {
+        const targetCol = info.pos.col + direction;
+        const match = info.positions.find((p) => p.row === info.pos.row && p.col === targetCol);
+        return match ? focusableIn(match.field) : null;
+      }
+      return null;
+    }
+
+    function focusAndSelect(el) {
+      if (!el) return;
+      el.focus();
+      if (isTextLikeInput(el)) {
+        try { el.select(); } catch (_) {}
+      }
+      const cell = el.closest('td, th, ' + FIELD_CELL);
+      if (cell && cell.scrollIntoView) {
+        cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    }
+
+    document.addEventListener('keydown', function (e) {
+      const el = e.target;
+      if (!isNavTarget(el)) return;
+      if (el.tagName === 'INPUT') {
+        const t = (el.type || '').toLowerCase();
+        if (t === 'date' || t === 'time' || t === 'datetime-local' || t === 'file' || t === 'checkbox' || t === 'radio' || t === 'color' || t === 'range') return;
+      }
+      if (e.ctrlKey || e.metaKey) return;
+      if (isComboMenuOpen()) return;
+
+      const info = getCellInfo(el);
+      if (!info) return;
+
+      const key = e.key;
+
+      if (key === 'ArrowUp' || key === 'ArrowDown') {
+        if (el.tagName === 'SELECT' && !e.altKey) return;
+        const target = findInColumn(info, key === 'ArrowDown' ? 1 : -1);
+        if (target) {
+          e.preventDefault();
+          focusAndSelect(target);
+        }
+        return;
+      }
+
+      if (key === 'ArrowLeft' || key === 'ArrowRight') {
+        const direction = key === 'ArrowRight' ? 1 : -1;
+        if (isTextLikeInput(el)) {
+          if (direction < 0 && !caretAtStart(el)) return;
+          if (direction > 0 && !caretAtEnd(el)) return;
+        }
+        const target = findInRow(info, direction);
+        if (target) {
+          e.preventDefault();
+          focusAndSelect(target);
+        }
+        return;
+      }
+
+      if (key === 'Enter') {
+        if (el.tagName === 'SELECT') return;
+        const target = findInColumn(info, e.shiftKey ? -1 : 1);
+        if (target) {
+          e.preventDefault();
+          focusAndSelect(target);
+        }
+      }
+    }, false);
+  })();
 
   // ---------- boot ----------
   (async function () {
