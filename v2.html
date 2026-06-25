@@ -5584,7 +5584,6 @@
     const singlesKey = opts.singlesKey || 'singles';
     const p = spiritProductById(pid);
     const entryUps = entryUnitsPerCase(pid, supplierId);
-    const supplierCaseTotal = combineCasesSingles(line[casesKey] ?? line.qty, line[singlesKey], entryUps);
     if (p && productStockUnit(p) === 'bottle') {
       const casesVal = Math.max(0, Number(line[casesKey] ?? line.qty) || 0);
       const singlesVal = Math.max(0, Number(line[singlesKey]) || 0);
@@ -9573,10 +9572,8 @@
     line[field] = value;
     if (field === 'supplierId') {
       renderRcnReturnLines();
-    } else if (field === 'cases' || field === 'singles') {
-      renderRcnReturnTotal();
     } else {
-      renderRcnReturnLines();
+      renderRcnReturnTotal();
     }
     recalcReconDrawer();
   }
