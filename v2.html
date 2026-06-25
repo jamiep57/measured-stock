@@ -566,6 +566,7 @@
     #reconTable thead th[data-recon-col="plu"] {
       min-width:3.75rem; padding-left:6px; padding-right:6px;
     }
+    #reconTable thead th[data-recon-col="returned_to_supplier"],
     #reconTable thead th[data-recon-col="transferred"],
     #reconTable thead th[data-recon-col="consumption"],
     #reconTable thead th[data-recon-col="variance"] {
@@ -584,6 +585,7 @@
     #reconTable tbody td[data-recon-col="invoiced"],
     #reconTable tbody td[data-recon-col="closing_cases"],
     #reconTable tbody td[data-recon-col="closing_units"],
+    #reconTable tbody td[data-recon-col="returned_to_supplier"],
     #reconTable tbody td[data-recon-col="transferred"],
     #reconTable tbody td[data-recon-col="consumption"],
     #reconTable tbody td[data-recon-col="plu"],
@@ -1626,6 +1628,7 @@
           <th data-recon-col="invoiced">Invoiced</th>
           <th data-recon-col="closing_cases">Closing<br>(cases)</th>
           <th data-recon-col="closing_units">Closing<br>(units)</th>
+          <th data-recon-col="returned_to_supplier" title="Qty returned to supplier">Returned<br>to supplier</th>
           <th data-recon-col="transferred">Transferred</th>
           <th data-recon-col="consumption">Consumption</th>
           <th data-recon-col="plu">PLU</th>
@@ -2276,12 +2279,13 @@
       <div id="rcn-delivered-by-supplier" class="rcn-delivered-summary"></div>
     </div>
     <div class="page-title" style="font-size:13px;margin:16px 0 8px">Returns to suppliers</div>
-    <p class="df-hint" style="margin-top:0">Add a line per supplier you are returning stock to — each can use a different case price.</p>
+    <p class="df-hint" style="margin-top:0">Add a line per supplier you are returning stock to — enter whole cases and/or loose singles; each line can use a different case price.</p>
     <div style="overflow-x:auto">
       <table class="rcn-return-table" id="rcn-return-table">
         <thead><tr>
           <th style="min-width:120px">Supplier</th>
-          <th style="width:88px" id="rcn-return-qty-h">Quantity</th>
+          <th style="width:72px" id="rcn-return-cases-h" title="Whole supplier cases">Cases</th>
+          <th style="width:72px" id="rcn-return-singles-h" title="Loose singles not in a full case">Singles</th>
           <th style="width:88px" id="rcn-return-price-h">£/case</th>
           <th style="width:72px">Value</th>
           <th style="width:36px" title="Print pallet stickers"></th>
@@ -8668,10 +8672,9 @@
     if (_reconCtx && _reconCtx.pid === pid && _rcnReturnLines.length) {
       return roundN(totalReturnCasesFromRcnLines(pid), 2);
     }
-    const ups = unitsPerCaseFor(pid) || 1;
     const lines = (_supplierReturns || []).filter((r) => r.product_id === pid);
     if (lines.length) {
-      return roundN(lines.reduce((s, r) => s + combineCasesSingles(r.qty, r.singles, ups), 0), 2);
+      return roundN(lines.reduce((s, r) => s + lineSupplierCaseTotal(r, pid, r.supplier_id), 0), 2);
     }
     const cl = closingRowFor(pid) || {};
     return roundN(Number(cl.return_amount) || 0, 2);
@@ -8876,6 +8879,7 @@
     { id: 'invoiced', label: 'Invoiced' },
     { id: 'closing_cases', label: 'Closing (cases)' },
     { id: 'closing_units', label: 'Closing (units)' },
+    { id: 'returned_to_supplier', label: 'Returned to supplier' },
     { id: 'transferred', label: 'Transferred' },
     { id: 'consumption', label: 'Consumption' },
     { id: 'plu', label: 'PLU' },
@@ -9278,6 +9282,16 @@
 
   function rcnReturnLineDisplayFromSaved(r, pid) {
     const supId = r.supplier_id || productSupplierId(pid);
+    const p = spiritProductById(pid);
+    if (p && productStockUnit(p) === 'bottle' && !usesSinglesOnlyUnit(pid)) {
+      const entryUps = entryUnitsPerCase(pid, supId);
+      const totalBottles = (Number(r.qty) || 0) + (Number(r.singles) || 0);
+      const split = splitBottlesToCasesSingles(totalBottles, entryUps);
+      return {
+        cases: split.cases ? String(split.cases) : '',
+        singles: split.singles ? String(split.singles) : '',
+      };
+    }
     const form = entryNativeToForm(r, pid, supId);
     if (usesSinglesOnlyUnit(pid)) {
       return { cases: '', singles: form.singles ? String(form.singles) : '' };
@@ -9391,8 +9405,15 @@
       if (p != null) totVal += p * c;
     });
     if (totStored > 0) {
-      const d = stockQtyDisplay(pid, totStored);
-      el.textContent = 'Total return: ' + d.n + ' ' + d.unit + (totVal ? ' · ' + money(totVal) : '');
+      const supId = productSupplierId(pid);
+      const entryUps = entryUnitsPerCase(pid, supId);
+      const split = splitCasesSingles(totStored, entryUps);
+      const parts = [];
+      const cases = round1(split.cases);
+      const loose = Math.round(split.singles) || 0;
+      if (cases || !loose) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
+      if (loose) parts.push(loose + ' ' + (loose === 1 ? 'single' : 'singles'));
+      el.textContent = 'Total return: ' + (parts.join(' \u00b7 ') || '0') + (totVal ? ' · ' + money(totVal) : '');
     } else {
       el.textContent = '';
     }
@@ -9875,6 +9896,7 @@
           '<td data-recon-col="invoiced">' + reconQtyCell(r.invoiced) + '</td>' +
           '<td data-recon-col="closing_cases">' + reconQtyCell(r.closingCases) + '</td>' +
           '<td data-recon-col="closing_units">' + reconQtyCell(r.closingUnits) + '</td>' +
+          '<td data-recon-col="returned_to_supplier">' + reconQtyCell(r.supplierReturns) + '</td>' +
           '<td data-recon-col="transferred">' + reconQtyCell(r.transferred) + '</td>' +
           '<td data-recon-col="consumption" style="font-weight:600">' + reconQtyCell(r.consumption) + '</td>' +
           '<td data-recon-col="plu">' + reconQtyCell(r.plu) + '</td>' +
@@ -9925,7 +9947,7 @@
     const headers = [
       'Status', 'Item', 'Case Size', 'ABV', 'Case Price', 'Supplier', 'Units per case',
       'Delivered', 'Invoiced', 'Closing (Cases)', 'Closing (Units in case format)',
-      'Transferred', 'Consumption', 'PLU', 'Variance', 'Variance %', 'Consumption Charge', 'Consumption + Loose Charge',
+      'Returned to supplier', 'Transferred', 'Consumption', 'PLU', 'Variance', 'Variance %', 'Consumption Charge', 'Consumption + Loose Charge',
       'PLU Charge', 'Invoice Charge', '', 'Budget Cost', 'Notes',
     ];
     const lines = [headers.map(csvEscape).join(',')];
@@ -9937,7 +9959,7 @@
         statusLabel, r.p.name, r.p.case_size || '', abv,
         r.casePrice ? '£' + r.casePrice.toFixed(2) : '', r.supplierName, r.ups || '',
         r.delivered || 0, r.invoiced || 0,
-        r.closingCases || 0, r.closingUnits || 0, r.transferred || 0,
+        r.closingCases || 0, r.closingUnits || 0, r.supplierReturns || 0, r.transferred || 0,
         r.consumption || 0, r.plu || 0,
         r.variance || 0, r.variancePct != null ? r.variancePct + '%' : '',
         r.consumptionCharge || 0, r.consumptionLooseCharge || 0,
@@ -9951,8 +9973,8 @@
       totConsLoose += r.consumptionLooseCharge || 0;
       totInvoice += r.invoiceCharge || 0;
     });
-    lines.push(Array(21).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
-    lines.push(Array(21).fill('').concat([
+    lines.push(Array(22).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
+    lines.push(Array(22).fill('').concat([
       totConsLoose.toFixed(2), totInvoice.toFixed(2),
       totConsLoose > 0 ? ((totBudget / totConsLoose) * 100).toFixed(2) + '%' : '',
       totInvoice > 0 ? ((totBudget / totInvoice) * 100).toFixed(2) + '%' : '',
