@@ -604,15 +604,24 @@
     #reconTable tbody tr.recon-row { cursor:default; }
     #reconTable tbody tr.recon-row:hover td { background:var(--secondary); }
     #reconTable tbody tr.recon-row.recon-row-editing td { background:var(--secondary); }
-    #reconTable input.recon-qty, #reconTable input.recon-price {
-      width:64px; font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--input);
+    #reconTable input.recon-cell-input {
+      width:84px; font:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--input);
       border-radius:var(--radius); background:var(--background); color:var(--foreground);
-      text-align:center; font-variant-numeric:tabular-nums; -moz-appearance:textfield; appearance:textfield;
+      text-align:center; font-variant-numeric:tabular-nums;
+      transition:border-color .12s, background .12s, box-shadow .12s;
+      -moz-appearance:textfield; appearance:textfield;
     }
-    #reconTable input.recon-price { width:72px; }
-    #reconTable input.recon-qty::-webkit-outer-spin-button, #reconTable input.recon-qty::-webkit-inner-spin-button,
-    #reconTable input.recon-price::-webkit-outer-spin-button, #reconTable input.recon-price::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
-    #reconTable input.recon-qty:focus, #reconTable input.recon-price:focus { border-color:var(--ring); box-shadow:0 0 0 3px rgba(24,24,27,.08); outline:none; }
+    #reconTable input.recon-cell-input::-webkit-outer-spin-button,
+    #reconTable input.recon-cell-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+    #reconTable input.recon-cell-input:focus { border-color:var(--ring); box-shadow:0 0 0 3px rgba(24,24,27,.08); outline:none; }
+    #reconTable tbody tr.recon-row-editing input.recon-cell-input { border-color:var(--ring); background:var(--card); }
+    #reconTable td.recon-drawer-cell { cursor:pointer; }
+    #reconTable td.recon-drawer-cell:hover { background:var(--secondary); }
+    #reconTable td.recon-drawer-cell .recon-drawer-hint {
+      display:block; font-size:10px; font-weight:500; color:var(--muted-foreground); margin-top:3px; opacity:0;
+      transition:opacity .12s;
+    }
+    #reconTable td.recon-drawer-cell:hover .recon-drawer-hint { opacity:1; }
     #reconTable .recon-item-actions { display:inline-flex; align-items:center; gap:4px; margin-left:4px; flex-shrink:0; vertical-align:middle; }
     #reconTable .recon-more-btn {
       font:inherit; font-size:14px; font-weight:700; line-height:1; padding:2px 6px; border:1px solid var(--border);
@@ -1605,7 +1614,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
-      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. Edit <strong>Invoiced</strong>, <strong>Closing</strong>, <strong>Case price</strong>, and <strong>Returns</strong> inline (arrow keys move between cells; changes auto-save). Use <strong>⋯</strong> on a row for multi-supplier returns, notes, and budget. <strong>Consumption</strong> = Delivered − Closing − Transferred (+ pre-event on hand). <strong>Variance</strong> = PLU − Consumption. Import Square sales for PLU figures.</p>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. Edit <strong>Invoiced</strong> and <strong>Closing</strong> inline (arrow keys move between cells; changes auto-save). Click <strong>Case price</strong> or <strong>Returns</strong>, or use <strong>⋯</strong>, to open the drawer for supplier-specific price and return lines. <strong>Consumption</strong> = Delivered − Closing − Transferred (+ pre-event on hand). <strong>Variance</strong> = PLU − Consumption. Import Square sales for PLU figures.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
@@ -1637,14 +1646,14 @@
           <th data-recon-col="status" title="Red = action needed, yellow = review, green = done, blue = none returned">Status</th>
           <th data-recon-col="item">Item</th>
           <th data-recon-col="abv">ABV</th>
-          <th data-recon-col="case_price">Case<br>price</th>
+          <th data-recon-col="case_price" title="Click a cell to edit price in the drawer">Case<br>price</th>
           <th data-recon-col="supplier">Supplier</th>
           <th data-recon-col="units_per_case">Units<br>per case</th>
           <th data-recon-col="delivered">Delivered</th>
           <th data-recon-col="invoiced">Invoiced</th>
           <th data-recon-col="closing_cases">Closing<br>(cases)</th>
           <th data-recon-col="closing_units">Closing<br>(units)</th>
-          <th data-recon-col="returned_to_supplier" title="Qty returned to supplier">Returned<br>to supplier</th>
+          <th data-recon-col="returned_to_supplier" title="Click a cell to edit returns by supplier in the drawer">Returned<br>to supplier</th>
           <th data-recon-col="transferred">Transferred</th>
           <th data-recon-col="consumption">Consumption</th>
           <th data-recon-col="plu">PLU</th>
@@ -9815,23 +9824,15 @@
     const invEl = $('recon-inv-' + pid);
     const casesEl = $('recon-cl-cases-' + pid);
     const singlesEl = $('recon-cl-singles-' + pid);
-    const priceEl = $('recon-price-' + pid);
-    const retEl = $('recon-ret-' + pid);
     const invRaw = invEl && invEl.value.trim();
     const invSet = invRaw !== '';
     const cases = Math.max(0, parseFloat(casesEl && casesEl.value) || 0);
     const singles = Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0);
-    const priceRaw = priceEl && priceEl.value.trim();
-    const retRaw = retEl && retEl.value.trim();
     return {
       invoiceSet: invSet,
       invoiced: invSet ? displayToStoredCases(pid, parseFloat(invRaw) || 0) : 0,
       closingCases: cases,
       closingSingles: singles,
-      casePrice: priceRaw !== '' ? parseFloat(priceRaw) : '',
-      unitPrice: '',
-      returnSet: retEl != null,
-      returnStored: retRaw !== '' ? displayToStoredCases(pid, parseFloat(retRaw) || 0) : 0,
     };
   }
 
@@ -9848,10 +9849,8 @@
     const cases = Math.max(0, draft.closingCases);
     const singles = Math.max(0, draft.closingSingles);
     const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
-    const returnAmt = draft.returnSet != null ? round1(Number(draft.returnStored) || 0) : round1(supplierReturnCasesForProduct(pid));
+    const returnAmt = round1(supplierReturnCasesForProduct(pid));
     ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : null;
-    ep.order_price_override = draft.casePrice !== '' && draft.casePrice != null && !isNaN(Number(draft.casePrice))
-      ? roundN(Number(draft.casePrice), 2) : null;
     let cl = closingRowFor(pid);
     if (!cl) { cl = { event_id: _currentEvent.id, product_id: pid }; _closing.push(cl); }
     cl.closing_cases = cases;
@@ -9859,24 +9858,6 @@
     cl.close_count = closeCount;
     cl.return_amount = returnAmt;
     cl.carried_over = round1(Math.max(0, closeCount - returnAmt));
-    if (draft.returnSet != null) {
-      const supId = productSupplierId(pid);
-      if (returnAmt > 0 && supId) {
-        const form = entryNativeToForm({ qty: returnAmt, singles: 0 }, pid, supId);
-        const qtyParts = entryFormToNative(form, pid, supId);
-        const row = {
-          event_id: _currentEvent.id,
-          product_id: pid,
-          supplier_id: supId,
-          qty: qtyParts.qty,
-          singles: qtyParts.singles,
-          case_price: null,
-        };
-        _supplierReturns = (_supplierReturns || []).filter((r) => r.product_id !== pid).concat([row]);
-      } else {
-        _supplierReturns = (_supplierReturns || []).filter((r) => r.product_id !== pid);
-      }
-    }
   }
 
   async function persistReconInlineDraft(pid, draft) {
@@ -9887,16 +9868,7 @@
     const cl = closingRowFor(pid) || {};
     await DB.eventProducts.setForEvent(_currentEvent.id, pid, {
       invoice_qty: ep.invoice_qty,
-      order_price_override: ep.order_price_override,
     });
-    if (draft.returnSet != null) {
-      const returnRows = (_supplierReturns || []).filter((r) => r.product_id === pid);
-      try {
-        await DB.supplierReturns.replaceForProduct(_currentEvent.id, pid, returnRows);
-      } catch (retErr) {
-        console.warn('persistReconInlineDraft supplier returns', retErr);
-      }
-    }
     const closingPatch = {
       closing_cases: cl.closing_cases,
       closing_singles: cl.closing_singles,
@@ -10024,10 +9996,18 @@
     }
   }
 
-  function reconInlineQtyInput(pid, id, value, cls) {
+  function reconInlineQtyInput(pid, id, value) {
     const v = value != null && value !== '' ? String(value) : '';
-    return '<input type="text" class="' + cls + '" id="' + id + '" value="' + escapeHtml(v) + '" placeholder="0"' +
+    return '<input type="text" class="recon-cell-input" id="' + id + '" value="' + escapeHtml(v) + '" placeholder="0"' +
+      ' inputmode="decimal" autocomplete="off"' +
       reconInlineInputHandlers(pid) + '>';
+  }
+
+  function reconDrawerOnlyCell(pid, col, innerHtml, hint) {
+    return '<td data-recon-col="' + col + '" class="recon-drawer-cell" onclick="openReconDrawer(\'' + pid + '\')" title="Open drawer to edit">' +
+      innerHtml +
+      (hint ? '<span class="recon-drawer-hint">' + escapeHtml(hint) + '</span>' : '') +
+      '</td>';
   }
 
   function reconItemCellWithActions(name, caseSize, noteHint, pid) {
@@ -10036,7 +10016,7 @@
     return '<span class="recon-item-line" title="' + escapeHtml(name) + '">' +
       '<span class="recon-item-name">' + escapeHtml(name) + '</span>' + cs +
       '<span class="recon-item-actions">' +
-        '<button type="button" class="recon-more-btn" onclick="event.stopPropagation();openReconDrawer(\'' + pid + '\')" title="Notes, budget, multi-supplier returns">⋯</button>' +
+        '<button type="button" class="recon-more-btn" onclick="event.stopPropagation();openReconDrawer(\'' + pid + '\')" title="Price, returns, notes, budget">⋯</button>' +
       '</span></span>' +
       (noteHint || '');
   }
@@ -10149,22 +10129,20 @@
         const invDisp = r.ep.invoice_qty != null ? storedCasesToDisplay(r.pid, r.ep.invoice_qty) : '';
         const closingCasesVal = r.closingCases ? String(r.closingCases) : '';
         const closingSinglesVal = r.closingSingles ? String(r.closingSingles) : '';
-        const retDisp = r.supplierReturns > 0 ? storedCasesToDisplay(r.pid, r.supplierReturns) : '';
-        const priceDisp = r.ep.order_price_override != null ? r.ep.order_price_override : '';
         const entryUps = entryUnitsPerCase(r.pid, supId);
         const perCaseHint = entryUps > 1 ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + entryUps + ' per case</div>' : '';
         html += '<tr class="recon-row' + statusClass + (_reconShowHidden ? ' recon-row-hidden' : '') + (r.investigate ? ' row-investigate' : '') + '" data-recon-pid="' + r.pid + '">' +
           reconMarkerCell(r.pid, r.reconStatus) +
           '<td data-recon-col="item">' + reconItemCellWithActions(r.p.name, caseSize, noteHint, r.pid) + '</td>' +
           '<td data-recon-col="abv">' + escapeHtml(abv) + '</td>' +
-          '<td data-recon-col="case_price">' + reconInlineQtyInput(r.pid, 'recon-price-' + r.pid, priceDisp, 'recon-price') + '</td>' +
+          reconDrawerOnlyCell(r.pid, 'case_price', reconMoneyCell(r.casePrice), 'Edit in drawer') +
           '<td data-recon-col="supplier" title="' + escapeHtml(r.supplierName) + '">' + escapeHtml(r.supplierName) + '</td>' +
           '<td data-recon-col="units_per_case">' + (r.ups || '—') + '</td>' +
           '<td data-recon-col="delivered">' + reconQtyCell(r.delivered) + '</td>' +
-          '<td data-recon-col="invoiced">' + reconInlineQtyInput(r.pid, 'recon-inv-' + r.pid, invDisp, 'recon-qty') + '</td>' +
-          '<td data-recon-col="closing_cases">' + reconInlineQtyInput(r.pid, 'recon-cl-cases-' + r.pid, closingCasesVal, 'recon-qty') + '</td>' +
-          '<td data-recon-col="closing_units">' + reconInlineQtyInput(r.pid, 'recon-cl-singles-' + r.pid, closingSinglesVal, 'recon-qty') + perCaseHint + '</td>' +
-          '<td data-recon-col="returned_to_supplier">' + reconInlineQtyInput(r.pid, 'recon-ret-' + r.pid, retDisp, 'recon-qty') + '</td>' +
+          '<td data-recon-col="invoiced">' + reconInlineQtyInput(r.pid, 'recon-inv-' + r.pid, invDisp) + '</td>' +
+          '<td data-recon-col="closing_cases">' + reconInlineQtyInput(r.pid, 'recon-cl-cases-' + r.pid, closingCasesVal) + '</td>' +
+          '<td data-recon-col="closing_units">' + reconInlineQtyInput(r.pid, 'recon-cl-singles-' + r.pid, closingSinglesVal) + perCaseHint + '</td>' +
+          reconDrawerOnlyCell(r.pid, 'returned_to_supplier', reconQtyCell(r.supplierReturns), 'Edit in drawer') +
           '<td data-recon-col="transferred">' + reconQtyCell(r.transferred) + '</td>' +
           '<td data-recon-col="consumption" style="font-weight:600" id="recon-cons-' + r.pid + '">' + reconQtyCell(r.consumption) + '</td>' +
           '<td data-recon-col="plu" id="recon-plu-' + r.pid + '">' + reconQtyCell(r.plu) + '</td>' +
