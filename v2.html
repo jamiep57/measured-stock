@@ -706,10 +706,21 @@
     #modifierTable tbody tr.row-mapped { color:var(--muted-foreground); }
     .recipe-tag { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:3px 9px; border-radius:9999px; }
     .recipe-tag.mapped { background:#dcfce7; color:#166534; }
+    .recipe-tag.mapped.stock-warn { background:#fef3c7; color:#92400e; }
     .recipe-tag.unmapped { background:var(--secondary); color:var(--muted-foreground); }
     .recipe-tag .ing-list { font-weight:400; }
+    .recipe-ing-warn { color:#b45309; font-weight:600; }
+    .recipe-ing-unknown { color:var(--danger); }
+    #squareTable tbody tr.row-stock-warn td:first-child,
+    #modifierTable tbody tr.row-stock-warn td:nth-child(2) { color:#92400e; }
     .rf-ing-list { display:flex; flex-direction:column; gap:8px; }
     .rf-ing-row { display:grid; grid-template-columns: minmax(0,1fr) 150px auto; gap:8px; align-items:start; }
+    .rf-ing-prod-wrap { display:flex; flex-direction:column; gap:3px; min-width:0; }
+    .rf-ing-status { font-size:11px; line-height:1.35; min-height:14px; }
+    .rf-ing-status--warn { color:#92400e; }
+    .rf-ing-status--unknown { color:var(--danger); }
+    .rf-ing-row--issue .rf-product,
+    .rf-ing-row--issue .rf-pool { border-color:#f59e0b; box-shadow:0 0 0 1px rgba(245,158,11,.25); }
     .rf-ing-row--pool .rf-pool-label { font-size:11px; font-weight:600; color:var(--muted-foreground); margin-bottom:3px; }
     .rf-ing-row--pool .rf-pool-wrap { display:flex; flex-direction:column; gap:0; }
     .rf-ing-row select, .rf-ing-row input { font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--input); border-radius:var(--radius); background:var(--background); color:var(--foreground); width:100%; }
@@ -1634,6 +1645,7 @@
     </div>
 
     <div class="stats-row" id="squareStats" style="margin-bottom:20px"></div>
+    <div id="sqStockWarn" style="display:none;margin-bottom:16px"></div>
 
     <div id="sqProjectionWrap" style="margin-bottom:24px"></div>
 
@@ -6705,41 +6717,20 @@
 
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += '<tr class="category-row"><td colspan="6">' + escapeHtml(cat) + '</td></tr>';
+      html += '<tr class="category-row"><td colspan="5">' + escapeHtml(cat) + '</td></tr>';
       grouped[cat].slice().sort((a, b) => (a.product.name || '').localeCompare(b.product.name || '')).forEach((ep) => {
         const pid = ep.product_id;
         const line = lines.find((l) => l.product_id === pid && l.bar_id === barId);
-        const counted = !!(line && ((line.cases != null && line.cases !== 0) || (line.singles != null && line.singles !== 0)));
-    const decUnit = usesDecimalPrimaryUnit(pid);
-        const singlesOnly = usesSinglesOnlyUnit(pid);
-        const altUnit = decUnit || singlesOnly;
-        // Decimal-primary / singles-only: collapse stored cases (+ singles) into display units.
-        let casesCellVal = (line && line.cases != null ? line.cases : '');
-        let singlesCellVal = (line && line.singles != null ? line.singles : '');
-        if (decUnit) {
-          const ups = unitsPerCaseFor(pid) || 1;
-          const totCases = line ? ((Number(line.cases) || 0) + (Number(line.singles) || 0) / ups) : 0;
-          casesCellVal = totCases ? round1(casesToDisplayQty(spiritProductById(pid), totCases)) : '';
-        } else if (singlesOnly) {
-          const ups = unitsPerCaseFor(pid) || 1;
-          const totCases = line ? ((Number(line.cases) || 0) + (Number(line.singles) || 0) / ups) : 0;
-          singlesCellVal = totCases ? round1(casesToDisplayQty(spiritProductById(pid), totCases)) : '';
-          casesCellVal = '';
-        }
-        const pUnit = spiritProductById(pid);
-        const primaryLabel = productStockUnitLabel(pUnit, true);
-        const singlesCell = decUnit
-          ? '<td class="cnt-num" style="color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
-          : '<td class="cnt-num"><input type="text" class="cnt-singles" value="' + singlesCellVal + '" placeholder="' + (singlesOnly ? primaryLabel : '0') + '" id="cnt-singles-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>';
-        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (altUnit ? ' data-alt-unit="' + productStockUnit(pUnit) + '"' : '') + (counted ? ' class="counted"' : '') + '>' +
+        const stored = line ? lineStoredCases(line, pid) : 0;
+        const counted = !!(line && stored);
+        const qtyVal = stored ? storedCasesToDisplay(pid, stored) : '';
+        const primaryLabel = productStockUnitLabel(spiritProductById(pid), true);
+        html += '<tr data-pid="' + pid + '" data-name="' + escapeHtml((ep.product.name || '').toLowerCase()) + '"' + (counted ? ' class="counted"' : '') + '>' +
           '<td class="cnt-status" id="cnt-status-' + pid + '">' + (counted ? '<i class="ph ph-check-circle"></i>' : '') + '</td>' +
           '<td>' + escapeHtml(ep.product.name) + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + escapeHtml(ep.product.case_size || '—') + '</td>' +
           '<td style="font-size:12px;color:var(--muted-foreground)">' + (barId ? escapeHtml(barNameById(barId)) : '—') + '</td>' +
-          (singlesOnly
-            ? '<td class="cnt-num" style="color:var(--muted-foreground)" title="Singles only — use the Singles column">—</td>'
-            : '<td class="cnt-num"><input type="text" class="cnt-cases" value="' + casesCellVal + '" placeholder="' + (decUnit ? primaryLabel : '0') + '" id="cnt-cases-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>') +
-          singlesCell +
+          '<td class="cnt-num"><input type="text" class="cnt-qty" value="' + qtyVal + '" placeholder="' + escapeHtml(primaryLabel) + '" id="cnt-qty-' + pid + '" onblur="evalMathInput(this);autoSaveCountEntry(\'' + pid + '\');updateCountStats()" oninput="autoSaveCountEntry(\'' + pid + '\');updateCountStats()"></td>' +
         '</tr>';
       });
     });
@@ -7755,7 +7746,7 @@
     const eps = ((_currentEvent && _currentEvent.event_products) || [])
       .filter((ep) => ep.product && ep.product.name);
     if (!eps.length) {
-      body.innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
       return;
     }
     const grouped = {};
@@ -8079,7 +8070,7 @@
           byPool[key] += sold * qty;
           return;
         }
-        const key = normProductName(ig.product_name);
+        const key = recipeIngredientStockKey(ig.product_name);
         if (!key) return;
         if (!byName[key]) byName[key] = 0;
         byName[key] += sold * qty;
@@ -10063,7 +10054,14 @@
     const statusEl = $('sqImportStatus');
 
     let mapped = 0;
-    rows.forEach((r) => { if (findRecipeFor(r.name, r.variation)) mapped++; });
+    let stockIssues = 0;
+    rows.forEach((r) => {
+      const recipe = findRecipeFor(r.name, r.variation);
+      if (recipe) {
+        mapped++;
+        if (recipeHasStockIssues(recipe)) stockIssues++;
+      }
+    });
     const unmapped = rows.length - mapped;
     const netTotal = rows.reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
 
@@ -10072,7 +10070,24 @@
         '<div class="stat-card"><div class="stat-label">Till lines</div><div class="stat-value">' + rows.length + '</div><div class="stat-sub">Items sold &gt; 0</div></div>' +
         '<div class="stat-card"><div class="stat-label">Mapped</div><div class="stat-value" style="color:#166534">' + mapped + '</div><div class="stat-sub">Have a recipe</div></div>' +
         '<div class="stat-card"><div class="stat-label">Need mapping</div><div class="stat-value" style="color:var(--warning)">' + unmapped + '</div><div class="stat-sub">No recipe yet</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Stock mismatches</div><div class="stat-value" style="color:' + (stockIssues ? '#92400e' : 'inherit') + '">' + stockIssues + '</div><div class="stat-sub">Recipe uses SKU not on event</div></div>' +
         '<div class="stat-card"><div class="stat-label">Net sales</div><div class="stat-value">' + money(netTotal) + '</div><div class="stat-sub">Across imported lines</div></div>';
+    }
+    const stockWarnEl = $('sqStockWarn');
+    if (stockWarnEl) {
+      if (stockIssues > 0) {
+        stockWarnEl.style.display = '';
+        stockWarnEl.innerHTML =
+          '<div class="card" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-color:#fcd34d;background:#fffbeb">' +
+          '<i class="ph-bold ph-warning" style="font-size:20px;color:#b45309;margin-top:1px"></i>' +
+          '<div style="font-size:13px"><strong>' + stockIssues + ' mapped till line' + (stockIssues === 1 ? '' : 's') +
+          ' use a product not stocked on this event.</strong> Look for amber <em>Stock mismatch</em> badges below — ' +
+          'often an old SKU (e.g. Red Bull 330ml) when the event stocks a different pack size. Edit the recipe to pick the SKU on this event.</div>' +
+          '</div>';
+      } else {
+        stockWarnEl.style.display = 'none';
+        stockWarnEl.innerHTML = '';
+      }
     }
 
     if (clearBtn) clearBtn.style.display = _squareImport ? '' : 'none';
@@ -10111,17 +10126,15 @@
       const variation = r.variation && normVar(r.variation) !== 'regular' ? escapeHtml(r.variation) : '<span class="muted">Regular</span>';
       let tag, btn;
       if (recipe) {
-        const ings = (recipe.ingredients || []).slice().sort((x, y) => (x.position || 0) - (y.position || 0));
-        const summary = ings.length
-          ? ings.map((ig) => formatRecipeIngredientSummary(ig)).join(', ')
-          : 'no ingredients';
-        tag = '<span class="recipe-tag mapped"><i class="ph-bold ph-check"></i> Mapped</span> <span class="ing-list" style="font-size:12px;color:var(--muted-foreground)">' + summary + '</span>';
+        const mapped = buildRecipeMappingTag(recipe);
+        tag = mapped.tag;
         btn = '<button class="btn btn-outline btn-sm" onclick="openRecipeModal(' + jsArg(r.name) + ',' + jsArg(r.variation) + ',' + jsArg(recipe.id) + ')"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit</button>';
       } else {
         tag = '<span class="recipe-tag unmapped">Not mapped</span>';
         btn = '<button class="btn btn-primary btn-sm" onclick="openRecipeModal(' + jsArg(r.name) + ',' + jsArg(r.variation) + ',null)"><i class="ph ph-link btn-leading-icon"></i> Map</button>';
       }
-      return '<tr class="' + (recipe ? 'row-mapped' : 'row-unmapped') + '">' +
+      const rowCls = recipe ? (recipeHasStockIssues(recipe) ? 'row-mapped row-stock-warn' : 'row-mapped') : 'row-unmapped';
+      return '<tr class="' + rowCls + '">' +
         '<td>' + escapeHtml(r.name) + '</td>' +
         '<td>' + variation + '</td>' +
         '<td>' + (r.category ? escapeHtml(r.category) : '<span class="muted">—</span>') + '</td>' +
@@ -10169,8 +10182,40 @@
   }
 
   function formatRecipeIngredientSummary(ig) {
-    if (ig.pool_name) return escapeHtml(ig.pool_name) + ' (pool) ×' + fmtQty(ig.qty) + ' serv';
-    return escapeHtml(ig.product_name) + ' ×' + fmtQty(ig.qty);
+    let text;
+    if (ig.pool_name) text = escapeHtml(ig.pool_name) + ' (pool) ×' + fmtQty(ig.qty) + ' serv';
+    else text = escapeHtml(recipeIngredientDisplayName(ig.product_name)) + ' ×' + fmtQty(ig.qty);
+    const st = recipeIngredientEventStatus(ig.product_name, ig.pool_name);
+    if (st.status === 'ok') return text;
+    if (st.status === 'not_on_event') {
+      return '<span class="recipe-ing-warn" title="' + escapeHtml(st.message) + '">' + text +
+        ' <i class="ph-bold ph-warning"></i></span>';
+    }
+    return '<span class="recipe-ing-warn recipe-ing-unknown" title="' + escapeHtml(st.message) + '">' + text +
+      ' <i class="ph-bold ph-question"></i></span>';
+  }
+
+  function recipeHasStockIssues(recipe) {
+    return (recipe && (recipe.ingredients || [])).some((ig) => {
+      const st = recipeIngredientEventStatus(ig.product_name, ig.pool_name);
+      return st.status !== 'ok';
+    });
+  }
+
+  function buildRecipeMappingTag(recipe) {
+    const ings = (recipe.ingredients || []).slice().sort((x, y) => (x.position || 0) - (y.position || 0));
+    const summary = ings.length
+      ? ings.map((ig) => formatRecipeIngredientSummary(ig)).join(', ')
+      : 'no ingredients';
+    const stockWarn = recipeHasStockIssues(recipe);
+    const cls = stockWarn ? 'mapped stock-warn' : 'mapped';
+    const icon = stockWarn ? 'ph-warning' : 'ph-check';
+    const label = stockWarn ? 'Stock mismatch' : 'Mapped';
+    return {
+      tag: '<span class="recipe-tag ' + cls + '"><i class="ph-bold ' + icon + '"></i> ' + label +
+        '</span> <span class="ing-list" style="font-size:12px;color:var(--muted-foreground)">' + summary + '</span>',
+      stockWarn,
+    };
   }
 
   function poolStockForEvent(poolName) {
@@ -10222,9 +10267,9 @@
           if (!seenPool.has(key)) { byPool[key].baselineServingsSold += sold; seenPool.add(key); }
           return;
         }
-        const key = normProductName(ig.product_name);
+        const key = recipeIngredientStockKey(ig.product_name);
         if (!key) return;
-        if (!byName[key]) byName[key] = { name: ig.product_name, baselineCases: 0, baselineServingsSold: 0 };
+        if (!byName[key]) byName[key] = { name: recipeIngredientDisplayName(ig.product_name), baselineCases: 0, baselineServingsSold: 0 };
         byName[key].baselineCases += sold * qty;
         if (!seenProd.has(key)) { byName[key].baselineServingsSold += sold; seenProd.add(key); }
       });
@@ -10251,11 +10296,26 @@
       const runOutRevenue = (b.baselineCases > 0 && available != null)
         ? (available / b.baselineCases) * baselineNet
         : null;
+      const libProduct = (_products || []).find((p) => normProductName(p.name) === key) || null;
+      let stockStatus = st ? 'ok' : (libProduct ? 'not_on_event' : 'unknown');
+      let stockHint = null;
+      if (!st && libProduct) {
+        const suggestions = findSimilarEventProducts(libProduct.name);
+        if (suggestions.length) {
+          stockHint = 'On this event as ' + suggestions.map((p) => ProductPicker.label(p.name, p.case_size)).join(', ');
+        } else {
+          stockHint = 'Add this product to the event, or update the recipe to use a stocked SKU.';
+        }
+      } else if (!st && !libProduct) {
+        stockHint = 'Not in the product library — check spelling or pick from the library.';
+      }
       return {
         name: b.name,
         unit: 'cases',
         pid: st ? st.pid : null,
         inEvent: !!st,
+        stockStatus,
+        stockHint,
         baselineCases: b.baselineCases,
         projectedCases,
         servingsSold: factor != null ? b.baselineServingsSold * factor : null,
@@ -10358,7 +10418,13 @@
     const body = sorted.map((it) => {
       let badge, runOutCell, pctCell;
       if (!it.inEvent) {
-        badge = '<span style="font-size:12px;font-weight:600;color:var(--muted-foreground)">Not in event</span>';
+        const hint = it.stockHint ? (' title="' + escapeHtml(it.stockHint) + '"') : '';
+        const label = it.stockStatus === 'unknown' ? 'Unknown product' : 'Not on event';
+        badge = '<span class="recipe-ing-warn"' + hint + ' style="font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px">' +
+          '<i class="ph-bold ' + (it.stockStatus === 'unknown' ? 'ph-question' : 'ph-warning') + '"></i> ' + label + '</span>';
+        if (it.stockHint) {
+          badge += '<div style="font-size:11px;color:var(--muted-foreground);margin-top:2px;max-width:220px">' + escapeHtml(it.stockHint) + '</div>';
+        }
         runOutCell = '<span class="muted">—</span>';
         pctCell = '<span class="muted">—</span>';
       } else {
@@ -10617,17 +10683,14 @@
       const recipe = findRecipeFor(r.modifier, r.modifier_set);
       let tag, btn;
       if (recipe) {
-        const ings = (recipe.ingredients || []).slice().sort((x, y) => (x.position || 0) - (y.position || 0));
-        const summary = ings.length
-          ? ings.map((ig) => formatRecipeIngredientSummary(ig)).join(', ')
-          : 'no ingredients';
-        tag = '<span class="recipe-tag mapped"><i class="ph-bold ph-check"></i> Mapped</span> <span class="ing-list" style="font-size:12px;color:var(--muted-foreground)">' + summary + '</span>';
+        tag = buildRecipeMappingTag(recipe).tag;
         btn = '<button class="btn btn-outline btn-sm" onclick="openRecipeModal(' + jsArg(r.modifier) + ',' + jsArg(r.modifier_set) + ',' + jsArg(recipe.id) + ',\'modifier\')"><i class="ph ph-pencil-simple btn-leading-icon"></i> Edit</button>';
       } else {
         tag = '<span class="recipe-tag unmapped">Not mapped</span>';
         btn = '<button class="btn btn-primary btn-sm" onclick="openRecipeModal(' + jsArg(r.modifier) + ',' + jsArg(r.modifier_set) + ',null,\'modifier\')"><i class="ph ph-link btn-leading-icon"></i> Map</button>';
       }
-      return '<tr class="' + (recipe ? 'row-mapped' : 'row-unmapped') + '">' +
+      const rowCls = recipe ? (recipeHasStockIssues(recipe) ? 'row-mapped row-stock-warn' : 'row-mapped') : 'row-unmapped';
+      return '<tr class="' + rowCls + '">' +
         '<td>' + (r.modifier_set ? escapeHtml(r.modifier_set) : '<span class="muted">—</span>') + '</td>' +
         '<td>' + escapeHtml(r.modifier) + '</td>' +
         '<td class="num">' + num(r.qty_sold) + '</td>' +
@@ -10732,10 +10795,14 @@
     row.className = 'rf-ing-row';
     row.id = 'rf-row-' + rowId;
     row.innerHTML =
-      '<input type="text" class="rf-product df-combo-input" id="rf-prod-' + rowId + '" autocomplete="off"' +
-        ' placeholder="Search products\u2026"' +
-        ' value="' + (productName != null ? escapeHtml(productName) : '') + '"' +
-        ProductPicker.inputAttrs('recipe', rowId) + '>' +
+      '<div class="rf-ing-prod-wrap">' +
+        '<input type="text" class="rf-product df-combo-input" id="rf-prod-' + rowId + '" autocomplete="off"' +
+          ' placeholder="Search products\u2026"' +
+          ' value="' + (productName != null ? escapeHtml(productName) : '') + '"' +
+          ProductPicker.inputAttrs('recipe', rowId) +
+          ' oninput="updateRecipeIngredientRowStatus(\'' + rowId + '\')" onchange="updateRecipeIngredientRowStatus(\'' + rowId + '\')">' +
+        '<div class="rf-ing-status" id="rf-status-' + rowId + '"></div>' +
+      '</div>' +
       '<div class="rf-qty-cell">' +
         '<input type="text" class="rf-qty" placeholder="e.g. 1/12" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
         '<div class="shot-btns">' +
@@ -10745,6 +10812,7 @@
       '</div>' +
       '<button type="button" class="rf-ing-remove" onclick="this.closest(\'.rf-ing-row\').remove()" title="Remove">&times;</button>';
     wrap.appendChild(row);
+    updateRecipeIngredientRowStatus(rowId);
   }
 
   function addRecipePoolRow(poolName, qty) {
@@ -10763,9 +10831,10 @@
     row.innerHTML =
       '<div class="rf-pool-wrap">' +
         '<span class="rf-pool-label">Volume pool</span>' +
-        '<select class="rf-pool" id="rf-pool-' + rowId + '">' +
+        '<select class="rf-pool" id="rf-pool-' + rowId + '" onchange="updateRecipeIngredientRowStatus(\'' + rowId + '\')">' +
           '<option value="">— Select pool —</option>' + opts +
         '</select>' +
+        '<div class="rf-ing-status" id="rf-status-' + rowId + '"></div>' +
       '</div>' +
       '<div class="rf-qty-cell">' +
         '<input type="text" class="rf-qty" placeholder="servings" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
@@ -10776,6 +10845,7 @@
       '</div>' +
       '<button type="button" class="rf-ing-remove" onclick="this.closest(\'.rf-ing-row\').remove()" title="Remove">&times;</button>';
     wrap.appendChild(row);
+    updateRecipeIngredientRowStatus(rowId);
     if (!pools.length) {
       const err = $('rf-err');
       if (err) err.textContent = 'No volume pools defined yet — set a pool name on interchangeable products in the Product Library first.';
@@ -10817,6 +10887,106 @@
     return p ? ProductPicker.label(p.name, p.case_size) : (storedName || '');
   }
 
+  // Recipe ingredients may store a picker label ("Name — case size") or a
+  // bare product name. Resolve to the library product name for stock lookups.
+  function recipeIngredientStockKey(storedName) {
+    const p = recipeProductByName(storedName);
+    return normProductName(p ? p.name : storedName);
+  }
+
+  function eventProductIdSet() {
+    const ids = new Set();
+    ((_currentEvent && _currentEvent.event_products) || []).forEach((ep) => {
+      if (ep.product_id) ids.add(ep.product_id);
+    });
+    return ids;
+  }
+
+  function findSimilarEventProducts(productName) {
+    const base = normProductName(productName);
+    const tokens = base.split(' ').filter((t) => t.length > 1);
+    if (!tokens.length) return [];
+    const onEventIds = eventProductIdSet();
+    const scored = (_products || [])
+      .filter((p) => p.id && onEventIds.has(p.id))
+      .map((p) => {
+        const pn = normProductName(p.name);
+        let score = 0;
+        if (pn === base) score = 100;
+        else if (pn.startsWith(base + ' ') || base.startsWith(pn + ' ')) score = 80;
+        else if (tokens.every((t) => pn.includes(t))) score = 60;
+        else if (tokens.some((t) => t.length > 3 && pn.includes(t))) score = 30;
+        return { p, score };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || (a.p.name || '').localeCompare(b.p.name || ''));
+    return scored.slice(0, 3).map((x) => x.p);
+  }
+
+  function recipeIngredientEventStatus(storedName, poolName) {
+    if (poolName) {
+      const st = poolStockForEvent(poolName);
+      if (st.inEvent) return { status: 'ok' };
+      const hasPool = (_products || []).some((p) =>
+        p.pool_name && normPoolName(p.pool_name) === normPoolName(poolName));
+      return {
+        status: hasPool ? 'not_on_event' : 'unknown',
+        message: hasPool
+          ? 'Pool exists in the library but no member is on this event'
+          : 'Unknown volume pool',
+      };
+    }
+    const raw = String(storedName || '').trim();
+    if (!raw) return { status: 'ok', message: '' };
+    const p = recipeProductByName(raw);
+    if (!p) {
+      return {
+        status: 'unknown',
+        message: 'Not in the product library — pick a product from search',
+      };
+    }
+    if (eventProductIdSet().has(p.id)) return { status: 'ok', product: p };
+    const suggestions = findSimilarEventProducts(p.name);
+    const suggestionText = suggestions.length
+      ? 'On this event as ' + suggestions.map((s) => ProductPicker.label(s.name, s.case_size)).join(', ')
+      : 'This SKU is not on the event — add it under Products or switch to a stocked SKU';
+    return {
+      status: 'not_on_event',
+      product: p,
+      suggestions,
+      message: (ProductPicker.label(p.name, p.case_size) || p.name) + ' is not on this event. ' + suggestionText,
+    };
+  }
+
+  function updateRecipeIngredientRowStatus(rowId) {
+    const row = document.getElementById('rf-row-' + rowId);
+    const statusEl = document.getElementById('rf-status-' + rowId);
+    if (!row || !statusEl) return;
+    let st;
+    if (row.classList.contains('rf-ing-row--pool')) {
+      const poolEl = row.querySelector('.rf-pool');
+      st = recipeIngredientEventStatus(null, poolEl ? poolEl.value : '');
+    } else {
+      const prodEl = row.querySelector('.rf-product');
+      st = recipeIngredientEventStatus(prodEl ? prodEl.value : '', null);
+    }
+    row.classList.toggle('rf-ing-row--issue', st.status !== 'ok');
+    if (st.status === 'ok') {
+      statusEl.className = 'rf-ing-status';
+      statusEl.textContent = '';
+      return;
+    }
+    statusEl.className = 'rf-ing-status rf-ing-status--' + (st.status === 'unknown' ? 'unknown' : 'warn');
+    statusEl.textContent = st.message;
+  }
+
+  function updateAllRecipeIngredientStatuses() {
+    document.querySelectorAll('#rf-ingredients .rf-ing-row').forEach((row) => {
+      const id = row.id && row.id.replace(/^rf-row-/, '');
+      if (id) updateRecipeIngredientRowStatus(id);
+    });
+  }
+
   // +Single (n=1) / +Double (n=2): add a 25ml serving to a recipe ingredient
   // row's quantity, expressed as a fraction of one case for the chosen product
   // (6x700ml ⇒ 1/168 per single). The user thinks in shots; the maths is done
@@ -10850,8 +11020,9 @@
     onPick(rowId, it) {
       const input = document.getElementById('rf-prod-' + rowId);
       if (it && input) input.value = ProductPicker.label(it.name, it.case_size);
+      updateRecipeIngredientRowStatus(rowId);
       if (input && input.parentElement) {
-        const qty = input.parentElement.querySelector('.rf-qty');
+        const qty = input.parentElement.parentElement.querySelector('.rf-qty');
         if (qty) qty.focus();
       }
     },
@@ -10888,6 +11059,7 @@
     } else {
       addRecipeIngredientRow();
     }
+    updateAllRecipeIngredientStatuses();
     $('recipeFormOverlay').classList.add('open');
     $('recipeFormDrawer').classList.add('open');
   }
