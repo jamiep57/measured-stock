@@ -1586,7 +1586,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
-      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Returns − Transferred (+ pre-event on hand if any). <strong>Variance</strong> = Consumption − PLU (cases). Charges use case price. Import Square sales for PLU figures.</p>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing stock counted − Transferred (+ pre-event on hand if any). Returns are part of the closing count, not subtracted again. <strong>Variance</strong> = Consumption − PLU (cases). Charges use case price. Import Square sales for PLU figures.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
@@ -8398,10 +8398,21 @@
 
   // ===================== FINANCIAL RECON =====================
   // Post-event financial close — mirrors the Gottwood recon spreadsheet.
-  // Consumption = Delivered + pre-event on hand − Closing − Returns to suppliers − Transferred
+  // Consumption = Delivered + pre-event on hand − closing stock counted − Transferred.
+  // Closing count is everything physically on site at close (returns are a subset — not subtracted again).
 
   function reconDeliveredQty(ep) {
     return ep.delivered_qty != null ? Number(ep.delivered_qty) || 0 : 0;
+  }
+
+  function reconStockRemaining(cl, ep, closingTotal) {
+    const hasClose = cl && (cl.closing_cases != null || cl.closing_singles != null || cl.close_count != null);
+    if (hasClose || closingTotal > 0) return roundN(closingTotal, 2);
+    if (cl && cl.carried_over != null && cl.return_amount != null) {
+      return roundN((Number(cl.carried_over) || 0) + (Number(cl.return_amount) || 0), 2);
+    }
+    if (cl && cl.return_amount != null) return roundN(Number(cl.return_amount) || 0, 2);
+    return 0;
   }
 
   function supplierReturnCasesForProduct(pid) {
@@ -8555,8 +8566,9 @@
     const closingTotal = closingCases + closingUnits;
     const preEventOnHand = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
     const supplierReturns = supplierReturnCasesForProduct(pid);
+    const stockRemaining = reconStockRemaining(cl, ep, closingTotal);
     const transferred = summaryTransferOut(pid);
-    const consumption = roundN(delivered + preEventOnHand - supplierReturns - closingTotal - transferred, 2);
+    const consumption = roundN(delivered + preEventOnHand - stockRemaining - transferred, 2);
     const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
     const casePrice = reconCasePrice(ep, draft);
     const consumptionCharge = consumption * casePrice;
