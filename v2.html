@@ -605,16 +605,18 @@
     #reconTable tbody tr.recon-row:hover td { background:var(--secondary); }
     #reconTable tbody tr.recon-row.recon-row-editing td { background:var(--secondary); }
     #reconTable input.recon-cell-input {
-      width:84px; font:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--input);
-      border-radius:var(--radius); background:var(--background); color:var(--foreground);
+      width:100%; max-width:4.5rem; font:inherit; font-size:inherit; padding:0; margin:0;
+      border:none; border-radius:var(--radius); background:transparent; color:inherit;
       text-align:center; font-variant-numeric:tabular-nums;
-      transition:border-color .12s, background .12s, box-shadow .12s;
+      transition:background .12s, box-shadow .12s;
       -moz-appearance:textfield; appearance:textfield;
     }
+    #reconTable input.recon-cell-input::placeholder { color:var(--muted-foreground); opacity:.45; }
     #reconTable input.recon-cell-input::-webkit-outer-spin-button,
     #reconTable input.recon-cell-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
-    #reconTable input.recon-cell-input:focus { border-color:var(--ring); box-shadow:0 0 0 3px rgba(24,24,27,.08); outline:none; }
-    #reconTable tbody tr.recon-row-editing input.recon-cell-input { border-color:var(--ring); background:var(--card); }
+    #reconTable input.recon-cell-input:hover:not(:focus) { background:rgba(24,24,27,.04); cursor:text; }
+    #reconTable input.recon-cell-input:focus { background:var(--card); box-shadow:0 0 0 2px var(--ring); outline:none; }
+    #reconTable tbody tr.recon-row-editing input.recon-cell-input { background:var(--card); box-shadow:0 0 0 2px var(--ring); }
     #reconTable td.recon-drawer-cell { cursor:pointer; }
     #reconTable td.recon-drawer-cell:hover { background:var(--secondary); }
     #reconTable td.recon-drawer-cell .recon-drawer-hint {
