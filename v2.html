@@ -1074,6 +1074,12 @@
         <span class="nav-status-dot" title="Built — panel is functional"></span>
       </button>
 
+      <button class="nav-item" data-panel="case-sizes" onclick="showPanel('case-sizes')" title="Case Sizes">
+        <i class="ph ph-package nav-icon"></i>
+        <span class="nav-label">Case Sizes</span>
+        <span class="nav-status-dot" title="Built — panel is functional"></span>
+      </button>
+
       <button class="nav-item nav-item-bottom" data-panel="bugs" onclick="showPanel('bugs')" title="Bug &amp; Feature Reports">
         <i class="ph ph-bug nav-icon"></i>
         <span class="nav-label">Bug Reports</span>
@@ -1753,6 +1759,48 @@
     </div>
   </div>
 </div>
+<!-- ===================== CASE SIZES (global) ===================== -->
+<div id="panel-case-sizes" class="panel">
+  <div class="page-header">
+    <div class="page-title">Case Sizes <span class="nav-status-dot" style="display:inline-block;margin-left:4px;vertical-align:middle" title="Built — panel is functional"></span></div>
+    <p class="page-subtitle">Standard pack and case definitions used across the product library — e.g. 24×330ml, 6×700ml, 70cl. Sets units per case, stock unit (case, bottle, keg…) and servings per unit for recipe mapping.</p>
+  </div>
+  <div class="suppliers-layout">
+    <div class="card supplier-list-card">
+      <div class="supplier-list-header">
+        <button class="btn btn-primary btn-sm" onclick="openCaseSizeModal()" title="Add case size">+ New</button>
+      </div>
+      <div class="supplier-list" id="caseSizeList"></div>
+    </div>
+    <div class="card supplier-detail-card" id="caseSizeDetailCard">
+      <div class="empty-state" id="caseSizeDetailEmpty">
+        <i class="ph ph-package icon"></i>
+        <p>Select a case size from the list to view details, or <button class="btn btn-outline btn-sm" onclick="openCaseSizeModal()" style="margin-left:6px">add a new one</button>.</p>
+      </div>
+      <div id="caseSizeDetailBody" style="display:none">
+        <div class="supplier-detail-head">
+          <div>
+            <div class="supplier-detail-title" id="csDetailLabel">—</div>
+            <p class="supplier-detail-meta" id="csDetailMeta"></p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openCaseSizeModal(_selectedCaseSizeId)">
+            <i class="ph ph-pencil-simple btn-leading-icon"></i> Edit
+          </button>
+        </div>
+        <div class="readonly-grid">
+          <div class="ro-field"><span class="ro-label">Units per case</span><span class="ro-value" id="csRoUnits">—</span></div>
+          <div class="ro-field"><span class="ro-label">Stock unit</span><span class="ro-value" id="csRoStockUnit">—</span></div>
+          <div class="ro-field"><span class="ro-label">Servings per unit</span><span class="ro-value" id="csRoServings">—</span></div>
+          <div class="ro-field full"><span class="ro-label">Notes</span><span class="ro-value" id="csRoNotes">—</span></div>
+        </div>
+        <div class="supplier-detail-section">
+          <div class="card-title" style="margin-bottom:10px">Products using this size</div>
+          <div id="csDetailProducts"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- ===================== BUG / FEATURE REPORTS ===================== -->
 <div id="panel-bugs" class="panel">
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
@@ -1930,9 +1978,10 @@
 
     <div class="df-field">
       <label>Products delivered</label>
+      <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:38%">Product</th><th>Quantity</th><th title="Unusable / damaged stock">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:38%">Product</th><th title="Cases — spirits are entered as decimal bottles">Cases</th><th title="Loose individual units (not used for spirits)">Singles</th><th title="Unusable / damaged stock">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
           <tbody id="df-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2006,7 +2055,7 @@
       <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:46%">Product</th><th>Quantity</th><th class="num" style="width:84px">Value</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:46%">Product</th><th title="Cases — spirits are entered as decimal bottles">Cases</th><th title="Loose individual units (not used for spirits)">Singles</th><th class="num" style="width:84px">Value</th><th style="width:36px"></th></tr></thead>
           <tbody id="wf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2111,7 +2160,7 @@
       <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:36%">Product</th><th>Pack size</th><th>Quantity</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:36%">Product</th><th>Pack size</th><th title="Cases — spirits are entered as decimal bottles">Cases</th><th title="Loose individual units (not used for spirits)">Singles</th><th style="width:36px"></th></tr></thead>
           <tbody id="tf-lines-body"></tbody>
         </table>
         <div style="padding:8px 12px;border-top:1px solid var(--border)">
@@ -2309,6 +2358,7 @@
   let _products = [];
   let _categories = [];   // {id,name,colour_key}
   let _suppliers = [];    // {id,name}
+  let _caseSizes = [];    // {id,label,units_per_case,stock_unit,servings_per_unit}
   let _sortKey = 'name';
   let _sortDir = 1;
   let _currentEvent = null;
@@ -2734,6 +2784,7 @@
     'stock-levels': 'Stock Levels', deliveries: 'Deliveries', opening: 'Opening Stock',
     distribution: 'Distribution', counts: 'Stock Counts', transfers: 'Transfers',
     wastage: 'Wastage', closing: 'Closing Stock', summary: 'Summary', recon: 'Financial Recon', square: 'Square', modifiers: 'Modifiers', suppliers: 'Suppliers',
+    'case-sizes': 'Case Sizes',
     warehouse: 'Warehouse', settings: 'Settings', bugs: 'Bug & Feature Reports',
   };
 
@@ -2789,6 +2840,7 @@
     if (name === 'square') loadSquare();
     if (name === 'modifiers') loadModifiers();
     if (name === 'suppliers') loadSuppliers();
+    if (name === 'case-sizes') loadCaseSizes();
     if (name === 'warehouse') loadWarehousePanel();
     if (name === 'settings') loadSettings();
     if (name === 'bugs') loadBugs();
@@ -2909,14 +2961,16 @@
   async function loadLibrary() {
     try {
       setStatus('loading products…');
-      const [products, categories, suppliers] = await Promise.all([
+      const [products, categories, suppliers, caseSizes] = await Promise.all([
         DB.products.listFull(),
         DB.categories.list(),
         DB.suppliers.list(),
+        DB.caseSizes.list().catch(() => []),
       ]);
       _products = products;
       _categories = categories || [];
       _suppliers = suppliers || [];
+      _caseSizes = caseSizes || [];
       // populate filters
       const cats = [...new Set(_products.map((p) => p.category && p.category.name).filter(Boolean))].sort();
       const sups = [...new Set(_products.map((p) => p.supplier && p.supplier.name).filter(Boolean))].sort();
@@ -3569,7 +3623,10 @@
     document.head.appendChild(css);
   }
 
-  function openProductModal(id, opts) {
+  async function openProductModal(id, opts) {
+    if (!_caseSizes.length) {
+      try { _caseSizes = (await DB.caseSizes.list()) || []; } catch (e) { _caseSizes = []; }
+    }
     const p = id ? _products.find((x) => x.id === id) : null;
     const catOpts = _categories.map((c) => ({ value: c.id, label: c.name }));
     const editor = makeSupplierPriceEditor(
@@ -3578,13 +3635,20 @@
         pack_size: r.pack_size || p.case_size || '',
       })) : []
     );
+    const casePicker = makeCaseSizePicker(p ? p.case_size_id : null);
     Drawer.open({
       title: p ? 'Edit product' : 'New product',
       stacked: opts && opts.stacked,
       fields: [
         { key: 'name', label: 'Name', type: 'text', full: true, required: true },
         { key: 'category_id', label: 'Category', type: 'select', options: catOpts, placeholder: '— none —' },
-        { key: 'case_size', label: 'Case size', type: 'text', placeholder: 'e.g. 70cl (spirits), 24x330ml (beer)' },
+        {
+          key: 'case_size_id', type: 'custom', full: true, label: 'Standard case size',
+          render: () => casePicker.render(),
+          mount: (wrap) => casePicker.mount(wrap),
+          collect: () => casePicker.collect(),
+        },
+        { key: 'case_size', label: 'Case size label', type: 'text', placeholder: 'e.g. 24x330ml — filled from standard or enter manually' },
         { key: 'units_per_case', label: 'Units / case', type: 'number', min: 0 },
         { key: 'stock_unit', label: 'Stock unit', type: 'select', full: true, options: STOCK_UNIT_OPTS, placeholder: 'Auto-detect' },
         { key: 'sku', label: 'SKU', type: 'text' },
@@ -3618,10 +3682,12 @@
             if (ml) poolServings = shotsPerBottle({ case_size: cs });
           }
         }
+        const cs = v.case_size_id ? caseSizeById(v.case_size_id) : null;
         const patch = {
           name: v.name,
           category_id: v.category_id || null,
-          case_size: v.case_size || null,
+          case_size_id: v.case_size_id || null,
+          case_size: (v.case_size || (cs && cs.label) || null),
           units_per_case: v.units_per_case != null ? v.units_per_case : 1,
           stock_unit: v.stock_unit || null,
           sku: v.sku || null,
@@ -3815,6 +3881,219 @@
           if (created && created.id) _selectedSupplierId = created.id;
         }
         await loadSuppliers();
+      },
+    });
+  }
+
+  // =====================================================================
+  // Case sizes — global catalogue (list + detail, Drawer to edit)
+  // =====================================================================
+  let _selectedCaseSizeId = null;
+
+  function caseSizeById(id) {
+    return (_caseSizes || []).find((c) => c.id === id) || null;
+  }
+
+  function caseSizeSummary(cs) {
+    if (!cs) return '';
+    const parts = [
+      stockUnitTitle(cs.stock_unit),
+      cs.units_per_case + ' per case',
+    ];
+    if (cs.servings_per_unit != null) parts.push(cs.servings_per_unit + ' serve' + (cs.servings_per_unit === 1 ? '' : 's') + '/unit');
+    return parts.join(' · ');
+  }
+
+  function applyCaseSizeToProductFields(cs) {
+    const labelEl = $('df_case_size');
+    const upcEl = $('df_units_per_case');
+    const suEl = $('df_stock_unit');
+    const poolEl = $('df_pool_servings_per_unit');
+    if (!cs) return;
+    if (labelEl) labelEl.value = cs.label || '';
+    if (upcEl && cs.units_per_case != null) upcEl.value = cs.units_per_case;
+    if (suEl && cs.stock_unit) suEl.value = cs.stock_unit;
+    if (poolEl && cs.servings_per_unit != null && !poolEl.value) poolEl.value = cs.servings_per_unit;
+  }
+
+  function makeCaseSizePicker(initialId) {
+    const sorted = (_caseSizes || []).slice().sort((a, b) =>
+      (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''));
+    let selectedId = initialId || '';
+    return {
+      render() {
+        const opts = sorted.map((cs) =>
+          '<option value="' + escapeHtml(cs.id) + '"' +
+          (cs.id === selectedId ? ' selected' : '') + '>' +
+          escapeHtml(cs.label) + ' — ' + escapeHtml(caseSizeSummary(cs)) + '</option>').join('');
+        return (
+          '<select id="csp_select" style="width:100%">' +
+          '<option value="">— custom / manual —</option>' +
+          opts +
+          '</select>' +
+          '<p class="df-hint" style="margin:6px 0 0">Pick a standard size to fill units, stock unit and servings. Manage sizes on the <a href="#case-sizes" onclick="showPanel(\'case-sizes\')">Case Sizes</a> page.</p>'
+        );
+      },
+      mount(wrap) {
+        const sel = wrap && wrap.querySelector('#csp_select');
+        if (!sel) return;
+        sel.addEventListener('change', () => {
+          selectedId = sel.value || '';
+          if (selectedId) applyCaseSizeToProductFields(caseSizeById(selectedId));
+        });
+      },
+      collect() {
+        const sel = $('csp_select');
+        return (sel && sel.value) || null;
+      },
+    };
+  }
+
+  async function loadCaseSizes() {
+    try {
+      setStatus('loading case sizes…');
+      const [caseSizes, products] = await Promise.all([
+        DB.caseSizes.list().catch(() => []),
+        DB.products.listFull(),
+      ]);
+      _caseSizes = caseSizes || [];
+      _products = products || _products;
+      if (_selectedCaseSizeId && !_caseSizes.some((c) => c.id === _selectedCaseSizeId)) {
+        _selectedCaseSizeId = null;
+      }
+      renderCaseSizeList();
+      renderCaseSizeDetail();
+      setStatus('● connected · ' + _caseSizes.length + ' case sizes', 'ok');
+    } catch (err) {
+      setStatus('✕ ' + err.message, 'err');
+      console.error(err);
+    }
+  }
+
+  function renderCaseSizeList() {
+    const list = (_caseSizes || []).slice().sort((a, b) =>
+      (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''));
+    const box = $('caseSizeList');
+    if (!box) return;
+    if (!list.length) {
+      box.innerHTML = '<div class="supplier-list-empty">No case sizes yet. Add your first one.</div>';
+      return;
+    }
+    box.innerHTML = list.map((cs) => (
+      '<div class="supplier-list-item' + (cs.id === _selectedCaseSizeId ? ' active' : '') +
+      '" onclick="selectCaseSize(\'' + cs.id + '\')">' +
+      '<span class="supplier-list-name">' + escapeHtml(cs.label) + '</span>' +
+      '<span class="supplier-list-sor">' + escapeHtml(stockUnitTitle(cs.stock_unit)) + '</span>' +
+      '</div>'
+    )).join('');
+    const q = (($('pageSearchInput') && $('pageSearchInput').value) || '').trim().toLowerCase();
+    if (q) pageSearch(q);
+  }
+
+  function selectCaseSize(id) {
+    _selectedCaseSizeId = id;
+    renderCaseSizeList();
+    renderCaseSizeDetail();
+  }
+
+  function setCaseSizeRo(id, val) {
+    const el = $(id);
+    if (!el) return;
+    const has = val != null && String(val).trim() !== '';
+    el.textContent = has ? val : '—';
+    el.classList.toggle('empty', !has);
+  }
+
+  function renderCaseSizeDetail() {
+    const cs = _selectedCaseSizeId ? caseSizeById(_selectedCaseSizeId) : null;
+    const empty = $('caseSizeDetailEmpty');
+    const body = $('caseSizeDetailBody');
+    if (!empty || !body) return;
+    if (!cs) {
+      empty.style.display = '';
+      body.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    body.style.display = '';
+    const linked = (_products || []).filter((p) => p.case_size_id === cs.id);
+    $('csDetailLabel').textContent = cs.label || '—';
+    $('csDetailMeta').textContent = caseSizeSummary(cs);
+    setCaseSizeRo('csRoUnits', cs.units_per_case != null ? String(cs.units_per_case) : null);
+    setCaseSizeRo('csRoStockUnit', stockUnitTitle(cs.stock_unit));
+    setCaseSizeRo('csRoServings', cs.servings_per_unit != null ? String(cs.servings_per_unit) : null);
+    setCaseSizeRo('csRoNotes', cs.notes);
+    const wrap = $('csDetailProducts');
+    if (!linked.length) {
+      wrap.innerHTML = '<div class="supplier-products-empty">No products linked yet. Assign this size when editing a product.</div>';
+    } else {
+      wrap.innerHTML =
+        '<table class="supplier-products-table"><thead><tr>' +
+        '<th>Product</th><th>Category</th><th>Supplier</th>' +
+        '</tr></thead><tbody>' +
+        linked.map((p) =>
+          '<tr>' +
+          '<td>' + escapeHtml(p.name) + '</td>' +
+          '<td>' + catBadge(p.category) + '</td>' +
+          '<td>' + supplierCell(p) + '</td>' +
+          '</tr>'
+        ).join('') +
+        '</tbody></table>';
+    }
+  }
+
+  function openCaseSizeModal(id) {
+    const cs = id ? caseSizeById(id) : null;
+    Drawer.open({
+      title: cs ? 'Edit case size' : 'New case size',
+      fields: [
+        { key: 'label', label: 'Label', type: 'text', full: true, required: true, placeholder: 'e.g. 24x330ml, 6x700ml, 70cl, 50L keg' },
+        { key: 'units_per_case', label: 'Units per case', type: 'number', min: 0, required: true },
+        { key: 'stock_unit', label: 'Stock unit', type: 'select', required: true, options: STOCK_UNIT_OPTS.filter((o) => o.value !== '') },
+        { key: 'servings_per_unit', label: 'Servings per unit', type: 'number', min: 0, placeholder: 'e.g. 1 per can, 28 shots per 70cl bottle' },
+        { key: 'sort_order', label: 'Sort order', type: 'number', min: 0 },
+        { key: 'notes', label: 'Notes', type: 'textarea', full: true },
+      ],
+      values: cs || { stock_unit: 'case', units_per_case: 1, sort_order: 0 },
+      onDelete: cs ? async () => {
+        const linked = (_products || []).some((p) => p.case_size_id === cs.id);
+        if (linked) {
+          throw new Error('Can’t delete — products still use this case size. Reassign them first.');
+        }
+        await DB.caseSizes.remove(cs.id);
+        if (_selectedCaseSizeId === cs.id) _selectedCaseSizeId = null;
+        await loadCaseSizes();
+      } : null,
+      onSave: async (v) => {
+        const label = (v.label || '').trim();
+        if (!label) throw new Error('Label is required.');
+        let upc = Number(v.units_per_case);
+        if (!Number.isFinite(upc) || upc <= 0) throw new Error('Units per case must be greater than zero.');
+        let servings = v.servings_per_unit;
+        if (servings != null && servings !== '') {
+          servings = Number(servings);
+          if (!Number.isFinite(servings) || servings <= 0) throw new Error('Servings per unit must be greater than zero.');
+        } else {
+          servings = null;
+        }
+        let sortOrder = Number(v.sort_order);
+        if (!Number.isFinite(sortOrder)) sortOrder = 0;
+        const patch = {
+          label,
+          units_per_case: upc,
+          stock_unit: v.stock_unit || 'case',
+          servings_per_unit: servings,
+          sort_order: sortOrder,
+          notes: (v.notes || '').trim() || null,
+        };
+        if (cs) {
+          await DB.caseSizes.update(cs.id, patch);
+        } else {
+          const created = await DB.caseSizes.create(patch);
+          if (created && created.id) _selectedCaseSizeId = created.id;
+        }
+        await loadCaseSizes();
+        await loadLibrary();
       },
     });
   }
@@ -4827,7 +5106,7 @@
   let _supplierReturns = [];
   let _supplierReturnsEventId = null;
   let _delEditingId = null;
-  let _delLines = [];                 // [{lineId, productId, qty, damagedQty}]
+  let _delLines = [];                 // [{lineId, productId, qty, singles, damagedQty}]
   let _delNote = null;                // {file?,dataUrl?,url?}
   let _delPhotos = [];                // [{id,file?,dataUrl?,url?}]
   let _delDamages = [];               // [{id,file?,dataUrl?,url?}]
@@ -5065,12 +5344,12 @@
     const body = $('df-lines-body');
     const options = deliveryProductOptions();
     if (!_delLines.length) {
-      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
       renderDeliveryCostSummary();
       return;
     }
     if (!options.length && !(_products || []).length) {
-      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
       renderDeliveryCostSummary();
       return;
     }
@@ -5078,16 +5357,17 @@
     body.innerHTML = _delLines.map((line) => {
       const { price } = deliveryLineCasePrice(line.productId, supplierId);
       const lineCost = (line.productId && price != null) ? price * delFormLineCases(line) : null;
-      const qtyCell = stockQtyCellHtml(line.productId, line, {
-        qtyKey: 'qty',
-        onChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)',
+      const qtyCells = stockQtyCellsHtml(line.productId, line, {
+        casesKey: 'qty',
+        onCasesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)',
+        onSinglesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'singles\',this.value)',
       });
       return '<tr>' +
       '<td style="position:relative"><input type="text" class="df-combo-input" id="df-combo-input-' + line.lineId + '" autocomplete="off"' +
         ' value="' + escapeHtml(productPickerDisplayById(line.productId)) + '"' +
         ' placeholder="Search products\u2026"' +
         ProductPicker.inputAttrs('delivery', line.lineId) + '></td>' +
-      qtyCell +
+      qtyCells +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
       '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
       '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeDeliveryLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
@@ -5103,7 +5383,10 @@
   }
   // Unusable/damaged for a form line, in cases (spirits enter it in bottles).
   function delFormLineDamagedCases(line) {
-    return displayToStoredCases(line.productId, line.damagedQty);
+    if (usesDecimalPrimaryUnit(line.productId)) {
+      return displayQtyToCases(spiritProductById(line.productId), line.damagedQty);
+    }
+    return Number(line.damagedQty) || 0;
   }
 
   // Live total + supplier-price hint under the delivery form's line table.
@@ -5119,7 +5402,6 @@
       const { price, matched } = deliveryLineCasePrice(line.productId, supplierId);
       if (price == null) { anyMissing = true; return; }
       if (!matched) anyFallback = true;
-      // Spirits: qty is bottles, so cost from cases; others keep whole-case cost.
       total += price * delFormLineCases(line);
     });
     totalEl.textContent = money(total) || '£0.00';
@@ -5138,7 +5420,7 @@
   }
 
   function addDeliveryLine() {
-    _delLines.push({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', damagedQty: '' });
+    _delLines.push({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', singles: '', damagedQty: '' });
     renderDeliveryLines();
   }
   function removeDeliveryLine(lineId) {
@@ -5340,12 +5622,17 @@
     const lines = d.lines || [];
     _delLines = lines.length
       ? lines.map((l) => {
-          const stored = lineStoredCases(l, l.product_id);
-          const displayQty = stored ? String(storedCasesToDisplay(l.product_id, stored)) : '';
-          const dmgDisplay = l.damaged_qty ? String(storedCasesToDisplay(l.product_id, Number(l.damaged_qty) || 0)) : '';
-          return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: displayQty, damagedQty: dmgDisplay };
+          if (usesDecimalPrimaryUnit(l.product_id)) {
+            const p = spiritProductById(l.product_id);
+            const ups = unitsPerCaseFor(l.product_id) || 1;
+            const cases = (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
+            const displayQty = round1(casesToDisplayQty(p, cases));
+            const dmgDisplay = round1(casesToDisplayQty(p, Number(l.damaged_qty) || 0));
+            return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: displayQty ? String(displayQty) : '', singles: '', damagedQty: dmgDisplay ? String(dmgDisplay) : '' };
+          }
+          return { lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: l.product_id, qty: String(l.qty ?? ''), singles: (l.singles != null && Number(l.singles) !== 0) ? String(l.singles) : '', damagedQty: (l.damaged_qty != null && Number(l.damaged_qty) !== 0) ? String(l.damaged_qty) : '' };
         })
-      : [{ lineId: 'l1', productId: '', qty: '', damagedQty: '' }];
+      : [{ lineId: 'l1', productId: '', qty: '', singles: '', damagedQty: '' }];
     _delNote = d.delivery_note_url ? { url: d.delivery_note_url } : null;
     _delPhotos = (d.photo_urls || []).map((u) => ({ id: 'p' + Math.random().toString(36).slice(2, 8), url: u }));
     _delDamages = (d.damages_photo_urls || []).map((u) => ({ id: 'd' + Math.random().toString(36).slice(2, 8), url: u }));
@@ -5381,13 +5668,18 @@
   async function saveDelivery() {
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const valid = _delLines
-      .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
-      .map((l) => ({
-        product_id: l.productId,
-        qty: roundN(delFormLineCases(l), 4),
-        singles: 0,
-        damaged_qty: roundN(delFormLineDamagedCases(l), 4),
-      }));
+      .filter((l) => l.productId && ((Number(l.qty) || 0) > 0 || (Number(l.singles) || 0) > 0 || (Number(l.damagedQty) || 0) > 0))
+      .map((l) => {
+        if (usesDecimalPrimaryUnit(l.productId)) {
+          return {
+            product_id: l.productId,
+            qty: roundN(delFormLineCases(l), 4),
+            singles: 0,
+            damaged_qty: roundN(delFormLineDamagedCases(l), 4),
+          };
+        }
+        return { product_id: l.productId, qty: round1(l.qty), singles: Math.round(Number(l.singles) || 0), damaged_qty: round1(l.damagedQty) };
+      });
     if (!valid.length) { $('df-err').textContent = 'Add at least one product with a quantity.'; return; }
 
     const btn = $('df-save-btn');
@@ -7700,49 +7992,62 @@
       || String(singlesVal != null ? singlesVal : '').trim() !== '';
   }
 
-  // Total cases from a form line's single quantity field (display unit → stored cases).
+  // Total cases from a form line's cases (+ optional singles) fields.
   function formLineCases(productId, line, opts) {
     opts = opts || {};
-    const qtyKey = opts.qtyKey || opts.casesKey || 'qty';
-    const val = line[qtyKey] ?? line.cases ?? '';
-    return displayToStoredCases(productId, val);
+    const casesKey = opts.casesKey || 'cases';
+    const singlesKey = opts.singlesKey || 'singles';
+    const casesVal = line[casesKey] ?? line.qty;
+    if (productId && usesDecimalPrimaryUnit(productId)) {
+      return displayQtyToCases(spiritProductById(productId), casesVal);
+    }
+    return combineCasesSingles(casesVal, line[singlesKey], unitsPerCaseFor(productId));
   }
 
-  // One quantity input — label comes from the product's stock unit.
-  function stockQtyCellHtml(productId, line, opts) {
-    opts = opts || {};
-    const qtyKey = opts.qtyKey || opts.casesKey || 'qty';
-    const val = line[qtyKey] ?? line.cases ?? '';
-    const inputType = opts.inputType || 'number';
-    const p = productId ? spiritProductById(productId) : null;
-    const label = qtyInputLabel(productId, true);
-    const inputTypeAttr = inputType === 'text' ? ' type="text"' : ' type="number" step="any" min="0"';
-    return '<td' + (opts.tdStyle ? ' style="' + opts.tdStyle + '"' : '') + '><input' + inputTypeAttr +
-      ' value="' + escapeHtml(val) + '" placeholder="' + escapeHtml(label) + '"' +
-      (opts.inputStyle ? ' style="' + opts.inputStyle + '"' : '') +
-      (opts.onChange ? ' onchange="' + opts.onChange + '"' : '') +
-      (opts.onBlur ? ' onblur="' + opts.onBlur + '"' : '') +
-      (opts.onInput ? ' oninput="' + opts.onInput + '"' : '') + '></td>';
-  }
-
-  // Back-compat alias — returns a single qty cell (second column removed app-wide).
+  // Standard cases + singles table cells for line-item stock entry forms.
   function stockQtyCellsHtml(productId, line, opts) {
     opts = opts || {};
-    return stockQtyCellHtml(productId, line, {
-      qtyKey: opts.casesKey || 'qty',
-      inputType: opts.inputType,
-      tdStyle: opts.casesTdStyle || opts.casesStyle,
-      inputStyle: opts.casesStyle,
-      onChange: opts.onCasesChange,
-      onBlur: opts.onCasesBlur,
-      onInput: opts.onCasesInput,
-    });
+    const casesKey = opts.casesKey || 'cases';
+    const singlesKey = opts.singlesKey || 'singles';
+    const casesVal = line[casesKey] ?? '';
+    const singlesVal = line[singlesKey] ?? '';
+    const inputType = opts.inputType || 'number';
+    const decUnit = productId && usesDecimalPrimaryUnit(productId);
+    const p = productId ? spiritProductById(productId) : null;
+    const ups = productId ? unitsPerCaseFor(productId) : 1;
+    const primaryLabel = p ? productStockUnitLabel(p, true) : 'units';
+    const casesType = inputType === 'text' ? ' type="text"' : ' type="number" step="any" min="0"';
+    const singlesType = inputType === 'text' ? ' type="text"' : ' type="number" step="1" min="0"';
+    const casesCell = '<td' + (opts.casesTdStyle ? ' style="' + opts.casesTdStyle + '"' : '') + '><input' + casesType +
+      ' value="' + escapeHtml(casesVal) + '" placeholder="' + (decUnit ? escapeHtml(primaryLabel) : '0') + '"' +
+      (opts.casesStyle ? ' style="' + opts.casesStyle + '"' : '') +
+      (opts.onCasesChange ? ' onchange="' + opts.onCasesChange + '"' : '') +
+      (opts.onCasesBlur ? ' onblur="' + opts.onCasesBlur + '"' : '') + '></td>';
+    const singlesCell = decUnit
+      ? '<td style="text-align:center;color:var(--muted-foreground)" title="Enter decimal ' + escapeHtml(primaryLabel) + ' in the first column">—</td>'
+      : '<td' + (opts.singlesTdStyle ? ' style="' + opts.singlesTdStyle + '"' : '') + '><input' + singlesType +
+        ' value="' + escapeHtml(singlesVal) + '" placeholder="0"' +
+        (opts.singlesStyle ? ' style="' + opts.singlesStyle + '"' : '') +
+        (opts.onSinglesChange ? ' onchange="' + opts.onSinglesChange + '"' : '') +
+        (opts.onSinglesBlur ? ' onblur="' + opts.onSinglesBlur + '"' : '') + '>' +
+        (opts.singlesHint !== false && ups > 1 ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + ups + ' per case</div>' : '') +
+        '</td>';
+    return casesCell + singlesCell;
   }
 
+  // Human label for a saved qty + singles pair, e.g. "3 cases · 5 singles".
   function stockLineQtyLabel(productId, qty, singles) {
-    const stored = lineStoredCases({ qty, singles }, productId);
-    const d = stockQtyDisplay(productId, stored);
-    return d.n + ' ' + d.unit;
+    if (productId && usesDecimalPrimaryUnit(productId)) {
+      const stored = combineCasesSingles(qty, singles, unitsPerCaseFor(productId));
+      const d = deliveryDisplayQty(productId, stored);
+      return d.n + ' ' + d.unit;
+    }
+    const cases = round1(qty);
+    const loose = Math.round(Number(singles) || 0);
+    const parts = [];
+    if (cases || !loose) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
+    if (loose) parts.push(loose + ' ' + (loose === 1 ? 'single' : 'singles'));
+    return parts.join(' \u00b7 ');
   }
 
   function renderClosing() {

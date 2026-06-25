@@ -249,6 +249,7 @@
   );
   const suppliers = makeRepo('suppliers', { order: 'name' });
   const warehouses = makeRepo('warehouses', { order: 'name' });
+  const caseSizes = makeRepo('case_sizes', { order: 'sort_order,label' });
 
   // Migration 020 adds pack_size + units_per_case on product_suppliers.
   // Probe once so older databases keep working until that SQL is applied.
@@ -330,6 +331,7 @@
           abv: numOrNull(input.abv),
           sku: input.sku || null,
           case_size: input.case_size || null,
+          case_size_id: input.case_size_id || null,
           units_per_case: numOrZero(input.units_per_case) || 1,
           stock_unit: input.stock_unit || null,
           unit_price: numOrNull(input.unit_price),
@@ -683,7 +685,7 @@
     // helpers
     _: { numOrNull, numOrZero, enc, makeRepo },
     // reference
-    categories, suppliers, warehouses, products, productSuppliers, warehouseStock,
+    categories, suppliers, warehouses, caseSizes, products, productSuppliers, warehouseStock,
     // event-scoped
     events, eventProducts, bars, recipients, distribution, barProducts,
     stockCounts, closing, supplierReturns, transfers, deliveries, topups, wastage,
