@@ -2612,8 +2612,11 @@
   }
 
   function reconUnitsPerCase(p) {
-    if (productStockUnit(p) === 'bottle') return spiritBottlesPerCase(p);
-    return Number(p && p.units_per_case) || 1;
+    if (productStockUnit(p) === 'bottle') {
+      const bpc = supplierPackBottlesPerCase(p, null);
+      return bpc > 0 ? bpc : resolvedUnitsPerCase(p);
+    }
+    return resolvedUnitsPerCase(p);
   }
 
   function normCaseSizeLabel(t) {
@@ -4030,6 +4033,25 @@
     return (_caseSizes || []).find((c) => c.id === id) || null;
   }
 
+  // Resolve units per case from explicit field, linked catalogue row, label match, or pack-size text.
+  function resolvedUnitsPerCase(p) {
+    if (!p) return 1;
+    const explicit = Number(p.units_per_case);
+    if (explicit > 0) return explicit;
+    if (p.case_size_id) {
+      const cs = caseSizeById(p.case_size_id);
+      if (cs && Number(cs.units_per_case) > 0) return Number(cs.units_per_case);
+    }
+    const label = String(p.case_size || '').trim();
+    if (label) {
+      const norm = normCaseSizeLabel(label);
+      const cs = (_caseSizes || []).find((c) => normCaseSizeLabel(c.label) === norm);
+      if (cs && Number(cs.units_per_case) > 0) return Number(cs.units_per_case);
+    }
+    const fromSize = spiritBottlesPerCase(p);
+    return fromSize > 0 ? fromSize : 1;
+  }
+
   function caseSizeSummary(cs) {
     if (!cs) return '';
     const parts = [
@@ -5256,6 +5278,9 @@
       if (!_currentEvent || _currentEvent.id !== id) {
         _currentEvent = await DB.events.getFull(id);
       }
+      if (!_caseSizes.length) {
+        _caseSizes = (await DB.caseSizes.list().catch(() => [])) || [];
+      }
       const rows = await DB.deliveries.forEvent(id);
       _deliveries = (rows || []).slice().sort((a, b) =>
         new Date(b.delivered_at) - new Date(a.delivered_at));
@@ -5467,12 +5492,12 @@
     if (ml && (_caseSizes || []).length) {
       for (let i = 0; i < _caseSizes.length; i++) {
         const cs = _caseSizes[i];
-        if (cs.stock_unit !== 'case') continue;
         const bpc = tryPack(cs.label);
         if (bpc > 1 && packBottleMl(cs.label) === ml) return bpc;
       }
     }
-    return 1;
+    const resolved = resolvedUnitsPerCase(p);
+    return resolved > 1 ? resolved : 1;
   }
 
   // Units per case for cases/singles UI entry — supplier pack for bottle-counted spirits.
@@ -6046,13 +6071,7 @@
   }
 
   function unitsPerCaseFor(pid) {
-    const p = _products.find((x) => x.id === pid);
-    let ups = p && Number(p.units_per_case);
-    if (!ups) {
-      const ep = ((_currentEvent && _currentEvent.event_products) || []).find((e) => e.product_id === pid);
-      ups = ep && ep.product && Number(ep.product.units_per_case);
-    }
-    return ups && ups > 0 ? ups : 1;
+    return resolvedUnitsPerCase(spiritProductById(pid));
   }
 
   function wastageCasePrice(pid) {
