@@ -1586,7 +1586,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
-      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing stock counted − Transferred (+ pre-event on hand if any). Returns are part of the closing count, not subtracted again. <strong>Variance</strong> = Consumption − PLU (cases). Charges use case price. Import Square sales for PLU figures.</p>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing stock counted − Transferred (+ pre-event on hand if any). Returns are part of the closing count, not subtracted again. <strong>Variance</strong> = PLU − Consumption (cases); negative = short stock. Charges use case price. Import Square sales for PLU figures.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
@@ -1628,7 +1628,7 @@
           <th data-recon-col="transferred">Transferred</th>
           <th data-recon-col="consumption">Consumption</th>
           <th data-recon-col="plu">PLU</th>
-          <th data-recon-col="variance" title="Consumption − PLU (cases)">Variance</th>
+          <th data-recon-col="variance" title="PLU − Consumption (cases). Negative = short stock.">Variance</th>
           <th data-recon-col="consumption_charge">Consumption<br>charge</th>
           <th data-recon-col="consumption_loose">Consumption<br>+ loose</th>
           <th data-recon-col="plu_charge">PLU<br>charge</th>
@@ -8586,7 +8586,7 @@
     };
     const budgetCost = reconBudgetCost(charges, budgetCl);
     const supplierName = supplierNameById(productSupplierId(pid));
-    const variance = roundN(consumption - plu, 2);
+    const variance = roundN(plu - consumption, 2);
     const denom = Math.max(Math.abs(consumption), Math.abs(plu), 0.01);
     const variancePct = (consumption !== 0 || plu !== 0)
       ? roundN((variance / denom) * 100, 1) : 0;
@@ -9342,7 +9342,7 @@
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
         '<tr><td>PLU (till)</td><td>' + reconQtyCell(r.plu) + '</td></tr>' +
-        '<tr><td>Variance (cons − PLU)</td><td>' + (r.consumption === 0 && r.plu === 0 ? '—' : (
+        '<tr><td>Variance (PLU − cons)</td><td>' + (r.consumption === 0 && r.plu === 0 ? '—' : (
           '<span class="' + reconVarianceClass(r.consumption, r.plu, r.variance) + '">' +
           (r.variance > 0 ? '+' : '') + roundN(r.variance, 2) +
           (r.variancePct != null ? ' (' + roundN(r.variancePct, 1) + '%)' : '') +
@@ -9529,7 +9529,7 @@
     const sign = variance > 0 ? '+' : '';
     const qty = Number.isInteger(variance) ? String(variance) : roundN(variance, 2).toString();
     const pct = variancePct != null ? roundN(variancePct, 1).toString() + '%' : '';
-    return '<td data-recon-col="variance" class="' + cls + '" title="Consumption − PLU">' +
+    return '<td data-recon-col="variance" class="' + cls + '" title="PLU − Consumption. Negative = short stock.">' +
       sign + qty + (pct ? '<span style="font-size:10px;font-weight:500;opacity:.85"> (' + pct + ')</span>' : '') +
       '</td>';
   }
