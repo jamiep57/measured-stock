@@ -2284,7 +2284,7 @@
     <div class="page-title" style="font-size:13px;margin:12px 0 8px">Stock &amp; invoicing</div>
     <div class="df-field">
       <label for="rcn-invoice-qty">Invoice</label>
-      <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-qty" oninput="recalcReconDrawer()">
+      <input type="text" inputmode="decimal" id="rcn-invoice-qty" placeholder="0" onblur="evalMathInput(this)" oninput="recalcReconDrawer()">
     </div>
     <div class="df-grid2" id="rcn-price-row">
       <div class="df-field" id="rcn-unit-price-wrap">
@@ -2301,11 +2301,11 @@
     <div class="df-grid2">
       <div class="df-field">
         <label for="rcn-cl-singles">Closing count (single)</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-singles" oninput="recalcReconDrawer()">
+        <input type="text" inputmode="decimal" id="rcn-cl-singles" placeholder="0" onblur="evalMathInput(this)" oninput="recalcReconDrawer()">
       </div>
       <div class="df-field">
         <label for="rcn-cl-cases">Closing count (case)</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-cases" oninput="recalcReconDrawer()">
+        <input type="text" inputmode="decimal" id="rcn-cl-cases" placeholder="0" onblur="evalMathInput(this)" oninput="recalcReconDrawer()">
       </div>
     </div>
     <div class="df-field">
@@ -7430,15 +7430,53 @@
     if (catRow) catRow.style.display = visibleInCat ? '' : 'none';
   }
 
+  // Parse plain numbers or simple math (e.g. "1+2", "10+5+2") from a qty cell.
+  function evalMathExpr(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return NaN;
+    if (/[+\-*/]/.test(s) && /^[0-9+\-*/.()\s]+$/.test(s)) {
+      try {
+        const val = Function('"use strict";return (' + s + ')')();
+        if (typeof val === 'number' && isFinite(val)) return Math.round(val * 100) / 100;
+      } catch (e) { /* fall through */ }
+    }
+    const n = parseFloat(s);
+    return isFinite(n) ? Math.round(n * 100) / 100 : NaN;
+  }
+
+  function qtyFromInput(raw) {
+    const n = evalMathExpr(raw);
+    return isNaN(n) ? 0 : Math.max(0, n);
+  }
+
   // Safe evaluation of a simple arithmetic expression typed into a cell.
+  // Returns true when a sum was evaluated and the input value was updated.
   function evalMathInput(el) {
     const raw = (el.value || '').trim();
-    if (!raw || /^[0-9.]+$/.test(raw)) return;
-    if (!/^[0-9+\-*/.()\s]+$/.test(raw)) return;
+    if (!raw || !/[+\-*/]/.test(raw)) return false;
+    if (!/^[0-9+\-*/.()\s]+$/.test(raw)) return false;
     try {
       const val = Function('"use strict";return (' + raw + ')')();
-      if (typeof val === 'number' && isFinite(val)) el.value = Math.round(val * 100) / 100;
-    } catch (e) { /* leave as-is */ }
+      if (typeof val === 'number' && isFinite(val)) {
+        el.value = Math.round(val * 100) / 100;
+        return true;
+      }
+    } catch (e) { /* incomplete expression — leave as-is */ }
+    return false;
+  }
+
+  // Enter on recon inline cells: evaluate a sum and save immediately.
+  // Returns 'committed', 'invalid' (incomplete sum), or 'plain' (not a sum).
+  function commitReconMathInput(el) {
+    const raw = (el.value || '').trim();
+    if (!/[+\-*/]/.test(raw)) return 'plain';
+    if (!evalMathInput(el)) return 'invalid';
+    const pid = el.dataset.reconPid;
+    if (pid) {
+      clearTimeout(_reconTimers[pid]);
+      void flushReconInlineSave(pid);
+    }
+    return 'committed';
   }
 
   function autoSaveCountEntry(pid) {
@@ -8361,8 +8399,8 @@
 
   // Combine cases + singles inputs into one stored case total.
   function combineCasesSingles(cases, singles, ups) {
-    const c = Math.max(0, Number(cases) || 0);
-    const s = Math.max(0, Number(singles) || 0);
+    const c = qtyFromInput(cases);
+    const s = qtyFromInput(singles);
     const u = Number(ups) || 1;
     return roundN(c + (u > 0 ? s / u : 0), 4);
   }
@@ -9541,8 +9579,8 @@
         : '';
       const casesCell = singlesOnly
         ? '<td style="text-align:center;color:var(--muted-foreground)" title="Singles only — use the Singles column">—</td>'
-        : '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>';
-      const singlesCell = '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)">' + perCaseHint + '</td>';
+        : '<td><input type="text" inputmode="decimal" value="' + (line.cases ?? '') + '" placeholder="0" onblur="evalMathInput(this);updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>';
+      const singlesCell = '<td><input type="text" inputmode="decimal" value="' + (line.singles ?? '') + '" placeholder="0" onblur="evalMathInput(this);updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)">' + perCaseHint + '</td>';
       return '<tr>' +
         '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
         casesCell +
@@ -9730,16 +9768,16 @@
     const drawerSinglesRaw = ($('rcn-cl-singles') && $('rcn-cl-singles').value || '').trim();
     if (drawerCasesRaw !== '' || drawerSinglesRaw !== '') {
       return {
-        closingCases: drawerCasesRaw !== '' ? Math.max(0, parseFloat(drawerCasesRaw) || 0) : 0,
-        closingSingles: drawerSinglesRaw !== '' ? Math.max(0, parseFloat(drawerSinglesRaw) || 0) : 0,
+        closingCases: drawerCasesRaw !== '' ? qtyFromInput(drawerCasesRaw) : 0,
+        closingSingles: drawerSinglesRaw !== '' ? qtyFromInput(drawerSinglesRaw) : 0,
       };
     }
     const casesEl = $('recon-cl-cases-' + pid);
     const singlesEl = $('recon-cl-singles-' + pid);
     if (casesEl || singlesEl) {
       return {
-        closingCases: Math.max(0, parseFloat(casesEl && casesEl.value) || 0),
-        closingSingles: Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0),
+        closingCases: qtyFromInput(casesEl && casesEl.value),
+        closingSingles: qtyFromInput(singlesEl && singlesEl.value),
       };
     }
     const cl = closingRowFor(pid) || {};
@@ -9759,7 +9797,7 @@
     const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
     const invQtyRaw = ($('rcn-invoice-qty') && $('rcn-invoice-qty').value || '').trim();
     const invSet = invQtyRaw !== '';
-    const invoiced = invSet ? displayToStoredCases(pid, parseFloat(invQtyRaw) || 0) : 0;
+    const invoiced = invSet ? displayToStoredCases(pid, qtyFromInput(invQtyRaw)) : 0;
     const clSplit = reconDrawerDraftClosing(pid, ep);
     return {
       invoiced,
@@ -10005,13 +10043,11 @@
     const singlesEl = $('recon-cl-singles-' + pid);
     const invRaw = invEl && invEl.value.trim();
     const invSet = invRaw !== '';
-    const cases = Math.max(0, parseFloat(casesEl && casesEl.value) || 0);
-    const singles = Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0);
     return {
       invoiceSet: invSet,
-      invoiced: invSet ? displayToStoredCases(pid, parseFloat(invRaw) || 0) : 0,
-      closingCases: cases,
-      closingSingles: singles,
+      invoiced: invSet ? displayToStoredCases(pid, qtyFromInput(invRaw)) : 0,
+      closingCases: qtyFromInput(casesEl && casesEl.value),
+      closingSingles: qtyFromInput(singlesEl && singlesEl.value),
     };
   }
 
@@ -12621,10 +12657,21 @@
 
       if (key === 'Enter') {
         if (el.tagName === 'SELECT') return;
+        let reconCommitted = false;
+        if (el.classList.contains('recon-cell-input')) {
+          const commit = commitReconMathInput(el);
+          if (commit === 'invalid') {
+            e.preventDefault();
+            return;
+          }
+          if (commit === 'committed') reconCommitted = true;
+        }
         const target = findInColumn(info, e.shiftKey ? -1 : 1);
         if (target) {
           e.preventDefault();
           focusAndSelect(target);
+        } else if (reconCommitted) {
+          e.preventDefault();
         }
       }
     }, false);
