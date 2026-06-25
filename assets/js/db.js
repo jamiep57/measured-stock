@@ -666,7 +666,7 @@
           '&select=*' +
           ',bars:bars(*)' +
           ',recipients:recipients(*)' +
-          ',event_products:event_products(*,product:products(id,name,case_size,units_per_case,case_price,abv,category:categories(id,name,colour_key)))'
+          ',event_products:event_products(*,product:products(id,name,case_size,units_per_case,case_price,unit_price,stock_unit,supplier_id,sku,abv,category:categories(id,name,colour_key)))'
         ).then((r) => (r && r[0]) || null);
       },
     }

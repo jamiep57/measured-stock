@@ -2290,7 +2290,7 @@
     </div>
     <div class="df-grid2" id="rcn-price-row">
       <div class="df-field" id="rcn-case-price-wrap">
-        <label for="rcn-price">Case price override (£)</label>
+        <label for="rcn-price" id="rcn-case-price-label">Case price override (£)</label>
         <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
       </div>
       <div class="df-field" id="rcn-unit-price-wrap">
@@ -2893,12 +2893,15 @@
   }
 
   function spiritProductById(pid) {
+    let p = null;
     const ev = _currentEvent && _currentEvent.event_products;
     if (ev) {
       const ep = ev.find((e) => e.product_id === pid);
-      if (ep && ep.product) return ep.product;
+      if (ep && ep.product) p = ep.product;
     }
-    return (_products || []).find((p) => p.id === pid) || null;
+    const fresh = (_products || []).find((x) => x.id === pid);
+    if (fresh) return Object.assign({}, fresh, p || {});
+    return p;
   }
 
   // 25ml shots in one supplier case: bottles-per-case × shots-per-bottle
@@ -8848,7 +8851,7 @@
   }
 
   function defaultUnitPriceForRecon(ep) {
-    const p = ep && ep.product;
+    const p = (ep && ep.product_id && spiritProductById(ep.product_id)) || (ep && ep.product);
     if (!p) return null;
     const offer = productOfferForEvent(ep);
     if (offer && offer.unit_price != null) return Number(offer.unit_price);
@@ -8861,7 +8864,7 @@
   }
 
   function reconCasePrice(ep, draft) {
-    const p = ep.product;
+    const p = (ep && ep.product_id && spiritProductById(ep.product_id)) || ep.product;
     if (draft) {
       if (draft.casePrice !== '' && draft.casePrice != null) return Number(draft.casePrice) || 0;
       if (p && draft.unitPrice !== '' && draft.unitPrice != null) {
@@ -8880,7 +8883,7 @@
   }
 
   function reconUnitPrice(ep, draft) {
-    const p = ep && ep.product;
+    const p = (ep && ep.product_id && spiritProductById(ep.product_id)) || (ep && ep.product);
     if (!p) return null;
     if (draft) {
       if (draft.unitPrice !== '' && draft.unitPrice != null) return Number(draft.unitPrice) || 0;
@@ -8906,7 +8909,7 @@
   // Price shown in the recon table and used to multiply qty for charge columns.
   // Bottle-counted spirits use £/bottle; everything else uses £/case.
   function reconRowPrice(ep, draft) {
-    const p = ep && ep.product;
+    const p = (ep && ep.product_id && spiritProductById(ep.product_id)) || (ep && ep.product);
     if (reconUsesBottlePrice(p)) {
       return reconUnitPrice(ep, draft) || 0;
     }
@@ -8926,7 +8929,7 @@
 
   function buildReconRow(ep, pluByPid, draft) {
     const pid = ep.product_id;
-    const p = ep.product;
+    const p = spiritProductById(pid) || ep.product;
     const ups = Number(p.units_per_case) || 1;
     const delivered = reconDeliveredQty(ep);
     const cl = closingRowFor(pid) || {};
@@ -9299,26 +9302,43 @@
   }
 
   function syncReconDrawerReturnFields(pid) {
+    const p = spiritProductById(pid);
     const singlesOnly = usesSinglesOnlyUnit(pid);
+    const bottlePrice = reconUsesBottlePrice(p);
     const casesH = $('rcn-return-cases-h');
     const singlesH = $('rcn-return-singles-h');
     const priceH = $('rcn-return-price-h');
     if (casesH) casesH.textContent = singlesOnly ? '—' : 'Cases';
-    if (singlesH) singlesH.textContent = singlesOnly ? 'Singles' : 'Singles';
-    if (priceH) priceH.textContent = '£/case';
+    if (singlesH) singlesH.textContent = bottlePrice ? 'Bottles' : (singlesOnly ? 'Singles' : 'Singles');
+    if (priceH) priceH.textContent = bottlePrice ? '£/bottle' : '£/case';
   }
 
   function syncReconDrawerPriceFields(ep) {
-    const p = ep && ep.product;
-    const unitLabel = stockUnitTitle(productStockUnit(p));
+    const pid = ep && ep.product_id;
+    const p = pid ? spiritProductById(pid) : (ep && ep.product);
+    const bottlePrice = reconUsesBottlePrice(p);
+    const caseWrap = $('rcn-case-price-wrap');
+    const unitWrap = $('rcn-unit-price-wrap');
+    const caseLabel = $('rcn-case-price-label');
     const labelEl = $('rcn-unit-price-label');
-    if (labelEl) labelEl.textContent = unitLabel + ' price override (£)';
     const hint = $('rcn-unit-price-hint');
+    const priceRow = $('rcn-price-row');
+    if (caseWrap) caseWrap.style.display = bottlePrice ? 'none' : '';
+    if (unitWrap) unitWrap.style.display = '';
+    if (priceRow) priceRow.style.gridTemplateColumns = bottlePrice ? '1fr' : '';
+    if (caseLabel && !bottlePrice) caseLabel.textContent = 'Case price override (£)';
+    if (labelEl) {
+      labelEl.textContent = bottlePrice ? 'Bottle price override (£)' : 'Unit price override (£)';
+    }
     if (hint) {
       const def = defaultUnitPriceForRecon(ep);
-      hint.textContent = def != null
-        ? 'Per ' + unitLabel.toLowerCase() + '. Default ' + money(def) + '. Used when case override is blank.'
-        : 'Per ' + unitLabel.toLowerCase() + '. Used when case override is blank.';
+      if (bottlePrice) {
+        hint.textContent = def != null ? 'Per bottle. Default ' + money(def) + '.' : 'Per bottle.';
+      } else {
+        hint.textContent = def != null
+          ? 'Per unit in a case. Default ' + money(def) + '. Used when case override is blank.'
+          : 'Per unit in a case. Used when case override is blank.';
+      }
     }
   }
 
@@ -9439,6 +9459,20 @@
     return entryFormToNative(line, pid, supId);
   }
 
+  function rcnReturnLineNativeQty(line, pid) {
+    return lineNativeTotal(rcnReturnLineToDbQty(line, pid), pid, line.supplierId);
+  }
+
+  function rcnReturnLineValue(line, pid, draft) {
+    const price = rcnReturnLinePrice(line, pid, draft);
+    if (price == null) return null;
+    const p = spiritProductById(pid);
+    if (reconUsesBottlePrice(p)) {
+      return price * rcnReturnLineNativeQty(line, pid);
+    }
+    return price * rcnReturnLineStoredCases(line, pid);
+  }
+
   function rcnReturnLinePrice(line, pid, draft) {
     if (line.casePrice !== '' && line.casePrice != null && !isNaN(Number(line.casePrice))) {
       return Number(line.casePrice);
@@ -9447,10 +9481,19 @@
       const ep = ((_currentEvent && _currentEvent.event_products) || []).find((x) => x.product_id === pid);
       if (ep) {
         const d = draft !== undefined ? draft : reconDrawerDraft();
-        return reconCasePrice(ep, d);
+        const p = spiritProductById(pid);
+        return reconUsesBottlePrice(p) ? reconRowPrice(ep, d) : reconCasePrice(ep, d);
       }
     }
-    if (line.supplierId) return deliveryLineCasePrice(pid, line.supplierId).price;
+    if (line.supplierId) {
+      const p = spiritProductById(pid);
+      if (reconUsesBottlePrice(p)) {
+        const { price } = deliveryLineCasePrice(pid, line.supplierId);
+        const upc = entryUnitsPerCase(pid, line.supplierId) || 1;
+        return price != null && upc > 0 ? price / upc : null;
+      }
+      return deliveryLineCasePrice(pid, line.supplierId).price;
+    }
     return null;
   }
 
@@ -9494,20 +9537,24 @@
       renderRcnReturnTotal();
       return;
     }
+    const bottlePrice = reconUsesBottlePrice(spiritProductById(pid));
     body.innerHTML = _rcnReturnLines.map((line) => {
       const singlesOnly = usesSinglesOnlyUnit(pid);
       const draft = reconDrawerDraft();
-      const price = rcnReturnLinePrice(line, pid, draft);
+      const lineVal = rcnReturnLineValue(line, pid, draft);
       const lineCases = rcnReturnLineStoredCases(line, pid);
-      const lineVal = price != null ? price * lineCases : null;
-      const canPrint = line.supplierId && lineCases > 0;
+      const canPrint = line.supplierId && (bottlePrice ? rcnReturnLineNativeQty(line, pid) > 0 : lineCases > 0);
       const opts = '<option value="">— Supplier —</option>' + options.map((o) =>
         '<option value="' + o.id + '"' + (line.supplierId === o.id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>'
       ).join('');
+      const entryUps = entryUnitsPerCase(pid, line.supplierId);
+      const perCaseHint = entryUps > 1
+        ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + entryUps + ' per case</div>'
+        : '';
       const casesCell = singlesOnly
         ? '<td style="text-align:center;color:var(--muted-foreground)" title="Singles only — use the Singles column">—</td>'
         : '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>';
-      const singlesCell = '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
+      const singlesCell = '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)">' + perCaseHint + '</td>';
       return '<tr>' +
         '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
         casesCell +
@@ -9525,25 +9572,35 @@
     const el = $('rcn-return-total');
     if (!el || !_reconCtx) return;
     const pid = _reconCtx.pid;
+    const p = spiritProductById(pid);
+    const bottlePrice = reconUsesBottlePrice(p);
     let totStored = 0;
     let totVal = 0;
     const draft = reconDrawerDraft();
     _rcnReturnLines.forEach((line) => {
-      const c = rcnReturnLineStoredCases(line, pid);
-      totStored += c;
-      const p = rcnReturnLinePrice(line, pid, draft);
-      if (p != null) totVal += p * c;
+      const val = rcnReturnLineValue(line, pid, draft);
+      if (val != null) totVal += val;
+      totStored += bottlePrice
+        ? rcnReturnLineNativeQty(line, pid)
+        : rcnReturnLineStoredCases(line, pid);
     });
     if (totStored > 0) {
-      const supId = productSupplierId(pid);
-      const entryUps = entryUnitsPerCase(pid, supId);
-      const split = splitCasesSingles(totStored, entryUps);
-      const parts = [];
-      const cases = round1(split.cases);
-      const loose = Math.round(split.singles) || 0;
-      if (cases || !loose) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
-      if (loose) parts.push(loose + ' ' + (loose === 1 ? 'single' : 'singles'));
-      el.textContent = 'Total return: ' + (parts.join(' \u00b7 ') || '0') + (totVal ? ' · ' + money(totVal) : '');
+      let qtyLabel;
+      if (bottlePrice) {
+        const bottles = roundN(totStored, 2);
+        qtyLabel = bottles + ' ' + (bottles === 1 ? 'bottle' : 'bottles');
+      } else {
+        const supId = productSupplierId(pid);
+        const entryUps = entryUnitsPerCase(pid, supId);
+        const split = splitCasesSingles(totStored, entryUps);
+        const parts = [];
+        const cases = round1(split.cases);
+        const loose = Math.round(split.singles) || 0;
+        if (cases || !loose) parts.push(cases + ' ' + (cases === 1 ? 'case' : 'cases'));
+        if (loose) parts.push(loose + ' ' + (loose === 1 ? 'single' : 'singles'));
+        qtyLabel = parts.join(' \u00b7 ') || '0';
+      }
+      el.textContent = 'Total return: ' + qtyLabel + (totVal ? ' · ' + money(totVal) : '');
     } else {
       el.textContent = '';
     }
@@ -9614,6 +9671,8 @@
             ep.product.case_size = fresh.case_size;
             ep.product.units_per_case = fresh.units_per_case;
             ep.product.case_price = fresh.case_price;
+            ep.product.unit_price = fresh.unit_price;
+            ep.product.stock_unit = fresh.stock_unit;
             ep.product.sku = fresh.sku;
             ep.product.category = fresh.category;
             ep.product.category_id = fresh.category_id;
@@ -9732,17 +9791,21 @@
     let returnValue = 0;
     const draft = reconDrawerDraft();
     _rcnReturnLines.forEach((line) => {
-      const p = rcnReturnLinePrice(line, _reconCtx.pid, draft);
-      if (p != null) returnValue += p * rcnReturnLineStoredCases(line, _reconCtx.pid);
+      const val = rcnReturnLineValue(line, _reconCtx.pid, draft);
+      if (val != null) returnValue += val;
     });
     r.returnValue = returnValue;
-    const p = ep.product;
+    const p = spiritProductById(_reconCtx.pid);
+    const bottlePrice = reconUsesBottlePrice(p);
     const unitP = reconUnitPrice(ep, reconDrawerDraft());
-    const unitLabel = stockUnitTitle(productStockUnit(p));
+    const unitLabel = bottlePrice ? 'Bottle' : stockUnitTitle(productStockUnit(p));
+    const priceRows = bottlePrice
+      ? '<tr><td>Bottle price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>'
+      : '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
+        '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>';
     $('rcn-preview').innerHTML =
       '<table><tbody>' +
-        '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
-        '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>' +
+        priceRows +
         '<tr><td>Returns to suppliers</td><td>' + reconQtyCell(r.supplierReturns) + '</td></tr>' +
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
