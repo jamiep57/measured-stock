@@ -8327,12 +8327,14 @@
   function closingRowFor(pid) {
     return _closing.find((c) => c.product_id === pid) || null;
   }
-  // Total close count in CASES — prefer split cases/singles over close_count
-  // (close_count was wrongly synced as cases×units+singles before the fix).
+  // Total close count in native storage units — prefer split cases/singles over close_count.
   function closingCountInCases(cl, ep) {
-    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
     if (cl && (cl.closing_cases != null || cl.closing_singles != null)) {
-      return (Number(cl.closing_cases) || 0) + (ups > 0 ? (Number(cl.closing_singles) || 0) / ups : 0);
+      return reconClosingTotal(
+        ep && ep.product_id,
+        Number(cl.closing_cases) || 0,
+        Number(cl.closing_singles) || 0
+      );
     }
     return cl && cl.close_count != null ? Number(cl.close_count) || 0 : 0;
   }
@@ -8744,6 +8746,16 @@
     return 0;
   }
 
+  // Closing count in the same native units as delivered_qty (bottles for bottle-counted spirits, cases otherwise).
+  function reconClosingTotal(pid, closingCases, closingSingles) {
+    const supId = productSupplierId(pid);
+    return lineNativeTotal(
+      entryFormToNative({ cases: closingCases, singles: closingSingles }, pid, supId),
+      pid,
+      supId
+    );
+  }
+
   // Sum return lines in native storage units (bottles for spirits, cases for case-counted products).
   function totalReturnNativeFromRcnLines(pid) {
     return _rcnReturnLines.reduce((s, line) => {
@@ -8946,20 +8958,22 @@
     if (draft == null && cl.closing_cases == null && cl.closing_singles == null && cl.close_count != null) {
       closingCases = Number(cl.close_count) || 0;
     }
-    const entryUps = entryUnitsPerCase(pid, productSupplierId(pid));
+    const supId = productSupplierId(pid);
+    const entryUps = entryUnitsPerCase(pid, supId);
     const closingLooseAsCases = entryUps > 0 ? closingSingles / entryUps : 0;
     const preEventOnHand = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
     const supplierReturns = draft && draft.returnSet != null
       ? roundN(Number(draft.returnStored) || 0, 2)
       : supplierReturnCasesForProduct(pid);
-    const stockRemaining = reconStockRemaining(cl, ep, closingCases);
+    const closingTotal = reconClosingTotal(pid, closingCases, closingSingles);
+    const stockRemaining = reconStockRemaining(cl, ep, closingTotal);
     const transferred = summaryTransferOut(pid);
     const consumption = roundN(delivered + preEventOnHand - stockRemaining - transferred, 2);
     const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
     const casePrice = reconCasePrice(ep, draft);
     const unitPrice = reconUnitPrice(ep, draft);
     const rowPrice = reconRowPrice(ep, draft);
-    const consumptionCharge = (consumption - closingLooseAsCases) * rowPrice;
+    const consumptionCharge = consumption * rowPrice;
     const consumptionLooseCharge = consumption * rowPrice;
     const pluCharge = plu * casePrice;
     const invoiceCharge = invoiced * casePrice;
@@ -9835,10 +9849,9 @@
     btn.disabled = true; btn.textContent = 'Saving…';
     $('rcn-err').textContent = '';
     const draft = reconDrawerDraft();
-    const ups = Number(ep.product && ep.product.units_per_case) || 1;
     const cases = Math.max(0, draft.closingCases);
     const singles = Math.max(0, draft.closingSingles);
-    const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
+    const closeCount = roundN(reconClosingTotal(pid, cases, singles), 4);
     const returnAmt = round1(totalReturnNativeFromRcnLines(pid));
     const priceRaw = $('rcn-price').value.trim();
     const unitPriceRaw = ($('rcn-unit-price') && $('rcn-unit-price').value || '').trim();
@@ -10034,10 +10047,9 @@
     if (!_currentEvent || !draft) return;
     const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
     if (!ep) return;
-    const ups = Number(ep.product && ep.product.units_per_case) || 1;
     const cases = Math.max(0, draft.closingCases);
     const singles = Math.max(0, draft.closingSingles);
-    const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
+    const closeCount = roundN(reconClosingTotal(pid, cases, singles), 4);
     const returnAmt = round1(returnNativeTotalForProduct(pid));
     ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : null;
     let cl = closingRowFor(pid);
