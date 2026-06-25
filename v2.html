@@ -2781,7 +2781,7 @@
   // Bottles in one supplier case, from the pack-size leading multiplier
   // ("6x700ml" ⇒ 6, "6 x 1L" ⇒ 6, "70cl" ⇒ 1), falling back to units_per_case.
   function spiritBottlesPerCase(p) {
-    const s = String((p && p.case_size) || '').toLowerCase();
+    const s = String((p && p.case_size) || '').toLowerCase().replace(/×/g, 'x');
     const m = s.match(/(\d+(?:\.\d+)?)\s*x/);
     if (m) { const n = parseFloat(m[1]); if (n > 0) return n; }
     const upc = Number(p && p.units_per_case);
@@ -2813,11 +2813,18 @@
   function deliveryLogQtyCells(productId, line, supplierId) {
     const p = spiritProductById(productId);
     const entryUps = deliveryUnitsPerCase(productId, supplierId) || 1;
-    const storageUps = unitsPerCaseFor(productId) || 1;
-    const stored = combineCasesSingles(Number(line.qty) || 0, Number(line.singles) || 0, storageUps);
     if (p && productStockUnit(p) === 'bottle') {
-      const split = splitBottlesToCasesSingles(stored, entryUps);
-      return { cases: split.cases || null, singles: split.singles || null };
+      const caseBottles = Number(line.qty) || 0;
+      const looseBottles = Number(line.singles) || 0;
+      if (looseBottles > 0) {
+        const cases = entryUps > 1 && caseBottles > 0 ? roundN(caseBottles / entryUps, 4) : null;
+        return { cases: cases || null, singles: looseBottles };
+      }
+      if (caseBottles > 0) {
+        // Legacy rows (and loose-bottle deliveries): total stored in qty, singles=0.
+        return { cases: null, singles: caseBottles };
+      }
+      return { cases: null, singles: null };
     }
     const cases = round1(Number(line.qty) || 0);
     const loose = Math.round(Number(line.singles) || 0);
@@ -5316,11 +5323,17 @@
 
   // Total cases for a saved delivery line: whole cases plus any loose
   // singles expressed as a fraction of a case.
-  function delLineCases(l) {
+  function delLineCases(l, supplierId) {
+    const p = spiritProductById(l.product_id);
+    if (p && productStockUnit(p) === 'bottle') {
+      return (Number(l.qty) || 0) + (Number(l.singles) || 0);
+    }
     const ups = unitsPerCaseFor(l.product_id) || 1;
     return (Number(l.qty) || 0) + (Number(l.singles) || 0) / ups;
   }
-  function delLineSum(lines) { return (lines || []).reduce((s, l) => s + delLineCases(l), 0); }
+  function delLineSum(lines, supplierId) {
+    return (lines || []).reduce((s, l) => s + delLineCases(l, supplierId), 0);
+  }
   function delDamagedSum(lines) { return (lines || []).reduce((s, l) => s + (Number(l.damaged_qty) || 0), 0); }
 
   // Deliveries are now the source of truth for delivered qty. Recompute the
@@ -5332,7 +5345,7 @@
     const map = {};
     _deliveries.forEach((d) => (d.lines || []).forEach((l) => {
       if (!l.product_id) return;
-      map[l.product_id] = (map[l.product_id] || 0) + delLineCases(l);
+      map[l.product_id] = (map[l.product_id] || 0) + delLineCases(l, d.supplier_id);
     }));
     _openingCountedIn = map;
     const eps = _currentEvent.event_products || [];
@@ -5352,7 +5365,7 @@
   }
 
   function renderDeliveries() {
-    const totalCases = round1(_deliveries.reduce((s, d) => s + delLineSum(d.lines), 0));
+    const totalCases = round1(_deliveries.reduce((s, d) => s + delLineSum(d.lines, d.supplier_id), 0));
     const totalDmg = round1(_deliveries.reduce((s, d) => s + delDamagedSum(d.lines), 0));
     const totalValue = _deliveries.reduce((s, d) => s + deliveryCost(d), 0);
     $('del-stat-count').textContent = _deliveries.length;
@@ -5370,7 +5383,7 @@
       const dt = d.delivered_at
         ? new Date(d.delivered_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         : '—';
-      const total = round1(delLineSum(lines));
+      const total = round1(delLineSum(lines, d.supplier_id));
       const dmgTot = round1(delDamagedSum(lines));
       const supName = (d.supplier && d.supplier.name) || 'No supplier';
       const ref = d.reference ? '<span class="delivery-log-ref">' + escapeHtml(d.reference) + '</span>' : '';
@@ -5521,6 +5534,10 @@
   }
 
   function lineNativeTotal(line, productId) {
+    const p = spiritProductById(productId);
+    if (p && productStockUnit(p) === 'bottle') {
+      return (Number(line.qty) || 0) + (Number(line.singles) || 0);
+    }
     const ups = unitsPerCaseFor(productId) || 1;
     return combineCasesSingles(Number(line.qty) || 0, Number(line.singles) || 0, ups);
   }
@@ -5534,8 +5551,12 @@
     const entryUps = entryUnitsPerCase(pid, supplierId);
     const supplierCaseTotal = combineCasesSingles(line[casesKey] ?? line.qty, line[singlesKey], entryUps);
     if (p && productStockUnit(p) === 'bottle') {
-      const bottles = roundN(supplierCaseTotal * entryUps, 4);
-      return { qty: bottles, singles: 0 };
+      const casesVal = Math.max(0, Number(line[casesKey] ?? line.qty) || 0);
+      const singlesVal = Math.max(0, Number(line[singlesKey]) || 0);
+      return {
+        qty: roundN(casesVal * entryUps, 4),
+        singles: roundN(singlesVal, 4),
+      };
     }
     const split = splitCasesSingles(supplierCaseTotal, entryUps);
     return { qty: split.cases, singles: split.singles || 0 };
@@ -5544,10 +5565,19 @@
   function entryNativeToForm(line, pid, supplierId) {
     const p = spiritProductById(pid);
     const entryUps = entryUnitsPerCase(pid, supplierId);
-    const nativeTotal = lineNativeTotal(line, pid);
     if (p && productStockUnit(p) === 'bottle') {
-      return splitBottlesToCasesSingles(nativeTotal, entryUps);
+      const caseBottles = Number(line.qty) || 0;
+      const looseBottles = Number(line.singles) || 0;
+      if (looseBottles > 0) {
+        const cases = entryUps > 1 && caseBottles > 0 ? Math.floor(caseBottles / entryUps) : 0;
+        return { cases: cases || '', singles: looseBottles };
+      }
+      if (caseBottles > 0) {
+        return { cases: '', singles: caseBottles };
+      }
+      return { cases: '', singles: '' };
     }
+    const nativeTotal = lineNativeTotal(line, pid);
     return splitCasesSingles(nativeTotal, entryUps);
   }
 
@@ -6403,7 +6433,7 @@
         (d.lines || []).forEach((l) => {
           const pid = l.product_id;
           if (!pid) return;
-          _openingCountedIn[pid] = (_openingCountedIn[pid] || 0) + delLineCases(l);
+          _openingCountedIn[pid] = (_openingCountedIn[pid] || 0) + delLineCases(l, d.supplier_id);
         });
       });
     } catch (err) {
@@ -9170,7 +9200,7 @@
       if (!d.supplier_id) return;
       const line = (d.lines || []).find((l) => l.product_id === pid);
       if (!line) return;
-      const cases = delLineCases(line);
+      const cases = delLineCases(line, d.supplier_id);
       if (!cases) return;
       if (!map[d.supplier_id]) {
         map[d.supplier_id] = {
