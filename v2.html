@@ -601,8 +601,24 @@
     #reconTable tbody tr.category-row td { text-align:left; font-size:13px; }
     #reconTable tbody tr.total-row td { font-weight:700; background:var(--secondary); border-top:2px solid var(--foreground); }
     #reconTable tbody tr.row-investigate td:nth-child(2) { box-shadow:inset 3px 0 0 var(--warning); }
-    #reconTable tbody tr.recon-row { cursor:pointer; }
+    #reconTable tbody tr.recon-row { cursor:default; }
     #reconTable tbody tr.recon-row:hover td { background:var(--secondary); }
+    #reconTable tbody tr.recon-row.recon-row-editing td { background:var(--secondary); }
+    #reconTable input.recon-qty, #reconTable input.recon-price {
+      width:64px; font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--input);
+      border-radius:var(--radius); background:var(--background); color:var(--foreground);
+      text-align:center; font-variant-numeric:tabular-nums; -moz-appearance:textfield; appearance:textfield;
+    }
+    #reconTable input.recon-price { width:72px; }
+    #reconTable input.recon-qty::-webkit-outer-spin-button, #reconTable input.recon-qty::-webkit-inner-spin-button,
+    #reconTable input.recon-price::-webkit-outer-spin-button, #reconTable input.recon-price::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+    #reconTable input.recon-qty:focus, #reconTable input.recon-price:focus { border-color:var(--ring); box-shadow:0 0 0 3px rgba(24,24,27,.08); outline:none; }
+    #reconTable .recon-item-actions { display:inline-flex; align-items:center; gap:4px; margin-left:4px; flex-shrink:0; vertical-align:middle; }
+    #reconTable .recon-more-btn {
+      font:inherit; font-size:14px; font-weight:700; line-height:1; padding:2px 6px; border:1px solid var(--border);
+      border-radius:var(--radius); background:var(--background); color:var(--muted-foreground); cursor:pointer;
+    }
+    #reconTable .recon-more-btn:hover { border-color:var(--ring); color:var(--foreground); background:var(--secondary); }
     #reconTable tbody tr.recon-row-status-red td { background:#fef2f2; }
     #reconTable tbody tr.recon-row-status-red:hover td { background:#fee2e2; }
     #reconTable tbody tr.recon-row-status-yellow td { background:#fffbeb; }
@@ -1589,7 +1605,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
-      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing stock counted − Transferred (+ pre-event on hand if any). Returns are part of the closing count, not subtracted again. <strong>Variance</strong> = PLU − Consumption (cases); negative = short stock. Charges use case price. Import Square sales for PLU figures.</p>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. Edit <strong>Invoiced</strong>, <strong>Closing</strong>, <strong>Case price</strong>, and <strong>Returns</strong> inline (arrow keys move between cells; changes auto-save). Use <strong>⋯</strong> on a row for multi-supplier returns, notes, and budget. <strong>Consumption</strong> = Delivered − Closing − Transferred (+ pre-event on hand). <strong>Variance</strong> = PLU − Consumption. Import Square sales for PLU figures.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
@@ -8807,7 +8823,12 @@
     const ups = Number(p.units_per_case) || 1;
     const delivered = reconDeliveredQty(ep);
     const cl = closingRowFor(pid) || {};
-    const invoiced = draft && draft.invoiced != null ? Number(draft.invoiced) : closingInvoiceQty(ep);
+    let invoiced;
+    if (draft && draft.invoiceSet != null) {
+      invoiced = draft.invoiceSet ? Number(draft.invoiced) || 0 : closingInvoiceQty(ep);
+    } else {
+      invoiced = closingInvoiceQty(ep);
+    }
     let closingCases = draft && draft.closingCases != null ? Number(draft.closingCases)
       : (cl.closing_cases != null ? Number(cl.closing_cases) : 0);
     let closingSingles = draft && draft.closingSingles != null ? Number(draft.closingSingles)
@@ -8818,7 +8839,9 @@
     const closingUnits = ups > 0 ? closingSingles / ups : 0;
     const closingTotal = closingCases + closingUnits;
     const preEventOnHand = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
-    const supplierReturns = supplierReturnCasesForProduct(pid);
+    const supplierReturns = draft && draft.returnSet != null
+      ? roundN(Number(draft.returnStored) || 0, 2)
+      : supplierReturnCasesForProduct(pid);
     const stockRemaining = reconStockRemaining(cl, ep, closingTotal);
     const transferred = summaryTransferOut(pid);
     const consumption = roundN(delivered + preEventOnHand - stockRemaining - transferred, 2);
@@ -9132,14 +9155,14 @@
       .filter((ep) => ep.product && ep.product.name)
       .filter((ep) => _reconShowHidden ? isReconHidden(ep) : !isReconHidden(ep));
     const pluByPid = computePluCasesByProductId(eps);
-    return eps.map((ep) => buildReconRow(ep, pluByPid, null));
+    return eps.map((ep) => buildReconRow(ep, pluByPid, reconDraftForPid(ep.product_id)));
   }
 
   function computeReconTotalRows() {
     const eps = ((_currentEvent && _currentEvent.event_products) || [])
       .filter((ep) => ep.product && ep.product.name && !isReconHidden(ep));
     const pluByPid = computePluCasesByProductId(eps);
-    return eps.map((ep) => buildReconRow(ep, pluByPid, null));
+    return eps.map((ep) => buildReconRow(ep, pluByPid, reconDraftForPid(ep.product_id)));
   }
 
   function refreshReconDrawerProductFields() {
@@ -9773,13 +9796,249 @@
     if (consumption === 0 && plu === 0) {
       return '<td data-recon-col="variance">—</td>';
     }
+    return '<td data-recon-col="variance" class="' + reconVarianceClass(consumption, plu, variance) + '">' +
+      reconVarianceCellInner(consumption, plu, variance, variancePct) +
+      '</td>';
+  }
+
+  let _reconTimers = {};
+
+  function reconInlineInputHandlers(pid) {
+    return ' data-recon-pid="' + pid + '"' +
+      ' onclick="event.stopPropagation()"' +
+      ' onfocus="this.closest(\'tr\')&&this.closest(\'tr\').classList.add(\'recon-row-editing\')"' +
+      ' onblur="evalMathInput(this);flushReconInlineSave(\'' + pid + '\')"' +
+      ' oninput="recalcReconRow(\'' + pid + '\')"';
+  }
+
+  function readReconInlineDraft(pid) {
+    const invEl = $('recon-inv-' + pid);
+    const casesEl = $('recon-cl-cases-' + pid);
+    const singlesEl = $('recon-cl-singles-' + pid);
+    const priceEl = $('recon-price-' + pid);
+    const retEl = $('recon-ret-' + pid);
+    const invRaw = invEl && invEl.value.trim();
+    const invSet = invRaw !== '';
+    const cases = Math.max(0, parseFloat(casesEl && casesEl.value) || 0);
+    const singles = Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0);
+    const priceRaw = priceEl && priceEl.value.trim();
+    const retRaw = retEl && retEl.value.trim();
+    return {
+      invoiceSet: invSet,
+      invoiced: invSet ? displayToStoredCases(pid, parseFloat(invRaw) || 0) : 0,
+      closingCases: cases,
+      closingSingles: singles,
+      casePrice: priceRaw !== '' ? parseFloat(priceRaw) : '',
+      unitPrice: '',
+      returnSet: retEl != null,
+      returnStored: retRaw !== '' ? displayToStoredCases(pid, parseFloat(retRaw) || 0) : 0,
+    };
+  }
+
+  function reconDraftForPid(pid) {
+    if ($('recon-inv-' + pid)) return readReconInlineDraft(pid);
+    return null;
+  }
+
+  function applyReconInlineDraftToState(pid, draft) {
+    if (!_currentEvent || !draft) return;
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    if (!ep) return;
+    const ups = Number(ep.product && ep.product.units_per_case) || 1;
+    const cases = Math.max(0, draft.closingCases);
+    const singles = Math.max(0, draft.closingSingles);
+    const closeCount = roundN(cases + (ups > 0 ? singles / ups : 0), 4);
+    const returnAmt = draft.returnSet != null ? round1(Number(draft.returnStored) || 0) : round1(supplierReturnCasesForProduct(pid));
+    ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : null;
+    ep.order_price_override = draft.casePrice !== '' && draft.casePrice != null && !isNaN(Number(draft.casePrice))
+      ? roundN(Number(draft.casePrice), 2) : null;
+    let cl = closingRowFor(pid);
+    if (!cl) { cl = { event_id: _currentEvent.id, product_id: pid }; _closing.push(cl); }
+    cl.closing_cases = cases;
+    cl.closing_singles = singles;
+    cl.close_count = closeCount;
+    cl.return_amount = returnAmt;
+    cl.carried_over = round1(Math.max(0, closeCount - returnAmt));
+    if (draft.returnSet != null) {
+      const supId = productSupplierId(pid);
+      if (returnAmt > 0 && supId) {
+        const form = entryNativeToForm({ qty: returnAmt, singles: 0 }, pid, supId);
+        const qtyParts = entryFormToNative(form, pid, supId);
+        const row = {
+          event_id: _currentEvent.id,
+          product_id: pid,
+          supplier_id: supId,
+          qty: qtyParts.qty,
+          singles: qtyParts.singles,
+          case_price: null,
+        };
+        _supplierReturns = (_supplierReturns || []).filter((r) => r.product_id !== pid).concat([row]);
+      } else {
+        _supplierReturns = (_supplierReturns || []).filter((r) => r.product_id !== pid);
+      }
+    }
+  }
+
+  async function persistReconInlineDraft(pid, draft) {
+    if (!_currentEvent || !draft) return;
+    applyReconInlineDraftToState(pid, draft);
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    if (!ep) return;
+    const cl = closingRowFor(pid) || {};
+    await DB.eventProducts.setForEvent(_currentEvent.id, pid, {
+      invoice_qty: ep.invoice_qty,
+      order_price_override: ep.order_price_override,
+    });
+    if (draft.returnSet != null) {
+      const returnRows = (_supplierReturns || []).filter((r) => r.product_id === pid);
+      try {
+        await DB.supplierReturns.replaceForProduct(_currentEvent.id, pid, returnRows);
+      } catch (retErr) {
+        console.warn('persistReconInlineDraft supplier returns', retErr);
+      }
+    }
+    const closingPatch = {
+      closing_cases: cl.closing_cases,
+      closing_singles: cl.closing_singles,
+      close_count: cl.close_count,
+      return_amount: cl.return_amount,
+      carried_over: cl.carried_over,
+      recon_status: cl.recon_status != null ? cl.recon_status : null,
+      recon_note: cl.recon_note || null,
+      budget_method: cl.budget_method || 'auto',
+      budget_override: cl.budget_override != null ? cl.budget_override : null,
+    };
+    try {
+      const saved = await DB.closing.setForEvent(_currentEvent.id, pid, closingPatch);
+      if (saved) Object.assign(cl, saved);
+    } catch (e1) {
+      await DB.closing.setForEvent(_currentEvent.id, pid, {
+        closing_cases: closingPatch.closing_cases,
+        closing_singles: closingPatch.closing_singles,
+        close_count: closingPatch.close_count,
+        return_amount: closingPatch.return_amount,
+        carried_over: closingPatch.carried_over,
+      });
+    }
+  }
+
+  function captureReconInlineFromDom() {
+    const body = $('reconTableBody');
+    if (!body) return;
+    const pids = new Set();
+    body.querySelectorAll('input[data-recon-pid]').forEach((el) => {
+      if (el.dataset.reconPid) pids.add(el.dataset.reconPid);
+    });
+    pids.forEach((pid) => {
+      clearTimeout(_reconTimers[pid]);
+      delete _reconTimers[pid];
+      const draft = readReconInlineDraft(pid);
+      applyReconInlineDraftToState(pid, draft);
+      persistReconInlineDraft(pid, draft).catch((e) => console.warn('captureReconInlineFromDom', e));
+    });
+  }
+
+  async function flushReconInlineSave(pid) {
+    clearTimeout(_reconTimers[pid]);
+    delete _reconTimers[pid];
+    if (!$('recon-inv-' + pid) || !_currentEvent) return;
+    const row = document.querySelector('tr.recon-row[data-recon-pid="' + pid + '"]');
+    if (row) row.classList.remove('recon-row-editing');
+    try {
+      await persistReconInlineDraft(pid, readReconInlineDraft(pid));
+      updateReconTotalsRow();
+      if ($('panel-closing') && $('panel-closing').classList.contains('active')) renderClosing();
+    } catch (err) {
+      console.warn('flushReconInlineSave', err);
+    }
+  }
+
+  function recalcReconRow(pid) {
+    const ep = ((_currentEvent && _currentEvent.event_products) || []).find((x) => x.product_id === pid);
+    if (!ep) return;
+    const draft = readReconInlineDraft(pid);
+    const r = buildReconRow(ep, computePluCasesByProductId([ep]), draft);
+    const setHtml = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
+    setHtml('recon-cons-' + pid, reconQtyCell(r.consumption));
+    setHtml('recon-plu-' + pid, reconQtyCell(r.plu));
+    setHtml('recon-var-' + pid, reconVarianceCellInner(r.consumption, r.plu, r.variance, r.variancePct));
+    setHtml('recon-cons-charge-' + pid, reconMoneyCell(r.consumptionCharge));
+    setHtml('recon-cons-loose-' + pid, reconMoneyCell(r.consumptionLooseCharge));
+    setHtml('recon-plu-charge-' + pid, reconMoneyCell(r.pluCharge));
+    setHtml('recon-inv-charge-' + pid, reconMoneyCell(r.invoiceCharge));
+    setHtml('recon-budget-' + pid, reconMoneyCell(r.budgetCost));
+    const row = document.querySelector('tr.recon-row[data-recon-pid="' + pid + '"]');
+    if (row) row.classList.toggle('row-investigate', r.investigate);
+    updateReconTotalsRow();
+    clearTimeout(_reconTimers[pid]);
+    _reconTimers[pid] = setTimeout(() => flushReconInlineSave(pid), 600);
+  }
+
+  function reconVarianceCellInner(consumption, plu, variance, variancePct) {
+    if (consumption === 0 && plu === 0) return '—';
     const cls = reconVarianceClass(consumption, plu, variance);
     const sign = variance > 0 ? '+' : '';
     const qty = Number.isInteger(variance) ? String(variance) : roundN(variance, 2).toString();
     const pct = variancePct != null ? roundN(variancePct, 1).toString() + '%' : '';
-    return '<td data-recon-col="variance" class="' + cls + '" title="PLU − Consumption. Negative = short stock.">' +
+    return '<span class="' + cls + '" title="PLU − Consumption. Negative = short stock.">' +
       sign + qty + (pct ? '<span style="font-size:10px;font-weight:500;opacity:.85"> (' + pct + ')</span>' : '') +
-      '</td>';
+      '</span>';
+  }
+
+  function updateReconTotalsRow() {
+    const allRows = computeReconRows();
+    const rows = filterReconRows(allRows);
+    const totalSource = (_reconStatusFilter || _reconCategoryFilter) ? rows : computeReconTotalRows();
+    let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
+    let totConsumption = 0, totPluCases = 0, totVariance = 0;
+    totalSource.forEach((r) => {
+      totBudget += r.budgetCost || 0;
+      totConsLoose += r.consumptionLooseCharge || 0;
+      totInvoice += r.invoiceCharge || 0;
+      totPlu += r.pluCharge || 0;
+      totConsumption += r.consumption || 0;
+      totPluCases += r.plu || 0;
+      totVariance += r.variance || 0;
+    });
+    const varCell = document.querySelector('#reconTable tbody tr.total-row td[data-recon-col="variance"]');
+    if (varCell) {
+      const sign = totVariance > 0 ? '+' : '';
+      const qty = roundN(totVariance, 2).toString();
+      const denom = Math.max(Math.abs(totConsumption), Math.abs(totPluCases), 0.01);
+      const pct = (totConsumption !== 0 || totPluCases !== 0)
+        ? roundN((totVariance / denom) * 100, 1).toString() + '%' : '';
+      const cls = reconVarianceClass(totConsumption, totPluCases, totVariance);
+      varCell.innerHTML = '<span class="' + cls + '">' + sign + qty + (pct ? ' (' + pct + ')' : '') + '</span>';
+    }
+    const setMoney = (col, val) => {
+      const el = document.querySelector('#reconTable tbody tr.total-row td[data-recon-col="' + col + '"]');
+      if (el) el.textContent = money(val);
+    };
+    setMoney('consumption_loose', totConsLoose);
+    setMoney('plu_charge', totPlu);
+    setMoney('invoice_charge', totInvoice);
+    setMoney('budget_cost', totBudget);
+    const stats = $('reconStats');
+    if (stats && stats.firstElementChild) {
+      stats.firstElementChild.querySelector('.stat-value').textContent = money(totBudget);
+    }
+  }
+
+  function reconInlineQtyInput(pid, id, value, cls) {
+    const v = value != null && value !== '' ? String(value) : '';
+    return '<input type="text" class="' + cls + '" id="' + id + '" value="' + escapeHtml(v) + '" placeholder="0"' +
+      reconInlineInputHandlers(pid) + '>';
+  }
+
+  function reconItemCellWithActions(name, caseSize, noteHint, pid) {
+    const cs = caseSize
+      ? '<span class="recon-item-case">' + escapeHtml(caseSize) + '</span>' : '';
+    return '<span class="recon-item-line" title="' + escapeHtml(name) + '">' +
+      '<span class="recon-item-name">' + escapeHtml(name) + '</span>' + cs +
+      '<span class="recon-item-actions">' +
+        '<button type="button" class="recon-more-btn" onclick="event.stopPropagation();openReconDrawer(\'' + pid + '\')" title="Notes, budget, multi-supplier returns">⋯</button>' +
+      '</span></span>' +
+      (noteHint || '');
   }
 
   function reconMoneyCell(n) {
@@ -9815,6 +10074,7 @@
   });
 
   function renderRecon() {
+    captureReconInlineFromDom();
     const allRows = computeReconRows();
     const totalRows = computeReconTotalRows();
     const body = $('reconTableBody');
@@ -9885,27 +10145,35 @@
         const noteHint = r.reconNote
           ? '<span class="recon-note-hint" title="' + escapeHtml(r.reconNote) + '">' + escapeHtml(r.reconNote) + '</span>' : '';
         const statusClass = r.reconStatus ? (' recon-row-status-' + r.reconStatus) : '';
-        html += '<tr class="recon-row' + statusClass + (_reconShowHidden ? ' recon-row-hidden' : '') + (r.investigate ? ' row-investigate' : '') + '" onclick="openReconDrawer(\'' + r.pid + '\')" title="Click to edit">' +
+        const supId = productSupplierId(r.pid);
+        const invDisp = r.ep.invoice_qty != null ? storedCasesToDisplay(r.pid, r.ep.invoice_qty) : '';
+        const closingCasesVal = r.closingCases ? String(r.closingCases) : '';
+        const closingSinglesVal = r.closingSingles ? String(r.closingSingles) : '';
+        const retDisp = r.supplierReturns > 0 ? storedCasesToDisplay(r.pid, r.supplierReturns) : '';
+        const priceDisp = r.ep.order_price_override != null ? r.ep.order_price_override : '';
+        const entryUps = entryUnitsPerCase(r.pid, supId);
+        const perCaseHint = entryUps > 1 ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + entryUps + ' per case</div>' : '';
+        html += '<tr class="recon-row' + statusClass + (_reconShowHidden ? ' recon-row-hidden' : '') + (r.investigate ? ' row-investigate' : '') + '" data-recon-pid="' + r.pid + '">' +
           reconMarkerCell(r.pid, r.reconStatus) +
-          '<td data-recon-col="item">' + reconItemCell(r.p.name, caseSize, noteHint) + '</td>' +
+          '<td data-recon-col="item">' + reconItemCellWithActions(r.p.name, caseSize, noteHint, r.pid) + '</td>' +
           '<td data-recon-col="abv">' + escapeHtml(abv) + '</td>' +
-          '<td data-recon-col="case_price">' + reconMoneyCell(r.casePrice) + '</td>' +
+          '<td data-recon-col="case_price">' + reconInlineQtyInput(r.pid, 'recon-price-' + r.pid, priceDisp, 'recon-price') + '</td>' +
           '<td data-recon-col="supplier" title="' + escapeHtml(r.supplierName) + '">' + escapeHtml(r.supplierName) + '</td>' +
           '<td data-recon-col="units_per_case">' + (r.ups || '—') + '</td>' +
           '<td data-recon-col="delivered">' + reconQtyCell(r.delivered) + '</td>' +
-          '<td data-recon-col="invoiced">' + reconQtyCell(r.invoiced) + '</td>' +
-          '<td data-recon-col="closing_cases">' + reconQtyCell(r.closingCases) + '</td>' +
-          '<td data-recon-col="closing_units">' + reconQtyCell(r.closingUnits) + '</td>' +
-          '<td data-recon-col="returned_to_supplier">' + reconQtyCell(r.supplierReturns) + '</td>' +
+          '<td data-recon-col="invoiced">' + reconInlineQtyInput(r.pid, 'recon-inv-' + r.pid, invDisp, 'recon-qty') + '</td>' +
+          '<td data-recon-col="closing_cases">' + reconInlineQtyInput(r.pid, 'recon-cl-cases-' + r.pid, closingCasesVal, 'recon-qty') + '</td>' +
+          '<td data-recon-col="closing_units">' + reconInlineQtyInput(r.pid, 'recon-cl-singles-' + r.pid, closingSinglesVal, 'recon-qty') + perCaseHint + '</td>' +
+          '<td data-recon-col="returned_to_supplier">' + reconInlineQtyInput(r.pid, 'recon-ret-' + r.pid, retDisp, 'recon-qty') + '</td>' +
           '<td data-recon-col="transferred">' + reconQtyCell(r.transferred) + '</td>' +
-          '<td data-recon-col="consumption" style="font-weight:600">' + reconQtyCell(r.consumption) + '</td>' +
-          '<td data-recon-col="plu">' + reconQtyCell(r.plu) + '</td>' +
-          reconVarianceCell(r.consumption, r.plu, r.variance, r.variancePct) +
-          '<td data-recon-col="consumption_charge">' + reconMoneyCell(r.consumptionCharge) + '</td>' +
-          '<td data-recon-col="consumption_loose" style="font-weight:600">' + reconMoneyCell(r.consumptionLooseCharge) + '</td>' +
-          '<td data-recon-col="plu_charge">' + reconMoneyCell(r.pluCharge) + '</td>' +
-          '<td data-recon-col="invoice_charge">' + reconMoneyCell(r.invoiceCharge) + '</td>' +
-          '<td data-recon-col="budget_cost" style="font-weight:700">' + reconMoneyCell(r.budgetCost) + '</td>' +
+          '<td data-recon-col="consumption" style="font-weight:600" id="recon-cons-' + r.pid + '">' + reconQtyCell(r.consumption) + '</td>' +
+          '<td data-recon-col="plu" id="recon-plu-' + r.pid + '">' + reconQtyCell(r.plu) + '</td>' +
+          '<td data-recon-col="variance" id="recon-var-' + r.pid + '">' + reconVarianceCellInner(r.consumption, r.plu, r.variance, r.variancePct) + '</td>' +
+          '<td data-recon-col="consumption_charge" id="recon-cons-charge-' + r.pid + '">' + reconMoneyCell(r.consumptionCharge) + '</td>' +
+          '<td data-recon-col="consumption_loose" style="font-weight:600" id="recon-cons-loose-' + r.pid + '">' + reconMoneyCell(r.consumptionLooseCharge) + '</td>' +
+          '<td data-recon-col="plu_charge" id="recon-plu-charge-' + r.pid + '">' + reconMoneyCell(r.pluCharge) + '</td>' +
+          '<td data-recon-col="invoice_charge" id="recon-inv-charge-' + r.pid + '">' + reconMoneyCell(r.invoiceCharge) + '</td>' +
+          '<td data-recon-col="budget_cost" style="font-weight:700" id="recon-budget-' + r.pid + '">' + reconMoneyCell(r.budgetCost) + '</td>' +
         '</tr>';
       });
     });
