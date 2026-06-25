@@ -2072,7 +2072,7 @@
         <button type="button" class="btn btn-outline btn-sm" onclick="addRecipeIngredientRow()"><i class="ph ph-plus btn-leading-icon"></i> Add product</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="addRecipePoolRow()"><i class="ph ph-drop btn-leading-icon"></i> Add pool</button>
       </div>
-      <p class="df-hint"><strong>Product:</strong> quantity is a fraction of one case — e.g. <strong>1/12</strong> = one unit from a 12-pack, <strong>1/52</strong> = one pint from a keg. For spirits, pick the product then tap <strong>+ Single</strong> / <strong>+ Double</strong> for the shot fraction.<br><strong>Pool:</strong> combines interchangeable SKUs (e.g. Vodka 70cl + 1L) tagged with the same pool name on the product. Quantity is <strong>servings</strong> per sale — use <strong>+ Single</strong> (1) or <strong>+ Double</strong> (2).</p>
+      <p class="df-hint"><strong>Product:</strong> quantity is a fraction of one stock unit — e.g. <strong>1/12</strong> = one can from a 12-pack, <strong>1/52</strong> = one pint from a keg. Spirits are counted in <strong>bottles</strong> — pick the product then tap <strong>+ Single</strong> / <strong>+ Double</strong> (e.g. 1/28 for a single from 70cl).<br><strong>Pool:</strong> combines interchangeable SKUs (e.g. Vodka 70cl + 1L) tagged with the same pool name on the product. Quantity is <strong>servings</strong> per sale — use <strong>+ Single</strong> (1) or <strong>+ Double</strong> (2).</p>
     </div>
     <div class="df-field"><label>Notes</label><textarea id="rf-notes" rows="2" placeholder="Optional — e.g. pour size, review note"></textarea></div>
   </div>
@@ -2672,12 +2672,17 @@
     return (_products || []).find((p) => p.id === pid) || null;
   }
 
-  // 25ml shots in one whole case: bottles-per-case × shots-per-bottle
-  // (6x700ml ⇒ 6 × 28 = 168; 70cl ⇒ 1 × 28 = 28). Used by the recipe-mapping
-  // +Single / +Double buttons to express a pour as a fraction of one case.
+  // 25ml shots in one supplier case: bottles-per-case × shots-per-bottle
+  // (legacy 6x700ml ⇒ 168; per-bottle 70cl ⇒ 28). Prefer shotsPerBottle for
+  // recipe mapping — spirits are counted in individual bottles.
   function shotsPerCase(p) {
     const spc = spiritBottlesPerCase(p) * shotsPerBottle(p);
     return spc > 0 ? spc : 28;
+  }
+
+  function recipeShotFraction(p, n) {
+    const spb = shotsPerBottle(p);
+    return n / (spb > 0 ? spb : 28);
   }
 
   // ---------- unified stock quantity (stored as fractional cases) ----------
@@ -3579,7 +3584,7 @@
       fields: [
         { key: 'name', label: 'Name', type: 'text', full: true, required: true },
         { key: 'category_id', label: 'Category', type: 'select', options: catOpts, placeholder: '— none —' },
-        { key: 'case_size', label: 'Case size', type: 'text', placeholder: 'e.g. 24x330ml' },
+        { key: 'case_size', label: 'Case size', type: 'text', placeholder: 'e.g. 70cl (spirits), 24x330ml (beer)' },
         { key: 'units_per_case', label: 'Units / case', type: 'number', min: 0 },
         { key: 'stock_unit', label: 'Stock unit', type: 'select', full: true, options: STOCK_UNIT_OPTS, placeholder: 'Auto-detect' },
         { key: 'sku', label: 'SKU', type: 'text' },
@@ -10159,7 +10164,7 @@
   // against the stock on hand to flag what runs out before the target.
   //
   //   factor             = target_revenue / imported net sales
-  //   projected cases    = (Σ items_sold × recipe qty) × factor   [qty is a case-fraction]
+  //   projected stock    = (Σ items_sold × recipe qty) × factor   [qty is a bottle/case fraction]
   //   runs-dry revenue   = stock cases / baseline cases × imported net sales
   //
   // Stock = opening stock per event_product (delivered − damaged, falling
@@ -10806,7 +10811,7 @@
       '<div class="rf-qty-cell">' +
         '<input type="text" class="rf-qty" placeholder="e.g. 1/12" value="' + (qty != null ? escapeHtml(fmtQty(qty)) : '') + '">' +
         '<div class="shot-btns">' +
-          '<button type="button" class="shot-btn" title="Add one 25ml single — set automatically as a fraction of the chosen product\u2019s case" onclick="addRecipeShot(\'' + rowId + '\',1)">+ Single</button>' +
+          '<button type="button" class="shot-btn" title="Add one 25ml single — set as a fraction of one bottle (e.g. 1/28 for 70cl)" onclick="addRecipeShot(\'' + rowId + '\',1)">+ Single</button>' +
           '<button type="button" class="shot-btn" title="Add one 50ml double" onclick="addRecipeShot(\'' + rowId + '\',2)">+ Double</button>' +
         '</div>' +
       '</div>' +
@@ -10988,9 +10993,7 @@
   }
 
   // +Single (n=1) / +Double (n=2): add a 25ml serving to a recipe ingredient
-  // row's quantity, expressed as a fraction of one case for the chosen product
-  // (6x700ml ⇒ 1/168 per single). The user thinks in shots; the maths is done
-  // here so the mapping stays in the app's per-case model.
+  // row's quantity, expressed as a fraction of one bottle (70cl ⇒ 1/28).
   function addRecipeShot(rowId, n) {
     const prodEl = document.getElementById('rf-prod-' + rowId);
     const row = prodEl && prodEl.closest('.rf-ing-row');
@@ -10999,10 +11002,9 @@
     if (!qtyEl) return;
     const p = recipeProductByName(prodEl.value);
     if (!p) { prodEl.focus(); return; }
-    const spc = shotsPerCase(p);
     const cur = parseQtyInput(qtyEl.value);
     const base = isFinite(cur) ? cur : 0;
-    qtyEl.value = fmtQty(roundN(base + n / spc, 6));
+    qtyEl.value = fmtQty(roundN(base + recipeShotFraction(p, n), 6));
   }
 
   // ---- Searchable product picker for recipe ingredients ------------------
@@ -11206,6 +11208,14 @@
     if (/^(Custom Amount|REFUSED|SOLD\b.*|Compulsory Cup|Case of water|Prosecco Glass)$/i.test(String(tillName).trim())) return null;
 
     const qtyFor = (pour, p) => {
+      const ml = packBottleMl(p && p.case_size);
+      const spiritBtl = p && (productStockUnit(p) === 'bottle' || (categoryColourKeyOf(p) === 'spirits' && ml != null && ml >= 500));
+      if (spiritBtl) {
+        const spb = shotsPerBottle(p);
+        if (pour === 'shot') return 1 / spb;
+        if (pour === 'double') return 2 / spb;
+        return 1;
+      }
       const ups = (p && Number(p.units_per_case)) || 1;
       if (pour === 'whole') return 1 / ups;
       if (pour === 'half') return 0.5 / ups;
