@@ -1646,7 +1646,7 @@
           <th data-recon-col="status" title="Red = action needed, yellow = review, green = done, blue = none returned">Status</th>
           <th data-recon-col="item">Item</th>
           <th data-recon-col="abv">ABV</th>
-          <th data-recon-col="case_price" title="Click a cell to edit price in the drawer">Case<br>price</th>
+          <th data-recon-col="case_price" title="Click a cell to edit price in the drawer — spirits show £/bottle, others £/case">Price</th>
           <th data-recon-col="supplier">Supplier</th>
           <th data-recon-col="units_per_case">Units<br>per case</th>
           <th data-recon-col="delivered">Delivered</th>
@@ -5593,29 +5593,51 @@
         singles: roundN(singlesVal, 4),
       };
     }
-    const split = splitCasesSingles(supplierCaseTotal, entryUps);
-    return { qty: split.cases, singles: split.singles || 0 };
+    return {
+      qty: roundN(Math.max(0, Number(line[casesKey] ?? line.qty) || 0), 4),
+      singles: roundN(Math.max(0, Number(line[singlesKey]) || 0), 4),
+    };
   }
 
   function entryNativeToForm(line, pid, supplierId) {
     const p = spiritProductById(pid);
     const entryUps = entryUnitsPerCase(pid, supplierId);
+    const storedQty = Number(line.qty) || 0;
+    const storedSingles = Number(line.singles) || 0;
+
     if (p && productStockUnit(p) === 'bottle') {
-      const caseBottles = Number(line.qty) || 0;
-      const looseBottles = Number(line.singles) || 0;
-      if (looseBottles > 0) {
-        const cases = entryUps > 1 && caseBottles > 0 ? Math.floor(caseBottles / entryUps) : 0;
-        return { cases: cases || '', singles: looseBottles };
+      if (storedSingles > 0) {
+        const casesFromQty = entryUps > 0 && storedQty > 0 ? roundN(storedQty / entryUps, 4) : 0;
+        return {
+          cases: casesFromQty ? String(casesFromQty) : '',
+          singles: String(storedSingles),
+        };
       }
-      if (caseBottles > 0) {
-        return { cases: '', singles: caseBottles };
+      if (storedQty > 0) {
+        if (entryUps > 1 && Math.abs(storedQty / entryUps - Math.round(storedQty / entryUps)) < 1e-6) {
+          return { cases: String(Math.round(storedQty / entryUps)), singles: '' };
+        }
+        const split = splitBottlesToCasesSingles(storedQty, entryUps);
+        return {
+          cases: split.cases ? String(split.cases) : '',
+          singles: split.singles ? String(split.singles) : '',
+        };
       }
       return { cases: '', singles: '' };
     }
-    const storedCases = Number(line.qty) || 0;
-    const storedSingles = Number(line.singles) || 0;
-    const caseEquivalent = combineCasesSingles(storedCases, storedSingles, entryUps);
-    return splitCasesSingles(caseEquivalent, entryUps);
+
+    // Pass through explicit cases + singles; only split when singles is zero (scalar total).
+    if (storedSingles > 0) {
+      return {
+        cases: storedQty ? String(storedQty) : '',
+        singles: String(storedSingles),
+      };
+    }
+    const split = splitCasesSingles(storedQty, entryUps);
+    return {
+      cases: split.cases ? String(split.cases) : '',
+      singles: split.singles ? String(split.singles) : '',
+    };
   }
 
   function entryDamagedToNative(line, pid, supplierId, opts) {
@@ -8832,7 +8854,8 @@
     const offer = productOfferForEvent(ep);
     if (offer && offer.unit_price != null) return Number(offer.unit_price);
     if (p.unit_price != null) return Number(p.unit_price);
-    const cp = p.case_price != null ? Number(p.case_price) : null;
+    const cp = offer && offer.case_price != null ? Number(offer.case_price)
+      : (p.case_price != null ? Number(p.case_price) : null);
     const upc = reconUnitsPerCase(p);
     if (cp != null && upc > 0) return cp / upc;
     return null;
@@ -8860,9 +8883,35 @@
   function reconUnitPrice(ep, draft) {
     const p = ep && ep.product;
     if (!p) return null;
-    const caseP = reconCasePrice(ep, draft);
-    const upc = reconUnitsPerCase(p) || 1;
-    return upc > 0 ? caseP / upc : null;
+    if (draft) {
+      if (draft.unitPrice !== '' && draft.unitPrice != null) return Number(draft.unitPrice) || 0;
+      if (draft.casePrice !== '' && draft.casePrice != null) {
+        const upc = reconUnitsPerCase(p) || 1;
+        return upc > 0 ? (Number(draft.casePrice) || 0) / upc : null;
+      }
+    }
+    if (ep.order_unit_price_override != null) return Number(ep.order_unit_price_override) || 0;
+    if (ep.order_price_override != null) {
+      const upc = reconUnitsPerCase(p) || 1;
+      return upc > 0 ? (Number(ep.order_price_override) || 0) / upc : null;
+    }
+    return defaultUnitPriceForRecon(ep);
+  }
+
+  function reconUsesBottlePrice(p) {
+    if (!p) return false;
+    if (productStockUnit(p) === 'bottle') return true;
+    return isSpiritBottle(p);
+  }
+
+  // Price shown in the recon table and used to multiply qty for charge columns.
+  // Bottle-counted spirits use £/bottle; everything else uses £/case.
+  function reconRowPrice(ep, draft) {
+    const p = ep && ep.product;
+    if (reconUsesBottlePrice(p)) {
+      return reconUnitPrice(ep, draft) || 0;
+    }
+    return reconCasePrice(ep, draft);
   }
 
   function reconBudgetCost(row, cl) {
@@ -8906,8 +8955,10 @@
     const consumption = roundN(delivered + preEventOnHand - stockRemaining - transferred, 2);
     const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
     const casePrice = reconCasePrice(ep, draft);
-    const consumptionCharge = (consumption - closingLooseAsCases) * casePrice;
-    const consumptionLooseCharge = consumption * casePrice;
+    const unitPrice = reconUnitPrice(ep, draft);
+    const rowPrice = reconRowPrice(ep, draft);
+    const consumptionCharge = (consumption - closingLooseAsCases) * rowPrice;
+    const consumptionLooseCharge = consumption * rowPrice;
     const pluCharge = plu * casePrice;
     const invoiceCharge = invoiced * casePrice;
     const budgetCl = {
@@ -8916,7 +8967,8 @@
     };
     const charges = {
       ep, pid, p, ups, delivered, invoiced, closingCases, closingLooseAsCases, closingSingles,
-      supplierReturns, transferred, consumption, plu, casePrice, consumptionCharge, consumptionLooseCharge,
+      supplierReturns, transferred, consumption, plu, casePrice, unitPrice, rowPrice,
+      consumptionCharge, consumptionLooseCharge,
       pluCharge, invoiceCharge,
     };
     const budgetCost = reconBudgetCost(charges, budgetCl);
@@ -8954,7 +9006,7 @@
     { id: 'status', label: 'Status' },
     { id: 'item', label: 'Item' },
     { id: 'abv', label: 'ABV' },
-    { id: 'case_price', label: 'Case price' },
+    { id: 'case_price', label: 'Price' },
     { id: 'supplier', label: 'Supplier' },
     { id: 'units_per_case', label: 'Units per case' },
     { id: 'delivered', label: 'Delivered' },
@@ -9373,16 +9425,6 @@
 
   function rcnReturnLineDisplayFromSaved(r, pid) {
     const supId = r.supplier_id || productSupplierId(pid);
-    const p = spiritProductById(pid);
-    if (p && productStockUnit(p) === 'bottle' && !usesSinglesOnlyUnit(pid)) {
-      const entryUps = entryUnitsPerCase(pid, supId);
-      const totalBottles = (Number(r.qty) || 0) + (Number(r.singles) || 0);
-      const split = splitBottlesToCasesSingles(totalBottles, entryUps);
-      return {
-        cases: split.cases ? String(split.cases) : '',
-        singles: split.singles ? String(split.singles) : '',
-      };
-    }
     const form = entryNativeToForm(r, pid, supId);
     if (usesSinglesOnlyUnit(pid)) {
       return { cases: '', singles: form.singles ? String(form.singles) : '' };
@@ -9463,15 +9505,16 @@
       const opts = '<option value="">— Supplier —</option>' + options.map((o) =>
         '<option value="' + o.id + '"' + (line.supplierId === o.id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>'
       ).join('');
+      const perCaseHint = entryUps > 1 ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + entryUps + ' per case</div>' : '';
       const casesCell = singlesOnly
         ? '<td style="text-align:center;color:var(--muted-foreground)" title="Singles only — use the Singles column">—</td>'
         : '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>';
-      const singlesCell = '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
+      const singlesCell = '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)">' + perCaseHint + '</td>';
       return '<tr>' +
         '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
         casesCell +
         singlesCell +
-        '<td><input type="number" step="0.01" min="0" value="' + escapeHtml(line.casePrice ?? '') + '" placeholder="Auto" oninput="updateRcnReturnLine(\'' + line.lineId + '\',\'casePrice\',this.value)"></td>' +
+        '<td><input type="number" step="0.01" min="0" value="' + escapeHtml(line.casePrice ?? '') + '" placeholder="Auto" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'casePrice\',this.value)"></td>' +
         '<td class="num">' + (lineVal != null ? money(lineVal) : '—') + '</td>' +
         '<td><button type="button" class="btn btn-outline btn-sm btn-icon" onclick="openReturnDrawer(\'' + pid + '\',\'' + line.supplierId + '\')" title="Print pallet stickers"' + (canPrint ? '' : ' disabled') + '><i class="ph ph-printer"></i></button></td>' +
         '<td><button type="button" class="btn btn-danger btn-sm btn-icon" onclick="removeRcnReturnLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
@@ -10220,7 +10263,7 @@
           reconMarkerCell(r.pid, r.reconStatus) +
           '<td data-recon-col="item">' + reconItemCellWithActions(r.p.name, caseSize, noteHint, r.pid) + '</td>' +
           '<td data-recon-col="abv">' + escapeHtml(abv) + '</td>' +
-          reconDrawerOnlyCell(r.pid, 'case_price', reconMoneyCell(r.casePrice), 'Edit in drawer') +
+          reconDrawerOnlyCell(r.pid, 'case_price', reconMoneyCell(r.rowPrice), 'Edit in drawer') +
           '<td data-recon-col="supplier" title="' + escapeHtml(r.supplierName) + '">' + escapeHtml(r.supplierName) + '</td>' +
           '<td data-recon-col="units_per_case">' + (r.ups || '—') + '</td>' +
           '<td data-recon-col="delivered">' + reconQtyCell(r.delivered) + '</td>' +
@@ -10276,7 +10319,7 @@
     if (!_currentEvent) { alert('Pick an event first'); return; }
     const rows = computeReconTotalRows();
     const headers = [
-      'Status', 'Item', 'Case Size', 'ABV', 'Case Price', 'Supplier', 'Units per case',
+      'Status', 'Item', 'Case Size', 'ABV', 'Price', 'Supplier', 'Units per case',
       'Delivered', 'Invoiced', 'Closing (Cases)', 'Closing (Singles)',
       'Returned to supplier', 'Transferred', 'Consumption', 'PLU', 'Variance', 'Variance %', 'Consumption Charge', 'Consumption + Loose Charge',
       'PLU Charge', 'Invoice Charge', '', 'Budget Cost', 'Notes',
@@ -10288,7 +10331,7 @@
       const note = r.reconNote || '';
       lines.push([
         statusLabel, r.p.name, r.p.case_size || '', abv,
-        r.casePrice ? '£' + r.casePrice.toFixed(2) : '', r.supplierName, r.ups || '',
+        r.rowPrice ? '£' + r.rowPrice.toFixed(2) : '', r.supplierName, r.ups || '',
         r.delivered || 0, r.invoiced || 0,
         r.closingCases || 0, r.closingSingles || 0, r.supplierReturns || 0, r.transferred || 0,
         r.consumption || 0, r.plu || 0,
