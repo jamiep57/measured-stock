@@ -8926,6 +8926,14 @@
     }
   }
 
+  function syncReconDrawerQtyFields(pid) {
+    const label = productStockUnitLabel(spiritProductById(pid), true);
+    const invLabel = $('rcn-invoice-qty-label');
+    const clLabel = $('rcn-cl-qty-label');
+    if (invLabel) invLabel.textContent = 'Invoiced (' + label + ')';
+    if (clLabel) clLabel.textContent = 'Closing count (' + label + ')';
+  }
+
   // Suppliers that delivered this product on the current event (qty summed).
   function deliveredBySupplierForProduct(pid) {
     const map = {};
@@ -9238,19 +9246,14 @@
     } catch (err) { console.warn('openReconDrawer preload', err); }
     _reconCtx = { pid };
     const cl = closingRowFor(pid) || {};
-    const ups = Number(ep.product && ep.product.units_per_case) || 1;
     refreshReconDrawerProductFields();
-    const invSplit = ep.invoice_qty != null ? splitCasesSingles(ep.invoice_qty, ups) : null;
-    $('rcn-invoice-cases').value = invSplit ? invSplit.cases : '';
-    $('rcn-invoice-singles').value = invSplit && invSplit.singles ? invSplit.singles : '';
+    syncReconDrawerQtyFields(pid);
+    $('rcn-invoice-qty').value = ep.invoice_qty != null ? storedCasesToDisplay(pid, ep.invoice_qty) : '';
     $('rcn-price').value = ep.order_price_override != null ? ep.order_price_override : '';
     $('rcn-unit-price').value = ep.order_unit_price_override != null ? ep.order_unit_price_override : '';
     syncReconDrawerPriceFields(ep);
-    let casesVal = cl.closing_cases != null ? Number(cl.closing_cases) : '';
-    let singlesVal = cl.closing_singles != null ? Number(cl.closing_singles) : '';
-    if (casesVal === '' && singlesVal === '' && cl.close_count != null) casesVal = Number(cl.close_count);
-    $('rcn-cl-cases').value = casesVal !== '' ? casesVal : '';
-    $('rcn-cl-singles').value = singlesVal !== '' ? singlesVal : '';
+    const closingStored = closingCountInCases(cl, ep);
+    $('rcn-cl-qty').value = closingStored ? storedCasesToDisplay(pid, closingStored) : '';
     initRcnReturnLines(pid);
     renderRcnReturnLines();
     $('rcn-budget-method').value = cl.budget_method || 'auto';
@@ -9263,7 +9266,7 @@
     recalcReconDrawer();
     $('reconFormOverlay').classList.add('open');
     $('reconFormDrawer').classList.add('open');
-    setTimeout(() => { const el = $('rcn-invoice-cases'); if (el) el.focus(); }, 50);
+    setTimeout(() => { const el = $('rcn-invoice-qty'); if (el) el.focus(); }, 50);
   }
 
   function closeReconDrawer() {
@@ -9276,20 +9279,22 @@
   function reconDrawerDraft() {
     const priceRaw = $('rcn-price').value.trim();
     const unitPriceRaw = ($('rcn-unit-price') && $('rcn-unit-price').value || '').trim();
-    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === (_reconCtx && _reconCtx.pid));
+    const pid = _reconCtx && _reconCtx.pid;
+    const ep = ((_currentEvent.event_products) || []).find((x) => x.product_id === pid);
     const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
-    const invCasesRaw = $('rcn-invoice-cases').value;
-    const invSinglesRaw = $('rcn-invoice-singles').value;
-    const invSet = casesSinglesInputsSet(invCasesRaw, invSinglesRaw);
+    const invQtyRaw = ($('rcn-invoice-qty') && $('rcn-invoice-qty').value || '').trim();
+    const invSet = invQtyRaw !== '';
+    const invoiced = invSet ? displayToStoredCases(pid, parseFloat(invQtyRaw) || 0) : 0;
+    const clQtyRaw = ($('rcn-cl-qty') && $('rcn-cl-qty').value || '').trim();
+    const clStored = clQtyRaw !== '' ? displayToStoredCases(pid, parseFloat(clQtyRaw) || 0) : 0;
+    const clSplit = splitCasesSingles(clStored, ups);
     return {
-      invoiceCases: parseFloat(invCasesRaw) || 0,
-      invoiceSingles: parseFloat(invSinglesRaw) || 0,
-      invoiced: invSet ? combineCasesSingles(invCasesRaw, invSinglesRaw, ups) : 0,
+      invoiced,
       invoiceSet: invSet,
       casePrice: priceRaw !== '' ? parseFloat(priceRaw) : '',
       unitPrice: unitPriceRaw !== '' ? parseFloat(unitPriceRaw) : '',
-      closingCases: parseFloat($('rcn-cl-cases').value) || 0,
-      closingSingles: parseFloat($('rcn-cl-singles').value) || 0,
+      closingCases: clSplit.cases,
+      closingSingles: clSplit.singles,
       budgetMethod: $('rcn-budget-method').value,
       budgetOverride: $('rcn-budget-override').value !== '' ? parseFloat($('rcn-budget-override').value) : null,
       reconNote: $('rcn-note').value.trim(),
