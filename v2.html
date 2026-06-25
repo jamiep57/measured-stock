@@ -1556,9 +1556,11 @@
           <th>Supplier</th>
           <th>SOR %</th>
           <th title="Invoiced / ordered quantity">Invoice qty</th>
-          <th title="Physical count at close">Closing count</th>
+          <th title="Physical count at close — whole cases">Closing (cases)</th>
+          <th title="Physical count at close — loose singles">Closing (singles)</th>
           <th title="Invoice qty × SOR %">Max returnable</th>
-          <th title="Qty being returned to supplier">Return qty</th>
+          <th title="Qty being returned — whole cases">Return (cases)</th>
+          <th title="Qty being returned — loose singles">Return (singles)</th>
           <th title="Close count − return amount">Carried over</th>
         </tr></thead>
         <tbody id="closingTableBody"></tbody>
@@ -2280,25 +2282,30 @@
       </div>
     </div>
     <div class="page-title" style="font-size:13px;margin:12px 0 8px">Stock &amp; invoicing</div>
-    <div class="df-grid2">
-      <div class="df-field">
-        <label for="rcn-invoice-qty" id="rcn-invoice-qty-label">Invoiced qty</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-qty" oninput="recalcReconDrawer()">
-      </div>
-      <div class="df-field">
-        <label for="rcn-cl-qty" id="rcn-cl-qty-label">Closing count</label>
-        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-qty" oninput="recalcReconDrawer()">
-      </div>
+    <div class="df-field">
+      <label for="rcn-invoice-qty">Invoice</label>
+      <input type="number" inputmode="decimal" min="0" step="any" id="rcn-invoice-qty" oninput="recalcReconDrawer()">
     </div>
     <div class="df-grid2" id="rcn-price-row">
+      <div class="df-field" id="rcn-unit-price-wrap">
+        <label for="rcn-unit-price" id="rcn-unit-price-label">Single price override (£)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-unit-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+        <p class="df-hint" id="rcn-unit-price-hint"></p>
+      </div>
       <div class="df-field" id="rcn-case-price-wrap">
         <label for="rcn-price" id="rcn-case-price-label">Case price override (£)</label>
         <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
+        <p class="df-hint" id="rcn-case-price-hint"></p>
       </div>
-      <div class="df-field" id="rcn-unit-price-wrap">
-        <label for="rcn-unit-price" id="rcn-unit-price-label">Unit price override (£)</label>
-        <input type="number" inputmode="decimal" min="0" step="0.01" id="rcn-unit-price" placeholder="Leave blank for default" oninput="recalcReconDrawer()">
-        <p class="df-hint" id="rcn-unit-price-hint">Used when case override is blank.</p>
+    </div>
+    <div class="df-grid2">
+      <div class="df-field">
+        <label for="rcn-cl-singles">Closing count (single)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-singles" oninput="recalcReconDrawer()">
+      </div>
+      <div class="df-field">
+        <label for="rcn-cl-cases">Closing count (case)</label>
+        <input type="number" inputmode="decimal" min="0" step="any" id="rcn-cl-cases" oninput="recalcReconDrawer()">
       </div>
     </div>
     <div class="df-field">
@@ -2311,8 +2318,8 @@
       <table class="rcn-return-table" id="rcn-return-table">
         <thead><tr>
           <th style="min-width:120px">Supplier</th>
-          <th style="width:72px" id="rcn-return-cases-h" title="Whole supplier cases">Cases</th>
-          <th style="width:72px" id="rcn-return-singles-h" title="Loose singles not in a full case">Singles</th>
+          <th style="width:72px" id="rcn-return-cases-h" title="Whole cases">Cases</th>
+          <th style="width:72px" id="rcn-return-singles-h" title="Loose singles">Singles</th>
           <th style="width:88px" id="rcn-return-price-h">£/case</th>
           <th style="width:72px">Value</th>
           <th style="width:36px" title="Print pallet stickers"></th>
@@ -8428,7 +8435,7 @@
     const eps = ((_currentEvent && _currentEvent.event_products) || [])
       .filter((ep) => ep.product && ep.product.name);
     if (!eps.length) {
-      body.innerHTML = '<tr><td colspan="9"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="11"><div class="empty-state"><i class="ph ph-chart-bar icon"></i><p>Add products to this event first.</p></div></td></tr>';
       return;
     }
     const grouped = {};
@@ -9314,56 +9321,21 @@
     }
     renderRcnDeliveredSummary(pid);
     syncReconDrawerPriceFields(ep);
-    syncReconDrawerReturnFields(pid);
-  }
-
-  function syncReconDrawerReturnFields(pid) {
-    const p = spiritProductById(pid);
-    const singlesOnly = usesSinglesOnlyUnit(pid);
-    const bottlePrice = reconUsesBottlePrice(p);
-    const casesH = $('rcn-return-cases-h');
-    const singlesH = $('rcn-return-singles-h');
-    const priceH = $('rcn-return-price-h');
-    if (casesH) casesH.textContent = singlesOnly ? '—' : 'Cases';
-    if (singlesH) singlesH.textContent = bottlePrice ? 'Bottles' : (singlesOnly ? 'Singles' : 'Singles');
-    if (priceH) priceH.textContent = bottlePrice ? '£/bottle' : '£/case';
   }
 
   function syncReconDrawerPriceFields(ep) {
-    const pid = ep && ep.product_id;
-    const p = pid ? spiritProductById(pid) : (ep && ep.product);
-    const bottlePrice = reconUsesBottlePrice(p);
-    const caseWrap = $('rcn-case-price-wrap');
-    const unitWrap = $('rcn-unit-price-wrap');
-    const caseLabel = $('rcn-case-price-label');
-    const labelEl = $('rcn-unit-price-label');
-    const hint = $('rcn-unit-price-hint');
-    const priceRow = $('rcn-price-row');
-    if (caseWrap) caseWrap.style.display = bottlePrice ? 'none' : '';
-    if (unitWrap) unitWrap.style.display = '';
-    if (priceRow) priceRow.style.gridTemplateColumns = bottlePrice ? '1fr' : '';
-    if (caseLabel && !bottlePrice) caseLabel.textContent = 'Case price override (£)';
-    if (labelEl) {
-      labelEl.textContent = bottlePrice ? 'Bottle price override (£)' : 'Unit price override (£)';
+    const unitHint = $('rcn-unit-price-hint');
+    const caseHint = $('rcn-case-price-hint');
+    const defUnit = defaultUnitPriceForRecon(ep);
+    const defCase = reconCasePrice(ep, null);
+    if (unitHint) {
+      unitHint.textContent = defUnit != null
+        ? 'Default ' + money(defUnit) + '. Used when case override is blank.'
+        : 'Used when case override is blank.';
     }
-    if (hint) {
-      const def = defaultUnitPriceForRecon(ep);
-      if (bottlePrice) {
-        hint.textContent = def != null ? 'Per bottle. Default ' + money(def) + '.' : 'Per bottle.';
-      } else {
-        hint.textContent = def != null
-          ? 'Per unit in a case. Default ' + money(def) + '. Used when case override is blank.'
-          : 'Per unit in a case. Used when case override is blank.';
-      }
+    if (caseHint) {
+      caseHint.textContent = defCase != null ? 'Default ' + money(defCase) + '.' : '';
     }
-  }
-
-  function syncReconDrawerQtyFields(pid) {
-    const label = productStockUnitLabel(spiritProductById(pid), true);
-    const invLabel = $('rcn-invoice-qty-label');
-    const clLabel = $('rcn-cl-qty-label');
-    if (invLabel) invLabel.textContent = 'Invoiced (' + label + ')';
-    if (clLabel) clLabel.textContent = 'Closing count — cases only (edit singles in the table)';
   }
 
   // Suppliers that delivered this product on the current event (qty summed).
@@ -9715,16 +9687,21 @@
     _reconCtx = { pid };
     const cl = closingRowFor(pid) || {};
     refreshReconDrawerProductFields();
-    syncReconDrawerQtyFields(pid);
     $('rcn-invoice-qty').value = ep.invoice_qty != null ? storedCasesToDisplay(pid, ep.invoice_qty) : '';
     $('rcn-price').value = ep.order_price_override != null ? ep.order_price_override : '';
     $('rcn-unit-price').value = ep.order_unit_price_override != null ? ep.order_unit_price_override : '';
     syncReconDrawerPriceFields(ep);
     if (cl.closing_cases != null || cl.closing_singles != null) {
-      $('rcn-cl-qty').value = cl.closing_cases != null && cl.closing_cases !== 0 ? cl.closing_cases : '';
+      $('rcn-cl-cases').value = cl.closing_cases != null && cl.closing_cases !== 0 ? cl.closing_cases : '';
+      $('rcn-cl-singles').value = cl.closing_singles != null && cl.closing_singles !== 0 ? cl.closing_singles : '';
+    } else if (cl.close_count != null) {
+      const supId = productSupplierId(pid);
+      const split = splitCasesSingles(Number(cl.close_count) || 0, entryUnitsPerCase(pid, supId));
+      $('rcn-cl-cases').value = split.cases ? split.cases : '';
+      $('rcn-cl-singles').value = split.singles ? split.singles : '';
     } else {
-      const closingStored = closingCountInCases(cl, ep);
-      $('rcn-cl-qty').value = closingStored ? storedCasesToDisplay(pid, closingStored) : '';
+      $('rcn-cl-cases').value = '';
+      $('rcn-cl-singles').value = '';
     }
     initRcnReturnLines(pid);
     renderRcnReturnLines();
@@ -9749,6 +9726,14 @@
   }
 
   function reconDrawerDraftClosing(pid, ep) {
+    const drawerCasesRaw = ($('rcn-cl-cases') && $('rcn-cl-cases').value || '').trim();
+    const drawerSinglesRaw = ($('rcn-cl-singles') && $('rcn-cl-singles').value || '').trim();
+    if (drawerCasesRaw !== '' || drawerSinglesRaw !== '') {
+      return {
+        closingCases: drawerCasesRaw !== '' ? Math.max(0, parseFloat(drawerCasesRaw) || 0) : 0,
+        closingSingles: drawerSinglesRaw !== '' ? Math.max(0, parseFloat(drawerSinglesRaw) || 0) : 0,
+      };
+    }
     const casesEl = $('recon-cl-cases-' + pid);
     const singlesEl = $('recon-cl-singles-' + pid);
     if (casesEl || singlesEl) {
@@ -9764,11 +9749,7 @@
         closingSingles: Math.max(0, Number(cl.closing_singles) || 0),
       };
     }
-    const ups = Number(ep && ep.product && ep.product.units_per_case) || 1;
-    const clQtyRaw = ($('rcn-cl-qty') && $('rcn-cl-qty').value || '').trim();
-    const clStored = clQtyRaw !== '' ? displayToStoredCases(pid, parseFloat(clQtyRaw) || 0) : 0;
-    const clSplit = splitCasesSingles(clStored, ups);
-    return { closingCases: clSplit.cases, closingSingles: clSplit.singles };
+    return { closingCases: 0, closingSingles: 0 };
   }
 
   function reconDrawerDraft() {
@@ -9811,17 +9792,11 @@
       if (val != null) returnValue += val;
     });
     r.returnValue = returnValue;
-    const p = spiritProductById(_reconCtx.pid);
-    const bottlePrice = reconUsesBottlePrice(p);
     const unitP = reconUnitPrice(ep, reconDrawerDraft());
-    const unitLabel = bottlePrice ? 'Bottle' : stockUnitTitle(productStockUnit(p));
-    const priceRows = bottlePrice
-      ? '<tr><td>Bottle price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>'
-      : '<tr><td>' + unitLabel + ' price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
-        '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>';
     $('rcn-preview').innerHTML =
       '<table><tbody>' +
-        priceRows +
+        '<tr><td>Single price (effective)</td><td>' + (unitP != null ? money(unitP) : '—') + '</td></tr>' +
+        '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>' +
         '<tr><td>Returns to suppliers</td><td>' + reconQtyCell(r.supplierReturns) + '</td></tr>' +
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
