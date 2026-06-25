@@ -371,8 +371,15 @@
     .delivery-log-sub { font-size:11px; color:var(--muted-foreground); margin-top:2px; }
     .delivery-log-actions { display:flex; gap:6px; flex-shrink:0; }
     .delivery-log-body { padding:6px 18px 14px; }
-    .delivery-log-line { display:flex; justify-content:space-between; gap:10px; padding:7px 0; font-size:13px; }
+    .delivery-log-line { display:grid; grid-template-columns:minmax(0,1fr) 56px 56px 84px; gap:10px 12px;
+      align-items:baseline; padding:7px 0; font-size:13px; }
     .delivery-log-line:not(:last-child) { border-bottom:1px dashed var(--border); }
+    .delivery-log-line-head { padding-top:2px; padding-bottom:4px; border-bottom:1px solid var(--border); }
+    .delivery-log-line-head .delivery-log-num { font-weight:600; font-size:10px; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--muted-foreground); }
+    .delivery-log-num { text-align:right; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .delivery-log-num.muted { color:var(--muted-foreground); font-weight:400; }
+    .delivery-log-num.price { color:var(--foreground); }
     .delivery-log-extra { padding:0 18px 14px; }
     /* ── transfers ── */
     .transfer-log-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); }
@@ -559,7 +566,8 @@
       min-width:3.75rem; padding-left:6px; padding-right:6px;
     }
     #reconTable thead th[data-recon-col="transferred"],
-    #reconTable thead th[data-recon-col="consumption"] {
+    #reconTable thead th[data-recon-col="consumption"],
+    #reconTable thead th[data-recon-col="variance"] {
       min-width:4.75rem; padding-left:6px; padding-right:6px;
     }
     #reconTable thead th[data-recon-col="case_price"],
@@ -577,9 +585,13 @@
     #reconTable tbody td[data-recon-col="closing_units"],
     #reconTable tbody td[data-recon-col="transferred"],
     #reconTable tbody td[data-recon-col="consumption"],
-    #reconTable tbody td[data-recon-col="plu"] {
+    #reconTable tbody td[data-recon-col="plu"],
+    #reconTable tbody td[data-recon-col="variance"] {
       width:1%; white-space:nowrap; padding-left:6px; padding-right:6px;
     }
+    #reconTable .recon-var-good { color:var(--success); font-weight:600; }
+    #reconTable .recon-var-warn { color:var(--warning); font-weight:600; }
+    #reconTable .recon-var-bad  { color:var(--danger);  font-weight:600; }
     #reconTable thead th:first-child, #reconTable thead th:nth-child(2), #reconTable thead th:nth-child(3) { text-align:left; }
     #reconTable tbody td { text-align:center; vertical-align:middle; font-variant-numeric:tabular-nums; font-size:12px; }
     #reconTable tbody td:first-child, #reconTable tbody td:nth-child(2), #reconTable tbody td:nth-child(3) { text-align:left; }
@@ -1574,7 +1586,7 @@
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div style="min-width:0;flex:1">
       <div class="page-title">Financial Recon <span class="feature-dot green" title="Built — post-event financial close"></span></div>
-      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Returns − Transferred (+ pre-event on hand if any). Charges use case price. Import Square sales for PLU figures.</p>
+      <p class="page-subtitle">End-of-event financial reconciliation — matches your post-event spreadsheet. <strong>Consumption</strong> = Delivered − Closing − Returns − Transferred (+ pre-event on hand if any). <strong>Variance</strong> = Consumption − PLU (cases). Charges use case price. Import Square sales for PLU figures.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="reconExportBtn" onclick="exportReconCsv()" title="Download as CSV (same layout as Gottwood recon sheet)"><i class="ph ph-download-simple btn-leading-icon"></i> Export CSV</button>
@@ -1616,6 +1628,7 @@
           <th data-recon-col="transferred">Transferred</th>
           <th data-recon-col="consumption">Consumption</th>
           <th data-recon-col="plu">PLU</th>
+          <th data-recon-col="variance" title="Consumption − PLU (cases)">Variance</th>
           <th data-recon-col="consumption_charge">Consumption<br>charge</th>
           <th data-recon-col="consumption_loose">Consumption<br>+ loose</th>
           <th data-recon-col="plu_charge">PLU<br>charge</th>
@@ -2711,6 +2724,48 @@
     const stored = lineStoredCases(l, l.product_id);
     const d = stockQtyDisplay(l.product_id, stored);
     return d.n + ' ' + d.unit;
+  }
+
+  function deliveryLogNumCell(val) {
+    if (val != null && val !== '' && Number(val) !== 0) {
+      return '<span class="delivery-log-num">' + escapeHtml(String(val)) + '</span>';
+    }
+    return '<span class="delivery-log-num muted">—</span>';
+  }
+
+  // Cases / singles / price cells for delivery & wastage log lines.
+  function deliveryLogQtyCells(productId, line) {
+    const ups = unitsPerCaseFor(productId) || 1;
+    const stored = lineStoredCases(line, productId);
+    if (usesDecimalPrimaryUnit(productId)) {
+      return {
+        cases: round1(stored),
+        singles: storedCasesToDisplay(productId, stored),
+      };
+    }
+    const cases = round1(Number(line.qty) || 0);
+    const loose = Math.round(Number(line.singles) || 0);
+    const singles = loose || (cases && ups > 1 ? Math.round(cases * ups) : null);
+    return { cases: cases || null, singles: singles || null };
+  }
+
+  function deliveryLogLineHead() {
+    return '<div class="delivery-log-line delivery-log-line-head">' +
+      '<span></span><span class="delivery-log-num">Cases</span><span class="delivery-log-num">Singles</span><span class="delivery-log-num">Price</span>' +
+    '</div>';
+  }
+
+  function deliveryLogLineRow(productId, nameHtml, line, lineCost) {
+    const qty = deliveryLogQtyCells(productId, line);
+    const priceCell = lineCost != null
+      ? '<span class="delivery-log-num price">' + money(lineCost) + '</span>'
+      : '<span class="delivery-log-num muted">—</span>';
+    return '<div class="delivery-log-line">' +
+      '<span style="font-weight:600;min-width:0">' + nameHtml + '</span>' +
+      deliveryLogNumCell(qty.cases) +
+      deliveryLogNumCell(qty.singles) +
+      priceCell +
+    '</div>';
   }
 
   function spiritProductById(pid) {
@@ -5220,7 +5275,7 @@
       const ref = d.reference ? '<span class="delivery-log-ref">' + escapeHtml(d.reference) + '</span>' : '';
       const notes = d.notes ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px;font-style:italic">' + escapeHtml(d.notes) + '</div>' : '';
       const itemRows = lines.length
-        ? lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
+        ? deliveryLogLineHead() + lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
             const dmg = Number(l.damaged_qty) || 0;
             const dmgDisp = deliveryDisplayQty(l.product_id, dmg);
             const dmgTag = dmg > 0 ? ' <span class="badge-unusable">' + dmgDisp.n + ' unusable</span>' : '';
@@ -5228,8 +5283,8 @@
             const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
             const { price } = deliveryLineCasePrice(l.product_id, d.supplier_id || null);
             const lineCost = price != null ? price * delLineCases(l) : null;
-            const costTag = lineCost != null ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">· ' + money(lineCost) + '</span>' : '';
-            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag + '</span><span style="font-weight:700">' + deliveryLineQtyLabel(l) + costTag + '</span></div>';
+            const nameHtml = escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag;
+            return deliveryLogLineRow(l.product_id, nameHtml, l, lineCost);
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const photo = (label, url) => '<div class="delivery-log-photo" onclick="openDeliveryLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt="' + label + '"></div>';
@@ -5919,13 +5974,13 @@
       const reason = b.reason ? '<span class="delivery-log-ref">' + escapeHtml(b.reason) + '</span>' : '';
       const notes = b.notes ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px;font-style:italic">' + escapeHtml(b.notes) + '</div>' : '';
       const itemRows = lines.length
-        ? lines.slice().sort((a, c) => productNameById(a.product_id).localeCompare(productNameById(c.product_id))).map((l) => {
+        ? deliveryLogLineHead() + lines.slice().sort((a, c) => productNameById(a.product_id).localeCompare(productNameById(c.product_id))).map((l) => {
             const size = productSizeById(l.product_id);
             const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
             const price = wastageCasePrice(l.product_id);
             const lineCost = price != null ? price * batchLineCases(b, l) : null;
-            const costTag = lineCost != null ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">· ' + money(lineCost) + '</span>' : '';
-            return '<div class="delivery-log-line"><span style="font-weight:600">' + escapeHtml(productNameById(l.product_id)) + sizeTag + '</span><span style="font-weight:700">' + stockLineQtyLabel(l.product_id, l.qty, l.singles) + costTag + '</span></div>';
+            const nameHtml = escapeHtml(productNameById(l.product_id)) + sizeTag;
+            return deliveryLogLineRow(l.product_id, nameHtml, l, lineCost);
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const valMeta = val > 0 ? ' · <span style="font-weight:700;color:var(--foreground)">' + money(val) + '</span>' : '';
@@ -8519,9 +8574,12 @@
     };
     const budgetCost = reconBudgetCost(charges, budgetCl);
     const supplierName = supplierNameById(productSupplierId(pid));
+    const variance = roundN(consumption - plu, 2);
     const denom = Math.max(Math.abs(consumption), Math.abs(plu), 0.01);
+    const variancePct = (consumption !== 0 || plu !== 0)
+      ? roundN((variance / denom) * 100, 1) : 0;
     const investigate = (consumption !== 0 || plu !== 0)
-      && Math.abs(consumption - plu) / denom > 0.08;
+      && Math.abs(variance) / denom > 0.08;
     const reconNote = (draft && draft.reconNote != null ? draft.reconNote : cl.recon_note) || '';
     const reconStatus = draft && draft.reconStatus !== undefined
       ? (draft.reconStatus || null)
@@ -8530,7 +8588,7 @@
       ? !!draft.reconHidden
       : isReconHidden(ep);
     return Object.assign(charges, {
-      budgetCost, supplierName, investigate, reconNote, reconStatus, reconHidden,
+      variance, variancePct, budgetCost, supplierName, investigate, reconNote, reconStatus, reconHidden,
       budgetMethod: budgetCl.budget_method || 'auto',
     });
   }
@@ -8559,6 +8617,7 @@
     { id: 'transferred', label: 'Transferred' },
     { id: 'consumption', label: 'Consumption' },
     { id: 'plu', label: 'PLU' },
+    { id: 'variance', label: 'Variance' },
     { id: 'consumption_charge', label: 'Consumption charge' },
     { id: 'consumption_loose', label: 'Consumption + loose' },
     { id: 'plu_charge', label: 'PLU charge' },
@@ -9266,6 +9325,11 @@
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
         '<tr><td>PLU (till)</td><td>' + reconQtyCell(r.plu) + '</td></tr>' +
+        '<tr><td>Variance (cons − PLU)</td><td>' + (r.consumption === 0 && r.plu === 0 ? '—' : (
+          '<span class="' + reconVarianceClass(r.consumption, r.plu, r.variance) + '">' +
+          (r.variance > 0 ? '+' : '') + roundN(r.variance, 2) +
+          (r.variancePct != null ? ' (' + roundN(r.variancePct, 1) + '%)' : '') +
+          '</span>')) + '</td></tr>' +
         '<tr><td>Consumption charge</td><td>' + money(r.consumptionCharge) + '</td></tr>' +
         '<tr><td>Consumption + loose</td><td>' + money(r.consumptionLooseCharge) + '</td></tr>' +
         '<tr><td>PLU charge</td><td>' + money(r.pluCharge) + '</td></tr>' +
@@ -9431,6 +9495,28 @@
     return Number.isInteger(v) ? String(v) : roundN(v, 2).toString();
   }
 
+  function reconVarianceClass(consumption, plu, variance) {
+    if (consumption === 0 && plu === 0) return '';
+    const denom = Math.max(Math.abs(consumption), Math.abs(plu), 0.01);
+    const absPct = Math.abs(variance) / denom * 100;
+    if (absPct < 8) return 'recon-var-good';
+    if (absPct < 15) return 'recon-var-warn';
+    return 'recon-var-bad';
+  }
+
+  function reconVarianceCell(consumption, plu, variance, variancePct) {
+    if (consumption === 0 && plu === 0) {
+      return '<td data-recon-col="variance">—</td>';
+    }
+    const cls = reconVarianceClass(consumption, plu, variance);
+    const sign = variance > 0 ? '+' : '';
+    const qty = Number.isInteger(variance) ? String(variance) : roundN(variance, 2).toString();
+    const pct = variancePct != null ? roundN(variancePct, 1).toString() + '%' : '';
+    return '<td data-recon-col="variance" class="' + cls + '" title="Consumption − PLU">' +
+      sign + qty + (pct ? '<span style="font-size:10px;font-weight:500;opacity:.85"> (' + pct + ')</span>' : '') +
+      '</td>';
+  }
+
   function reconMoneyCell(n) {
     const v = Number(n) || 0;
     if (!v) return '£0.00';
@@ -9480,12 +9566,16 @@
     const rows = filterReconRows(allRows);
 
     let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
+    let totConsumption = 0, totPluCases = 0, totVariance = 0;
     const totalSource = (_reconStatusFilter || _reconCategoryFilter) ? rows : totalRows;
     totalSource.forEach((r) => {
       totBudget += r.budgetCost || 0;
       totConsLoose += r.consumptionLooseCharge || 0;
       totInvoice += r.invoiceCharge || 0;
       totPlu += r.pluCharge || 0;
+      totConsumption += r.consumption || 0;
+      totPluCases += r.plu || 0;
+      totVariance += r.variance || 0;
     });
     const pctOfConsLoose = totConsLoose > 0 ? (totBudget / totConsLoose) * 100 : null;
     const pctOfInvoice = totInvoice > 0 ? (totBudget / totInvoice) * 100 : null;
@@ -9544,6 +9634,7 @@
           '<td data-recon-col="transferred">' + reconQtyCell(r.transferred) + '</td>' +
           '<td data-recon-col="consumption" style="font-weight:600">' + reconQtyCell(r.consumption) + '</td>' +
           '<td data-recon-col="plu">' + reconQtyCell(r.plu) + '</td>' +
+          reconVarianceCell(r.consumption, r.plu, r.variance, r.variancePct) +
           '<td data-recon-col="consumption_charge">' + reconMoneyCell(r.consumptionCharge) + '</td>' +
           '<td data-recon-col="consumption_loose" style="font-weight:600">' + reconMoneyCell(r.consumptionLooseCharge) + '</td>' +
           '<td data-recon-col="plu_charge">' + reconMoneyCell(r.pluCharge) + '</td>' +
@@ -9557,7 +9648,15 @@
       RECON_COLS.map((c) => {
         let val = '';
         if (c.id === 'item') val = 'Total';
-        else if (c.id === 'consumption_loose') val = money(totConsLoose);
+        else if (c.id === 'variance') {
+          const sign = totVariance > 0 ? '+' : '';
+          const qty = roundN(totVariance, 2).toString();
+          const denom = Math.max(Math.abs(totConsumption), Math.abs(totPluCases), 0.01);
+          const pct = (totConsumption !== 0 || totPluCases !== 0)
+            ? roundN((totVariance / denom) * 100, 1).toString() + '%' : '';
+          const cls = reconVarianceClass(totConsumption, totPluCases, totVariance);
+          val = '<span class="' + cls + '">' + sign + qty + (pct ? ' (' + pct + ')' : '') + '</span>';
+        } else if (c.id === 'consumption_loose') val = money(totConsLoose);
         else if (c.id === 'plu_charge') val = money(totPlu);
         else if (c.id === 'invoice_charge') val = money(totInvoice);
         else if (c.id === 'budget_cost') val = money(totBudget);
@@ -9582,7 +9681,7 @@
     const headers = [
       'Status', 'Item', 'Case Size', 'ABV', 'Case Price', 'Supplier', 'Units per case',
       'Delivered', 'Invoiced', 'Closing (Cases)', 'Closing (Units in case format)',
-      'Transferred', 'Consumption', 'PLU', 'Consumption Charge', 'Consumption + Loose Charge',
+      'Transferred', 'Consumption', 'PLU', 'Variance', 'Variance %', 'Consumption Charge', 'Consumption + Loose Charge',
       'PLU Charge', 'Invoice Charge', '', 'Budget Cost', 'Notes',
     ];
     const lines = [headers.map(csvEscape).join(',')];
@@ -9596,6 +9695,7 @@
         r.delivered || 0, r.invoiced || 0,
         r.closingCases || 0, r.closingUnits || 0, r.transferred || 0,
         r.consumption || 0, r.plu || 0,
+        r.variance || 0, r.variancePct != null ? r.variancePct + '%' : '',
         r.consumptionCharge || 0, r.consumptionLooseCharge || 0,
         r.pluCharge || 0, r.invoiceCharge || 0, '',
         r.budgetCost || 0, note,
@@ -9607,8 +9707,8 @@
       totConsLoose += r.consumptionLooseCharge || 0;
       totInvoice += r.invoiceCharge || 0;
     });
-    lines.push(Array(20).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
-    lines.push(Array(20).fill('').concat([
+    lines.push(Array(21).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
+    lines.push(Array(21).fill('').concat([
       totConsLoose.toFixed(2), totInvoice.toFixed(2),
       totConsLoose > 0 ? ((totBudget / totConsLoose) * 100).toFixed(2) + '%' : '',
       totInvoice > 0 ? ((totBudget / totInvoice) * 100).toFixed(2) + '%' : '',
