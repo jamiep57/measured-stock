@@ -373,6 +373,7 @@
     .delivery-log-body { padding:6px 18px 14px; }
     .delivery-log-line { display:grid; grid-template-columns:minmax(0,1fr) 56px 56px 84px; gap:10px 12px;
       align-items:baseline; padding:7px 0; font-size:13px; }
+    .delivery-log-line.delivery-log-line--no-price { grid-template-columns:minmax(0,1fr) 56px 56px; }
     .delivery-log-line:not(:last-child) { border-bottom:1px dashed var(--border); }
     .delivery-log-line-head { padding-top:2px; padding-bottom:4px; border-bottom:1px solid var(--border); }
     .delivery-log-line-head .delivery-log-num { font-weight:600; font-size:10px; text-transform:uppercase;
@@ -1994,14 +1995,12 @@
       <p class="df-hint" style="margin-top:-2px">Enter whole cases, loose singles, or both for each product.</p>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <table class="df-table">
-          <thead><tr><th style="width:38%">Product</th><th title="Cases — spirits are entered as decimal bottles">Cases</th><th title="Loose individual units (not used for spirits)">Singles</th><th title="Unusable / damaged stock">Unusable</th><th class="num" style="width:84px">Cost</th><th style="width:36px"></th></tr></thead>
+          <thead><tr><th style="width:38%">Product</th><th title="Cases — spirits are entered as decimal bottles">Cases</th><th title="Loose individual units (not used for spirits)">Singles</th><th title="Unusable / damaged stock">Unusable</th><th style="width:36px"></th></tr></thead>
           <tbody id="df-lines-body"></tbody>
         </table>
-        <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="padding:8px 12px;border-top:1px solid var(--border)">
           <button class="btn btn-outline btn-sm" onclick="addDeliveryLine()">+ Add Product</button>
-          <div style="font-size:13px;color:var(--muted-foreground)">Total <strong id="df-cost-total" style="color:var(--foreground);font-size:14px">£0.00</strong></div>
         </div>
-        <p class="df-hint" id="df-cost-hint" style="padding:0 12px 8px;margin:0">Costed at the selected supplier's prices.</p>
       </div>
       <p class="df-hint">Unusable cases are subtracted from Opening Stock automatically.</p>
     </div>
@@ -2617,6 +2616,80 @@
     return Number(p && p.units_per_case) || 1;
   }
 
+  function normCaseSizeLabel(t) {
+    let s = String(t == null ? '' : t).trim().toLowerCase().replace(/×/g, 'x').replace(/\s+/g, '');
+    if (s === '50l') s = '50lkeg';
+    return s;
+  }
+
+  function productServingsPerUnit(p) {
+    if (!p) return null;
+    if (p.case_size_id) {
+      const cs = caseSizeById(p.case_size_id);
+      if (cs && cs.servings_per_unit != null) return Number(cs.servings_per_unit) || null;
+    }
+    const label = String(p.case_size || '').trim();
+    if (label) {
+      const norm = normCaseSizeLabel(label);
+      const cs = (_caseSizes || []).find((c) => normCaseSizeLabel(c.label) === norm);
+      if (cs && cs.servings_per_unit != null) return Number(cs.servings_per_unit) || null;
+    }
+    return null;
+  }
+
+  // Recipe qty is a fraction of one stock unit (case, keg, bottle). Legacy
+  // recipes may still use qty ≥ 1 meaning one can/pint — convert to stock units.
+  function recipeQtyToStockUnits(p, qty, sold) {
+    const q = Number(qty) || 0;
+    const n = Number(sold) || 0;
+    if (!(p && q > 0 && n > 0)) return 0;
+    const raw = n * q;
+    if (q >= 1) {
+      const ups = Number(p.units_per_case) || 1;
+      if (ups > 1) return raw / ups;
+      const spu = productServingsPerUnit(p);
+      const u = productStockUnit(p);
+      if (spu > 1 && (u === 'keg' || u === 'unit' || u === 'single')) return raw / spu;
+    }
+    return raw;
+  }
+
+  function productDefaultRecipeUnitFraction(p) {
+    if (!p) return 1;
+    const u = productStockUnit(p);
+    if (u === 'keg' || u === 'unit' || u === 'single') {
+      const spu = productServingsPerUnit(p);
+      if (spu > 0) return 1 / spu;
+    }
+    if (u === 'bottle') {
+      const spb = shotsPerBottle(p);
+      if (spb > 0) return 1 / spb;
+    }
+    const ups = Number(p.units_per_case) || 1;
+    return ups > 0 ? 1 / ups : 1;
+  }
+
+  function pickProductByRecipeQty(candidates, qty) {
+    if (!candidates || !candidates.length) return null;
+    if (candidates.length === 1) return candidates[0];
+    const q = Number(qty) || 0;
+    if (!(q > 0)) return candidates[0];
+    let best = candidates[0], bestDiff = Infinity;
+    candidates.forEach((p) => {
+      const expected = productDefaultRecipeUnitFraction(p);
+      if (!(expected > 0)) return;
+      const diff = Math.abs(Math.log(q / expected));
+      if (diff < bestDiff) { bestDiff = diff; best = p; }
+    });
+    return best;
+  }
+
+  function eventProductStockKey(ep) {
+    const p = ep && ep.product;
+    if (!p || !p.name) return '';
+    return normProductName(p.name) + '|' + normCaseSizeLabel(p.case_size || '');
+  }
+
   const STOCK_UNIT_VALUES = ['case', 'single', 'bottle', 'keg', 'unit'];
 
   const STOCK_UNIT_OPTS = [
@@ -2749,23 +2822,32 @@
     return { cases: cases || null, singles: singles || null };
   }
 
-  function deliveryLogLineHead() {
-    return '<div class="delivery-log-line delivery-log-line-head">' +
-      '<span></span><span class="delivery-log-num">Cases</span><span class="delivery-log-num">Singles</span><span class="delivery-log-num">Price</span>' +
-    '</div>';
+  function deliveryLogLineHead(opts) {
+    opts = opts || {};
+    const showPrice = opts.showPrice !== false;
+    const rowCls = 'delivery-log-line delivery-log-line-head' + (showPrice ? '' : ' delivery-log-line--no-price');
+    let html = '<div class="' + rowCls + '">' +
+      '<span></span><span class="delivery-log-num">Cases</span><span class="delivery-log-num">Singles</span>';
+    if (showPrice) html += '<span class="delivery-log-num">Price</span>';
+    return html + '</div>';
   }
 
-  function deliveryLogLineRow(productId, nameHtml, line, lineCost) {
+  function deliveryLogLineRow(productId, nameHtml, line, lineCost, opts) {
+    opts = opts || {};
+    const showPrice = opts.showPrice !== false;
+    const rowCls = 'delivery-log-line' + (showPrice ? '' : ' delivery-log-line--no-price');
     const qty = deliveryLogQtyCells(productId, line);
-    const priceCell = lineCost != null
-      ? '<span class="delivery-log-num price">' + money(lineCost) + '</span>'
-      : '<span class="delivery-log-num muted">—</span>';
-    return '<div class="delivery-log-line">' +
+    let html = '<div class="' + rowCls + '">' +
       '<span style="font-weight:600;min-width:0">' + nameHtml + '</span>' +
       deliveryLogNumCell(qty.cases) +
-      deliveryLogNumCell(qty.singles) +
-      priceCell +
-    '</div>';
+      deliveryLogNumCell(qty.singles);
+    if (showPrice) {
+      const priceCell = lineCost != null
+        ? '<span class="delivery-log-num price">' + money(lineCost) + '</span>'
+        : '<span class="delivery-log-num muted">—</span>';
+      html += priceCell;
+    }
+    return html + '</div>';
   }
 
   function spiritProductById(pid) {
@@ -5270,21 +5352,18 @@
         : '—';
       const total = round1(delLineSum(lines));
       const dmgTot = round1(delDamagedSum(lines));
-      const costTot = deliveryCost(d);
       const supName = (d.supplier && d.supplier.name) || 'No supplier';
       const ref = d.reference ? '<span class="delivery-log-ref">' + escapeHtml(d.reference) + '</span>' : '';
       const notes = d.notes ? '<div style="font-size:12px;color:var(--muted-foreground);margin-top:6px;font-style:italic">' + escapeHtml(d.notes) + '</div>' : '';
       const itemRows = lines.length
-        ? deliveryLogLineHead() + lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
+        ? deliveryLogLineHead({ showPrice: false }) + lines.slice().sort((a, b) => productNameById(a.product_id).localeCompare(productNameById(b.product_id))).map((l) => {
             const dmg = Number(l.damaged_qty) || 0;
             const dmgDisp = deliveryDisplayQty(l.product_id, dmg);
             const dmgTag = dmg > 0 ? ' <span class="badge-unusable">' + dmgDisp.n + ' unusable</span>' : '';
             const size = productSizeById(l.product_id);
             const sizeTag = size ? ' <span style="font-weight:400;font-size:11px;color:var(--muted-foreground)">' + escapeHtml(size) + '</span>' : '';
-            const { price } = deliveryLineCasePrice(l.product_id, d.supplier_id || null);
-            const lineCost = price != null ? price * delLineCases(l) : null;
             const nameHtml = escapeHtml(productNameById(l.product_id)) + sizeTag + dmgTag;
-            return deliveryLogLineRow(l.product_id, nameHtml, l, lineCost);
+            return deliveryLogLineRow(l.product_id, nameHtml, l, null, { showPrice: false });
           }).join('')
         : '<span style="color:var(--muted-foreground);font-size:12px">No line items</span>';
       const photo = (label, url) => '<div class="delivery-log-photo" onclick="openDeliveryLightbox(\'' + encodeURI(url) + '\')"><img src="' + escapeHtml(url) + '" alt="' + label + '"></div>';
@@ -5293,7 +5372,6 @@
       const dmgThumbs = (d.damages_photo_urls || []).length ? '<span class="delivery-log-photo-label">Damages</span>' + (d.damages_photo_urls || []).map((u) => photo('Damage', u)).join('') : '';
       const photosBlock = (noteThumb || photoThumbs || dmgThumbs) ? '<div class="delivery-log-photos">' + noteThumb + photoThumbs + dmgThumbs + '</div>' : '';
       const dmgMeta = dmgTot > 0 ? ' · <span style="color:#b91c1c;font-weight:600">' + dmgTot + ' unusable</span>' : '';
-      const costMeta = costTot > 0 ? ' · <span style="font-weight:700;color:var(--foreground)">' + money(costTot) + '</span>' : '';
       const extra = (notes || photosBlock) ? '<div class="delivery-log-extra">' + notes + photosBlock + '</div>' : '';
       return '<div class="delivery-log-item">' +
         '<div class="delivery-log-head">' +
@@ -5301,7 +5379,7 @@
             '<span class="delivery-log-supplier-icon"><i class="ph ph-storefront"></i></span>' +
             '<div style="min-width:0">' +
               '<div class="delivery-log-supplier">' + escapeHtml(supName) + ref + '</div>' +
-              '<div class="delivery-log-sub">' + dt + ' · ' + total + ' cases across ' + lines.length + ' product' + (lines.length === 1 ? '' : 's') + dmgMeta + costMeta + '</div>' +
+              '<div class="delivery-log-sub">' + dt + ' · ' + total + ' cases across ' + lines.length + ' product' + (lines.length === 1 ? '' : 's') + dmgMeta + '</div>' +
             '</div>' +
           '</div>' +
           '<div class="delivery-log-actions">' +
@@ -5399,19 +5477,14 @@
     const body = $('df-lines-body');
     const options = deliveryProductOptions();
     if (!_delLines.length) {
-      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
-      renderDeliveryCostSummary();
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Click “+ Add Product” to add items</td></tr>';
       return;
     }
     if (!options.length && !(_products || []).length) {
-      body.innerHTML = '<tr><td colspan="6" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
-      renderDeliveryCostSummary();
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted-foreground);font-size:12px;text-align:center">Add products to this event first.</td></tr>';
       return;
     }
-    const supplierId = ($('df-supplier') && $('df-supplier').value) || null;
     body.innerHTML = _delLines.map((line) => {
-      const { price } = deliveryLineCasePrice(line.productId, supplierId);
-      const lineCost = (line.productId && price != null) ? price * delFormLineCases(line) : null;
       const qtyCells = stockQtyCellsHtml(line.productId, line, {
         casesKey: 'qty',
         onCasesChange: 'updateDeliveryLine(\'' + line.lineId + '\',\'qty\',this.value)',
@@ -5424,11 +5497,9 @@
         ProductPicker.inputAttrs('delivery', line.lineId) + '></td>' +
       qtyCells +
       '<td><input type="number" step="any" min="0" value="' + (line.damagedQty ?? '') + '" placeholder="0" onchange="updateDeliveryLine(\'' + line.lineId + '\',\'damagedQty\',this.value)"></td>' +
-      '<td class="num" style="font-weight:600;white-space:nowrap">' + (lineCost != null ? money(lineCost) : '—') + '</td>' +
       '<td style="text-align:center"><button class="btn btn-danger btn-sm btn-icon" onclick="removeDeliveryLine(\'' + line.lineId + '\')" title="Remove"><i class="ph ph-x"></i></button></td>' +
       '</tr>';
     }).join('');
-    renderDeliveryCostSummary();
   }
 
   // Total cases for an in-progress form line: whole cases plus loose singles
@@ -5444,36 +5515,6 @@
     return Number(line.damagedQty) || 0;
   }
 
-  // Live total + supplier-price hint under the delivery form's line table.
-  function renderDeliveryCostSummary() {
-    const totalEl = $('df-cost-total');
-    if (!totalEl) return;
-    const supplierId = ($('df-supplier') && $('df-supplier').value) || null;
-    let total = 0;
-    let anyFallback = false;
-    let anyMissing = false;
-    _delLines.forEach((line) => {
-      if (!line.productId) return;
-      const { price, matched } = deliveryLineCasePrice(line.productId, supplierId);
-      if (price == null) { anyMissing = true; return; }
-      if (!matched) anyFallback = true;
-      total += price * delFormLineCases(line);
-    });
-    totalEl.textContent = money(total) || '£0.00';
-    const hint = $('df-cost-hint');
-    if (hint) {
-      if (!supplierId) {
-        hint.textContent = 'No supplier selected — using each product\u2019s preferred price.';
-      } else if (anyMissing) {
-        hint.textContent = 'Costed at this supplier\u2019s prices. Some lines have no price set for any supplier.';
-      } else if (anyFallback) {
-        hint.textContent = 'Costed at this supplier\u2019s prices, falling back to the preferred price where this supplier has none.';
-      } else {
-        hint.textContent = 'Costed at this supplier\u2019s prices.';
-      }
-    }
-  }
-
   function addDeliveryLine() {
     _delLines.push({ lineId: 'l' + Math.random().toString(36).slice(2, 8), productId: '', qty: '', singles: '', damagedQty: '' });
     renderDeliveryLines();
@@ -5485,8 +5526,7 @@
   function updateDeliveryLine(lineId, field, value) {
     const l = _delLines.find((x) => x.lineId === lineId);
     if (l) l[field] = value;
-    // Re-render to refresh the line cost + running total (onchange has
-    // already fired, so rebuilding the row inputs won't disrupt typing).
+    // Re-render row display (onchange has already fired).
     renderDeliveryLines();
   }
 
@@ -8446,17 +8486,18 @@
           byPool[key] += sold * qty;
           return;
         }
-        const key = recipeIngredientStockKey(ig.product_name);
+        const p = recipeProductByName(ig.product_name, qty);
+        const key = recipeIngredientStockKey(ig.product_name, qty);
         if (!key) return;
         if (!byName[key]) byName[key] = 0;
-        byName[key] += sold * qty;
+        byName[key] += recipeQtyToStockUnits(p, qty, sold);
       });
     });
 
     const pluByPid = {};
     (eps || []).forEach((ep) => {
       if (!(ep.product && ep.product.name)) return;
-      pluByPid[ep.product_id] = byName[normProductName(ep.product.name)] || 0;
+      pluByPid[ep.product_id] = byName[eventProductStockKey(ep)] || 0;
     });
 
     Object.keys(byPool).forEach((poolKey) => {
@@ -9465,6 +9506,7 @@
       }
       if (!_suppliers.length) _suppliers = (await DB.suppliers.list()) || [];
       if (!_products.length) _products = (await DB.products.listFull()) || [];
+      if (!_caseSizes.length) _caseSizes = (await DB.caseSizes.list().catch(() => [])) || [];
       const [closing, imp, recipes] = await Promise.all([
         DB.closing.forEvent(id),
         DB.tillImports.forEvent(id),
@@ -10457,6 +10499,7 @@
         _currentEvent = await DB.events.getFull(id);
       }
       if (!_products.length) _products = (await DB.products.listFull()) || [];
+      if (!_caseSizes.length) _caseSizes = (await DB.caseSizes.list().catch(() => [])) || [];
       const [imp, recipes] = await Promise.all([
         DB.tillImports.forEvent(_currentEvent.id),
         DB.recipes.listFull(),
@@ -10694,10 +10737,11 @@
           if (!seenPool.has(key)) { byPool[key].baselineServingsSold += sold; seenPool.add(key); }
           return;
         }
-        const key = recipeIngredientStockKey(ig.product_name);
+        const p = recipeProductByName(ig.product_name, qty);
+        const key = recipeIngredientStockKey(ig.product_name, qty);
         if (!key) return;
         if (!byName[key]) byName[key] = { name: recipeIngredientDisplayName(ig.product_name), baselineCases: 0, baselineServingsSold: 0 };
-        byName[key].baselineCases += sold * qty;
+        byName[key].baselineCases += recipeQtyToStockUnits(p, qty, sold);
         if (!seenProd.has(key)) { byName[key].baselineServingsSold += sold; seenProd.add(key); }
       });
     });
@@ -10708,7 +10752,7 @@
     const stockByName = {};
     eps.forEach((ep) => {
       if (!(ep.product && ep.product.name)) return;
-      const key = normProductName(ep.product.name);
+      const key = eventProductStockKey(ep);
       if (!stockByName[key]) stockByName[key] = { available: 0, pid: ep.product_id };
       stockByName[key].available += epOpeningStock(ep);
     });
@@ -10723,7 +10767,8 @@
       const runOutRevenue = (b.baselineCases > 0 && available != null)
         ? (available / b.baselineCases) * baselineNet
         : null;
-      const libProduct = (_products || []).find((p) => normProductName(p.name) === key) || null;
+      const libProduct = recipeProductByName(b.name) ||
+        (_products || []).find((p) => eventProductStockKey({ product: p }) === key) || null;
       let stockStatus = st ? 'ok' : (libProduct ? 'not_on_event' : 'unknown');
       let stockHint = null;
       if (!st && libProduct) {
@@ -11289,7 +11334,7 @@
     qtyEl.value = String(n);
   }
 
-  function recipeProductByName(nameOrLabel) {
+  function recipeProductByName(nameOrLabel, qtyHint) {
     const raw = String(nameOrLabel || '').trim();
     if (!raw) return null;
     const nLower = raw.toLowerCase();
@@ -11306,7 +11351,9 @@
       if (byPack) return byPack;
     }
     const byName = (_products || []).filter((p) => (p.name || '').trim().toLowerCase() === nLower);
-    return byName.length === 1 ? byName[0] : (byName[0] || null);
+    if (byName.length === 1) return byName[0];
+    if (byName.length > 1) return pickProductByRecipeQty(byName, qtyHint);
+    return byName[0] || null;
   }
 
   function recipeIngredientDisplayName(storedName) {
@@ -11315,10 +11362,11 @@
   }
 
   // Recipe ingredients may store a picker label ("Name — case size") or a
-  // bare product name. Resolve to the library product name for stock lookups.
-  function recipeIngredientStockKey(storedName) {
-    const p = recipeProductByName(storedName);
-    return normProductName(p ? p.name : storedName);
+  // bare product name. Key includes pack size so 30L and 50L kegs stay separate.
+  function recipeIngredientStockKey(storedName, qtyHint) {
+    const p = recipeProductByName(storedName, qtyHint);
+    if (p && p.name) return normProductName(p.name) + '|' + normCaseSizeLabel(p.case_size || '');
+    return normProductName(storedName) + '|';
   }
 
   function eventProductIdSet() {
@@ -11637,6 +11685,14 @@
         if (pour === 'shot') return 1 / spb;
         if (pour === 'double') return 2 / spb;
         return 1;
+      }
+      if (p && productStockUnit(p) === 'keg') {
+        const spu = productServingsPerUnit(p);
+        if (spu > 0) {
+          if (pour === 'whole') return 1 / spu;
+          if (pour === 'half') return 0.5 / spu;
+          return 1 / spu;
+        }
       }
       const ups = (p && Number(p.units_per_case)) || 1;
       if (pour === 'whole') return 1 / ups;
