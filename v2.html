@@ -9504,11 +9504,10 @@
       const opts = '<option value="">— Supplier —</option>' + options.map((o) =>
         '<option value="' + o.id + '"' + (line.supplierId === o.id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>'
       ).join('');
-      const perCaseHint = entryUps > 1 ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:3px">/' + entryUps + ' per case</div>' : '';
       const casesCell = singlesOnly
         ? '<td style="text-align:center;color:var(--muted-foreground)" title="Singles only — use the Singles column">—</td>'
         : '<td><input type="number" step="any" min="0" value="' + (line.cases ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'cases\',this.value)"></td>';
-      const singlesCell = '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)">' + perCaseHint + '</td>';
+      const singlesCell = '<td><input type="number" step="any" min="0" value="' + (line.singles ?? '') + '" placeholder="0" onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'singles\',this.value)"></td>';
       return '<tr>' +
         '<td><select onchange="updateRcnReturnLine(\'' + line.lineId + '\',\'supplierId\',this.value)">' + opts + '</select></td>' +
         casesCell +
