@@ -8855,7 +8855,7 @@
           return;
         }
         const p = recipeProductByName(ig.product_name, qty);
-        const key = recipeIngredientStockKey(ig.product_name, qty);
+        const key = pluStockKeyForRecipeIngredient(ig.product_name, qty, eps);
         if (!key) return;
         if (!byName[key]) byName[key] = 0;
         byName[key] += recipeQtyToStockUnits(p, qty, sold);
@@ -11382,6 +11382,7 @@
     const rows = (_squareImport && _squareImport.rows) || [];
     const baselineNet = rows.reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
     const target = Number(_currentEvent && _currentEvent.target_revenue) || 0;
+    const eps = (_currentEvent && _currentEvent.event_products) || [];
 
     // Σ consumption per product (in cases) and per pool (in servings).
     const byName = {};
@@ -11407,7 +11408,7 @@
           return;
         }
         const p = recipeProductByName(ig.product_name, qty);
-        const key = recipeIngredientStockKey(ig.product_name, qty);
+        const key = pluStockKeyForRecipeIngredient(ig.product_name, qty, eps);
         if (!key) return;
         if (!byName[key]) byName[key] = { name: recipeIngredientDisplayName(ig.product_name), baselineCases: 0, baselineServingsSold: 0 };
         byName[key].baselineCases += recipeQtyToStockUnits(p, qty, sold);
@@ -11417,7 +11418,6 @@
 
     // Resolve each consumed product to this event's stock. Summed by name so
     // duplicate product records (pre-merge) don't undercount availability.
-    const eps = (_currentEvent && _currentEvent.event_products) || [];
     const stockByName = {};
     eps.forEach((ep) => {
       if (!(ep.product && ep.product.name)) return;
@@ -12036,6 +12036,23 @@
     const p = recipeProductByName(storedName, qtyHint);
     if (p && p.name) return normProductName(p.name) + '|' + normCaseSizeLabel(p.case_size || '');
     return normProductName(storedName) + '|';
+  }
+
+  // Till recipes are global; keg PLU should land on whichever keg size is on
+  // this event when the recipe names a different keg (e.g. 50L recipe, 30L stock).
+  function pluStockKeyForRecipeIngredient(storedName, qtyHint, eps) {
+    const exactKey = recipeIngredientStockKey(storedName, qtyHint);
+    const p = recipeProductByName(storedName, qtyHint);
+    if (!p || !p.name || productStockUnit(p) !== 'keg') return exactKey;
+    const eventKeys = new Set((eps || []).filter((ep) => ep.product).map((ep) => eventProductStockKey(ep)));
+    if (eventKeys.has(exactKey)) return exactKey;
+    const nameNorm = normProductName(p.name);
+    const kegEps = (eps || []).filter((ep) =>
+      ep.product &&
+      normProductName(ep.product.name) === nameNorm &&
+      productStockUnit(ep.product) === 'keg');
+    if (kegEps.length === 1) return eventProductStockKey(kegEps[0]);
+    return exactKey;
   }
 
   function eventProductIdSet() {
