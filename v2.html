@@ -7549,6 +7549,7 @@
   let _xferUnit = 'cases';
   let _xferLines = [];
   let _xferSource = null;   // { type: 'event'|'bar'|'warehouse', id }
+  let _xferEditingId = null;
   let _xferAllowOverdraw = false;  // one-shot: skip availability check (carried-over transfers)
   let _xferPendingDownloadPDF = false;
 
@@ -7587,6 +7588,50 @@
     if (isBoneYardDest(t)) return 'Bone Yard — ' + ((_currentEvent && _currentEvent.name) || 'Event');
     if ((t.recipients && t.recipients.name) || t.recipient_id) return transferTypeLabel(t);
     return '—';
+  }
+
+  function transferSourceFromSaved(t) {
+    if (!t) return null;
+    if (t.from_warehouse_id) return { type: 'warehouse', id: t.from_warehouse_id };
+    const fromBar = transferFromBarId(t);
+    if (fromBar) return { type: 'bar', id: fromBar };
+    if (t.from_event_id) {
+      if (t.recipient_id || t.to_warehouse_id) return { type: 'site', id: t.from_event_id };
+      return { type: 'event', id: t.from_event_id };
+    }
+    return null;
+  }
+
+  function transferDestValueFromSaved(t) {
+    if (!t) return '';
+    if (t.recipient_id) return 'recipient:' + t.recipient_id;
+    const toBar = transferToBarId(t);
+    if (toBar) return 'bar:' + toBar;
+    if (t.to_warehouse_id) return 'warehouse:' + t.to_warehouse_id;
+    if (isBoneYardDest(t) && t.to_event_id) return 'event:' + t.to_event_id;
+    return '';
+  }
+
+  function transferLocationsMatch(a, b) {
+    return !!(a && b && a.type === b.type && a.id === b.id);
+  }
+
+  function transferStockAt(location, pid) {
+    let avail = getStockAt(location, pid);
+    if (_xferEditingId) {
+      const editingT = _transfers.find((x) => x.id === _xferEditingId);
+      const editSource = editingT && transferSourceFromSaved(editingT);
+      if (editingT && transferLocationsMatch(editSource, location)) {
+        avail += transferQtyForProduct(editingT, pid);
+      }
+    }
+    return round1(avail);
+  }
+
+  function resetTransferFormTitles() {
+    $('transferFormTitle').textContent = 'Log a transfer';
+    $('tf-save-btn').textContent = 'Log transfer';
+    $('tf-save-note-btn').textContent = 'Log & Download Note';
   }
 
   function locationLabel(loc) {
@@ -7710,27 +7755,42 @@
       const p = (_products || []).find((x) => x.id === pid);
       return (p && p.case_size) || '';
     };
+    const editingPids = _xferEditingId
+      ? new Set(_xferLines.filter((l) => l.productId).map((l) => l.productId))
+      : null;
+    const keepProduct = (pid, avail) => !avail || avail > 0 || (editingPids && editingPids.has(pid));
+    let options = [];
     if (_xferSource.type === 'event' || _xferSource.type === 'site') {
-      return ((_currentEvent && _currentEvent.event_products) || [])
+      options = ((_currentEvent && _currentEvent.event_products) || [])
         .filter((ep) => ep.product && ep.product.name)
         .map((ep) => ({ id: ep.product_id, name: ep.product.name, case_size: packSizeFor(ep.product_id, ep.product) }));
-    }
-    if (_xferSource.type === 'bar') {
-      return ((_currentEvent && _currentEvent.event_products) || [])
+    } else if (_xferSource.type === 'bar') {
+      options = ((_currentEvent && _currentEvent.event_products) || [])
         .filter((ep) => ep.product && ep.product.name)
-        .filter((ep) => barServesProduct(_xferSource.id, ep.product_id) && barStockAvailable(_xferSource.id, ep.product_id) > 0)
+        .filter((ep) => barServesProduct(_xferSource.id, ep.product_id) && keepProduct(ep.product_id, barStockAvailable(_xferSource.id, ep.product_id)))
         .map((ep) => ({ id: ep.product_id, name: ep.product.name, case_size: packSizeFor(ep.product_id, ep.product) }));
-    }
-    if (_xferSource.type === 'warehouse') {
-      return _warehouseStock
-        .filter((s) => s.warehouse_id === _xferSource.id && (Number(s.qty_on_hand) || 0) > 0)
+    } else if (_xferSource.type === 'warehouse') {
+      options = _warehouseStock
+        .filter((s) => s.warehouse_id === _xferSource.id && keepProduct(s.product_id, Number(s.qty_on_hand) || 0))
         .map((s) => ({
           id: s.product_id,
           name: (s.product && s.product.name) || productNameById(s.product_id),
           case_size: packSizeFor(s.product_id, s.product),
         }));
     }
-    return [];
+    if (editingPids) {
+      const have = new Set(options.map((o) => o.id));
+      editingPids.forEach((pid) => {
+        if (have.has(pid)) return;
+        const p = (_products || []).find((x) => x.id === pid);
+        options.push({
+          id: pid,
+          name: p ? p.name : productNameById(pid),
+          case_size: packSizeFor(pid, p),
+        });
+      });
+    }
+    return options;
   }
 
   function renderTransferSourceSelect() {
@@ -7851,7 +7911,7 @@
     body.innerHTML = _xferLines.map((line) => {
       const opt = line.productId ? productOptions.find((o) => o.id === line.productId) : null;
       const packSize = opt && opt.case_size ? opt.case_size : '';
-      const avail = line.productId ? getStockAt(_xferSource, line.productId) : null;
+      const avail = line.productId ? transferStockAt(_xferSource, line.productId) : null;
       const ups = line.productId ? unitsPerCaseFor(line.productId) : 1;
       const availLabel = avail == null ? '' : '<div style="font-size:11px;color:var(--muted-foreground);margin-top:3px">Available: <strong>' + avail + '</strong> case' + (avail === 1 ? '' : 's') + '</div>';
       const requested = line.productId ? transferFormLineCases(line) : 0;
@@ -7975,6 +8035,7 @@
           '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
             '<span class="transfer-timestamp">' + dt + '</span>' +
             '<button type="button" class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 8px" onclick="downloadTransferNote(\'' + t.id + '\')" title="Download delivery note"><i class="ph ph-download-simple"></i> Note</button>' +
+            '<button type="button" class="btn btn-outline btn-sm btn-icon" onclick="editTransfer(\'' + t.id + '\')" title="Edit"><i class="ph ph-pencil-simple"></i></button>' +
             '<button type="button" class="btn btn-danger btn-sm btn-icon" onclick="deleteTransfer(\'' + t.id + '\')" title="Delete"><i class="ph ph-trash"></i></button>' +
           '</div>' +
         '</div>' +
@@ -8132,6 +8193,7 @@
     if (!_currentEvent) { alert('Pick an event first'); return; }
     _xferAllowOverdraw = false;
     _xferPendingDownloadPDF = false;
+    if (!_xferEditingId) clearTransferForm();
     if (!_xferSource && _currentEvent) _xferSource = { type: 'event', id: _currentEvent.id };
     renderTransfers();
     const dEl = $('tf-date'); if (dEl && !dEl.value) setTransferDateTimeNow();
@@ -8146,9 +8208,11 @@
     closeTransferCombo();
     _xferAllowOverdraw = false;
     _xferPendingDownloadPDF = false;
+    _xferEditingId = null;
     setTransferOverdrawPrompt(false);
     $('transferFormOverlay').classList.remove('open');
     $('transferFormDrawer').classList.remove('open');
+    resetTransferFormTitles();
   }
 
   function setTransferDateTimeNow() {
@@ -8160,6 +8224,7 @@
   }
 
   function clearTransferForm() {
+    _xferEditingId = null;
     _xferAllowOverdraw = false;
     _xferPendingDownloadPDF = false;
     setTransferOverdrawPrompt(false);
@@ -8168,8 +8233,49 @@
     if (_currentEvent) _xferSource = { type: 'event', id: _currentEvent.id };
     $('tf-err').textContent = '';
     setTransferDateTimeNow();
+    resetTransferFormTitles();
     renderTransferSourceSelect();
     renderTransferLines();
+  }
+
+  async function editTransfer(id) {
+    const t = _transfers.find((x) => x.id === id) || (_warehouseTransfers || []).find((x) => x.id === id);
+    if (!t) return;
+    if (!_currentEvent) { alert('Pick an event first'); return; }
+    _xferEditingId = id;
+    _xferAllowOverdraw = false;
+    _xferPendingDownloadPDF = false;
+    _xferSource = transferSourceFromSaved(t);
+    if (_xferSource && _xferSource.type === 'warehouse') {
+      await loadWarehouseStockForSource(_xferSource.id);
+    }
+    const lines = t.lines || [];
+    _xferLines = lines.length
+      ? lines.map((l) => {
+          const form = entryNativeToForm(l, l.product_id, null);
+          return { lineId: xferLineId(), productId: l.product_id, cases: form.cases, singles: form.singles };
+        })
+      : [{ lineId: xferLineId(), productId: '', cases: '', singles: '' }];
+    if (t.transferred_at) {
+      const dt = new Date(t.transferred_at);
+      $('tf-date').value = dt.toISOString().slice(0, 10);
+      $('tf-time').value = dt.toTimeString().slice(0, 5);
+    } else {
+      setTransferDateTimeNow();
+    }
+    renderTransferSourceSelect();
+    if (_xferSource) $('tf-source').value = _xferSource.type + ':' + _xferSource.id;
+    renderTransferRecipientSelect();
+    $('tf-recipient').value = transferDestValueFromSaved(t);
+    $('tf-err').textContent = '';
+    setTransferOverdrawPrompt(false);
+    $('transferFormTitle').textContent = 'Edit Transfer';
+    $('tf-save-btn').textContent = 'Update Transfer';
+    $('tf-save-note-btn').textContent = 'Update & Download Note';
+    renderTransferLines();
+    $('transferFormOverlay').classList.add('open');
+    $('transferFormDrawer').classList.add('open');
+    setTimeout(() => { const el = $('tf-source'); if (el) el.focus(); }, 50);
   }
 
   function transferDateTime() {
@@ -8207,7 +8313,7 @@
     valid.forEach((l) => { totalsByProduct[l.productId] = (totalsByProduct[l.productId] || 0) + transferFormLineCases(l); });
     const overs = [];
     for (const [pid, qty] of Object.entries(totalsByProduct)) {
-      const avail = getStockAt(_xferSource, pid);
+      const avail = transferStockAt(_xferSource, pid);
       if (qty > avail) overs.push(productNameById(pid) + ': requested ' + round1(qty) + ', available ' + round1(avail) + ' cases');
     }
     if (overs.length && !_xferAllowOverdraw) {
@@ -8218,6 +8324,8 @@
     }
     _xferPendingDownloadPDF = false;
 
+    const isEdit = !!_xferEditingId;
+    const prevTransfer = isEdit ? _transfers.find((x) => x.id === _xferEditingId) : null;
     const isWarehouseSource = _xferSource.type === 'warehouse';
     const isBarSource = _xferSource.type === 'bar';
     const destIsRecipient = dest.type === 'recipient';
@@ -8251,15 +8359,32 @@
         transferred_at: transferredAt.toISOString(),
       };
 
-      const transfer = await DB.transfers.create(payload);
+      if (isEdit && prevTransfer) {
+        if (prevTransfer.from_warehouse_id) {
+          await Promise.all((prevTransfer.lines || []).map((l) => adjustWarehouseStockDB(prevTransfer.from_warehouse_id, l.product_id, transferLineCases(l))));
+        }
+        if (prevTransfer.to_warehouse_id) {
+          await Promise.all((prevTransfer.lines || []).map((l) => adjustWarehouseStockDB(prevTransfer.to_warehouse_id, l.product_id, -transferLineCases(l))));
+        }
+      }
+
+      let transfer;
+      if (isEdit) {
+        transfer = await DB.transfers.update(_xferEditingId, payload);
+        if (!transfer) transfer = Object.assign({ id: _xferEditingId }, payload);
+        await DB.transfers.clearLines(_xferEditingId);
+      } else {
+        transfer = await DB.transfers.create(payload);
+      }
       transfer.from_bar_id = fromBarId;
       transfer.to_bar_id = toBarId;
       transfer.to_warehouse_id = toWarehouseId;
       transfer.to_event_id = toEventId;
+      const transferId = isEdit ? _xferEditingId : transfer.id;
       const lineRows = valid.map((l) => {
         const stored = entryFormToNative(l, l.productId, null);
         return {
-          transfer_id: transfer.id,
+          transfer_id: transferId,
           product_id: l.productId,
           qty: stored.qty,
           singles: stored.singles,
@@ -8275,7 +8400,7 @@
         // hasn't been applied yet: fold loose singles into fractional cases.
         if (/singles|constraint|check/i.test(lineErr && lineErr.message || '')) {
           savedLines = await DB.transfers.addLines(valid.map((l) => ({
-            transfer_id: transfer.id,
+            transfer_id: transferId,
             product_id: l.productId,
             qty: roundN(transferFormLineCases(l), 4),
             unit_cost: 0,
@@ -8284,6 +8409,7 @@
         } else { throw lineErr; }
       }
       if (isWarehouseSource) {
+        await loadWarehouseStockForSource(_xferSource.id);
         await Promise.all(savedLines.map((l) => adjustWarehouseStock(_xferSource.id, l.product_id, -transferLineCases(l))));
       }
       if (destIsWarehouse) {
@@ -8292,7 +8418,15 @@
       transfer.lines = savedLines;
       const recip = recipientId ? ((_currentEvent.recipients) || []).find((r) => r.id === recipientId) : null;
       if (recip) transfer.recipients = { id: recip.id, name: recip.name };
-      _transfers.unshift(transfer);
+      if (isEdit) {
+        const idx = _transfers.findIndex((x) => x.id === transferId);
+        if (idx >= 0) _transfers[idx] = Object.assign({}, _transfers[idx], transfer, { lines: savedLines });
+        const whIdx = (_warehouseTransfers || []).findIndex((x) => x.id === transferId);
+        if (whIdx >= 0) _warehouseTransfers[whIdx] = Object.assign({}, _warehouseTransfers[whIdx], transfer, { lines: savedLines });
+        _xferEditingId = null;
+      } else {
+        _transfers.unshift(transfer);
+      }
       _transfersEventId = _currentEvent.id;
       if (downloadPDF) {
         await generateDeliveryNotePDF(transferDestLabel(transfer), savedLines.map((l) => ({ productId: l.product_id, cases: Number(l.qty) || 0, singles: Number(l.singles) || 0 })), transferredAt, 'cases');
@@ -8303,9 +8437,11 @@
       refreshLiveStockViews();
     } catch (err) {
       console.error('logTransfer', err);
-      $('tf-err').textContent = err.message || 'Failed to log transfer';
+      $('tf-err').textContent = err.message || (isEdit ? 'Failed to update transfer' : 'Failed to log transfer');
     } finally {
-      btn.disabled = false; btn.textContent = prev;
+      btn.disabled = false;
+      if ($('transferFormDrawer').classList.contains('open')) btn.textContent = prev;
+      else resetTransferFormTitles();
     }
   }
 
@@ -10853,6 +10989,7 @@
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap">' +
           '<div><span style="font-weight:700;font-size:14px"><span style="color:' + dirColor + '">' + dirLabel + '</span> · ' + escapeHtml(warehouseTransferOther(t)) + '</span></div>' +
           '<div style="display:flex;align-items:center;gap:8px"><span class="transfer-timestamp">' + dt + '</span>' +
+          '<button type="button" class="btn btn-outline btn-sm btn-icon" onclick="editTransfer(\'' + t.id + '\')" title="Edit"><i class="ph ph-pencil-simple"></i></button>' +
           '<button type="button" class="btn btn-danger btn-sm btn-icon" onclick="deleteTransfer(\'' + t.id + '\')" title="Delete"><i class="ph ph-trash"></i></button></div>' +
         '</div>' +
         '<div style="padding-top:4px;border-top:1px solid var(--border)">' + (itemRows || '<span style="color:var(--muted-foreground);font-size:12px">No items</span>') + '</div>' +
