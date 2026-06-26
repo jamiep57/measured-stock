@@ -568,6 +568,7 @@
     }
     #reconTable thead th[data-recon-col="returned_to_supplier"],
     #reconTable thead th[data-recon-col="transferred"],
+    #reconTable thead th[data-recon-col="wastage"],
     #reconTable thead th[data-recon-col="consumption"],
     #reconTable thead th[data-recon-col="variance"] {
       min-width:4.75rem; padding-left:6px; padding-right:6px;
@@ -587,6 +588,7 @@
     #reconTable tbody td[data-recon-col="closing_units"],
     #reconTable tbody td[data-recon-col="returned_to_supplier"],
     #reconTable tbody td[data-recon-col="transferred"],
+    #reconTable tbody td[data-recon-col="wastage"],
     #reconTable tbody td[data-recon-col="consumption"],
     #reconTable tbody td[data-recon-col="plu"],
     #reconTable tbody td[data-recon-col="variance"] {
@@ -1659,6 +1661,7 @@
           <th data-recon-col="closing_units">Closing<br>(singles)</th>
           <th data-recon-col="returned_to_supplier" title="Click a cell to edit returns by supplier in the drawer">Returned<br>to supplier</th>
           <th data-recon-col="transferred">Transferred</th>
+          <th data-recon-col="wastage">Wastage</th>
           <th data-recon-col="consumption">Consumption</th>
           <th data-recon-col="plu">PLU</th>
           <th data-recon-col="variance" title="PLU − Consumption (cases). Negative = short stock.">Variance</th>
@@ -6759,6 +6762,7 @@
     if ($('panel-stock-levels').classList.contains('active')) renderStockLevels();
     if ($('panel-distribution').classList.contains('active')) renderDistribution();
     if ($('panel-products').classList.contains('active')) renderEventProducts();
+    if ($('panel-recon').classList.contains('active')) renderRecon();
   }
   let _distTimers = {};
   let _transfers = [];
@@ -9045,7 +9049,8 @@
     const closingTotal = reconClosingTotal(pid, closingCases, closingSingles);
     const stockRemaining = reconStockRemaining(cl, ep, closingTotal);
     const transferred = summaryTransferOut(pid);
-    const consumption = roundN(delivered + preEventOnHand - stockRemaining - transferred, 2);
+    const wastage = roundN(wastageCasesForProduct(pid), 2);
+    const consumption = roundN(delivered + preEventOnHand - stockRemaining - transferred - wastage, 2);
     const plu = roundN((pluByPid && pluByPid[pid]) || 0, 2);
     const casePrice = reconCasePrice(ep, draft);
     const unitPrice = reconUnitPrice(ep, draft);
@@ -9060,7 +9065,7 @@
     };
     const charges = {
       ep, pid, p, ups, delivered, invoiced, closingCases, closingLooseAsCases, closingSingles,
-      supplierReturns, transferred, consumption, plu, casePrice, unitPrice, rowPrice,
+      supplierReturns, transferred, wastage, consumption, plu, casePrice, unitPrice, rowPrice,
       consumptionCharge, consumptionLooseCharge,
       pluCharge, invoiceCharge,
     };
@@ -9108,6 +9113,7 @@
     { id: 'closing_units', label: 'Closing (singles)' },
     { id: 'returned_to_supplier', label: 'Returned to supplier' },
     { id: 'transferred', label: 'Transferred' },
+    { id: 'wastage', label: 'Wastage' },
     { id: 'consumption', label: 'Consumption' },
     { id: 'plu', label: 'PLU' },
     { id: 'variance', label: 'Variance' },
@@ -9867,6 +9873,7 @@
         '<tr><td>Case price (effective)</td><td>' + money(r.casePrice) + '</td></tr>' +
         '<tr><td>Returns to suppliers</td><td>' + reconQtyCell(r.supplierReturns) + '</td></tr>' +
         '<tr><td>Transferred out</td><td>' + reconQtyCell(r.transferred) + '</td></tr>' +
+        '<tr><td>Wastage</td><td>' + reconQtyCell(r.wastage) + '</td></tr>' +
         '<tr><td>Consumption</td><td>' + reconQtyCell(r.consumption) + '</td></tr>' +
         '<tr><td>PLU (till)</td><td>' + reconQtyCell(r.plu) + '</td></tr>' +
         '<tr><td>Variance (PLU − cons)</td><td>' + (r.consumption === 0 && r.plu === 0 ? '—' : (
@@ -10206,7 +10213,7 @@
     const rows = filterReconRows(allRows);
     const totalSource = (_reconStatusFilter || _reconCategoryFilter) ? rows : computeReconTotalRows();
     let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
-    let totConsumption = 0, totPluCases = 0, totVariance = 0;
+    let totConsumption = 0, totPluCases = 0, totVariance = 0, totWastage = 0;
     totalSource.forEach((r) => {
       totBudget += r.budgetCost || 0;
       totConsLoose += r.consumptionLooseCharge || 0;
@@ -10215,6 +10222,7 @@
       totConsumption += r.consumption || 0;
       totPluCases += r.plu || 0;
       totVariance += r.variance || 0;
+      totWastage += r.wastage || 0;
     });
     const varCell = document.querySelector('#reconTable tbody tr.total-row td[data-recon-col="variance"]');
     if (varCell) {
@@ -10234,6 +10242,8 @@
     setMoney('plu_charge', totPlu);
     setMoney('invoice_charge', totInvoice);
     setMoney('budget_cost', totBudget);
+    const wastageCell = document.querySelector('#reconTable tbody tr.total-row td[data-recon-col="wastage"]');
+    if (wastageCell) wastageCell.textContent = totWastage ? roundN(totWastage, 2).toString() : '';
     const stats = $('reconStats');
     if (stats && stats.firstElementChild) {
       stats.firstElementChild.querySelector('.stat-value').textContent = money(totBudget);
@@ -10315,7 +10325,7 @@
     const rows = filterReconRows(allRows);
 
     let totBudget = 0, totConsLoose = 0, totInvoice = 0, totPlu = 0;
-    let totConsumption = 0, totPluCases = 0, totVariance = 0;
+    let totConsumption = 0, totPluCases = 0, totVariance = 0, totWastage = 0;
     const totalSource = (_reconStatusFilter || _reconCategoryFilter) ? rows : totalRows;
     totalSource.forEach((r) => {
       totBudget += r.budgetCost || 0;
@@ -10325,6 +10335,7 @@
       totConsumption += r.consumption || 0;
       totPluCases += r.plu || 0;
       totVariance += r.variance || 0;
+      totWastage += r.wastage || 0;
     });
     const pctOfConsLoose = totConsLoose > 0 ? (totBudget / totConsLoose) * 100 : null;
     const pctOfInvoice = totInvoice > 0 ? (totBudget / totInvoice) * 100 : null;
@@ -10386,6 +10397,7 @@
           '<td data-recon-col="closing_units">' + reconInlineQtyInput(r.pid, 'recon-cl-singles-' + r.pid, closingSinglesVal) + '</td>' +
           reconDrawerOnlyCell(r.pid, 'returned_to_supplier', reconQtyCell(r.supplierReturns), 'Edit in drawer') +
           '<td data-recon-col="transferred">' + reconQtyCell(r.transferred) + '</td>' +
+          '<td data-recon-col="wastage">' + reconQtyCell(r.wastage) + '</td>' +
           '<td data-recon-col="consumption" style="font-weight:600" id="recon-cons-' + r.pid + '">' + reconQtyCell(r.consumption) + '</td>' +
           '<td data-recon-col="plu" id="recon-plu-' + r.pid + '">' + reconQtyCell(r.plu) + '</td>' +
           '<td data-recon-col="variance" id="recon-var-' + r.pid + '">' + reconVarianceCellInner(r.consumption, r.plu, r.variance, r.variancePct) + '</td>' +
@@ -10410,7 +10422,8 @@
             ? roundN((totVariance / denom) * 100, 1).toString() + '%' : '';
           const cls = reconVarianceClass(totConsumption, totPluCases, totVariance);
           val = '<span class="' + cls + '">' + sign + qty + (pct ? ' (' + pct + ')' : '') + '</span>';
-        } else if (c.id === 'consumption_loose') val = money(totConsLoose);
+        } else if (c.id === 'wastage') val = totWastage ? roundN(totWastage, 2).toString() : '';
+        else if (c.id === 'consumption_loose') val = money(totConsLoose);
         else if (c.id === 'plu_charge') val = money(totPlu);
         else if (c.id === 'invoice_charge') val = money(totInvoice);
         else if (c.id === 'budget_cost') val = money(totBudget);
@@ -10435,7 +10448,7 @@
     const headers = [
       'Status', 'Item', 'Case Size', 'ABV', 'Price', 'Supplier', 'Units per case',
       'Delivered', 'Invoiced', 'Closing (Cases)', 'Closing (Singles)',
-      'Returned to supplier', 'Transferred', 'Consumption', 'PLU', 'Variance', 'Variance %', 'Consumption Charge', 'Consumption + Loose Charge',
+      'Returned to supplier', 'Transferred', 'Wastage', 'Consumption', 'PLU', 'Variance', 'Variance %', 'Consumption Charge', 'Consumption + Loose Charge',
       'PLU Charge', 'Invoice Charge', '', 'Budget Cost', 'Notes',
     ];
     const lines = [headers.map(csvEscape).join(',')];
@@ -10448,7 +10461,7 @@
         r.rowPrice ? '£' + r.rowPrice.toFixed(2) : '', r.supplierName, r.ups || '',
         r.delivered || 0, r.invoiced || 0,
         r.closingCases || 0, r.closingSingles || 0, r.supplierReturns || 0, r.transferred || 0,
-        r.consumption || 0, r.plu || 0,
+        r.wastage || 0, r.consumption || 0, r.plu || 0,
         r.variance || 0, r.variancePct != null ? r.variancePct + '%' : '',
         r.consumptionCharge || 0, r.consumptionLooseCharge || 0,
         r.pluCharge || 0, r.invoiceCharge || 0, '',
@@ -10461,8 +10474,8 @@
       totConsLoose += r.consumptionLooseCharge || 0;
       totInvoice += r.invoiceCharge || 0;
     });
-    lines.push(Array(22).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
-    lines.push(Array(22).fill('').concat([
+    lines.push(Array(23).fill('').concat([totBudget.toFixed(2), totBudget.toFixed(2)]).map(csvEscape).join(','));
+    lines.push(Array(23).fill('').concat([
       totConsLoose.toFixed(2), totInvoice.toFixed(2),
       totConsLoose > 0 ? ((totBudget / totConsLoose) * 100).toFixed(2) + '%' : '',
       totInvoice > 0 ? ((totBudget / totInvoice) * 100).toFixed(2) + '%' : '',
