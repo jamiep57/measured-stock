@@ -2781,6 +2781,15 @@
     return stockUnitLabel(productStockUnit(p), plural);
   }
 
+  // Catalogue row is one bottle per stored unit (migration 034 / case_sizes 70cl).
+  function isPerBottleCatalogueProduct(p) {
+    return p && productStockUnit(p) === 'bottle' && resolvedUnitsPerCase(p) === 1;
+  }
+
+  function bottleFormTotal(cases, singles) {
+    return roundN((Number(cases) || 0) + (Number(singles) || 0), 4);
+  }
+
   function displayFactorPerCase(p) {
     const u = productStockUnit(p);
     if (u === 'bottle') return spiritBottlesPerCase(p) || 1;
@@ -5525,6 +5534,8 @@
   // Bottles per supplier case for spirits (from supplier pack size, catalogue, or case_size).
   function supplierPackBottlesPerCase(p, supplierId) {
     if (!p) return 1;
+    // Per-bottle catalogue rows: never infer 6 from a matching 6×700ml case_sizes row.
+    if (resolvedUnitsPerCase(p) === 1) return 1;
     const tryPack = (pack) => {
       const packStr = String(pack || '').trim();
       if (!packStr) return 0;
@@ -5562,7 +5573,12 @@
   function entryUnitsPerCase(pid, supplierId) {
     const p = spiritProductById(pid);
     if (!p) return 1;
-    if (productStockUnit(p) === 'bottle') return supplierPackBottlesPerCase(p, supplierId);
+    if (productStockUnit(p) === 'bottle') {
+      // Per-bottle catalogue rows (units_per_case = 1): one stored unit = one bottle.
+      // Must match delivered_qty / delivery_lines (native bottles), not infer 6 from 6×700ml.
+      if (resolvedUnitsPerCase(p) === 1) return 1;
+      return supplierPackBottlesPerCase(p, supplierId);
+    }
     return unitsPerCaseFor(pid);
   }
 
@@ -5599,6 +5615,9 @@
     if (p && productStockUnit(p) === 'bottle') {
       const casesVal = Math.max(0, Number(line[casesKey] ?? line.qty) || 0);
       const singlesVal = Math.max(0, Number(line[singlesKey]) || 0);
+      if (isPerBottleCatalogueProduct(p)) {
+        return { qty: roundN(casesVal, 4), singles: roundN(singlesVal, 4) };
+      }
       return {
         qty: roundN(casesVal * entryUps, 4),
         singles: roundN(singlesVal, 4),
@@ -8547,9 +8566,11 @@
     const singles = Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0);
     const supplierCaseTotal = combineCasesSingles(cases, singles, entryUps);
     const p = ep.product;
-    const closeCount = (p && productStockUnit(p) === 'bottle')
-      ? roundN(supplierCaseTotal * entryUps, 4)
-      : roundN(supplierCaseTotal, 4);
+    const closeCount = isPerBottleCatalogueProduct(p)
+      ? bottleFormTotal(cases, singles)
+      : ((p && productStockUnit(p) === 'bottle')
+        ? roundN(supplierCaseTotal * entryUps, 4)
+        : roundN(supplierCaseTotal, 4));
     const returnStored = entryFormToNative(
       { cases: parseFloat(returnCasesEl && returnCasesEl.value) || 0, singles: parseFloat(returnSinglesEl && returnSinglesEl.value) || 0 },
       pid, supId
@@ -8606,9 +8627,11 @@
         const singles = Math.max(0, parseFloat(singlesEl && singlesEl.value) || 0);
         const supplierCaseTotal = combineCasesSingles(cases, singles, entryUps);
         const p = ep.product;
-        const closeCount = (p && productStockUnit(p) === 'bottle')
-          ? roundN(supplierCaseTotal * entryUps, 4)
-          : roundN(supplierCaseTotal, 4);
+        const closeCount = isPerBottleCatalogueProduct(p)
+          ? bottleFormTotal(cases, singles)
+          : ((p && productStockUnit(p) === 'bottle')
+            ? roundN(supplierCaseTotal * entryUps, 4)
+            : roundN(supplierCaseTotal, 4));
         const returnStored = entryFormToNative(
           { cases: parseFloat(returnCasesEl && returnCasesEl.value) || 0, singles: parseFloat(returnSinglesEl && returnSinglesEl.value) || 0 },
           pid, supId
@@ -8784,8 +8807,15 @@
   }
 
   function reconStockRemaining(cl, ep, closingTotal) {
+    const pid = ep && ep.product_id;
+    const p = spiritProductById(pid);
     const hasClose = cl && (cl.closing_cases != null || cl.closing_singles != null || cl.close_count != null);
-    if (hasClose || closingTotal > 0) return roundN(closingTotal, 2);
+    if (hasClose || closingTotal > 0) {
+      if (isPerBottleCatalogueProduct(p) && (cl.closing_cases != null || cl.closing_singles != null)) {
+        return bottleFormTotal(cl.closing_cases, cl.closing_singles);
+      }
+      return roundN(closingTotal, 2);
+    }
     if (cl && cl.carried_over != null && cl.return_amount != null) {
       return roundN((Number(cl.carried_over) || 0) + (Number(cl.return_amount) || 0), 2);
     }
