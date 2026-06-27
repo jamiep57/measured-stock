@@ -8946,14 +8946,79 @@
     return ep.delivered_qty != null ? Number(ep.delivered_qty) || 0 : 0;
   }
 
+  // Resolve closing cases/singles from inline inputs, drawer draft, or saved row.
+  // Blank recon inputs inherit saved split fields or legacy close_count — they do not mean zero.
+  function resolveReconClosingCounts(pid, cl, draft) {
+    cl = cl || {};
+
+    if (draft && draft.fromDrawer) {
+      return {
+        closingCases: draft.closingCases != null ? Number(draft.closingCases) : 0,
+        closingSingles: draft.closingSingles != null ? Number(draft.closingSingles) : 0,
+      };
+    }
+
+    const casesEl = $('recon-cl-cases-' + pid);
+    const singlesEl = $('recon-cl-singles-' + pid);
+
+    if (draft && !casesEl && !singlesEl) {
+      return {
+        closingCases: draft.closingCases != null ? Number(draft.closingCases) : 0,
+        closingSingles: draft.closingSingles != null ? Number(draft.closingSingles) : 0,
+      };
+    }
+
+    if (casesEl || singlesEl) {
+      const casesRaw = casesEl ? casesEl.value.trim() : '';
+      const singlesRaw = singlesEl ? singlesEl.value.trim() : '';
+      const casesSet = casesRaw !== '';
+      const singlesSet = singlesRaw !== '';
+
+      if (!casesSet && !singlesSet) {
+        if (cl.closing_cases != null || cl.closing_singles != null) {
+          return {
+            closingCases: cl.closing_cases != null ? Number(cl.closing_cases) : 0,
+            closingSingles: cl.closing_singles != null ? Number(cl.closing_singles) : 0,
+          };
+        }
+        if (cl.close_count != null) {
+          return { closingCases: Number(cl.close_count) || 0, closingSingles: 0 };
+        }
+        return { closingCases: 0, closingSingles: 0 };
+      }
+
+      let baseCases = 0;
+      let baseSingles = 0;
+      if (cl.closing_cases != null || cl.closing_singles != null) {
+        baseCases = cl.closing_cases != null ? Number(cl.closing_cases) : 0;
+        baseSingles = cl.closing_singles != null ? Number(cl.closing_singles) : 0;
+      } else if (cl.close_count != null) {
+        baseCases = Number(cl.close_count) || 0;
+        baseSingles = 0;
+      }
+
+      return {
+        closingCases: casesSet ? qtyFromInput(casesRaw) : baseCases,
+        closingSingles: singlesSet ? qtyFromInput(singlesRaw) : baseSingles,
+      };
+    }
+
+    if (cl.closing_cases != null || cl.closing_singles != null) {
+      return {
+        closingCases: cl.closing_cases != null ? Number(cl.closing_cases) : 0,
+        closingSingles: cl.closing_singles != null ? Number(cl.closing_singles) : 0,
+      };
+    }
+    if (cl.close_count != null) {
+      return { closingCases: Number(cl.close_count) || 0, closingSingles: 0 };
+    }
+    return { closingCases: 0, closingSingles: 0 };
+  }
+
   function reconStockRemaining(cl, ep, closingTotal) {
-    const pid = ep && ep.product_id;
-    const p = spiritProductById(pid);
     const hasClose = cl && (cl.closing_cases != null || cl.closing_singles != null || cl.close_count != null);
     if (hasClose || closingTotal > 0) {
-      if (isPerBottleCatalogueProduct(p) && (cl.closing_cases != null || cl.closing_singles != null)) {
-        return bottleFormTotal(cl.closing_cases, cl.closing_singles);
-      }
+      // closingTotal is already computed from the current draft or saved counts in buildReconRow.
       return roundN(closingTotal, 2);
     }
     if (cl && cl.carried_over != null && cl.return_amount != null) {
@@ -9168,13 +9233,9 @@
     } else {
       invoiced = closingInvoiceQty(ep);
     }
-    let closingCases = draft && draft.closingCases != null ? Number(draft.closingCases)
-      : (cl.closing_cases != null ? Number(cl.closing_cases) : 0);
-    let closingSingles = draft && draft.closingSingles != null ? Number(draft.closingSingles)
-      : (cl.closing_singles != null ? Number(cl.closing_singles) : 0);
-    if (draft == null && cl.closing_cases == null && cl.closing_singles == null && cl.close_count != null) {
-      closingCases = Number(cl.close_count) || 0;
-    }
+    const closingSplit = resolveReconClosingCounts(pid, cl, draft);
+    const closingCases = closingSplit.closingCases;
+    const closingSingles = closingSplit.closingSingles;
     const supId = productSupplierId(pid);
     const entryUps = entryUnitsPerCase(pid, supId);
     const closingLooseAsCases = entryUps > 0 ? closingSingles / entryUps : 0;
@@ -9974,6 +10035,7 @@
     return {
       invoiced,
       invoiceSet: invSet,
+      fromDrawer: true,
       casePrice: priceRaw !== '' ? parseFloat(priceRaw) : '',
       unitPrice: unitPriceRaw !== '' ? parseFloat(unitPriceRaw) : '',
       closingCases: clSplit.closingCases,
@@ -10212,15 +10274,15 @@
 
   function readReconInlineDraft(pid) {
     const invEl = $('recon-inv-' + pid);
-    const casesEl = $('recon-cl-cases-' + pid);
-    const singlesEl = $('recon-cl-singles-' + pid);
     const invRaw = invEl && invEl.value.trim();
     const invSet = invRaw !== '';
+    const cl = closingRowFor(pid) || {};
+    const closingSplit = resolveReconClosingCounts(pid, cl, null);
     return {
       invoiceSet: invSet,
       invoiced: invSet ? displayToStoredCases(pid, qtyFromInput(invRaw)) : 0,
-      closingCases: qtyFromInput(casesEl && casesEl.value),
-      closingSingles: qtyFromInput(singlesEl && singlesEl.value),
+      closingCases: closingSplit.closingCases,
+      closingSingles: closingSplit.closingSingles,
     };
   }
 
