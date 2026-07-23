@@ -51,7 +51,7 @@ function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editi
     : `<td class="ep-prod-num ep-prod-ordered ep-prod-ordered--edit" data-pid="${escapeHtml(pid)}" title="Edit ordered">${fmtNum(ordered)}</td>`;
 
   return `
-    <tr class="dist-prod-row" data-pid="${escapeHtml(pid)}" data-product-name="${escapeHtml((p.name || '').toLowerCase())}">
+    <tr class="dist-prod-row ep-prod-row" data-pid="${escapeHtml(pid)}" data-product-name="${escapeHtml((p.name || '').toLowerCase())}" tabindex="0" role="button" title="Edit product">
       <th class="dist-sticky dist-prod-name" scope="row">${escapeHtml(p.name || 'Product')}</th>
       <td class="dist-sticky dist-prod-pack muted">${escapeHtml(pack.label || p.case_size || '—')}</td>
       ${orderedCell}
@@ -230,9 +230,23 @@ export function mountProductsPanel(route) {
     }
 
     body.querySelectorAll('.ep-prod-ordered--edit').forEach((cell) => {
-      cell.onclick = () => {
+      cell.onclick = (e) => {
+        e.stopPropagation();
         editingOrderedId = cell.dataset.pid;
         paintTable();
+      };
+    });
+
+    body.querySelectorAll('.ep-prod-row[data-pid]').forEach((row) => {
+      row.onclick = (e) => {
+        if (e.target.closest('.ep-prod-ordered, .ep-ordered-input')) return;
+        openEditProduct(row.dataset.pid);
+      };
+      row.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openEditProduct(row.dataset.pid);
+        }
       };
     });
 
@@ -271,6 +285,104 @@ export function mountProductsPanel(route) {
     countedIn = countedInMap(deliveries, event, caseSizes);
     damagedFromDeliveries = damagedFromDeliveriesMap(deliveries);
     paintTable();
+  }
+
+  function openEditProduct(productId) {
+    const ep = (event?.event_products || []).find((x) => x.product_id === productId);
+    if (!ep?.product) return;
+
+    const p = ep.product;
+    const pack = productStockPack(p, caseSizes);
+    const cin = countedIn[productId] ?? (ep.delivered_qty != null ? Number(ep.delivered_qty) : 0);
+    const ordered = Number(ep.qty_ordered) || 0;
+    const opening = openingForProduct(productId, countedIn, damagedFromDeliveries, ep);
+    const variance = round1(cin - ordered);
+    const varLabel = variance === 0 ? '—' : `${variance > 0 ? '+' : ''}${fmtNum(variance)}`;
+
+    openSheet({
+      title: 'Edit product',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="epEditErr"></div>
+          <div class="admin-field">
+            <span class="admin-label">Product</span>
+            <div class="ep-edit-name">${escapeHtml(p.name || 'Product')}</div>
+            <p class="wst-form-hint muted">${escapeHtml(pack.label || p.case_size || '—')}</p>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="epEditOrdered">Cases ordered</label>
+            <input class="admin-input" type="text" inputmode="decimal" id="epEditOrdered"
+              value="${ep.qty_ordered != null ? escapeHtml(String(ep.qty_ordered)) : ''}"
+              placeholder="0">
+          </div>
+          <div class="admin-field-grid">
+            <div class="admin-field">
+              <span class="admin-label">Counted in</span>
+              <div class="ep-edit-stat">${fmtNum(cin)}</div>
+            </div>
+            <div class="admin-field">
+              <span class="admin-label">Variance</span>
+              <div class="ep-edit-stat">${escapeHtml(varLabel)}</div>
+            </div>
+            <div class="admin-field">
+              <span class="admin-label">Opening</span>
+              <div class="ep-edit-stat">${fmtNum(opening)}</div>
+            </div>
+          </div>
+          <p class="wst-form-hint muted">Counted in and opening come from deliveries. Unusable stock is deducted from counted in.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          <button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="epEditRemove">Remove</button>
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="epEditCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="epEditSave">Save</button>
+          </div>
+        </div>`,
+    });
+
+    const errEl = $('epEditErr');
+    const orderedInp = $('epEditOrdered');
+    orderedInp?.focus();
+    orderedInp?.select();
+
+    $('epEditCancel').onclick = closeSheet;
+
+    $('epEditSave').onclick = async () => {
+      const raw = orderedInp.value.trim();
+      const qty = raw === '' ? 0 : Number(raw);
+      if (!Number.isFinite(qty) || qty < 0) {
+        errEl.textContent = 'Enter a valid ordered quantity.';
+        return;
+      }
+      try {
+        await getDB().eventProducts.setForEvent(eventId, productId, { qty_ordered: qty });
+        if (ep) ep.qty_ordered = qty;
+        closeSheet();
+        paintTable();
+        toast('Product updated');
+      } catch (err) {
+        errEl.textContent = err.message || 'Save failed';
+      }
+    };
+
+    $('epEditRemove').onclick = async () => {
+      if (!confirm(`Remove “${p.name || 'this product'}” from this event?`)) return;
+      try {
+        const DB = getDB();
+        if (typeof DB.eventProducts.removeFromEvent === 'function') {
+          await DB.eventProducts.removeFromEvent(eventId, productId);
+        } else {
+          await DB.eventProducts.removeForEvent(eventId, productId);
+        }
+        closeSheet();
+        await refresh();
+        toast('Product removed from event');
+      } catch (err) {
+        errEl.textContent = err.message || 'Remove failed';
+      }
+    };
   }
 
   function openAddProduct() {

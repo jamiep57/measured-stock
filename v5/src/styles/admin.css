@@ -2186,6 +2186,9 @@ body.admin-drawer-open {
 .lib-table tbody tr:hover td {
   background: color-mix(in srgb, var(--secondary) 45%, var(--card));
 }
+.lib-table tbody tr.lib-row--clickable {
+  cursor: pointer;
+}
 .lib-table tbody tr[hidden] {
   display: none;
 }
@@ -2423,11 +2426,28 @@ body.admin-drawer-open {
   line-height: 1.45;
   flex-shrink: 0;
 }
+.ep-panel .ep-prod-row {
+  cursor: pointer;
+}
+.ep-panel .ep-prod-row:hover th,
+.ep-panel .ep-prod-row:hover td {
+  background: color-mix(in srgb, var(--secondary) 45%, var(--card));
+}
 .ep-panel .ep-prod-ordered--edit {
   cursor: pointer;
 }
 .ep-panel .ep-prod-ordered--edit:hover {
   background: color-mix(in srgb, var(--secondary) 55%, var(--card));
+}
+.ep-edit-name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ep-edit-stat {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .ep-ordered-input {
   width: 100%;

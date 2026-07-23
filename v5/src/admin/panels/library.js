@@ -230,7 +230,23 @@ export function mountLibraryPanel() {
       if (tableEl) tableEl.hidden = false;
       bodyEl.innerHTML = renderTableRows(rows, caseSizes, sortKey, sortDir);
       bodyEl.querySelectorAll('[data-edit]').forEach((btn) => {
-        btn.onclick = () => openProductForm(btn.dataset.edit);
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          openProductForm(btn.dataset.edit);
+        };
+      });
+      bodyEl.querySelectorAll('tr[data-pid]').forEach((row) => {
+        row.classList.add('lib-row--clickable');
+        row.onclick = () => openProductForm(row.dataset.pid);
+        row.onkeydown = (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openProductForm(row.dataset.pid);
+          }
+        };
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.title = 'Edit product';
       });
     }
     updateSortHeaders();
