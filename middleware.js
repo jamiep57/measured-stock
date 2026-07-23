@@ -147,5 +147,9 @@ export const config = {
   //   /api/unlock        — the gate itself
   //   /api/sync-catchup  — server-to-server cron + manual catch-ups
   //                         (gated by CRON_SECRET inside the handler)
-  matcher: ['/((?!api/unlock|api/sync-catchup).*)'],
+  //   static assets      — Vite ships CSS/JS with crossorigin=anonymous
+  //                         (no cookies); blocking them leaves /v5 unstyled
+  matcher: [
+    '/((?!api/unlock|api/sync-catchup|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
+  ],
 };
