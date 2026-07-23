@@ -519,22 +519,27 @@ export function mountCountsPanel(route) {
   }
 
   function openNewSessionSheet() {
-    const bars = servingBars(ctx.event?.bars);
     openSheet({
       title: 'New count session',
+      variant: 'admin-full',
       bodyHtml: `
-        <div class="del-form-err" id="cntNewErr"></div>
-        <div class="setup-field">
-          <label class="admin-label" for="cntNewName">Session name</label>
-          <input class="admin-input" type="text" id="cntNewName" placeholder="e.g. Friday close">
-        </div>
-        <p class="muted cnt-new-hint">Count all bars in the grid — pick a bar column and enter cases and singles per product.</p>`,
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="cntNewErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="cntNewName">Session name</label>
+            <input class="admin-input" type="text" id="cntNewName" placeholder="e.g. Friday close">
+          </div>
+          <p class="muted cnt-new-hint">Count all bars in the grid — pick a bar column and enter cases and singles per product.</p>
+        </div>`,
       footHtml: `
-        <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="cntNewCancel">Cancel</button>
-        <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="cntNewSave">Create session</button>`,
+        <div class="admin-drawer-foot">
+          <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="cntNewCancel">Cancel</button>
+          <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="cntNewSave">Create session</button>
+        </div>`,
     });
     $('cntNewCancel').onclick = closeSheet;
     $('cntNewSave').onclick = createSession;
+    requestAnimationFrame(() => $('cntNewName')?.focus());
   }
 
   async function createSession() {
