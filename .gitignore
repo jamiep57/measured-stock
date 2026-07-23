@@ -23,3 +23,7 @@
 # Logs
 *.log
 npm-debug.log*
+
+# V5
+v5/node_modules/
+v5/dist/

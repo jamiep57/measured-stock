@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<!--
+  Measured Stock V5 — admin (desktop)
+  Event setup, distribution, sales mapping, recon.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#18181b">
+  <title>Measured Stock Admin</title>
+  <link rel="icon" type="image/png" href="/assets/img/favicon.png?v=2">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="admin-app" id="adminApp">
+    <aside class="admin-sidebar" id="adminSidebar">
+      <div class="sidebar-inner">
+        <div class="sidebar-workspace-wrap">
+          <button type="button" class="sidebar-workspace" id="sidebarWorkspace"
+            aria-haspopup="listbox" aria-expanded="false" aria-controls="sidebarWorkspaceMenu">
+            <span class="sidebar-workspace-mark">
+              <img src="/assets/img/logomark.png" alt="">
+            </span>
+            <span class="sidebar-workspace-text">
+              <span class="sidebar-workspace-name" id="sidebarWorkspaceName">Measured Stock</span>
+              <span class="sidebar-workspace-sub" id="sidebarWorkspaceSub">Admin</span>
+            </span>
+            <i data-lucide="chevrons-up-down" aria-hidden="true"></i>
+          </button>
+          <div class="sidebar-workspace-menu" id="sidebarWorkspaceMenu" role="listbox" hidden></div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <nav class="sidebar-nav sidebar-nav-primary" id="sidebarPrimary">
+            <a class="nav-link" href="/v5/admin" data-route="home"><i data-lucide="house"></i> Events</a>
+          </nav>
+
+          <div class="sidebar-section" data-section="catalog">
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Catalog</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarGlobal">
+                <a class="nav-link" href="/v5/admin/library" data-route="library"><i data-lucide="library"></i> Library <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" href="/v5/admin/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" href="/v5/admin/case-sizes" data-route="case-sizes"><i data-lucide="package"></i> Case sizes <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="event-stock" hidden>
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Stock</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventStock">
+                <div class="nav-link-row">
+                  <a class="nav-link nav-link-row-main" data-route="dashboard" data-event><i data-lucide="gauge"></i> Dashboard</a>
+                  <a class="nav-link-cog" data-route="setup" data-event href="#" title="Event setup" aria-label="Event setup"><i data-lucide="settings"></i></a>
+                </div>
+                <a class="nav-link" data-route="products" data-event><i data-lucide="list"></i> Products <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" data-route="distribution" data-event><i data-lucide="share-2"></i> Distribution <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" data-route="deliveries" data-event><i data-lucide="container"></i> Deliveries <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" data-route="counts" data-event><i data-lucide="clipboard-list"></i> Counts <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" data-route="stock-levels" data-event><i data-lucide="bar-chart-3"></i> Stock levels</a>
+                <a class="nav-link" data-route="transfers" data-event><i data-lucide="arrow-left-right"></i> Transfers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" data-route="wastage" data-event><i data-lucide="trash"></i> Wastage <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" data-route="closing" data-event><i data-lucide="lock"></i> Closing</a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="event-sales" hidden>
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Sales &amp; recon</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventSales">
+                <a class="nav-link" data-route="sales" data-event><i data-lucide="store"></i> Square &amp; modifiers <span class="nav-status-dot" title="Modifiers mapping built"></span></a>
+                <a class="nav-link" data-route="recon" data-event><i data-lucide="pound-sterling"></i> Recon</a>
+                <a class="nav-link" data-route="summary" data-event><i data-lucide="pie-chart"></i> Summary</a>
+              </nav>
+            </div>
+          </div>
+        </div>
+
+        <footer class="sidebar-footer">
+          <a class="sidebar-footer-link" href="/v5">
+            <span class="sidebar-footer-mark"><i data-lucide="smartphone" aria-hidden="true"></i></span>
+            <span class="sidebar-footer-text">
+              <span class="sidebar-footer-name">Bar app</span>
+              <span class="sidebar-footer-sub">Mobile stock entry</span>
+            </span>
+            <i data-lucide="ellipsis" aria-hidden="true"></i>
+          </a>
+        </footer>
+      </div>
+    </aside>
+
+    <div class="admin-main">
+      <div class="admin-shell">
+        <header class="admin-topbar">
+          <div class="topbar-title" id="pageTitle">Events</div>
+          <div class="topbar-tools" id="topbarTools" hidden>
+            <div class="topbar-toolbar-strips" id="topbarToolbarStrips" hidden></div>
+            <div class="topbar-toolbar" id="topbarFilterStrip" hidden>
+              <div class="topbar-tool-wrap">
+                <button type="button" class="topbar-tool" id="topbarTableFilterBtn"
+                  aria-expanded="false" aria-haspopup="true" aria-controls="topbarTableFilterPanel"
+                  title="Filter & columns" aria-label="Filter & columns">
+                  <i data-lucide="funnel" aria-hidden="true"></i>
+                </button>
+                <div class="tfp-dropdown" id="topbarTableFilterPanel" hidden></div>
+              </div>
+            </div>
+            <div class="topbar-search" id="topbarSearch"></div>
+          </div>
+        </header>
+        <main class="admin-content" id="adminContent"></main>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-head">
+      <button class="icon-btn" type="button" id="sheetClose" aria-label="Close"><i data-lucide="x"></i></button>
+      <div class="sheet-title" id="sheetTitle"></div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+    <div class="sheet-foot" id="sheetFoot"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script type="module" src="/src/admin/main.js"></script>
+</body>
+</html>

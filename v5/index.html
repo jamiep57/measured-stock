@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!--
+  Measured Stock V5 — staff mobile app
+  Counts + deliveries with WYSIWYG stock entry and offline write queue.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#18181b">
+  <title>Measured Stock V5</title>
+  <link rel="icon" type="image/png" href="/assets/img/favicon.png?v=2">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Stock V5">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="topbar-row">
+        <div class="brand">
+          <img src="/assets/img/logomark.png" alt="">
+          <span>Stock <span class="v5-tag">V5</span></span>
+        </div>
+        <div class="sync-badge" id="syncBadge" hidden title="Pending sync">0</div>
+        <button class="icon-btn" id="reloadBtn" type="button" aria-label="Reload"><i class="ph ph-arrow-clockwise"></i></button>
+        <button class="icon-btn" id="cntBackTop" type="button" hidden aria-label="Back to sessions"><i class="ph ph-arrow-left"></i></button>
+      </div>
+      <div class="event-select-wrap">
+        <select id="eventPick" aria-label="Select event"></select>
+      </div>
+    </header>
+
+    <main class="main" id="main">
+      <section class="view active" id="view-deliveries"></section>
+      <section class="view" id="view-counts"></section>
+    </main>
+
+    <div class="count-save-bar" id="cntSaveBar" hidden>
+      <button class="btn btn-primary btn-block btn-lg" type="button" id="cntSaveBtn">
+        <i class="ph-bold ph-floppy-disk"></i> Save count
+      </button>
+    </div>
+
+    <nav class="bottomnav">
+      <button class="navbtn active" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
+      <button class="navbtn" type="button" data-tab="counts"><i class="ph ph-clipboard-text"></i><span>Counts</span></button>
+    </nav>
+  </div>
+
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-head">
+      <button class="icon-btn" type="button" id="sheetClose" aria-label="Close"><i class="ph ph-x"></i></button>
+      <div class="sheet-title" id="sheetTitle"></div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+    <div class="sheet-foot" id="sheetFoot"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <footer class="app-foot" id="appFoot">V5.0.0</footer>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

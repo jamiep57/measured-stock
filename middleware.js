@@ -98,7 +98,11 @@ function loginPage(error) {
 // Paths a "staff" session may reach. Everything else is admin-only.
 // Staff get the mobile view plus the shared static assets it needs.
 function isStaffAllowed(pathname) {
+  if (pathname.startsWith('/v5/admin')) return false;
   return (
+    pathname === '/v5' ||
+    pathname === '/v5/' ||
+    pathname.startsWith('/v5/') ||
     pathname === '/mobile' ||
     pathname === '/mobile.html' ||
     pathname.startsWith('/mobile/') ||

@@ -1,0 +1,262 @@
+/* Table filter panel — tabbed selector, compact sections */
+
+.tfp-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 130;
+  width: min(300px, calc(100vw - 32px));
+  max-height: min(72vh, 560px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 8px 24px rgb(0 0 0 / 0.06);
+}
+
+.tfp-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+}
+
+.tfp-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 8px 8px 0;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--secondary);
+  flex-shrink: 0;
+}
+
+.tfp-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tfp-tab .lucide-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.tfp-tab:hover {
+  color: var(--foreground);
+}
+
+.tfp-tab.is-active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+.tfp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tfp-groups {
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tfp-group + .tfp-group {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed color-mix(in srgb, var(--border) 85%, transparent);
+}
+
+.tfp-group-label {
+  padding: 2px 8px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.tfp-group-body--scroll {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.tfp-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tfp-option:hover {
+  background: var(--secondary);
+}
+
+.tfp-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tfp-option-control {
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid color-mix(in srgb, var(--border) 70%, var(--foreground));
+  background: var(--card);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.tfp-option--radio .tfp-option-control {
+  border-radius: 999px;
+}
+
+.tfp-option--checkbox .tfp-option-control {
+  border-radius: var(--radius-sm);
+}
+
+.tfp-option input:checked + .tfp-option-control {
+  border-color: var(--foreground);
+  background: var(--foreground);
+}
+
+.tfp-option--radio input:checked + .tfp-option-control::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.tfp-option--checkbox input:checked + .tfp-option-control::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 7px;
+  border: solid var(--card);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.tfp-option-label {
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--foreground);
+  min-width: 0;
+}
+
+.tfp-option-meta {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.tfp-foot {
+  flex-shrink: 0;
+  padding: 6px 10px 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--border) 85%, transparent);
+}
+
+.tfp-active {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tfp-active-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 4px 2px 8px;
+  border-radius: var(--radius);
+  background: var(--secondary);
+}
+
+.tfp-active-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tfp-active-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.tfp-active-remove:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.tfp-active-remove .lucide-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.tfp-reset {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-align: center;
+  cursor: pointer;
+}
+
+.tfp-reset:hover {
+  color: var(--foreground);
+  background: var(--secondary);
+}

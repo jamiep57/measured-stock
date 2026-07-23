@@ -600,9 +600,10 @@
         return select(
           'wastage_batches',
           '?event_id=eq.' + enc(eventId) +
-          '&select=*,lines:wastage_lines(*)&order=recorded_at'
+          '&select=*,lines:wastage_lines(*)&order=recorded_at.desc'
         );
       },
+      clearLines(batchId) { return remove('wastage_lines', 'batch_id=eq.' + enc(batchId)); },
       addLines(rows) { return insert('wastage_lines', rows); },
     }
   );

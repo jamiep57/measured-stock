@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd v5 && npm ci && npm run build",
   "redirects": [
     {
       "source": "/",
@@ -15,6 +16,30 @@
     {
       "source": "/legacy",
       "destination": "/index.html"
+    },
+    {
+      "source": "/v5",
+      "destination": "/v5/dist/index.html"
+    },
+    {
+      "source": "/v5/",
+      "destination": "/v5/dist/index.html"
+    },
+    {
+      "source": "/v5/sw.js",
+      "destination": "/v5/dist/sw.js"
+    },
+    {
+      "source": "/v5/manifest.webmanifest",
+      "destination": "/v5/dist/manifest.webmanifest"
+    },
+    {
+      "source": "/v5/assets/:path*",
+      "destination": "/v5/dist/assets/:path*"
+    },
+    {
+      "source": "/v5/admin/:path*",
+      "destination": "/v5/dist/admin.html"
     }
   ],
   "headers": [
@@ -31,9 +56,22 @@
       ]
     },
     {
+      "source": "/v5/dist/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
       "source": "/assets/js/sw.js",
       "headers": [
         { "key": "Service-Worker-Allowed", "value": "/" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/v5/dist/sw.js",
+      "headers": [
+        { "key": "Service-Worker-Allowed", "value": "/v5/" },
         { "key": "Cache-Control", "value": "no-cache" }
       ]
     }

@@ -1,0 +1,247 @@
+import { escapeHtml } from '../../lib/util.js';
+import {
+  renderDistributionShell,
+  mountDistributionPanel,
+} from './distribution.js';
+import {
+  renderDeliveriesShell,
+  mountDeliveriesPanel,
+} from './deliveries.js';
+import {
+  renderWastageShell,
+  mountWastagePanel,
+} from './wastage.js';
+import {
+  renderProductsShell,
+  mountProductsPanel,
+} from './products.js';
+import {
+  renderSetupShell,
+  mountSetupPanel,
+} from './setup.js';
+import {
+  renderTransfersShell,
+  mountTransfersPanel,
+} from './transfers.js';
+import {
+  renderSuppliersShell,
+  mountSuppliersPanel,
+} from './suppliers.js';
+import {
+  renderCaseSizesShell,
+  mountCaseSizesPanel,
+} from './case-sizes.js';
+import {
+  renderLibraryShell,
+  mountLibraryPanel,
+} from './library.js';
+import {
+  renderSalesShell,
+  mountSalesPanel,
+} from './sales.js';
+import {
+  renderCountsShell,
+  mountCountsPanel,
+} from './counts.js';
+import {
+  renderReconShell,
+  mountReconPanel,
+} from './recon.js';
+import {
+  renderDashboardShell,
+  mountDashboardPanel,
+} from './dashboard.js';
+
+export const PANEL_TITLES = {
+  home: 'Events',
+  library: 'Product library',
+  suppliers: 'Suppliers',
+  'case-sizes': 'Case sizes',
+  dashboard: 'Event dashboard',
+  setup: 'Event setup',
+  products: 'Products',
+  distribution: 'Distribution',
+  deliveries: 'Deliveries',
+  counts: 'Stock counts',
+  'stock-levels': 'Stock levels',
+  transfers: 'Transfers',
+  wastage: 'Wastage',
+  closing: 'Closing stock',
+  sales: 'Square & modifiers',
+  recon: 'Financial recon',
+  summary: 'Summary',
+  'not-found': 'Not found',
+};
+
+function placeholder(title, bullets) {
+  return `
+    <div class="admin-surface panel-placeholder">
+      <p class="admin-eyebrow">Coming soon</p>
+      <h2>${escapeHtml(title)}</h2>
+      <p class="muted">Panel scaffold — implementation in progress. See <code>v5/README.md</code>.</p>
+      <ul>${bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+    </div>`;
+}
+
+export async function renderPanel(route, state) {
+  if (route.view === 'not-found') {
+    return `<div class="admin-page">${placeholder('Page not found', ['Check the URL or pick an event from the sidebar.'])}</div>`;
+  }
+
+  if (route.view === 'home') {
+    if (!state.events.length) {
+      return `
+        <div class="admin-page">
+          <div class="admin-empty">No events yet. Create one in v2 admin until Setup is ported.</div>
+        </div>`;
+    }
+    return `
+      <div class="admin-page">
+        <div class="event-grid">
+          ${state.events.map((e) => `
+            <a class="event-card" href="/v5/admin/events/${e.id}/dashboard">
+              <div class="event-card-name">${escapeHtml(e.name)}</div>
+              <div class="event-card-meta">Open dashboard →</div>
+            </a>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  if (route.view === 'library') {
+    return renderLibraryShell();
+  }
+
+  if (route.view === 'suppliers') {
+    return renderSuppliersShell();
+  }
+
+  if (route.view === 'case-sizes') {
+    return renderCaseSizesShell();
+  }
+
+  if (route.view === 'event') {
+    const event = state.events.find((e) => e.id === route.eventId);
+    const name = event?.name || route.eventId;
+    const panel = route.panel || 'dashboard';
+
+    const specs = {
+      dashboard: [
+        'Low-stock / running-out table (from Square consumption).',
+        'Mapping progress: Square items + modifiers.',
+        'Quick stats: products, bars, unmapped till lines.',
+      ],
+      setup: ['Bars, dates, suppliers, recipients.'],
+      products: ['Event catalogue plus ordered, counted-in, and opening stock.'],
+      distribution: ['Bar-first product menus + allocation qty.'],
+      deliveries: ['Admin view; supplier offer per line.'],
+      counts: ['Count sessions with bar-scoped product entry.'],
+      'stock-levels': ['Live stock by bar.'],
+      transfers: ['Bar-to-bar moves.'],
+      wastage: ['Wastage batches.'],
+      closing: ['Closing stock entry.'],
+      sales: [
+        'Single page: Square item sales + modifier sales.',
+        'Recipe mapping; fractions stay as fractions.',
+        'Stock warnings inline.',
+      ],
+      recon: [
+        'Supplier + offer visible on every product row.',
+        'Price from selected product_suppliers offer.',
+        'Clear when multiple suppliers exist.',
+      ],
+      summary: ['Event summary export.'],
+    };
+
+    if (panel === 'dashboard') {
+      return renderDashboardShell();
+    }
+
+    if (panel === 'distribution') {
+      return renderDistributionShell();
+    }
+
+    if (panel === 'deliveries') {
+      return renderDeliveriesShell();
+    }
+
+    if (panel === 'wastage') {
+      return renderWastageShell();
+    }
+
+    if (panel === 'transfers') {
+      return renderTransfersShell();
+    }
+
+    if (panel === 'setup') {
+      return renderSetupShell();
+    }
+
+    if (panel === 'products') {
+      return renderProductsShell();
+    }
+
+    if (panel === 'sales') {
+      return renderSalesShell();
+    }
+
+    if (panel === 'counts') {
+      return renderCountsShell();
+    }
+
+    if (panel === 'recon') {
+      return renderReconShell();
+    }
+
+    return `
+      <div class="admin-page">
+        <p class="event-breadcrumb">${escapeHtml(name)}</p>
+        ${placeholder(PANEL_TITLES[panel] || panel, specs[panel] || ['Coming soon.'])}
+      </div>`;
+  }
+
+  return `<div class="admin-page">${placeholder('Admin', ['Select a section from the sidebar.'])}</div>`;
+}
+
+/** Wire interactive panels after HTML is inserted. Returns cleanup fn. */
+export function mountPanel(route, state) {
+  if (route.view === 'event' && route.panel === 'distribution') {
+    return mountDistributionPanel(route, state);
+  }
+  if (route.view === 'event' && route.panel === 'deliveries') {
+    return mountDeliveriesPanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'wastage') {
+    return mountWastagePanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'transfers') {
+    return mountTransfersPanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'setup') {
+    return mountSetupPanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'products') {
+    return mountProductsPanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'dashboard') {
+    return mountDashboardPanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'sales') {
+    return mountSalesPanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'counts') {
+    return mountCountsPanel(route);
+  }
+  if (route.view === 'event' && route.panel === 'recon') {
+    return mountReconPanel(route);
+  }
+  if (route.view === 'suppliers') {
+    return mountSuppliersPanel();
+  }
+  if (route.view === 'case-sizes') {
+    return mountCaseSizesPanel();
+  }
+  if (route.view === 'library') {
+    return mountLibraryPanel();
+  }
+  return null;
+}
