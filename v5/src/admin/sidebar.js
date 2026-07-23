@@ -24,7 +24,14 @@ function writeSectionState(state) {
   }
 }
 
-function renderWorkspaceMenu(events, route) {
+function activeEventId(route, state) {
+  if (route.view === 'event' && route.eventId) return route.eventId;
+  // Keep last event workspace while browsing global Catalog pages
+  if (route.view !== 'home' && state.eventId) return state.eventId;
+  return '';
+}
+
+function renderWorkspaceMenu(events, route, rememberedEventId) {
   const menu = document.getElementById('sidebarWorkspaceMenu');
   if (!menu) return;
 
@@ -34,7 +41,7 @@ function renderWorkspaceMenu(events, route) {
       <span class="sidebar-workspace-item-sub">Measured Stock Admin</span>
     </button>`,
     ...events.map((event) => {
-      const active = route.view === 'event' && route.eventId === event.id;
+      const active = rememberedEventId === event.id;
       return `<button type="button" class="sidebar-workspace-item${active ? ' is-active' : ''}" data-workspace="event" data-event-id="${escapeHtml(event.id)}">
         <span class="sidebar-workspace-item-name">${escapeHtml(event.name)}</span>
         <span class="sidebar-workspace-item-sub">${escapeHtml(event.status || 'Event')}</span>
@@ -50,8 +57,9 @@ function updateWorkspaceHeader(route, state) {
   const subEl = document.getElementById('sidebarWorkspaceSub');
   if (!nameEl || !subEl) return;
 
-  if (route.view === 'event' && route.eventId) {
-    const event = state.events.find((e) => e.id === route.eventId);
+  const eventId = activeEventId(route, state);
+  if (eventId) {
+    const event = state.events.find((e) => e.id === eventId);
     nameEl.textContent = event?.name || 'Event';
     subEl.textContent = 'Event workspace';
     return;
@@ -122,7 +130,7 @@ function wireWorkspace(onNavigate) {
 
     if (item.dataset.workspace === 'home') {
       navigate({ view: 'home' });
-      onNavigate();
+      onNavigate({ clearEvent: true });
       return;
     }
 
@@ -147,18 +155,19 @@ export function initSidebar(onNavigate) {
 }
 
 export function syncSidebar(route, state) {
+  const eventId = activeEventId(route, state);
   updateWorkspaceHeader(route, state);
-  renderWorkspaceMenu(state.events, route);
+  renderWorkspaceMenu(state.events, route, eventId);
 
   const eventSections = document.querySelectorAll('.sidebar-section[data-section^="event-"]');
-  const showEvent = route.view === 'event' && route.eventId;
+  const showEvent = Boolean(eventId);
   eventSections.forEach((section) => {
     section.hidden = !showEvent;
   });
 
   document.querySelectorAll('.nav-link[data-event], .nav-link-cog[data-event]').forEach((el) => {
-    if (showEvent && route.eventId) {
-      el.href = hrefForRoute({ view: 'event', eventId: route.eventId, panel: el.dataset.route });
+    if (showEvent && eventId) {
+      el.href = hrefForRoute({ view: 'event', eventId, panel: el.dataset.route });
     }
   });
 

@@ -64,6 +64,7 @@ function wireNav() {
     const a = e.target.closest('a[data-route]:not([data-event])');
     if (!a) return;
     e.preventDefault();
+    state.eventId = '';
     navigate({ view: 'home' });
     render(parseRoute());
   });
@@ -84,8 +85,9 @@ function wireNav() {
       if (!a) return;
       e.preventDefault();
       const route = parseRoute();
-      if (route.view !== 'event' || !route.eventId) return;
-      navigate({ view: 'event', eventId: route.eventId, panel: a.dataset.route });
+      const eventId = (route.view === 'event' && route.eventId) || state.eventId;
+      if (!eventId) return;
+      navigate({ view: 'event', eventId, panel: a.dataset.route });
       render(parseRoute());
     });
   });
@@ -103,7 +105,10 @@ async function boot() {
   initIcons();
   initSpreadsheetCells(document.body);
   wireNav();
-  initSidebar(() => render(parseRoute()));
+  initSidebar((opts = {}) => {
+    if (opts.clearEvent) state.eventId = '';
+    render(parseRoute());
+  });
   wireGenericProductFilter();
   globalSearch = initGlobalSearch();
 
