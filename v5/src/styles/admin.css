@@ -2186,9 +2186,6 @@ body.admin-drawer-open {
 .lib-table tbody tr:hover td {
   background: color-mix(in srgb, var(--secondary) 45%, var(--card));
 }
-.lib-table tbody tr.lib-row--clickable {
-  cursor: pointer;
-}
 .lib-table tbody tr[hidden] {
   display: none;
 }

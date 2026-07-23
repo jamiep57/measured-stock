@@ -4,7 +4,7 @@
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import {
-  getDB, loadEventFull, loadCaseSizes, loadCategories, loadLibraryProducts,
+  getDB, loadEventFull, loadCaseSizes, loadCategories, loadLibraryProducts, loadSuppliers,
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
 import {
@@ -13,6 +13,7 @@ import {
 import { epOpeningStock, round1 } from '../../lib/opening-stock.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 
@@ -166,6 +167,7 @@ export function mountProductsPanel(route) {
   let caseSizes = [];
   let library = [];
   let categories = [];
+  let suppliers = [];
   let deliveries = [];
   let countedIn = {};
   let damagedFromDeliveries = {};
@@ -275,11 +277,12 @@ export function mountProductsPanel(route) {
   }
 
   async function refresh() {
-    [event, caseSizes, library, categories, deliveries] = await Promise.all([
+    [event, caseSizes, library, categories, suppliers, deliveries] = await Promise.all([
       loadEventFull(eventId),
       loadCaseSizes(),
       loadLibraryProducts(),
       loadCategories(),
+      loadSuppliers(),
       getDB().deliveries.forEvent(eventId).catch(() => []),
     ]);
     countedIn = countedInMap(deliveries, event, caseSizes);
@@ -292,97 +295,40 @@ export function mountProductsPanel(route) {
     if (!ep?.product) return;
 
     const p = ep.product;
-    const pack = productStockPack(p, caseSizes);
+    // Prefer full library row (offers) when available
+    const full = library.find((x) => x.id === productId) || p;
     const cin = countedIn[productId] ?? (ep.delivered_qty != null ? Number(ep.delivered_qty) : 0);
     const ordered = Number(ep.qty_ordered) || 0;
     const opening = openingForProduct(productId, countedIn, damagedFromDeliveries, ep);
     const variance = round1(cin - ordered);
     const varLabel = variance === 0 ? '—' : `${variance > 0 ? '+' : ''}${fmtNum(variance)}`;
 
-    openSheet({
-      title: 'Edit product',
-      variant: 'admin-full',
-      bodyHtml: `
-        <div class="admin-drawer-form">
-          <div class="del-form-err" id="epEditErr"></div>
-          <div class="admin-field">
-            <span class="admin-label">Product</span>
-            <div class="ep-edit-name">${escapeHtml(p.name || 'Product')}</div>
-            <p class="wst-form-hint muted">${escapeHtml(pack.label || p.case_size || '—')}</p>
-          </div>
-          <div class="admin-field">
-            <label class="admin-label" for="epEditOrdered">Cases ordered</label>
-            <input class="admin-input" type="text" inputmode="decimal" id="epEditOrdered"
-              value="${ep.qty_ordered != null ? escapeHtml(String(ep.qty_ordered)) : ''}"
-              placeholder="0">
-          </div>
-          <div class="admin-field-grid">
-            <div class="admin-field">
-              <span class="admin-label">Counted in</span>
-              <div class="ep-edit-stat">${fmtNum(cin)}</div>
-            </div>
-            <div class="admin-field">
-              <span class="admin-label">Variance</span>
-              <div class="ep-edit-stat">${escapeHtml(varLabel)}</div>
-            </div>
-            <div class="admin-field">
-              <span class="admin-label">Opening</span>
-              <div class="ep-edit-stat">${fmtNum(opening)}</div>
-            </div>
-          </div>
-          <p class="wst-form-hint muted">Counted in and opening come from deliveries. Unusable stock is deducted from counted in.</p>
-        </div>`,
-      footHtml: `
-        <div class="admin-drawer-foot admin-drawer-foot--split">
-          <button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="epEditRemove">Remove</button>
-          <div class="admin-drawer-foot-actions">
-            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="epEditCancel">Cancel</button>
-            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="epEditSave">Save</button>
-          </div>
-        </div>`,
+    openProductFormSheet({
+      product: full,
+      categories,
+      suppliers,
+      caseSizes,
+      allowDelete: false,
+      eventContext: {
+        qtyOrdered: ep.qty_ordered,
+        countedIn: fmtNum(cin),
+        variance: varLabel,
+        opening: fmtNum(opening),
+        onSaveOrdered: async (qty) => {
+          await getDB().eventProducts.setForEvent(eventId, productId, { qty_ordered: qty });
+        },
+        onRemoveFromEvent: async () => {
+          const DB = getDB();
+          if (typeof DB.eventProducts.removeFromEvent === 'function') {
+            await DB.eventProducts.removeFromEvent(eventId, productId);
+          } else {
+            await DB.eventProducts.removeForEvent(eventId, productId);
+          }
+          await refresh();
+        },
+      },
+      onSaved: async () => { await refresh(); },
     });
-
-    const errEl = $('epEditErr');
-    const orderedInp = $('epEditOrdered');
-    orderedInp?.focus();
-    orderedInp?.select();
-
-    $('epEditCancel').onclick = closeSheet;
-
-    $('epEditSave').onclick = async () => {
-      const raw = orderedInp.value.trim();
-      const qty = raw === '' ? 0 : Number(raw);
-      if (!Number.isFinite(qty) || qty < 0) {
-        errEl.textContent = 'Enter a valid ordered quantity.';
-        return;
-      }
-      try {
-        await getDB().eventProducts.setForEvent(eventId, productId, { qty_ordered: qty });
-        if (ep) ep.qty_ordered = qty;
-        closeSheet();
-        paintTable();
-        toast('Product updated');
-      } catch (err) {
-        errEl.textContent = err.message || 'Save failed';
-      }
-    };
-
-    $('epEditRemove').onclick = async () => {
-      if (!confirm(`Remove “${p.name || 'this product'}” from this event?`)) return;
-      try {
-        const DB = getDB();
-        if (typeof DB.eventProducts.removeFromEvent === 'function') {
-          await DB.eventProducts.removeFromEvent(eventId, productId);
-        } else {
-          await DB.eventProducts.removeForEvent(eventId, productId);
-        }
-        closeSheet();
-        await refresh();
-        toast('Product removed from event');
-      } catch (err) {
-        errEl.textContent = err.message || 'Remove failed';
-      }
-    };
   }
 
   function openAddProduct() {
