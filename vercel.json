@@ -1,6 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "buildCommand": "cd v5 && npm ci && npm run build",
+  "outputDirectory": ".",
   "redirects": [
     {
       "source": "/",
