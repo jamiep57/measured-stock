@@ -521,18 +521,30 @@ body:has(.admin-app) {
   border-color: var(--primary);
 }
 
-/* Primary CTA — no nested white toolbar chrome */
-.topbar-toolbar:has(> .topbar-tool--primary:only-child) {
+/* Primary CTA — no nested white toolbar chrome (alone or with companion icons) */
+.topbar-toolbar:has(> .topbar-tool--primary) {
   padding: 0;
   border: none;
   background: transparent;
   box-shadow: none;
   height: auto;
+  gap: 6px;
 }
-.topbar-toolbar:has(> .topbar-tool--primary:only-child) .topbar-tool--primary {
+.topbar-toolbar:has(> .topbar-tool--primary) .topbar-tool--primary {
   height: var(--topbar-h);
   padding: 0 14px;
   border-radius: var(--radius);
+}
+.topbar-toolbar:has(> .topbar-tool--primary) > .topbar-tool:not(.topbar-tool--primary) {
+  width: var(--topbar-h);
+  height: var(--topbar-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
+}
+.topbar-toolbar:has(> .topbar-tool--primary) > .topbar-tool:not(.topbar-tool--primary):hover:not(:disabled) {
+  background: var(--secondary);
 }
 
 /* Legacy aliases — remove when unused */
