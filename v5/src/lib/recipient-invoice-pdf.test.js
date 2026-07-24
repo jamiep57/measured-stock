@@ -1,10 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import {
   INVOICE_FROM,
+  INVOICE_VAT_RATE,
   buildInvoiceNumber,
   formatInvoiceDate,
   formatInvoiceMoney,
+  invoiceVatBreakdown,
 } from './recipient-invoice-pdf.js';
+
+describe('invoiceVatBreakdown', () => {
+  it('applies UK standard VAT at 20%', () => {
+    expect(INVOICE_VAT_RATE).toBe(0.2);
+    expect(invoiceVatBreakdown(100)).toEqual({
+      net: 100,
+      vat: 20,
+      total: 120,
+      vatRate: 0.2,
+    });
+  });
+
+  it('rounds money to two decimals', () => {
+    expect(invoiceVatBreakdown(10.11)).toEqual({
+      net: 10.11,
+      vat: 2.02,
+      total: 12.13,
+      vatRate: 0.2,
+    });
+  });
+});
 
 describe('formatInvoiceMoney', () => {
   it('formats GBP with two decimals', () => {

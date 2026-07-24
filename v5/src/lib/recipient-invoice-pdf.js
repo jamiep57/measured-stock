@@ -15,6 +15,25 @@ export const INVOICE_FROM = {
   website: 'measured.events',
 };
 
+/** UK standard VAT rate applied to invoice totals. */
+export const INVOICE_VAT_RATE = 0.2;
+
+function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * @param {number} subtotal ex-VAT amount
+ * @param {number} [vatRate]
+ * @returns {{ net: number, vat: number, total: number, vatRate: number }}
+ */
+export function invoiceVatBreakdown(subtotal, vatRate = INVOICE_VAT_RATE) {
+  const rate = Number.isFinite(vatRate) ? vatRate : INVOICE_VAT_RATE;
+  const net = roundMoney(subtotal);
+  const vat = roundMoney(net * rate);
+  return { net, vat, total: roundMoney(net + vat), vatRate: rate };
+}
+
 export function formatInvoiceMoney(n) {
   if (n == null || !Number.isFinite(n)) return '—';
   return `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -99,7 +118,7 @@ export async function generateRecipientInvoicePDF({
   const ml = 18;
   const mr = 18;
   const contentW = pageW - ml - mr;
-  const bottomMargin = 48;
+  const bottomMargin = 18;
   const black = [17, 17, 17];
   const grey = [90, 90, 90];
   const muted = [130, 130, 130];
@@ -124,40 +143,10 @@ export async function generateRecipientInvoicePDF({
     doc.line(ml, y, pageW - mr, y);
   }
 
-  function drawFooterChrome() {
-    const y = pageH - 38;
-    hairline(y, 0.4);
-
-    setFont('bold', 7.5, muted);
-    doc.text('FROM', ml, y + 7);
-    setFont('normal', 8, grey);
-    let ay = y + 12;
-    for (const line of INVOICE_FROM.addressLines) {
-      doc.text(line, ml, ay);
-      ay += 3.8;
-    }
-    doc.text(INVOICE_FROM.email, ml, ay);
-    ay += 3.8;
-    doc.text(INVOICE_FROM.website, ml, ay);
-
-    setFont('bold', 7.5, muted);
-    doc.text('BENEFICIARY', pageW - mr, y + 7, { align: 'right' });
-    setFont('normal', 8, grey);
-    ay = y + 12;
-    for (const line of INVOICE_FROM.addressLines) {
-      doc.text(line, pageW - mr, ay, { align: 'right' });
-      ay += 3.8;
-    }
-    doc.text(INVOICE_FROM.email, pageW - mr, ay, { align: 'right' });
-    ay += 3.8;
-    doc.text(INVOICE_FROM.website, pageW - mr, ay, { align: 'right' });
-  }
-
   function stampPages() {
     const total = doc.getNumberOfPages();
     for (let p = 1; p <= total; p++) {
       doc.setPage(p);
-      drawFooterChrome();
       setFont('normal', 7.5, muted);
       doc.text(`${p} / ${total}`, pageW / 2, pageH - 8, { align: 'center' });
     }
@@ -183,9 +172,6 @@ export async function generateRecipientInvoicePDF({
     setFont('bold', 10, black);
     doc.text(dateStr, ml, 32);
     doc.text(inv.invoiceNumber || '—', ml, 37.5);
-
-    setFont('normal', 8, muted);
-    doc.text('Please add the invoice number to your payment description.', ml, 44);
 
     // Right: logo + from block (address / contact — no name under logo)
     let rightY = 14;
@@ -263,12 +249,23 @@ export async function generateRecipientInvoicePDF({
     hairline(y, 0.45);
     y += 8;
 
-    const total = Number.isFinite(inv.totalCost)
+    const subtotal = Number.isFinite(inv.totalCost)
       ? inv.totalCost
       : (inv.products || []).reduce((s, p) => s + (Number(p.cost) || 0), 0);
+    const { net, vat, total, vatRate } = invoiceVatBreakdown(subtotal);
+    const vatPctLabel = `${Math.round(vatRate * 100)}%`;
+    const labelX = ml + colDesc + colQty + colUnit - 8;
+
+    setFont('normal', 9.5, grey);
+    doc.text('SUBTOTAL', labelX, y, { align: 'right' });
+    doc.text(formatInvoiceMoney(net), pageW - mr, y, { align: 'right' });
+    y += 6;
+    doc.text(`VAT (${vatPctLabel})`, labelX, y, { align: 'right' });
+    doc.text(formatInvoiceMoney(vat), pageW - mr, y, { align: 'right' });
+    y += 7;
 
     setFont('bold', 10, black);
-    doc.text('TOTAL', ml + colDesc + colQty + colUnit - 8, y, { align: 'right' });
+    doc.text('TOTAL', labelX, y, { align: 'right' });
     doc.text(formatInvoiceMoney(total), pageW - mr, y, { align: 'right' });
     return y + 4;
   }
@@ -293,18 +290,19 @@ export async function generateRecipientInvoicePDF({
     const state = { y: drawTableHeader(drawInvoiceHeader(inv, false)) };
     const products = inv.products || [];
 
+    const totalsH = 36;
     if (!products.length) {
-      ensureSpace(rowH + 24, inv, state);
+      ensureSpace(rowH + totalsH, inv, state);
       state.y += rowH;
     } else {
       for (let i = 0; i < products.length; i++) {
-        ensureSpace(rowH + (i === products.length - 1 ? 24 : 0), inv, state);
+        ensureSpace(rowH + (i === products.length - 1 ? totalsH : 0), inv, state);
         drawRow(products[i], state.y);
         state.y += rowH;
       }
     }
 
-    ensureSpace(24, inv, state);
+    ensureSpace(totalsH, inv, state);
     drawTotals(inv, state.y);
   });
 
