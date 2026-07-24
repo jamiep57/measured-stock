@@ -543,6 +543,12 @@ body:has(.admin-app) {
   background: var(--card);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
 }
+/* Labeled companions (e.g. Merge duplicates) need auto width — square chrome is icon-only */
+.topbar-toolbar:has(> .topbar-tool--primary) > .topbar-tool--label:not(.topbar-tool--primary) {
+  width: auto;
+  padding: 0 12px;
+  gap: 6px;
+}
 .topbar-toolbar:has(> .topbar-tool--primary) > .topbar-tool:not(.topbar-tool--primary):hover:not(:disabled) {
   background: var(--secondary);
 }
