@@ -57,4 +57,19 @@ describe('square-recipes', () => {
     eps.push({ product_id: 'p2', product: { name: 'Tonic' } });
     expect(recipeOnEvent(findRecipe(recipes, 'G&T', 'Regular'), eps)).toBe(true);
   });
+
+  it('maps volume pool ingredients and checks pool members on event', () => {
+    const recipes = [{
+      till_item: 'Sprite',
+      till_variation: 'Regular',
+      ingredients: [{ pool_name: 'Lemon-lime soft', qty: 1, position: 0 }],
+    }];
+    expect(recipeIsMapped(findRecipe(recipes, 'Sprite', 'Regular'))).toBe(true);
+    expect(recipeOnEvent(findRecipe(recipes, 'Sprite', 'Regular'), [
+      { product_id: 'p1', product: { name: 'Coke' } },
+    ])).toBe(false);
+    expect(recipeOnEvent(findRecipe(recipes, 'Sprite', 'Regular'), [
+      { product_id: 'p2', product: { name: '7up', pool_name: 'Lemon-lime soft' } },
+    ])).toBe(true);
+  });
 });

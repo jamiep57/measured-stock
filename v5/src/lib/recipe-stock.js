@@ -24,7 +24,7 @@ export function productStockUnit(product, caseSizes = []) {
   return productStockPack(product, caseSizes).stockUnit || 'case';
 }
 
-function pickProductByRecipeQty(candidates, qty) {
+function pickProductByRecipeQty(candidates, qty, caseSizes = []) {
   if (!candidates?.length) return null;
   if (candidates.length === 1) return candidates[0];
   const q = Number(qty) || 0;
@@ -32,7 +32,7 @@ function pickProductByRecipeQty(candidates, qty) {
   let best = candidates[0];
   let bestDiff = Infinity;
   candidates.forEach((p) => {
-    const pack = productStockPack(p, []);
+    const pack = productStockPack(p, caseSizes);
     let expected = 1;
     const u = pack.stockUnit;
     if (u === 'keg' || u === 'unit' || u === 'single') {
@@ -52,8 +52,12 @@ function pickProductByRecipeQty(candidates, qty) {
   return best;
 }
 
-/** Resolve a recipe ingredient name to a library product. */
-export function recipeProductByName(storedName, qtyHint, products = []) {
+/**
+ * Resolve a recipe ingredient name to a library product.
+ * When several SKUs share a name, prefer the pack whose size matches qtyHint
+ * (case fraction), using caseSizes / legacy units_per_case.
+ */
+export function recipeProductByName(storedName, qtyHint, products = [], caseSizes = []) {
   const raw = String(storedName ?? '').trim();
   if (!raw) return null;
   const nLower = raw.toLowerCase();
@@ -68,26 +72,26 @@ export function recipeProductByName(storedName, qtyHint, products = []) {
   }
   const byName = products.filter((p) => (p.name || '').trim().toLowerCase() === nLower);
   if (byName.length === 1) return byName[0];
-  if (byName.length > 1) return pickProductByRecipeQty(byName, qtyHint);
+  if (byName.length > 1) return pickProductByRecipeQty(byName, qtyHint, caseSizes);
   return byName[0] || null;
 }
 
-export function recipeIngredientDisplayName(storedName, products = []) {
-  const p = recipeProductByName(storedName, null, products);
+export function recipeIngredientDisplayName(storedName, products = [], qtyHint = null, caseSizes = []) {
+  const p = recipeProductByName(storedName, qtyHint, products, caseSizes);
   if (!p) return storedName || '';
   const pack = p.case_size ? ` — ${p.case_size}` : '';
   return `${p.name}${pack}`;
 }
 
-function recipeIngredientStockKey(storedName, qtyHint, products = []) {
-  const p = recipeProductByName(storedName, qtyHint, products);
+function recipeIngredientStockKey(storedName, qtyHint, products = [], caseSizes = []) {
+  const p = recipeProductByName(storedName, qtyHint, products, caseSizes);
   if (p?.name) return `${normProductName(p.name)}|${normCaseSizeLabel(p.case_size || '')}`;
   return `${normProductName(storedName)}|`;
 }
 
 export function pluStockKeyForRecipeIngredient(storedName, qtyHint, eps, products = [], caseSizes = []) {
-  const exactKey = recipeIngredientStockKey(storedName, qtyHint, products);
-  const p = recipeProductByName(storedName, qtyHint, products);
+  const exactKey = recipeIngredientStockKey(storedName, qtyHint, products, caseSizes);
+  const p = recipeProductByName(storedName, qtyHint, products, caseSizes);
   if (!p?.name || productStockUnit(p, caseSizes) !== 'keg') return exactKey;
   const eventKeys = new Set((eps || []).filter((ep) => ep.product).map((ep) => eventProductStockKey(ep)));
   if (eventKeys.has(exactKey)) return exactKey;

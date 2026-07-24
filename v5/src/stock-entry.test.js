@@ -124,4 +124,12 @@ describe('productStockPack', () => {
     const p = { stock_case_size_id: 'a' };
     expect(productStockPack(p, cs).label).toBe('70cl');
   });
+
+  it('falls back to legacy product units_per_case', () => {
+    const p = { name: 'Carton Water', case_size: '12×330ml', units_per_case: 12, stock_unit: 'case' };
+    const pack = productStockPack(p, []);
+    expect(pack.unitsPerCase).toBe(12);
+    expect(pack.label).toBe('12×330ml');
+    expect(pack.stockUnit).toBe('case');
+  });
 });

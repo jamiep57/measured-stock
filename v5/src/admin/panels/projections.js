@@ -92,12 +92,14 @@ export function mountProjectionsPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, recipes, products, caseSizes] = await Promise.all([
+    const [event, tillImport, recipes, products, caseSizes, deliveries, wastageBatches] = await Promise.all([
       loadEventFull(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.recipes.listFull().catch(() => []),
       loadLibraryProducts(),
       loadCaseSizes(),
+      DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+      DB.wastage.forEvent(ctx.eventId).catch(() => []),
     ]);
     if (ctx.abort) return;
 
@@ -107,6 +109,8 @@ export function mountProjectionsPanel(route) {
       recipes: recipes || [],
       products: products || [],
       caseSizes: caseSizes || [],
+      deliveries: deliveries || [],
+      wastageBatches: wastageBatches || [],
     });
     paint();
   }

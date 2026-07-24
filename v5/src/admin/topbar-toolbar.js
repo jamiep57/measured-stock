@@ -166,7 +166,13 @@ export const PANEL_TOOLBAR = {
           id: 'export-reports',
           icon: 'download',
           label: 'Export CSV',
-          title: 'Download supplier delivery cost as CSV',
+          title: 'Download report as CSV',
+        },
+        {
+          id: 'export-invoice',
+          icon: 'file-text',
+          label: 'Export invoice',
+          title: 'Download client transfer invoice PDF',
         },
       ],
     },
@@ -180,7 +186,13 @@ export const PANEL_TOOLBAR = {
           id: 'export-reports',
           icon: 'download',
           label: 'Export CSV',
-          title: 'Download supplier delivery cost as CSV',
+          title: 'Download report as CSV',
+        },
+        {
+          id: 'export-invoice',
+          icon: 'file-text',
+          label: 'Export invoice',
+          title: 'Download client transfer invoice PDF',
         },
       ],
     },
@@ -274,16 +286,16 @@ export const PANEL_TOOLBAR = {
       ],
     },
   ],
-  'case-sizes': [
+  'volume-pools': [
     {
       id: 'actions',
-      label: 'Case sizes',
+      label: 'Volume pools',
       items: [
         {
-          id: 'new-case-size',
+          id: 'new-volume-pool',
           icon: 'plus',
-          label: 'New case size',
-          title: 'New case size',
+          label: 'New pool',
+          title: 'New volume pool',
           primary: true,
         },
       ],

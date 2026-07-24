@@ -1,14 +1,37 @@
 /**
  * Internal transfers by recipient (client) — e.g. Artist Liaison got Lager ×5, Gin ×2.
+ * Costs use event override → preferred supplier offer → product price (same basis as recon).
  */
 
 import { productStockPack } from '../pack-metrics.js';
 import { storedToForm, totalUnitsForProduct, parseQty } from '../stock-entry.js';
+import {
+  eventProductFor,
+  usesBottlePrice,
+  deliveryCasePrice,
+  deliveryUnitPrice,
+} from './supplier-delivery-cost.js';
+import { preferredSupplierId } from './recon.js';
 
-function productFromEvent(event, productId) {
-  const ep = (event?.event_products || []).find((x) => x.product_id === productId);
-  return ep?.product || null;
+/**
+ * Unit/case price for a transferred product (event cost basis).
+ * @returns {{ unitPrice: number|null, missingPrice: boolean, priceBasis: 'unit'|'case', supplierId: string|null }}
+ */
+export function transferProductPrice(ep, product, caseSizes = []) {
+  const bottle = usesBottlePrice(product, caseSizes);
+  const supplierId = preferredSupplierId(product);
+  const unitPrice = bottle
+    ? deliveryUnitPrice(ep, product, supplierId, caseSizes)
+    : deliveryCasePrice(ep, product, supplierId);
+  const missingPrice = unitPrice == null || !Number.isFinite(unitPrice);
+  return {
+    unitPrice: missingPrice ? null : unitPrice,
+    missingPrice,
+    priceBasis: bottle ? 'unit' : 'case',
+    supplierId: supplierId || null,
+  };
 }
+
 function inDateRange(iso, dateFrom, dateTo) {
   if (!dateFrom && !dateTo) return true;
   if (!iso) return false;
@@ -49,20 +72,36 @@ export function formatTransferQtyLabel(qty, product, caseSizes = []) {
   return `${qtyStr} ${label}`;
 }
 
+/** Collapse same-named catalog rows (and null ids) into one aggregate line. */
+function productAggregateKey(row) {
+  const name = String(row?.productName || '').trim().toLowerCase();
+  if (name) return `name:${name}`;
+  if (row?.productId) return `id:${row.productId}`;
+  return 'unknown';
+}
+
 /**
- * Aggregate product qty for one transfer's lines.
+ * Aggregate product qty + cost for one transfer line.
  */
 export function transferProductQty(line, event, caseSizes = []) {
-  const product = productFromEvent(event, line?.product_id) || line?.product || null;
+  const ep = eventProductFor(event, line?.product_id);
+  const product = ep?.product || line?.product || null;
   const form = storedToForm(line);
   const qty = totalUnitsForProduct(form.cases, form.singles, product, caseSizes);
+  const priced = transferProductPrice(ep, product, caseSizes);
+  const safeQty = Number.isFinite(qty) ? qty : 0;
+  const cost = priced.missingPrice ? 0 : safeQty * priced.unitPrice;
   return {
     productId: line?.product_id || null,
     productName: product?.name || line?.product?.name || 'Unknown product',
-    qty: Number.isFinite(qty) ? qty : 0,
+    qty: safeQty,
     cases: parseQty(form.cases),
     singles: parseQty(form.singles),
     product,
+    unitPrice: priced.unitPrice,
+    cost,
+    missingPrice: priced.missingPrice,
+    priceBasis: priced.priceBasis,
   };
 }
 
@@ -102,6 +141,8 @@ export function buildRecipientTransferReport({
   let transferCount = 0;
   let lineCount = 0;
   let totalQty = 0;
+  let totalCost = 0;
+  let missingPriceCount = 0;
 
   for (const t of filtered) {
     const rid = t.recipient_id;
@@ -113,6 +154,8 @@ export function buildRecipientTransferReport({
         transferCount: 0,
         lineCount: 0,
         totalQty: 0,
+        totalCost: 0,
+        missingPriceCount: 0,
         products: new Map(),
         transfers: [],
       });
@@ -129,24 +172,37 @@ export function buildRecipientTransferReport({
       lineCount += 1;
       agg.lineCount += 1;
       agg.totalQty += row.qty;
+      agg.totalCost += row.cost;
       totalQty += row.qty;
+      totalCost += row.cost;
+      if (row.missingPrice) {
+        missingPriceCount += 1;
+        agg.missingPriceCount += 1;
+      }
       transferLines.push(row);
 
-      if (!row.productId) continue;
-      if (!agg.products.has(row.productId)) {
-        agg.products.set(row.productId, {
+      const key = productAggregateKey(row);
+      if (!agg.products.has(key)) {
+        agg.products.set(key, {
           productId: row.productId,
           productName: row.productName,
           qty: 0,
           cases: 0,
           singles: 0,
+          cost: 0,
+          missingPrice: false,
+          unitPrice: row.unitPrice,
+          priceBasis: row.priceBasis,
           product: row.product,
         });
       }
-      const p = agg.products.get(row.productId);
+      const p = agg.products.get(key);
       p.qty += row.qty;
       p.cases += row.cases;
       p.singles += row.singles;
+      p.cost += row.cost;
+      if (row.missingPrice) p.missingPrice = true;
+      else if (p.unitPrice == null && row.unitPrice != null) p.unitPrice = row.unitPrice;
     }
 
     agg.transfers.push({
@@ -155,6 +211,7 @@ export function buildRecipientTransferReport({
       notes: t.notes || '',
       lines: transferLines,
       totalQty: transferLines.reduce((s, l) => s + l.qty, 0),
+      totalCost: transferLines.reduce((s, l) => s + l.cost, 0),
     });
   }
 
@@ -174,6 +231,8 @@ export function buildRecipientTransferReport({
       transferCount: agg.transferCount,
       lineCount: agg.lineCount,
       totalQty: agg.totalQty,
+      totalCost: agg.totalCost,
+      missingPriceCount: agg.missingPriceCount,
       products,
       summary,
       transfers: agg.transfers.sort((a, b) => {
@@ -189,6 +248,8 @@ export function buildRecipientTransferReport({
     transferCount,
     lineCount,
     totalQty,
+    totalCost,
+    missingPriceCount,
     recipientRows,
   };
 }
@@ -198,12 +259,12 @@ export function recipientTransferCsv(report, eventName = 'event') {
     const s = String(v ?? '');
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const headers = ['Client', 'Product', 'Qty', 'Qty label', 'Transfers', 'Summary'];
+  const headers = ['Client', 'Product', 'Qty', 'Qty label', 'Unit price', 'Cost', 'Transfers', 'Summary'];
   const lines = [headers.map(esc).join(',')];
 
   for (const r of report.recipientRows || []) {
     if (!r.products.length) {
-      lines.push([r.recipientName, '', '', '', r.transferCount, ''].map(esc).join(','));
+      lines.push([r.recipientName, '', '', '', '', '', r.transferCount, ''].map(esc).join(','));
       continue;
     }
     r.products.forEach((p, i) => {
@@ -212,6 +273,8 @@ export function recipientTransferCsv(report, eventName = 'event') {
         p.productName,
         p.qty,
         p.qtyLabel,
+        p.missingPrice || p.unitPrice == null ? '' : Number(p.unitPrice).toFixed(2),
+        p.missingPrice ? '' : Number(p.cost || 0).toFixed(2),
         i === 0 ? r.transferCount : '',
         i === 0 ? r.summary : '',
       ].map(esc).join(','));

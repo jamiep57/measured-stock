@@ -11,7 +11,7 @@ function getDB() {
 
 const PRODUCT_SELECT =
   'id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit,' +
-  'case_price,unit_price,supplier_id,sku,abv,' +
+  'case_price,unit_price,supplier_id,sku,abv,pool_name,pool_servings_per_unit,pool_servings_text,' +
   'category:categories(id,name,colour_key),' +
   'product_suppliers(id,supplier_id,sku,pack_size,units_per_case,case_price,unit_price,is_preferred,purchase_case_size_id,supplier:suppliers(id,name))';
 
@@ -26,8 +26,14 @@ export async function loadCaseSizes() {
 
 export async function loadEventsList() {
   const DB = getDB();
+  const listQuery = '?select=id,name,legacy_id,status,image_url&order=created_at.desc';
   const [events, blobs] = await Promise.all([
-    DB.events.list('?select=id,name,legacy_id,status&order=created_at.desc'),
+    DB.events.list(listQuery).catch(async (err) => {
+      if (/image_url|column/.test(String(err?.message || err))) {
+        return DB.events.list('?select=id,name,legacy_id,status&order=created_at.desc');
+      }
+      throw err;
+    }),
     DB.select('stock_events', '?select=id&order=name').catch(() => []),
   ]);
   const blobIds = new Set((blobs || []).map((b) => b.id));

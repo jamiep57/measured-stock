@@ -7,6 +7,12 @@ import { icon } from '../lib/icons.js';
 import { getDB } from '../db.js';
 import { openSheet, closeSheet } from '../components/sheet.js';
 import { mountSupplierSearch } from '../components/supplier-search.js';
+import { mountFractionInput } from '../components/fraction-input.js';
+import {
+  defaultPoolFractionText,
+  poolFractionText,
+  poolServingsFromFraction,
+} from '../lib/volume-pools.js';
 
 function displayOfferPrice(row) {
   if (row?.case_price != null) return row.case_price;
@@ -138,8 +144,13 @@ export function openProductFormSheet(opts) {
         </div>
         <div class="admin-field">
           <label class="admin-label" for="libPoolName">Volume pool</label>
-          <input class="admin-input" type="text" id="libPoolName" placeholder="e.g. House Vodka">
-          <p class="wst-form-hint muted">Optional group for shared bottle stock across products.</p>
+          <input class="admin-input" type="text" id="libPoolName" placeholder="e.g. House Vodka, Lemon-lime soft">
+          <p class="wst-form-hint muted">Optional group for interchangeable SKUs. Prefer the Volume pools page to manage members.</p>
+        </div>
+        <div class="admin-field" id="libPoolFractionField">
+          <label class="admin-label" for="libPoolFraction">Pool fraction / serving</label>
+          <div id="libPoolFractionMount"></div>
+          <p class="wst-form-hint muted">Fraction of one case/SKU per serving when in a pool (e.g. 1/24, 1/12). Stays as typed.</p>
         </div>
         <div class="admin-field">
           <span class="admin-label">Suppliers &amp; prices</span>
@@ -167,6 +178,42 @@ export function openProductFormSheet(opts) {
     $('libAbv').value = p.abv != null ? String(p.abv) : '';
     $('libPoolName').value = p.pool_name || '';
   }
+
+  const poolFractionMount = $('libPoolFractionMount');
+  const poolFraction = poolFractionMount
+    ? mountFractionInput(poolFractionMount, {
+      value: p ? poolFractionText(p, caseSizes) : '1',
+      placeholder: 'e.g. 1/24',
+      id: 'libPoolFraction',
+    })
+    : null;
+
+  function productShapeForPool() {
+    const caseSizeId = $('libCaseSizeId')?.value || null;
+    const cs = caseSizeId ? caseSizes.find((c) => c.id === caseSizeId) : null;
+    return {
+      ...(p || {}),
+      case_size_id: cs?.id || p?.case_size_id || null,
+      case_size: cs?.label ?? p?.case_size ?? null,
+      units_per_case: cs?.units_per_case != null
+        ? Number(cs.units_per_case) || 1
+        : (p?.units_per_case ?? 1),
+      pool_servings_text: poolFraction?.getValue() || p?.pool_servings_text || null,
+      pool_servings_per_unit: p?.pool_servings_per_unit ?? null,
+    };
+  }
+
+  $('libCaseSizeId')?.addEventListener('change', () => {
+    if (!poolFraction) return;
+    // Only refresh default when the field still looks like a prior default / empty.
+    const current = poolFraction.getValue();
+    const prevDefault = p
+      ? poolFractionText({ ...p, pool_servings_text: null }, caseSizes)
+      : '1';
+    if (!current || current === prevDefault || current === '1') {
+      poolFraction.setValue(defaultPoolFractionText(productShapeForPool(), caseSizes));
+    }
+  });
 
   function syncOfferSupplierPickers(exceptRoot = null) {
     const wrap = $('libOffers');
@@ -335,6 +382,21 @@ export function openProductFormSheet(opts) {
     const caseSizeId = $('libCaseSizeId')?.value || null;
     const cs = caseSizeId ? caseSizes.find((c) => c.id === caseSizeId) : null;
     const poolName = ($('libPoolName')?.value || '').trim() || null;
+    let pool_servings_per_unit = null;
+    let pool_servings_text = null;
+    if (poolName) {
+      const derived = poolServingsFromFraction(
+        poolFraction?.getValue() || '',
+        productShapeForPool(),
+        caseSizes,
+      );
+      if (!derived) {
+        $('libErr').textContent = 'Enter a valid pool fraction (e.g. 1/24).';
+        return;
+      }
+      pool_servings_per_unit = derived.pool_servings_per_unit;
+      pool_servings_text = derived.pool_servings_text;
+    }
 
     const patch = {
       name,
@@ -348,9 +410,8 @@ export function openProductFormSheet(opts) {
       sku: ($('libSku')?.value || '').trim() || null,
       abv: $('libAbv')?.value !== '' ? Number($('libAbv').value) : null,
       pool_name: poolName,
-      pool_servings_per_unit: cs?.servings_per_unit != null
-        ? Number(cs.servings_per_unit)
-        : (p?.pool_servings_per_unit ?? null),
+      pool_servings_per_unit,
+      pool_servings_text,
     };
 
     const btn = $('libSave');

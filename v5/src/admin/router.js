@@ -11,13 +11,18 @@ export function parseRoute(pathname = location.pathname) {
 
   if (!rest) return { view: 'home' };
 
-  const global = ['library', 'suppliers', 'case-sizes', 'bugs'];
+  // Legacy Catalog → Case sizes URL now lives under Workspace settings.
+  if (rest === 'case-sizes') return { view: 'settings' };
+
+  const global = ['library', 'suppliers', 'volume-pools', 'bugs', 'settings'];
   if (global.includes(rest)) return { view: rest };
 
   const m = rest.match(/^events\/([^/]+)(?:\/(.+))?$/);
   if (m) {
     let panel = m[2] || 'dashboard';
     if (panel === 'opening') panel = 'products';
+    // Stock projections live on the event dashboard now.
+    if (panel === 'projections') panel = 'dashboard';
     return {
       view: 'event',
       eventId: m[1],
@@ -52,14 +57,12 @@ export function startRouter(onRoute) {
 }
 
 export function linkSidebar(route) {
-  document.querySelectorAll('.nav-link[data-route], .nav-link-cog[data-route]').forEach((el) => {
+  document.querySelectorAll('.nav-link[data-route], .nav-link-cog[data-route], .topbar-settings[data-route]').forEach((el) => {
     const isEvent = el.hasAttribute('data-event');
     let active = false;
     if (route.view === 'event' && isEvent) {
       active = el.dataset.route === route.panel;
     } else if (!isEvent && route.view === el.dataset.route) {
-      active = true;
-    } else if (route.view === 'home' && el.dataset.route === 'home') {
       active = true;
     }
     el.classList.toggle('active', active);

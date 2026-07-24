@@ -121,14 +121,17 @@ export function renderProjectionTable({
       <tr${it.pid ? ` data-pid="${escapeHtml(it.pid)}"` : ''}>
         <td class="dash-prod">${escapeHtml(it.name)}</td>
         <td class="num">${servingsHtml}</td>
+        <td class="num">${formatQtyCell(it.baselineCases)}</td>
         <td class="num">${formatQtyCell(it.projectedCases)}</td>
+        <td class="num">${it.delivered != null ? formatQtyCell(it.delivered) : '<span class="muted">—</span>'}</td>
+        <td class="num">${it.wastage != null ? formatQtyCell(it.wastage) : '<span class="muted">—</span>'}</td>
         <td class="num">${it.available != null ? formatQtyCell(it.available) : '<span class="muted">—</span>'}</td>
         <td class="num">${runOutHtml}</td>
         <td class="num">${pctHtml}</td>
         <td>${statusHtml}</td>
       </tr>`;
   }).join('') : `
-      <tr><td colspan="7" class="muted" style="padding:16px;text-align:center">No products run out before target revenue with this filter.</td></tr>`;
+      <tr><td colspan="10" class="muted" style="padding:16px;text-align:center">No products run out before target revenue with this filter.</td></tr>`;
 
   return `
     <div class="catalog-table-wrap dash-table-wrap">
@@ -136,8 +139,11 @@ export function renderProjectionTable({
         <thead>
           <tr>
             ${th('name', 'Product')}
-            ${th('servingsSold', 'Servings sold', 'num')}
-            ${th('projectedCases', 'Projected use', 'num')}
+            ${th('servingsSold', 'Sold (Square)', 'num')}
+            ${th('baselineCases', 'Sold (cases)', 'num')}
+            ${th('projectedCases', 'Use at target', 'num')}
+            ${th('delivered', 'Total delivered', 'num')}
+            ${th('wastage', 'Wastage', 'num')}
             ${th('available', 'Stock', 'num')}
             ${th('runOutRevenue', 'Runs dry at', 'num')}
             ${th('pct', '% of target', 'num')}

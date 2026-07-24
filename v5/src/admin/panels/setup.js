@@ -6,6 +6,8 @@ import { $, escapeHtml, toast } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import { getDB, loadEventFull } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { syncSidebar } from '../sidebar.js';
+import { parseRoute } from '../router.js';
 
 const STATUS_OPTS = [
   { value: 'draft', label: 'Draft' },
@@ -14,6 +16,8 @@ const STATUS_OPTS = [
   { value: 'reconciled', label: 'Reconciled' },
   { value: 'archived', label: 'Archived' },
 ];
+
+const EVENT_IMAGE_BUCKET = 'event-images';
 
 function renderShell() {
   return `
@@ -25,6 +29,27 @@ function renderShell() {
             <p class="setup-section-desc muted">Core information for this event. Changes save automatically.</p>
           </div>
           <div class="setup-fields">
+            <div class="setup-field setup-field--full">
+              <div class="setup-field-row">
+                <label class="admin-label" for="setupImageFile">Event image</label>
+                <span class="setup-field-saved" id="setupSaved-image_url"></span>
+              </div>
+              <div class="setup-image-row">
+                <div class="setup-image-preview setup-image-preview--empty" id="setupImagePreview" aria-hidden="true">
+                  ${icon('image', { size: 20 })}
+                </div>
+                <div class="setup-image-actions">
+                  <input type="file" id="setupImageFile" accept="image/*" hidden>
+                  <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="setupImagePick">
+                    ${icon('upload', { size: 14 })} Choose image
+                  </button>
+                  <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="setupImageClear" hidden>
+                    Remove
+                  </button>
+                  <p class="wst-form-hint muted" style="margin:0">Shown on the left of the event selector in the sidebar.</p>
+                </div>
+              </div>
+            </div>
             <div class="setup-field">
               <div class="setup-field-row">
                 <label class="admin-label" for="setupName">Event name</label>
@@ -153,6 +178,25 @@ function flashSaved(field, isErr, msg) {
   el._t = setTimeout(() => el.classList.remove('setup-field-saved--show'), isErr ? 4000 : 1600);
 }
 
+function paintEventImage(imageUrl) {
+  const preview = $('setupImagePreview');
+  const clearBtn = $('setupImageClear');
+  const pickBtn = $('setupImagePick');
+  if (!preview) return;
+
+  if (imageUrl) {
+    preview.classList.remove('setup-image-preview--empty');
+    preview.innerHTML = `<img src="${escapeHtml(imageUrl)}" alt="Event image">`;
+    if (clearBtn) clearBtn.hidden = false;
+    if (pickBtn) pickBtn.innerHTML = `${icon('upload', { size: 14 })} Change image`;
+  } else {
+    preview.classList.add('setup-image-preview--empty');
+    preview.innerHTML = icon('image', { size: 20 });
+    if (clearBtn) clearBtn.hidden = true;
+    if (pickBtn) pickBtn.innerHTML = `${icon('upload', { size: 14 })} Choose image`;
+  }
+}
+
 function paintEventFields(event) {
   $('setupName').value = event.name || '';
   $('setupStatus').value = event.status || 'active';
@@ -161,17 +205,33 @@ function paintEventFields(event) {
   $('setupStart').value = event.start_date || '';
   $('setupEnd').value = event.end_date || '';
   $('setupTarget').value = event.target_revenue != null ? String(event.target_revenue) : '';
+  paintEventImage(event.image_url || null);
+}
+
+function imageExt(file) {
+  const fromName = (file.name || '').split('.').pop()?.toLowerCase();
+  if (fromName && /^[a-z0-9]{2,5}$/.test(fromName)) return fromName;
+  const type = (file.type || '').split('/')[1];
+  if (type === 'jpeg') return 'jpg';
+  if (type && /^[a-z0-9]+$/.test(type)) return type;
+  return 'jpg';
 }
 
 export function renderSetupShell() {
   return renderShell();
 }
 
-export function mountSetupPanel(route) {
+export function mountSetupPanel(route, state = { events: [] }) {
   const eventId = route.eventId;
   if (!eventId) return () => {};
 
   let event = null;
+
+  function patchStateEvent(patch) {
+    const row = state.events?.find((e) => e.id === eventId);
+    if (row) Object.assign(row, patch);
+    syncSidebar(parseRoute(), state);
+  }
 
   async function refresh() {
     event = await loadEventFull(eventId);
@@ -179,6 +239,11 @@ export function mountSetupPanel(route) {
     paintEventFields(event);
     renderBarPills(event.bars || [], openBarForm);
     renderRecipientPills(event.recipients || [], openRecipientForm);
+    patchStateEvent({
+      name: event.name,
+      status: event.status,
+      image_url: event.image_url || null,
+    });
   }
 
   async function saveEventField(field, rawValue) {
@@ -202,9 +267,57 @@ export function mountSetupPanel(route) {
       if (field === 'name') {
         const title = $('pageTitle');
         if (title) title.textContent = `Event setup · ${value || event.name || 'Event'}`;
+        patchStateEvent({ name: value });
       }
+      if (field === 'status') patchStateEvent({ status: value });
     } catch (err) {
       flashSaved(field, true, (err.message || 'Failed').slice(0, 48));
+    }
+  }
+
+  async function saveEventImage(file) {
+    if (!event?.id || !file) return;
+    const pickBtn = $('setupImagePick');
+    const prevLabel = pickBtn?.innerHTML;
+    if (pickBtn) {
+      pickBtn.disabled = true;
+      pickBtn.textContent = 'Uploading…';
+    }
+    try {
+      const path = `events/${event.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${imageExt(file)}`;
+      const url = await getDB().uploadImage(EVENT_IMAGE_BUCKET, path, file);
+      await getDB().events.update(event.id, { image_url: url });
+      event.image_url = url;
+      paintEventImage(url);
+      patchStateEvent({ image_url: url });
+      flashSaved('image_url', false);
+      toast('Event image saved');
+    } catch (err) {
+      flashSaved('image_url', true, (err.message || 'Upload failed').slice(0, 48));
+      toast(err.message || 'Image upload failed', true);
+    } finally {
+      if (pickBtn) {
+        pickBtn.disabled = false;
+        pickBtn.innerHTML = prevLabel || `${icon('upload', { size: 14 })} Change image`;
+        paintEventImage(event?.image_url || null);
+      }
+    }
+  }
+
+  async function clearEventImage() {
+    if (!event?.id) return;
+    try {
+      await getDB().events.update(event.id, { image_url: null });
+      event.image_url = null;
+      paintEventImage(null);
+      const fileInput = $('setupImageFile');
+      if (fileInput) fileInput.value = '';
+      patchStateEvent({ image_url: null });
+      flashSaved('image_url', false);
+      toast('Event image removed');
+    } catch (err) {
+      flashSaved('image_url', true, (err.message || 'Failed').slice(0, 48));
+      toast(err.message || 'Could not remove image', true);
     }
   }
 
@@ -214,6 +327,16 @@ export function mountSetupPanel(route) {
       const ev = (node.tagName === 'SELECT' || node.type === 'date') ? 'change' : 'blur';
       node.addEventListener(ev, () => saveEventField(field, node.value));
     });
+  }
+
+  function wireEventImage() {
+    const fileInput = $('setupImageFile');
+    $('setupImagePick')?.addEventListener('click', () => fileInput?.click());
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (file) saveEventImage(file);
+    });
+    $('setupImageClear')?.addEventListener('click', () => clearEventImage());
   }
 
   function openBarForm(barId) {
@@ -356,6 +479,7 @@ export function mountSetupPanel(route) {
   }
 
   wireAutosave();
+  wireEventImage();
 
   refresh().catch((err) => {
     toast(err.message || 'Failed to load event setup', true);

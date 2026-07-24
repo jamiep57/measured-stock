@@ -12,7 +12,8 @@ import {
   buildRecipientTransferReport,
   recipientTransferCsv,
 } from '../../lib/recipient-transfer-report.js';
-import { initIcons } from '../../lib/icons.js';
+import { generateRecipientInvoicePDF } from '../../lib/recipient-invoice-pdf.js';
+import { icon, initIcons } from '../../lib/icons.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 
 function fmtQty(n) {
@@ -116,6 +117,52 @@ export function mountReportsPanel(route) {
     URL.revokeObjectURL(a.href);
   }
 
+  function invoicePayloadFromRow(r) {
+    return {
+      recipientName: r.recipientName,
+      transferCount: r.transferCount,
+      totalCost: r.totalCost,
+      products: (r.products || []).map((p) => ({
+        productName: p.productName,
+        qtyLabel: p.qtyLabel,
+        unitPrice: p.unitPrice,
+        cost: p.cost,
+        missingPrice: p.missingPrice,
+      })),
+    };
+  }
+
+  async function exportInvoice(recipientId = '') {
+    if (ctx.reportKind !== 'clients') {
+      toast('Switch to Clients to export invoices', true);
+      return;
+    }
+    const report = ctx.clientReport;
+    if (!report?.recipientRows?.length) {
+      toast('No client transfers to invoice', true);
+      return;
+    }
+    const rows = recipientId
+      ? report.recipientRows.filter((r) => r.recipientId === recipientId)
+      : report.recipientRows;
+    if (!rows.length) {
+      toast('Client not found in this report', true);
+      return;
+    }
+    try {
+      await generateRecipientInvoicePDF({
+        eventName: ctx.event?.name || '',
+        date: new Date(),
+        invoices: rows.map(invoicePayloadFromRow),
+      });
+      toast(rows.length === 1
+        ? `Invoice downloaded for ${rows[0].recipientName}`
+        : `${rows.length} invoices downloaded`);
+    } catch (err) {
+      toast(err.message || 'Invoice PDF failed', true);
+    }
+  }
+
   function renderSupplierStats(report) {
     return `
       <div class="wst-stats reports-stats">
@@ -144,7 +191,12 @@ export function mountReportsPanel(route) {
 
   function renderClientStats(report) {
     return `
-      <div class="wst-stats reports-stats reports-stats--3">
+      <div class="wst-stats reports-stats">
+        <div class="wst-stat">
+          <span class="wst-stat-label">Total cost</span>
+          <span class="wst-stat-value">${escapeHtml(formatMoney(report.totalCost || 0))}</span>
+          <span class="wst-stat-label muted">at event / offer price</span>
+        </div>
         <div class="wst-stat">
           <span class="wst-stat-label">Clients</span>
           <span class="wst-stat-value">${report.recipientCount}</span>
@@ -158,7 +210,11 @@ export function mountReportsPanel(route) {
         <div class="wst-stat">
           <span class="wst-stat-label">Total qty</span>
           <span class="wst-stat-value">${escapeHtml(fmtQty(report.totalQty))}</span>
-          <span class="wst-stat-label muted">cases / units</span>
+          <span class="wst-stat-label muted">${
+            report.missingPriceCount
+              ? `${report.missingPriceCount} missing price`
+              : 'cases / units'
+          }</span>
         </div>
       </div>`;
   }
@@ -276,24 +332,49 @@ export function mountReportsPanel(route) {
                 · ${escapeHtml(fmtQty(r.totalQty))} total qty
               </p>
             </div>
+            <div class="reports-client-cost">
+              <span class="reports-client-cost-value">${escapeHtml(fmtCost(r.totalCost))}</span>
+              ${r.missingPriceCount
+                ? `<span class="reports-miss muted">${r.missingPriceCount} no price</span>`
+                : ''}
+              <button type="button" class="topbar-tool topbar-tool--label reports-invoice-btn"
+                data-invoice-recipient="${escapeHtml(r.recipientId)}"
+                title="Export invoice PDF" aria-label="Export invoice for ${escapeHtml(r.recipientName)}">
+                ${icon('file-text', { size: 16 })}
+                <span>Invoice</span>
+              </button>
+            </div>
           </div>
-          ${r.summary ? `<p class="reports-client-summary">${escapeHtml(r.summary)}</p>` : ''}
-          <ul class="del-card-lines">
-            ${r.products.map((p) => `
-              <li class="del-card-line">
-                <div class="del-card-line-main">
-                  <span class="del-card-line-name">${escapeHtml(p.productName)}</span>
-                </div>
-                <span class="del-card-line-qty">${escapeHtml(p.qtyLabel)}</span>
-              </li>`).join('')}
-          </ul>
+          <div class="dash-table-wrap reports-client-table-wrap">
+            <table class="catalog-table dash-table reports-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th class="num">Qty</th>
+                  <th class="num">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${r.products.map((p) => `
+                  <tr>
+                    <td>${escapeHtml(p.productName)}</td>
+                    <td class="num">${escapeHtml(p.qtyLabel)}</td>
+                    <td class="num reports-cost">${
+                      p.missingPrice
+                        ? '<span class="reports-miss">No price</span>'
+                        : escapeHtml(fmtCost(p.cost))
+                    }</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
           ${r.transfers.length ? `
             <details class="reports-client-transfers">
               <summary>Transfer history (${r.transferCount})</summary>
               <ul class="reports-xfer-list">
                 ${r.transfers.map((t) => `
                   <li>
-                    <span class="reports-xfer-date">${escapeHtml(fmtDateTime(t.transferredAt))}</span>
+                    <span class="reports-xfer-date">${escapeHtml(fmtDateTime(t.transferredAt))} · ${escapeHtml(fmtCost(t.totalCost))}</span>
                     <span class="reports-xfer-items">${escapeHtml(
                       t.lines.map((l) => `${l.productName} (${fmtQty(l.qty)})`).join(', '),
                     )}</span>
@@ -358,6 +439,11 @@ export function mountReportsPanel(route) {
         paint();
       };
     });
+    root.querySelectorAll('[data-invoice-recipient]').forEach((btn) => {
+      btn.onclick = () => {
+        exportInvoice(btn.dataset.invoiceRecipient || '');
+      };
+    });
   }
 
   function paint() {
@@ -376,9 +462,11 @@ export function mountReportsPanel(route) {
         transferCount: 0,
         lineCount: 0,
         totalQty: 0,
+        totalCost: 0,
+        missingPriceCount: 0,
         recipientRows: [],
       };
-      lead = 'Internal transfers by client — what each recipient (Artist Liaison, Production, etc.) was sent.';
+      lead = 'Cost of stock transferred out to clients (Artist Liaison, Production, etc.), priced from each product’s event override or preferred supplier offer.';
       filters = `
         <label class="reports-filter-field">
           <span class="admin-label">Client</span>
@@ -469,10 +557,18 @@ export function mountReportsPanel(route) {
   }
 
   function onToolbar(e) {
-    if (e.detail?.action === 'export-reports') exportCsv();
+    if (e.detail?.action === 'export-reports') {
+      e.detail.handled = true;
+      exportCsv();
+      return;
+    }
+    if (e.detail?.action === 'export-invoice') {
+      e.detail.handled = true;
+      exportInvoice();
+    }
   }
 
-  window.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
 
   reload().catch((err) => {
     root.innerHTML = `<div class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load reports')}</div>`;
@@ -481,6 +577,6 @@ export function mountReportsPanel(route) {
 
   return () => {
     ctx.abort = true;
-    window.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
   };
 }

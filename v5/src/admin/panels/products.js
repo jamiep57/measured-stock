@@ -8,9 +8,11 @@ import {
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
 import {
-  storedToForm, totalUnitsForProduct, parseQty,
-} from '../../stock-entry.js';
-import { epOpeningStock, round1 } from '../../lib/opening-stock.js';
+  epOpeningStock,
+  round1,
+  countedInFromDeliveries,
+  damagedFromDeliveries as damagedFromDeliveriesMap,
+} from '../../lib/opening-stock.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
@@ -77,33 +79,8 @@ function renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, editingOrd
   return html;
 }
 
-function deliveryLineCases(line, product, caseSizes) {
-  if (!product) return parseQty(line.qty);
-  const form = storedToForm(line);
-  return totalUnitsForProduct(form.cases, form.singles, product, caseSizes);
-}
-
 function countedInMap(deliveries, event, caseSizes) {
-  const map = {};
-  (deliveries || []).forEach((d) => {
-    (d.lines || []).forEach((l) => {
-      if (!l.product_id) return;
-      const p = event?.event_products?.find((ep) => ep.product_id === l.product_id)?.product;
-      map[l.product_id] = round1((map[l.product_id] || 0) + deliveryLineCases(l, p, caseSizes));
-    });
-  });
-  return map;
-}
-
-function damagedFromDeliveriesMap(deliveries) {
-  const map = {};
-  (deliveries || []).forEach((d) => {
-    (d.lines || []).forEach((l) => {
-      if (!l.product_id) return;
-      map[l.product_id] = round1((map[l.product_id] || 0) + parseQty(l.damaged_qty));
-    });
-  });
-  return map;
+  return countedInFromDeliveries(deliveries, event?.event_products, caseSizes);
 }
 
 function openingForProduct(pid, countedIn, damagedFromDeliveries, ep) {

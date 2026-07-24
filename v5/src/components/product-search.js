@@ -3,12 +3,14 @@
  *
  *   mountProductSearch(container, {
  *     products,           // product[] or event_product[] with nested product
+ *     pools,              // optional volume pools [{ name, key, meta }]
  *     caseSizes,
  *     value: productId,
+ *     poolValue: poolName,
  *     allowCreate: false,
  *     categories: [],    // for create modal
  *     onCreateProduct,  // async ({ name, category_id, case_size_id }) => { productId, product }
- *     onSelect({ productId, offerId, supplierId }),
+ *     onSelect({ productId, poolName, product }),
  *   })
  */
 
@@ -23,6 +25,17 @@ function normaliseProducts(list) {
     }
     return { ...item, _productId: item.id };
   }).filter((p) => p.name);
+}
+
+function normalisePools(list) {
+  return (list || [])
+    .map((pool) => ({
+      name: String(pool?.name || '').trim(),
+      key: pool?.key || String(pool?.name || '').trim().toLowerCase(),
+      meta: pool?.meta || 'Volume pool',
+      searchText: pool?.searchText || '',
+    }))
+    .filter((p) => p.name);
 }
 
 function offerSummary(product) {
@@ -53,9 +66,11 @@ function caseSizeOptionsHtml(caseSizes) {
 export function mountProductSearch(container, options = {}) {
   const {
     products = [],
+    pools = [],
     caseSizes = [],
     categories = [],
     value = '',
+    poolValue = '',
     placeholder = 'Search products…',
     allowCreate = false,
     dropdownFixed = false,
@@ -65,16 +80,59 @@ export function mountProductSearch(container, options = {}) {
   } = options;
 
   let items = normaliseProducts(products);
+  let poolItems = normalisePools(pools);
+  let selectedId = value || '';
+  let selectedPool = poolValue || '';
 
   const root = document.createElement('div');
   root.className = 'product-search';
   root.innerHTML = `
     <input type="search" class="product-search-input" placeholder="${escapeHtml(placeholder)}" autocomplete="off">
+    <span class="product-search-pack" hidden></span>
     <div class="product-search-list" hidden></div>
   `;
 
   const input = root.querySelector('.product-search-input');
   const list = root.querySelector('.product-search-list');
+  const packEl = root.querySelector('.product-search-pack');
+
+  function packLabelFor(product) {
+    if (!product) return '';
+    const pack = productStockPack(product, caseSizes);
+    return (pack.label || product.case_size || '').trim();
+  }
+
+  function selectedPoolItem() {
+    if (!selectedPool) return null;
+    const key = selectedPool.trim().toLowerCase();
+    return poolItems.find((p) => p.name.toLowerCase() === key || p.key === key) || null;
+  }
+
+  function syncPackDisplay({ editing = false } = {}) {
+    const pool = selectedPoolItem();
+    if (pool && !editing && input.value.trim() === pool.name) {
+      packEl.textContent = pool.meta || 'Volume pool';
+      packEl.hidden = false;
+      root.classList.add('has-pack');
+      root.title = `${pool.name} · ${pool.meta || 'Volume pool'}`;
+      return;
+    }
+
+    const selected = selectedId ? items.find((p) => p._productId === selectedId) : null;
+    const pack = packLabelFor(selected);
+    const show = !editing && !!selected && !!pack && input.value.trim() === (selected.name || '').trim();
+    if (show) {
+      packEl.textContent = pack;
+      packEl.hidden = false;
+      root.classList.add('has-pack');
+      root.title = `${selected.name} · ${pack}`;
+    } else {
+      packEl.textContent = '';
+      packEl.hidden = true;
+      root.classList.remove('has-pack');
+      root.title = selected?.name || pool?.name || '';
+    }
+  }
 
   function syncListPosition() {
     if (!dropdownFixed || list.hidden) return;
@@ -103,11 +161,25 @@ export function mountProductSearch(container, options = {}) {
   }
 
   function selectProduct(id, product) {
+    selectedId = id || '';
+    selectedPool = '';
     input.value = product?.name || '';
     list.hidden = true;
     resetListPosition();
+    syncPackDisplay();
     onFilter?.(input.value);
-    onSelect?.({ productId: id, product });
+    onSelect?.({ productId: id, poolName: null, product });
+  }
+
+  function selectPool(pool) {
+    selectedId = '';
+    selectedPool = pool?.name || '';
+    input.value = pool?.name || '';
+    list.hidden = true;
+    resetListPosition();
+    syncPackDisplay();
+    onFilter?.(input.value);
+    onSelect?.({ productId: null, poolName: pool?.name || null, product: null });
   }
 
   function openCreateModal(initialName) {
@@ -196,13 +268,17 @@ export function mountProductSearch(container, options = {}) {
 
   function renderList(q = '') {
     const query = q.trim().toLowerCase();
-    const filtered = items.filter((p) => {
+    const filteredPools = poolItems.filter((p) => {
       if (!query) return true;
-      const hay = [p.name, p.sku, p.category?.name, offerSummary(p)].join(' ').toLowerCase();
+      return `${p.name} ${p.meta} ${p.searchText} volume pool`.toLowerCase().includes(query);
+    });
+    const filteredProducts = items.filter((p) => {
+      if (!query) return true;
+      const hay = [p.name, p.sku, p.case_size, productStockPack(p, caseSizes).label, p.category?.name, offerSummary(p)].join(' ').toLowerCase();
       return hay.includes(query);
     }).slice(0, 40);
 
-    if (!filtered.length) {
+    if (!filteredPools.length && !filteredProducts.length) {
       if (allowCreate && q.trim()) {
         list.innerHTML = `
           <div class="product-search-empty">No products match “${escapeHtml(q.trim())}”</div>
@@ -214,23 +290,46 @@ export function mountProductSearch(container, options = {}) {
         list.innerHTML = '<div class="product-search-empty">No matches</div>';
       }
     } else {
-      list.innerHTML = filtered.map((p) => {
+      const poolHtml = filteredPools.map((p) => {
+        const selected = selectedPool && (p.name === selectedPool || p.key === selectedPool.toLowerCase())
+          ? ' selected'
+          : '';
+        return `<button type="button" class="product-search-item product-search-item--pool${selected}" data-pool="${escapeHtml(p.name)}">
+          <span class="product-search-name">${escapeHtml(p.name)}</span>
+          <span class="product-search-meta">${escapeHtml(p.meta || 'Volume pool')}</span>
+        </button>`;
+      }).join('');
+
+      const productHtml = filteredProducts.map((p) => {
         const pack = productStockPack(p, caseSizes);
-        const selected = p._productId === value ? ' selected' : '';
+        const selected = p._productId === selectedId ? ' selected' : '';
         return `<button type="button" class="product-search-item${selected}" data-id="${escapeHtml(p._productId)}">
           <span class="product-search-name">${escapeHtml(p.name)}</span>
           <span class="product-search-meta">${escapeHtml(pack.label || p.case_size || '')}${offerSummary(p) ? ' · ' + escapeHtml(offerSummary(p)) : ''}</span>
         </button>`;
       }).join('');
+
+      list.innerHTML = poolHtml + productHtml;
     }
     list.hidden = false;
     syncListPosition();
   }
 
-  input.addEventListener('focus', () => renderList(input.value));
+  input.addEventListener('focus', () => {
+    syncPackDisplay({ editing: true });
+    renderList(input.value);
+  });
   input.addEventListener('input', () => {
+    if (!input.value.trim()) {
+      selectedId = '';
+      selectedPool = '';
+    }
+    syncPackDisplay({ editing: true });
     renderList(input.value);
     onFilter?.(input.value);
+  });
+  input.addEventListener('blur', () => {
+    window.setTimeout(() => syncPackDisplay(), 0);
   });
 
   list.addEventListener('mousedown', (e) => {
@@ -241,6 +340,12 @@ export function mountProductSearch(container, options = {}) {
     if (e.target.closest('.product-search-create-trigger')) {
       e.stopPropagation();
       openCreateModal(input.value);
+      return;
+    }
+    const poolBtn = e.target.closest('[data-pool]');
+    if (poolBtn) {
+      const pool = poolItems.find((p) => p.name === poolBtn.dataset.pool);
+      if (pool) selectPool(pool);
       return;
     }
     const btn = e.target.closest('.product-search-item');
@@ -254,13 +359,18 @@ export function mountProductSearch(container, options = {}) {
     if (!root.contains(e.target)) {
       list.hidden = true;
       resetListPosition();
+      syncPackDisplay();
     }
   });
 
-  if (value) {
+  if (selectedPool) {
+    const pool = selectedPoolItem();
+    if (pool) input.value = pool.name;
+  } else if (value) {
     const sel = items.find((p) => p._productId === value);
     if (sel) input.value = sel.name;
   }
+  syncPackDisplay();
 
   container.innerHTML = '';
   container.appendChild(root);

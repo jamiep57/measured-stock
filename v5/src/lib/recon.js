@@ -268,7 +268,7 @@ export function computePluByProductId(eps, tillRows, recipes, products, caseSize
         byPool[key] = (byPool[key] || 0) + sold * qty;
         return;
       }
-      const p = recipeProductByName(ig.product_name, qty, products);
+      const p = recipeProductByName(ig.product_name, qty, products, caseSizes);
       const key = pluStockKeyForRecipeIngredient(ig.product_name, qty, eps, products, caseSizes);
       if (!key) return;
       byName[key] = (byName[key] || 0) + recipeQtyToStockUnits(p, qty, sold, caseSizes);

@@ -84,8 +84,9 @@ function renderInlineInput(pid, fieldId, value) {
 }
 
 function rcnTh(col, label, extraClass = '') {
-  return `<th class="rcn-th ${extraClass}" data-rcn-col="${col}">
-    <div class="rcn-th-inner"><span class="rcn-th-label">${label}</span></div>
+  const align = col === 'item' ? ' dist-bar-head--left' : '';
+  return `<th class="rcn-th dist-col-header ${extraClass}" data-rcn-col="${col}">
+    <div class="dist-bar-head${align}"><span class="dist-bar-name">${label}</span></div>
   </th>`;
 }
 
@@ -179,24 +180,34 @@ function applyColVisibility(root, colVis) {
 export function renderReconShell() {
   return `
     <div class="rcn-panel" id="rcnPanel">
-      <p class="rcn-hint muted">End-of-event financial reconciliation. Edit <strong>Invoiced</strong> and <strong>Closing</strong> inline (arrow keys move between cells). Click price, returns, or <strong>⋯</strong> for details. Import Square item sales for PLU figures.</p>
-      <div class="wst-stats rcn-stats" id="rcnStats"></div>
-      <div class="recon-filter-row" id="rcnFilterRow">
-        <span class="label">Show</span>
-        <button type="button" class="recon-filter active" data-rcn-filter="">All</button>
-        <button type="button" class="recon-filter" data-rcn-filter="red"><span class="recon-filter-dot" style="background:#ef4444"></span> Action</button>
-        <button type="button" class="recon-filter" data-rcn-filter="yellow"><span class="recon-filter-dot" style="background:#f59e0b"></span> Review</button>
-        <button type="button" class="recon-filter" data-rcn-filter="green"><span class="recon-filter-dot" style="background:#22c55e"></span> Done</button>
-        <button type="button" class="recon-filter" data-rcn-filter="blue"><span class="recon-filter-dot" style="background:#3b82f6"></span> None returned</button>
-        <button type="button" class="recon-filter" data-rcn-filter="none">Unmarked</button>
-        <span class="label" style="margin-left:8px">Category</span>
-        <select id="rcnCatFilter" class="recon-cat-select"><option value="">All categories</option></select>
-        <button type="button" class="recon-filter" id="rcnHiddenToggle" title="Show products excluded from recon">Hidden</button>
-        <div class="recon-col-picker" id="rcnColPicker">
-          <button type="button" class="recon-filter" id="rcnColBtn" aria-expanded="false" aria-controls="rcnColMenu" title="Choose columns">
+      <p class="rcn-hint muted">Edit <strong>Invoiced</strong> and <strong>Closing</strong> inline. Click price, returns, or <strong>⋯</strong> for details. PLU comes from Square item sales.</p>
+      <div class="rcn-stats" id="rcnStats"></div>
+      <div class="rcn-toolbar" id="rcnFilterRow">
+        <div class="rcn-seg" role="tablist" aria-label="Status filter">
+          <button type="button" class="rcn-seg-btn is-active" data-rcn-filter="" role="tab" aria-selected="true">All</button>
+          <button type="button" class="rcn-seg-btn" data-rcn-filter="red" role="tab" aria-selected="false">
+            <span class="rcn-seg-dot rcn-seg-dot--red"></span> Action
+          </button>
+          <button type="button" class="rcn-seg-btn" data-rcn-filter="yellow" role="tab" aria-selected="false">
+            <span class="rcn-seg-dot rcn-seg-dot--yellow"></span> Review
+          </button>
+          <button type="button" class="rcn-seg-btn" data-rcn-filter="green" role="tab" aria-selected="false">
+            <span class="rcn-seg-dot rcn-seg-dot--green"></span> Done
+          </button>
+          <button type="button" class="rcn-seg-btn" data-rcn-filter="blue" role="tab" aria-selected="false">
+            <span class="rcn-seg-dot rcn-seg-dot--blue"></span> None returned
+          </button>
+          <button type="button" class="rcn-seg-btn" data-rcn-filter="none" role="tab" aria-selected="false">Unmarked</button>
+        </div>
+        <select id="rcnCatFilter" class="admin-input rcn-cat-select" aria-label="Category">
+          <option value="">All categories</option>
+        </select>
+        <button type="button" class="rcn-tool-btn" id="rcnHiddenToggle" title="Show products excluded from recon" aria-pressed="false">Hidden</button>
+        <div class="rcn-col-picker" id="rcnColPicker">
+          <button type="button" class="rcn-tool-btn" id="rcnColBtn" aria-expanded="false" aria-controls="rcnColMenu" title="Choose columns">
             <i data-lucide="columns"></i> Columns
           </button>
-          <div class="recon-col-menu" id="rcnColMenu" hidden></div>
+          <div class="rcn-col-menu" id="rcnColMenu" hidden></div>
         </div>
       </div>
       <div class="dist-grid-wrap rcn-table-wrap" id="rcnTableWrap">
@@ -302,12 +313,12 @@ export function mountReconPanel(route) {
     const menu = $('rcnColMenu');
     if (!menu || menu.dataset.ready) return;
     menu.innerHTML = `
-      <div class="recon-col-menu-head">
+      <div class="rcn-col-menu-head">
         <span>Visible columns</span>
         <button type="button" id="rcnColReset">Show all</button>
       </div>
       ${RECON_COLS.map((c) => `
-        <label class="recon-col-option">
+        <label class="rcn-col-option">
           <input type="checkbox" data-rcn-col-toggle="${c.id}"${ctx.colVis[c.id] !== false ? ' checked' : ''}>
           ${escapeHtml(c.label)}
         </label>`).join('')}`;
@@ -320,12 +331,31 @@ export function mountReconPanel(route) {
     const totals = reconTotals(rows);
     const sc = totals.statusCounts;
     el.innerHTML = `
-      <div class="wst-stat"><span class="wst-stat-label">Budget cost</span><span class="wst-stat-value">${formatMoney(totals.totBudget)}</span><span class="wst-stat-label muted">total to bill</span></div>
-      <div class="wst-stat"><span class="wst-stat-label">Action</span><span class="wst-stat-value" style="color:#ef4444">${sc.red}</span></div>
-      <div class="wst-stat"><span class="wst-stat-label">Review</span><span class="wst-stat-value" style="color:#f59e0b">${sc.yellow}</span></div>
-      <div class="wst-stat"><span class="wst-stat-label">Done</span><span class="wst-stat-value" style="color:#22c55e">${sc.green}</span></div>
-      <div class="wst-stat"><span class="wst-stat-label">None returned</span><span class="wst-stat-value" style="color:#3b82f6">${sc.blue}</span></div>
-      <div class="wst-stat"><span class="wst-stat-label">Unmarked</span><span class="wst-stat-value">${sc.none}</span></div>`;
+      <div class="wst-stat rcn-stat--budget">
+        <span class="wst-stat-label">Budget cost</span>
+        <span class="wst-stat-value">${formatMoney(totals.totBudget)}</span>
+        <span class="wst-stat-sub muted">Total to bill</span>
+      </div>
+      <div class="wst-stat">
+        <span class="wst-stat-label">Action</span>
+        <span class="wst-stat-value rcn-stat-value--red">${sc.red}</span>
+      </div>
+      <div class="wst-stat">
+        <span class="wst-stat-label">Review</span>
+        <span class="wst-stat-value rcn-stat-value--yellow">${sc.yellow}</span>
+      </div>
+      <div class="wst-stat">
+        <span class="wst-stat-label">Done</span>
+        <span class="wst-stat-value rcn-stat-value--green">${sc.green}</span>
+      </div>
+      <div class="wst-stat">
+        <span class="wst-stat-label">None returned</span>
+        <span class="wst-stat-value rcn-stat-value--blue">${sc.blue}</span>
+      </div>
+      <div class="wst-stat">
+        <span class="wst-stat-label">Unmarked</span>
+        <span class="wst-stat-value">${sc.none}</span>
+      </div>`;
   }
 
   function renderTable() {
@@ -510,7 +540,7 @@ export function mountReconPanel(route) {
             <input type="checkbox" id="rcnDrawerHidden"${ep.recon_hidden ? ' checked' : ''}>
             Exclude from recon
           </label>
-          <p class="muted" style="margin-top:12px;font-size:12px">Supplier returns are summed from return lines. Log returns via Closing or supplier return workflow in v2 until a dedicated editor is added here.</p>
+          <p class="rcn-drawer-note muted">Supplier returns are summed from return lines logged on Closing.</p>
         </div>`,
       footHtml: `
         <button type="button" class="btn btn-outline" id="rcnDrawerCancel">Cancel</button>
@@ -650,14 +680,18 @@ export function mountReconPanel(route) {
     if (filterBtn) {
       ctx.statusFilter = filterBtn.dataset.rcnFilter || '';
       panel.querySelectorAll('[data-rcn-filter]').forEach((b) => {
-        b.classList.toggle('active', (b.dataset.rcnFilter || '') === ctx.statusFilter);
+        const on = (b.dataset.rcnFilter || '') === ctx.statusFilter;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
       });
       renderTable();
       return;
     }
     if (e.target.closest('#rcnHiddenToggle')) {
       ctx.showHidden = !ctx.showHidden;
-      $('rcnHiddenToggle').classList.toggle('active', ctx.showHidden);
+      const btn = $('rcnHiddenToggle');
+      btn.classList.toggle('is-active', ctx.showHidden);
+      btn.setAttribute('aria-pressed', ctx.showHidden ? 'true' : 'false');
       renderTable();
       return;
     }
@@ -671,6 +705,8 @@ export function mountReconPanel(route) {
     if (e.target.closest('#rcnColReset')) {
       ctx.colVis = Object.fromEntries(RECON_COLS.map((c) => [c.id, true]));
       saveReconColVisibility(ctx.colVis);
+      const menu = $('rcnColMenu');
+      if (menu) delete menu.dataset.ready;
       initColMenu();
       renderTable();
     }
@@ -725,6 +761,8 @@ export function mountReconPanel(route) {
 
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+
+  initIcons(panel);
 
   async function load() {
     const DB = getDB();

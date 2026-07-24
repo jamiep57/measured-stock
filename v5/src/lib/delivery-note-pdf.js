@@ -19,7 +19,7 @@ function round1(n) {
   return Math.round(Number(n) * 10) / 10;
 }
 
-async function loadJsPdf() {
+export async function loadJsPdf() {
   if (typeof window !== 'undefined' && window.jspdf?.jsPDF) {
     return window.jspdf;
   }
@@ -61,7 +61,7 @@ function compressLogoForPdf(img) {
 }
 
 /** Load logo as a small JPEG data URL + dimensions for PDF embedding. */
-async function loadLogoForPdf() {
+export async function loadLogoForPdf() {
   if (logoPromise !== undefined) return logoPromise;
   logoPromise = (async () => {
     try {
@@ -89,7 +89,7 @@ async function loadLogoForPdf() {
   return logoPromise;
 }
 
-function drawLogo(doc, logo, pageW, mr) {
+export function drawLogo(doc, logo, pageW, mr) {
   const maxW = 52;
   const maxH = 14;
   const aspect = logo.width / logo.height;

@@ -59,7 +59,8 @@ function renderLineList(lines, event, caseSizes) {
     <ul class="del-card-lines">
       ${items.map((l) => {
         const { name, packLabel, qty } = lineParts(l, event, caseSizes);
-        return `<li class="del-card-line">
+        return `<li class="del-card-line" data-pid="${escapeHtml(l.product_id || '')}"
+          data-product-name="${escapeHtml((name || '').toLowerCase())}">
           <div class="del-card-line-main">
             <span class="del-card-line-name">${escapeHtml(name)}</span>
             ${packLabel ? `<span class="del-card-line-pack">${escapeHtml(packLabel)}</span>` : ''}
@@ -195,13 +196,28 @@ export function mountDeliveriesPanel(route) {
 
   function applyProductFilter({ query, productId } = {}) {
     const q = (query || '').trim().toLowerCase();
+    const filtering = Boolean(productId || q);
     listEl.querySelectorAll('.del-card').forEach((card) => {
-      const ids = (card.dataset.productIds || '').split(',').filter(Boolean);
-      const names = card.dataset.productNames || '';
-      const match = productId
-        ? ids.includes(productId)
-        : (!q || names.includes(q));
-      card.hidden = !match;
+      const lines = card.querySelectorAll('.del-card-line');
+      let anyVisible = false;
+      lines.forEach((line) => {
+        const pid = line.dataset.pid || '';
+        const name = line.dataset.productName || '';
+        const match = productId
+          ? pid === productId
+          : (!q || name.includes(q));
+        line.hidden = filtering && !match;
+        if (match) anyVisible = true;
+      });
+      if (!lines.length) {
+        const ids = (card.dataset.productIds || '').split(',').filter(Boolean);
+        const names = card.dataset.productNames || '';
+        card.hidden = productId
+          ? !ids.includes(productId)
+          : filtering && !names.includes(q);
+        return;
+      }
+      card.hidden = filtering && !anyVisible;
     });
   }
 

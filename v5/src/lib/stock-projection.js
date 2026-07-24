@@ -3,7 +3,14 @@
  */
 
 import { findRecipe } from './square-recipes.js';
-import { epOpeningStock, round1 } from './opening-stock.js';
+import {
+  epOpeningStock,
+  epDeliveredQty,
+  countedInFromDeliveries,
+  damagedFromDeliveries,
+  round1,
+} from './opening-stock.js';
+import { wastageByProduct } from './recon.js';
 import {
   eventProductStockKey,
   recipeProductByName,
@@ -19,6 +26,8 @@ export function computeStockProjection({
   recipes = [],
   products = [],
   caseSizes = [],
+  deliveries = null,
+  wastageBatches = null,
 }) {
   const rows = tillRows || [];
   const baselineNet = rows.reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
@@ -38,12 +47,12 @@ export function computeStockProjection({
       if (ig.pool_name) return;
       const qty = Number(ig.qty) || 0;
       if (!(qty > 0)) return;
-      const p = recipeProductByName(ig.product_name, qty, products);
+      const p = recipeProductByName(ig.product_name, qty, products, caseSizes);
       const key = pluStockKeyForRecipeIngredient(ig.product_name, qty, eps, products, caseSizes);
       if (!key) return;
       if (!byName[key]) {
         byName[key] = {
-          name: recipeIngredientDisplayName(ig.product_name, products),
+          name: recipeIngredientDisplayName(ig.product_name, products, qty, caseSizes),
           baselineCases: 0,
           baselineServingsSold: 0,
         };
@@ -56,12 +65,36 @@ export function computeStockProjection({
     });
   });
 
+  // Prefer live delivery-line totals — event_products.delivered_qty can lag behind
+  // multiple deliveries (e.g. only the last line was written back).
+  const countedIn = deliveries
+    ? countedInFromDeliveries(deliveries, eps, caseSizes)
+    : null;
+  const damagedMap = deliveries ? damagedFromDeliveries(deliveries) : null;
+  const wastageMap = wastageBatches
+    ? wastageByProduct(wastageBatches, event, caseSizes)
+    : null;
+
   const stockByName = {};
   eps.forEach((ep) => {
     if (!ep.product?.name) return;
     const key = eventProductStockKey(ep);
-    if (!stockByName[key]) stockByName[key] = { available: 0, pid: ep.product_id };
-    stockByName[key].available += epOpeningStock(ep);
+    if (!stockByName[key]) {
+      stockByName[key] = { available: 0, delivered: 0, wastage: 0, pid: ep.product_id };
+    }
+    const delivered = epDeliveredQty(ep, countedIn);
+    const wastage = wastageMap?.[ep.product_id] || 0;
+    const opening = countedIn
+      ? epOpeningStock({
+        delivered_qty: delivered,
+        damaged_qty: damagedMap?.[ep.product_id] || 0,
+      })
+      : epOpeningStock(ep);
+    // Sellable stock for run-out = opening after delivery damages − logged wastage.
+    const available = round1(opening - wastage);
+    stockByName[key].available += available;
+    stockByName[key].delivered += delivered;
+    stockByName[key].wastage += wastage;
   });
 
   const factor = baselineNet > 0 && target > 0 ? target / baselineNet : null;
@@ -70,11 +103,13 @@ export function computeStockProjection({
     const b = byName[key];
     const st = stockByName[key] || null;
     const available = st ? st.available : null;
+    const delivered = st ? round1(st.delivered) : null;
+    const wastage = st ? round1(st.wastage) : null;
     const projectedCases = factor != null ? b.baselineCases * factor : null;
     const runOutRevenue = b.baselineCases > 0 && available != null
       ? (available / b.baselineCases) * baselineNet
       : null;
-    const libProduct = recipeProductByName(b.name, null, products)
+    const libProduct = recipeProductByName(b.name, null, products, caseSizes)
       || products.find((p) => eventProductStockKey({ product: p }) === key)
       || null;
     let stockStatus = st ? 'ok' : (libProduct ? 'not_on_event' : 'unknown');
@@ -96,7 +131,10 @@ export function computeStockProjection({
       stockHint,
       baselineCases: b.baselineCases,
       projectedCases,
-      servingsSold: factor != null ? b.baselineServingsSold * factor : null,
+      // Actual Square items sold (not scaled to target).
+      servingsSold: b.baselineServingsSold,
+      delivered,
+      wastage,
       available,
       runOutRevenue,
     };
@@ -124,7 +162,10 @@ export function projectionSortValue(item, key, target) {
   switch (key) {
     case 'name': return item.name || '';
     case 'servingsSold': return item.servingsSold;
+    case 'baselineCases': return item.baselineCases;
     case 'projectedCases': return item.projectedCases;
+    case 'delivered': return item.delivered;
+    case 'wastage': return item.wastage;
     case 'available': return item.available;
     case 'runOutRevenue': return item.runOutRevenue;
     case 'pct':

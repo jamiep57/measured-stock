@@ -28,9 +28,9 @@ import {
   mountSuppliersPanel,
 } from './suppliers.js';
 import {
-  renderCaseSizesShell,
-  mountCaseSizesPanel,
-} from './case-sizes.js';
+  renderVolumePoolsShell,
+  mountVolumePoolsPanel,
+} from './volume-pools.js';
 import {
   renderLibraryShell,
   mountLibraryPanel,
@@ -52,10 +52,6 @@ import {
   mountDashboardPanel,
 } from './dashboard.js';
 import {
-  renderProjectionsShell,
-  mountProjectionsPanel,
-} from './projections.js';
-import {
   renderBugsShell,
   mountBugsPanel,
 } from './bugs.js';
@@ -63,13 +59,18 @@ import {
   renderReportsShell,
   mountReportsPanel,
 } from './reports.js';
+import {
+  renderSettingsShell,
+  mountSettingsPanel,
+} from './settings.js';
 
 export const PANEL_TITLES = {
   home: 'Events',
   library: 'Product library',
   suppliers: 'Suppliers',
-  'case-sizes': 'Case sizes',
+  'volume-pools': 'Volume pools',
   bugs: 'Bug & Feature Reports',
+  settings: 'Workspace settings',
   dashboard: 'Event dashboard',
   setup: 'Event setup',
   products: 'Products',
@@ -81,7 +82,6 @@ export const PANEL_TITLES = {
   wastage: 'Wastage',
   closing: 'Closing stock',
   sales: 'Square & modifiers',
-  projections: 'Stock projections',
   recon: 'Financial recon',
   reports: 'Reports',
   summary: 'Reports',
@@ -130,12 +130,16 @@ export async function renderPanel(route, state) {
     return renderSuppliersShell();
   }
 
-  if (route.view === 'case-sizes') {
-    return renderCaseSizesShell();
+  if (route.view === 'volume-pools') {
+    return renderVolumePoolsShell();
   }
 
   if (route.view === 'bugs') {
     return renderBugsShell();
+  }
+
+  if (route.view === 'settings') {
+    return renderSettingsShell();
   }
 
   if (route.view === 'event') {
@@ -163,24 +167,20 @@ export async function renderPanel(route, state) {
         'Recipe mapping; fractions stay as fractions.',
         'Stock warnings inline.',
       ],
-      projections: [
-        'Run-out list scaled to target revenue.',
-        'Runs dry at revenue and % of target.',
-      ],
       recon: [
         'Supplier + offer visible on every product row.',
         'Price from selected product_suppliers offer.',
         'Clear when multiple suppliers exist.',
       ],
       reports: [
-        'Total cost of supplier deliveries.',
-        'Filter by supplier and date.',
-        'Received vs invoiced qty.',
+        'Transfers by client with cost summary.',
+        'Supplier delivery cost totals.',
+        'Filter by client/supplier and date.',
       ],
       summary: [
-        'Total cost of supplier deliveries.',
-        'Filter by supplier and date.',
-        'Received vs invoiced qty.',
+        'Transfers by client with cost summary.',
+        'Supplier delivery cost totals.',
+        'Filter by client/supplier and date.',
       ],
     };
 
@@ -214,10 +214,6 @@ export async function renderPanel(route, state) {
 
     if (panel === 'sales') {
       return renderSalesShell();
-    }
-
-    if (panel === 'projections') {
-      return renderProjectionsShell();
     }
 
     if (panel === 'counts') {
@@ -257,7 +253,7 @@ export function mountPanel(route, state) {
     return mountTransfersPanel(route);
   }
   if (route.view === 'event' && route.panel === 'setup') {
-    return mountSetupPanel(route);
+    return mountSetupPanel(route, state);
   }
   if (route.view === 'event' && route.panel === 'products') {
     return mountProductsPanel(route);
@@ -267,9 +263,6 @@ export function mountPanel(route, state) {
   }
   if (route.view === 'event' && route.panel === 'sales') {
     return mountSalesPanel(route);
-  }
-  if (route.view === 'event' && route.panel === 'projections') {
-    return mountProjectionsPanel(route);
   }
   if (route.view === 'event' && route.panel === 'counts') {
     return mountCountsPanel(route);
@@ -283,14 +276,17 @@ export function mountPanel(route, state) {
   if (route.view === 'suppliers') {
     return mountSuppliersPanel();
   }
-  if (route.view === 'case-sizes') {
-    return mountCaseSizesPanel();
+  if (route.view === 'volume-pools') {
+    return mountVolumePoolsPanel();
   }
   if (route.view === 'library') {
     return mountLibraryPanel();
   }
   if (route.view === 'bugs') {
     return mountBugsPanel();
+  }
+  if (route.view === 'settings') {
+    return mountSettingsPanel();
   }
   return null;
 }

@@ -76,7 +76,18 @@ export function resolveStockCaseSize(product, caseSizes = []) {
 }
 
 export function productStockPack(product, caseSizes = []) {
-  return packMetrics(resolveStockCaseSize(product, caseSizes));
+  const row = resolveStockCaseSize(product, caseSizes);
+  if (row) return packMetrics(row);
+  // Legacy fallback when case_sizes catalogue miss / not loaded.
+  if (!product) return { ...DEFAULT_PACK };
+  const upc = Number(product.units_per_case);
+  return {
+    ...DEFAULT_PACK,
+    label: product.case_size || '',
+    stockUnit: product.stock_unit || DEFAULT_PACK.stockUnit,
+    unitsPerCase: upc > 0 ? upc : 1,
+    servingsPerUnit: 1,
+  };
 }
 
 function bottlesPartialMode(pack) {

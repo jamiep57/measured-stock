@@ -28,7 +28,7 @@ function renderDashboard(ctx) {
       <section class="dash-section admin-surface">
         <div class="dash-section-head">
           <h2 class="dash-section-title">Stock run-out projection</h2>
-          <p class="dash-section-desc muted">Scales imported sales to target revenue and flags what runs out first.</p>
+          <p class="dash-section-desc muted">Sold is from Square; use at target scales that mix to your revenue target and flags what runs out first.</p>
         </div>
         <div id="dashProjection">${renderProjectionTable({
           projection: ctx.projection,
@@ -106,13 +106,15 @@ export function mountDashboardPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, modImport, recipes, products, caseSizes] = await Promise.all([
+    const [event, tillImport, modImport, recipes, products, caseSizes, deliveries, wastageBatches] = await Promise.all([
       loadEventFull(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
       DB.recipes.listFull().catch(() => []),
       loadLibraryProducts(),
       loadCaseSizes(),
+      DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+      DB.wastage.forEvent(ctx.eventId).catch(() => []),
     ]);
     if (ctx.abort) return;
 
@@ -132,6 +134,8 @@ export function mountDashboardPanel(route) {
       recipes: ctx.recipes,
       products: ctx.products,
       caseSizes: ctx.caseSizes,
+      deliveries: deliveries || [],
+      wastageBatches: wastageBatches || [],
     });
     paint();
   }

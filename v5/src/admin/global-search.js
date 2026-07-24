@@ -34,7 +34,7 @@ function placeholderForRoute(route) {
 }
 
 function hideSearchForRoute(route) {
-  return route.view === 'suppliers' || route.view === 'case-sizes';
+  return route.view === 'suppliers' || route.view === 'volume-pools' || route.view === 'settings';
 }
 
 export function initGlobalSearch() {

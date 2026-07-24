@@ -8,7 +8,13 @@ describe('admin router', () => {
 
   it('parses global routes', () => {
     expect(parseRoute('/v5/admin/library')).toEqual({ view: 'library' });
+    expect(parseRoute('/v5/admin/volume-pools')).toEqual({ view: 'volume-pools' });
     expect(parseRoute('/v5/admin/bugs')).toEqual({ view: 'bugs' });
+    expect(parseRoute('/v5/admin/settings')).toEqual({ view: 'settings' });
+  });
+
+  it('redirects legacy case-sizes to workspace settings', () => {
+    expect(parseRoute('/v5/admin/case-sizes')).toEqual({ view: 'settings' });
   });
 
   it('parses event panel routes', () => {
@@ -32,6 +38,14 @@ describe('admin router', () => {
       view: 'event',
       eventId: 'abc-123',
       panel: 'products',
+    });
+  });
+
+  it('redirects projections to dashboard', () => {
+    expect(parseRoute('/v5/admin/events/abc-123/projections')).toEqual({
+      view: 'event',
+      eventId: 'abc-123',
+      panel: 'dashboard',
     });
   });
 

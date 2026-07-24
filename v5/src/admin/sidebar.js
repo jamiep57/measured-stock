@@ -25,7 +25,7 @@ function writeSectionState(state) {
   }
 }
 
-function renderWorkspaceMenu(events, route, rememberedEventId) {
+function renderWorkspaceMenu(events, rememberedEventId) {
   const menu = document.getElementById('sidebarWorkspaceMenu');
   if (!menu) return;
 
@@ -46,6 +46,18 @@ function renderWorkspaceMenu(events, route, rememberedEventId) {
   menu.innerHTML = items.join('');
 }
 
+const DEFAULT_WORKSPACE_MARK = '/assets/img/logomark.png';
+
+function setWorkspaceMark(imageUrl) {
+  const mark = document.getElementById('sidebarWorkspaceMark');
+  const img = document.getElementById('sidebarWorkspaceMarkImg');
+  if (!mark || !img) return;
+
+  const custom = Boolean(imageUrl);
+  mark.classList.toggle('has-event-image', custom);
+  img.src = custom ? imageUrl : DEFAULT_WORKSPACE_MARK;
+}
+
 function updateWorkspaceHeader(route, state) {
   const nameEl = document.getElementById('sidebarWorkspaceName');
   const subEl = document.getElementById('sidebarWorkspaceSub');
@@ -56,11 +68,13 @@ function updateWorkspaceHeader(route, state) {
     const event = state.events.find((e) => e.id === eventId);
     nameEl.textContent = event?.name || 'Event';
     subEl.textContent = 'Event workspace';
+    setWorkspaceMark(event?.image_url || null);
     return;
   }
 
   nameEl.textContent = 'Measured Stock';
   subEl.textContent = 'Admin';
+  setWorkspaceMark(null);
 }
 
 function setWorkspaceMenuOpen(open) {
@@ -175,7 +189,7 @@ export function syncSidebar(route, state) {
 
   const eventId = resolveActiveEventId(route, state);
   updateWorkspaceHeader(route, state);
-  renderWorkspaceMenu(state.events, route, eventId);
+  renderWorkspaceMenu(state.events, eventId);
 
   const eventSections = document.querySelectorAll('.sidebar-section[data-section^="event-"]');
   const showEvent = Boolean(eventId);

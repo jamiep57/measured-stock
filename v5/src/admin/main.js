@@ -69,16 +69,6 @@ async function render(route) {
 }
 
 function wireNav() {
-  // Events list — keep the current workspace (Stock / Sales stay visible).
-  // Leave the workspace only via the switcher → "All events".
-  document.getElementById('sidebarPrimary')?.addEventListener('click', (e) => {
-    const a = e.target.closest('a[data-route]:not([data-event])');
-    if (!a) return;
-    e.preventDefault();
-    navigate({ view: 'home' });
-    render(parseRoute());
-  });
-
   document.getElementById('sidebarGlobal')?.addEventListener('click', (e) => {
     const a = e.target.closest('a[data-route]:not([data-event])');
     if (!a) return;
@@ -88,9 +78,30 @@ function wireNav() {
     render(parseRoute());
   });
 
+  document.getElementById('topbarSettings')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    navigate({ view: 'settings' });
+    render(parseRoute());
+  });
+
+  document.querySelector('.sidebar-nav-tools')?.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-route]:not([data-event])');
+    if (!a) return;
+    e.preventDefault();
+    navigate({ view: a.dataset.route });
+    render(parseRoute());
+  });
+
   const eventNavIds = ['sidebarEventStock', 'sidebarEventSales'];
   eventNavIds.forEach((id) => {
     document.getElementById(id)?.addEventListener('click', (e) => {
+      const globalLink = e.target.closest('a[data-route]:not([data-event])');
+      if (globalLink) {
+        e.preventDefault();
+        navigate({ view: globalLink.dataset.route });
+        render(parseRoute());
+        return;
+      }
       const a = e.target.closest('a[data-event], .nav-link-cog[data-event]');
       if (!a) return;
       e.preventDefault();

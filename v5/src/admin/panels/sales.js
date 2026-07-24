@@ -3,13 +3,14 @@
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
-import { getDB, loadEventFull, loadCaseSizes, productFromEvent } from '../../db.js';
+import { getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, productFromEvent } from '../../db.js';
 import {
-  findRecipe, recipeIsMapped, recipeOnEvent, recipeProductIngredients,
+  findRecipe, recipeIsMapped, recipeOnEvent, recipeIngredients,
   productIdForName, normVariation,
 } from '../../lib/square-recipes.js';
 import { parseFractionQty, displayFractionQty, formatQtyAsFraction } from '../../components/fraction-input.js';
 import { mountProductSearch } from '../../components/product-search.js';
+import { groupProductsByPool, poolSummary } from '../../lib/volume-pools.js';
 import { icon } from '../../lib/icons.js';
 import { readModifierFile } from '../../lib/modifier-import.js';
 import { readTillFile } from '../../lib/till-import.js';
@@ -28,10 +29,11 @@ function renderPortionInput(qty) {
     aria-label="Portion per serving">`;
 }
 
-function renderProductSlot({ selectedId, showRemove }) {
+function renderProductSlot({ selectedId, poolName, showRemove }) {
   return `
     <div class="mod-ing">
-      <input type="hidden" class="mod-ing-pid" value="${escapeHtml(selectedId)}">
+      <input type="hidden" class="mod-ing-pid" value="${escapeHtml(selectedId || '')}">
+      <input type="hidden" class="mod-ing-pool" value="${escapeHtml(poolName || '')}">
       <div class="mod-ing-search"></div>
       <button type="button" class="mod-ing-remove" title="Remove product"
         aria-label="Remove product"${showRemove ? '' : ' hidden'}>
@@ -41,13 +43,14 @@ function renderProductSlot({ selectedId, showRemove }) {
 }
 
 function recipeSlots(recipe, eps) {
-  const ings = recipeProductIngredients(recipe);
+  const ings = recipeIngredients(recipe);
   return ings.length
     ? ings.map((ig) => ({
-      selectedId: productIdForName(ig.product_name, eps),
+      selectedId: ig.pool_name ? '' : productIdForName(ig.product_name, eps),
+      poolName: ig.pool_name || '',
       qty: displayFractionQty({ qty: ig.qty, qty_text: ig.qty_text }),
     }))
-    : [{ selectedId: '', qty: '1' }];
+    : [{ selectedId: '', poolName: '', qty: '1' }];
 }
 
 function renderRecipeColumns(recipe, eps, attrs) {
@@ -57,6 +60,7 @@ function renderRecipeColumns(recipe, eps, attrs) {
     <div class="mod-recipe" ${attrs}>
       <div class="mod-recipe-ings">${slots.map((slot, i) => renderProductSlot({
     selectedId: slot.selectedId,
+    poolName: slot.poolName,
     showRemove: slots.length > 1 || i > 0,
   })).join('')}</div>
       <button type="button" class="mod-ing-add" title="Add product" aria-label="Add product">
@@ -226,6 +230,7 @@ export function mountSalesPanel(route) {
     eventId: route.eventId,
     event: null,
     eps: [],
+    pools: [],
     caseSizes: [],
     recipes: [],
     tillImport: null,
@@ -331,39 +336,70 @@ export function mountSalesPanel(route) {
     const qtyInputs = [...tr.querySelectorAll('.mod-portion-cell .mod-ing-qty')];
     return [...recipeEl.querySelectorAll('.mod-ing')].map((slot, pos) => {
       const pidInput = slot.querySelector('.mod-ing-pid');
+      const poolInput = slot.querySelector('.mod-ing-pool');
       const qtyInput = qtyInputs[pos];
       const productId = pidInput?.value || '';
-      if (!productId) return null;
-      const product = productFromEvent(ctx.event, productId);
-      if (!product?.name) return null;
+      const poolName = (poolInput?.value || '').trim();
       const qtyRaw = qtyInput?.value?.trim() || '1';
       const qty = parseFractionQty(qtyRaw);
       if (!(qty > 0)) return null;
       const qtyText = /^[0-9.]+$/.test(qtyRaw) ? formatQtyAsFraction(qty) : qtyRaw;
-      return { product_name: product.name, qty, qty_text: qtyText, position: pos };
+
+      if (poolName) {
+        return { pool_name: poolName, product_name: null, qty, qty_text: qtyText, position: pos };
+      }
+      if (!productId) return null;
+      const product = productFromEvent(ctx.event, productId);
+      if (!product?.name) return null;
+      return { product_name: product.name, pool_name: null, qty, qty_text: qtyText, position: pos };
     }).filter(Boolean);
   }
 
   function clearIngredientSlot(slot) {
     const pidInput = slot.querySelector('.mod-ing-pid');
+    const poolInput = slot.querySelector('.mod-ing-pool');
     const searchInput = slot.querySelector('.product-search-input');
     if (pidInput) pidInput.value = '';
-    if (searchInput) searchInput.value = '';
+    if (poolInput) poolInput.value = '';
+    if (searchInput) {
+      searchInput.value = '';
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  function portionInputForSlot(recipeEl, slot) {
+    const tr = recipeEl.closest('tr');
+    const ings = recipeEl.querySelector('.mod-recipe-ings');
+    if (!tr || !ings || !slot) return null;
+    const index = [...ings.children].indexOf(slot);
+    if (index < 0) return null;
+    return tr.querySelectorAll('.mod-portion-cell .mod-ing-qty')[index] || null;
   }
 
   function mountIngredientSearch(slot, recipeEl) {
     const mountEl = slot.querySelector('.mod-ing-search');
     const pidInput = slot.querySelector('.mod-ing-pid');
-    if (!mountEl || !pidInput || mountEl.querySelector('.product-search')) return;
+    const poolInput = slot.querySelector('.mod-ing-pool');
+    if (!mountEl || !pidInput || !poolInput || mountEl.querySelector('.product-search')) return;
 
     mountProductSearch(mountEl, {
       products: ctx.eps,
+      pools: ctx.pools,
       caseSizes: ctx.caseSizes,
       value: pidInput.value || '',
-      placeholder: 'Search product…',
+      poolValue: poolInput.value || '',
+      placeholder: 'Search product or pool…',
       dropdownFixed: true,
-      onSelect: ({ productId }) => {
+      onSelect: ({ productId, poolName }) => {
         pidInput.value = productId || '';
+        poolInput.value = poolName || '';
+        if (poolName) {
+          const qtyInput = portionInputForSlot(recipeEl, slot);
+          // Pool qty is servings per sale (1 = single can/shot), not case fraction.
+          if (qtyInput && (!qtyInput.value.trim() || parseFractionQty(qtyInput.value) < 1)) {
+            qtyInput.value = '1';
+          }
+        }
         handleRecipeSave(recipeEl);
       },
     });
@@ -372,8 +408,9 @@ export function mountSalesPanel(route) {
     if (searchInput) {
       searchInput.addEventListener('blur', () => {
         window.setTimeout(() => {
-          if (!searchInput.value.trim() && pidInput.value) {
+          if (!searchInput.value.trim() && (pidInput.value || poolInput.value)) {
             pidInput.value = '';
+            poolInput.value = '';
             handleRecipeSave(recipeEl);
           }
         }, 120);
@@ -415,7 +452,7 @@ export function mountSalesPanel(route) {
     const ings = recipeEl.querySelector('.mod-recipe-ings');
     if (!portionStack || !ings) return;
     portionStack.insertAdjacentHTML('beforeend', renderPortionInput('1'));
-    ings.insertAdjacentHTML('beforeend', renderProductSlot({ selectedId: '', showRemove: true }));
+    ings.insertAdjacentHTML('beforeend', renderProductSlot({ selectedId: '', poolName: '', showRemove: true }));
     syncRemoveButtons(recipeEl);
     const slot = ings.lastElementChild;
     if (slot) mountIngredientSearch(slot, recipeEl);
@@ -472,7 +509,8 @@ export function mountSalesPanel(route) {
     ctx.saving.add(saveId);
 
     const existing = findRecipe(ctx.recipes, item, variation);
-    const valid = (ingredients || []).filter((ig) => ig.product_name && ig.qty > 0);
+    const valid = (ingredients || []).filter((ig) =>
+      (ig.product_name || ig.pool_name) && ig.qty > 0);
 
     try {
       if (!valid.length) {
@@ -502,7 +540,8 @@ export function mountSalesPanel(route) {
 
       await DB.insert('recipe_ingredients', valid.map((ig, i) => ({
         recipe_id: recipeId,
-        product_name: ig.product_name,
+        product_name: ig.pool_name ? null : ig.product_name,
+        pool_name: ig.pool_name || null,
         qty: ig.qty,
         qty_text: ig.qty_text || null,
         position: i,
@@ -694,17 +733,24 @@ export function mountSalesPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, modImport, recipes, caseSizes] = await Promise.all([
+    const [event, tillImport, modImport, recipes, caseSizes, libraryProducts] = await Promise.all([
       loadEventFull(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
       DB.recipes.listFull().catch(() => []),
       loadCaseSizes(),
+      loadLibraryProducts().catch(() => []),
     ]);
     if (ctx.abort) return;
     ctx.event = event;
     ctx.eps = (event?.event_products || []).filter((ep) => ep.product?.name);
     ctx.caseSizes = caseSizes || [];
+    ctx.pools = groupProductsByPool(libraryProducts || []).map((pool) => ({
+      name: pool.name,
+      key: pool.key,
+      meta: `Volume pool · ${poolSummary(pool, ctx.caseSizes)}`,
+      searchText: pool.members.map((m) => m.name || '').join(' '),
+    }));
     ctx.tillImport = tillImport;
     ctx.tillRows = tillImport?.rows || [];
     ctx.modImport = modImport;

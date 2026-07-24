@@ -15,12 +15,15 @@
 <body>
   <div class="admin-app" id="adminApp">
     <aside class="admin-sidebar" id="adminSidebar">
+      <div class="sidebar-brand">
+        <img src="/assets/img/logolarge.png" alt="Measured">
+      </div>
       <div class="sidebar-inner">
         <div class="sidebar-workspace-wrap">
           <button type="button" class="sidebar-workspace" id="sidebarWorkspace"
             aria-haspopup="listbox" aria-expanded="false" aria-controls="sidebarWorkspaceMenu">
-            <span class="sidebar-workspace-mark">
-              <img src="/assets/img/logomark.png" alt="">
+            <span class="sidebar-workspace-mark" id="sidebarWorkspaceMark">
+              <img src="/assets/img/logomark.png" alt="" id="sidebarWorkspaceMarkImg">
             </span>
             <span class="sidebar-workspace-text">
               <span class="sidebar-workspace-name" id="sidebarWorkspaceName">Measured Stock</span>
@@ -32,10 +35,6 @@
         </div>
 
         <div class="sidebar-scroll">
-          <nav class="sidebar-nav sidebar-nav-primary" id="sidebarPrimary">
-            <a class="nav-link" href="/v5/admin" data-route="home"><i data-lucide="house"></i> Events</a>
-          </nav>
-
           <div class="sidebar-section" data-section="catalog">
             <button type="button" class="sidebar-section-toggle" aria-expanded="true">
               <span>Catalog</span>
@@ -45,7 +44,6 @@
               <nav class="sidebar-nav" id="sidebarGlobal">
                 <a class="nav-link" href="/v5/admin/library" data-route="library"><i data-lucide="library"></i> Library <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" href="/v5/admin/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" href="/v5/admin/case-sizes" data-route="case-sizes"><i data-lucide="package"></i> Case sizes <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>
           </div>
@@ -75,14 +73,14 @@
 
           <div class="sidebar-section" data-section="event-sales" hidden>
             <button type="button" class="sidebar-section-toggle" aria-expanded="true">
-              <span>Sales &amp; recon</span>
+              <span>Square and Mapping</span>
               <i data-lucide="chevron-down" aria-hidden="true"></i>
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventSales">
                 <a class="nav-link" data-route="reports" data-event><i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="sales" data-event><i data-lucide="store"></i> Square &amp; modifiers <span class="nav-status-dot" title="Modifiers mapping built"></span></a>
-                <a class="nav-link" data-route="projections" data-event><i data-lucide="trending-down"></i> Stock projections <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" href="/v5/admin/volume-pools" data-route="volume-pools"><i data-lucide="layers"></i> Volume pools <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="recon" data-event><i data-lucide="pound-sterling"></i> Recon</a>
               </nav>
             </div>
@@ -97,19 +95,25 @@
       <div class="admin-shell">
         <header class="admin-topbar">
           <div class="topbar-title" id="pageTitle">Events</div>
-          <div class="topbar-tools" id="topbarTools" hidden>
-            <div class="topbar-toolbar-strips" id="topbarToolbarStrips" hidden></div>
-            <div class="topbar-toolbar" id="topbarFilterStrip" hidden>
-              <div class="topbar-tool-wrap">
-                <button type="button" class="topbar-tool" id="topbarTableFilterBtn"
-                  aria-expanded="false" aria-haspopup="true" aria-controls="topbarTableFilterPanel"
-                  title="Filter & columns" aria-label="Filter & columns">
-                  <i data-lucide="funnel" aria-hidden="true"></i>
-                </button>
-                <div class="tfp-dropdown" id="topbarTableFilterPanel" hidden></div>
+          <div class="topbar-end">
+            <div class="topbar-tools" id="topbarTools" hidden>
+              <div class="topbar-toolbar-strips" id="topbarToolbarStrips" hidden></div>
+              <div class="topbar-toolbar" id="topbarFilterStrip" hidden>
+                <div class="topbar-tool-wrap">
+                  <button type="button" class="topbar-tool" id="topbarTableFilterBtn"
+                    aria-expanded="false" aria-haspopup="true" aria-controls="topbarTableFilterPanel"
+                    title="Filter & columns" aria-label="Filter & columns">
+                    <i data-lucide="funnel" aria-hidden="true"></i>
+                  </button>
+                  <div class="tfp-dropdown" id="topbarTableFilterPanel" hidden></div>
+                </div>
               </div>
+              <div class="topbar-search" id="topbarSearch"></div>
             </div>
-            <div class="topbar-search" id="topbarSearch"></div>
+            <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings" data-route="settings"
+              title="Workspace settings" aria-label="Workspace settings">
+              <i data-lucide="settings" aria-hidden="true"></i>
+            </a>
           </div>
         </header>
         <main class="admin-content" id="adminContent"></main>
