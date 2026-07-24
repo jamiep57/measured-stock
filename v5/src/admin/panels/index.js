@@ -51,12 +51,25 @@ import {
   renderDashboardShell,
   mountDashboardPanel,
 } from './dashboard.js';
+import {
+  renderProjectionsShell,
+  mountProjectionsPanel,
+} from './projections.js';
+import {
+  renderBugsShell,
+  mountBugsPanel,
+} from './bugs.js';
+import {
+  renderReportsShell,
+  mountReportsPanel,
+} from './reports.js';
 
 export const PANEL_TITLES = {
   home: 'Events',
   library: 'Product library',
   suppliers: 'Suppliers',
   'case-sizes': 'Case sizes',
+  bugs: 'Bug & Feature Reports',
   dashboard: 'Event dashboard',
   setup: 'Event setup',
   products: 'Products',
@@ -68,8 +81,10 @@ export const PANEL_TITLES = {
   wastage: 'Wastage',
   closing: 'Closing stock',
   sales: 'Square & modifiers',
+  projections: 'Stock projections',
   recon: 'Financial recon',
-  summary: 'Summary',
+  reports: 'Reports',
+  summary: 'Reports',
   'not-found': 'Not found',
 };
 
@@ -119,6 +134,10 @@ export async function renderPanel(route, state) {
     return renderCaseSizesShell();
   }
 
+  if (route.view === 'bugs') {
+    return renderBugsShell();
+  }
+
   if (route.view === 'event') {
     const event = state.events.find((e) => e.id === route.eventId);
     const name = event?.name || route.eventId;
@@ -144,12 +163,25 @@ export async function renderPanel(route, state) {
         'Recipe mapping; fractions stay as fractions.',
         'Stock warnings inline.',
       ],
+      projections: [
+        'Run-out list scaled to target revenue.',
+        'Runs dry at revenue and % of target.',
+      ],
       recon: [
         'Supplier + offer visible on every product row.',
         'Price from selected product_suppliers offer.',
         'Clear when multiple suppliers exist.',
       ],
-      summary: ['Event summary export.'],
+      reports: [
+        'Total cost of supplier deliveries.',
+        'Filter by supplier and date.',
+        'Received vs invoiced qty.',
+      ],
+      summary: [
+        'Total cost of supplier deliveries.',
+        'Filter by supplier and date.',
+        'Received vs invoiced qty.',
+      ],
     };
 
     if (panel === 'dashboard') {
@@ -184,12 +216,20 @@ export async function renderPanel(route, state) {
       return renderSalesShell();
     }
 
+    if (panel === 'projections') {
+      return renderProjectionsShell();
+    }
+
     if (panel === 'counts') {
       return renderCountsShell();
     }
 
     if (panel === 'recon') {
       return renderReconShell();
+    }
+
+    if (panel === 'reports' || panel === 'summary') {
+      return renderReportsShell();
     }
 
     return `
@@ -228,11 +268,17 @@ export function mountPanel(route, state) {
   if (route.view === 'event' && route.panel === 'sales') {
     return mountSalesPanel(route);
   }
+  if (route.view === 'event' && route.panel === 'projections') {
+    return mountProjectionsPanel(route);
+  }
   if (route.view === 'event' && route.panel === 'counts') {
     return mountCountsPanel(route);
   }
   if (route.view === 'event' && route.panel === 'recon') {
     return mountReconPanel(route);
+  }
+  if (route.view === 'event' && (route.panel === 'reports' || route.panel === 'summary')) {
+    return mountReportsPanel(route);
   }
   if (route.view === 'suppliers') {
     return mountSuppliersPanel();
@@ -242,6 +288,9 @@ export function mountPanel(route, state) {
   }
   if (route.view === 'library') {
     return mountLibraryPanel();
+  }
+  if (route.view === 'bugs') {
+    return mountBugsPanel();
   }
   return null;
 }

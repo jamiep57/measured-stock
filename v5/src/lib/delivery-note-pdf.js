@@ -1,15 +1,19 @@
 /**
  * Transfer delivery note PDF — ported from v2 generateDeliveryNotePDF.
+ *
+ * Uses built-in Helvetica (like v2) instead of embedding Outfit TTFs, and
+ * embeds a downscaled JPEG logo so downloads stay small.
  */
 
 const JSPDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.js';
 const LOGO_URL = '/assets/img/logo.png';
-const OUTFIT_REGULAR_URL = '/assets/fonts/Outfit-Regular.ttf';
-const OUTFIT_BOLD_URL = '/assets/fonts/Outfit-Bold.ttf';
+/** ~150dpi at max logo width (52mm) — enough for print, keeps the PDF small. */
+const LOGO_PDF_MAX_PX = 320;
+const LOGO_JPEG_QUALITY = 0.72;
+const LOGO_ALIAS = 'delivery-note-logo';
 
 let jspdfPromise;
 let logoPromise;
-let outfitFontDataPromise;
 
 function round1(n) {
   return Math.round(Number(n) * 10) / 10;
@@ -35,7 +39,28 @@ async function loadJsPdf() {
   return jspdfPromise;
 }
 
-/** Load logo as data URL + natural dimensions for PDF embedding. */
+/** Downscale + JPEG-compress the logo for PDF embedding. */
+function compressLogoForPdf(img) {
+  const scale = Math.min(1, LOGO_PDF_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+  const width = Math.max(1, Math.round(img.naturalWidth * scale));
+  const height = Math.max(1, Math.round(img.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  return {
+    dataUrl: canvas.toDataURL('image/jpeg', LOGO_JPEG_QUALITY),
+    format: 'JPEG',
+    width,
+    height,
+  };
+}
+
+/** Load logo as a small JPEG data URL + dimensions for PDF embedding. */
 async function loadLogoForPdf() {
   if (logoPromise !== undefined) return logoPromise;
   logoPromise = (async () => {
@@ -43,20 +68,20 @@ async function loadLogoForPdf() {
       const res = await fetch(LOGO_URL);
       if (!res.ok) return null;
       const blob = await res.blob();
-      const dataUrl = await new Promise((resolve, reject) => {
+      const srcUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
-      const dims = await new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-        img.onerror = () => resolve(null);
-        img.src = dataUrl;
+      const img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = srcUrl;
       });
-      if (!dims?.width || !dims.height) return null;
-      return { dataUrl, ...dims };
+      if (!img.naturalWidth || !img.naturalHeight) return null;
+      return compressLogoForPdf(img);
     } catch {
       return null;
     }
@@ -76,45 +101,20 @@ function drawLogo(doc, logo, pageW, mr) {
   }
   const logoX = pageW - mr - logoW;
   const logoY = 7;
-  doc.addImage(logo.dataUrl, 'PNG', logoX, logoY, logoW, logoH);
+  // Alias reuses one image stream across pages instead of re-embedding.
+  doc.addImage(logo.dataUrl, logo.format || 'JPEG', logoX, logoY, logoW, logoH, LOGO_ALIAS);
 }
 
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+function formatLineCount(line, unit) {
+  if (line.cases != null || line.singles != null) {
+    const cs = Number(line.cases) || 0;
+    const sg = Number(line.singles) || 0;
+    const parts = [];
+    if (cs > 0 || sg === 0) parts.push(`${round1(cs)} case${cs === 1 ? '' : 's'}`);
+    if (sg > 0) parts.push(`${Math.round(sg)} single${Math.round(sg) === 1 ? '' : 's'}`);
+    return parts.join(' + ');
   }
-  return btoa(binary);
-}
-
-async function loadOutfitFontData() {
-  if (outfitFontDataPromise !== undefined) return outfitFontDataPromise;
-  outfitFontDataPromise = (async () => {
-    try {
-      const [regRes, boldRes] = await Promise.all([
-        fetch(OUTFIT_REGULAR_URL),
-        fetch(OUTFIT_BOLD_URL),
-      ]);
-      if (!regRes.ok || !boldRes.ok) return null;
-      const [regular, bold] = await Promise.all([
-        regRes.arrayBuffer().then(arrayBufferToBase64),
-        boldRes.arrayBuffer().then(arrayBufferToBase64),
-      ]);
-      return { regular, bold };
-    } catch {
-      return null;
-    }
-  })();
-  return outfitFontDataPromise;
-}
-
-function registerOutfitFonts(doc, fonts) {
-  doc.addFileToVFS('Outfit-Regular.ttf', fonts.regular);
-  doc.addFont('Outfit-Regular.ttf', 'Outfit', 'normal');
-  doc.addFileToVFS('Outfit-Bold.ttf', fonts.bold);
-  doc.addFont('Outfit-Bold.ttf', 'Outfit', 'bold');
+  return `${line.qty} ${unit}`;
 }
 
 /**
@@ -134,92 +134,117 @@ export async function generateDeliveryNotePDF({
   productInfo,
   unit = 'cases',
 }) {
-  const [jspdf, logo, outfitFonts] = await Promise.all([
+  const [jspdf, logo] = await Promise.all([
     loadJsPdf(),
     loadLogoForPdf(),
-    loadOutfitFontData(),
   ]);
   const { jsPDF } = jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const useOutfit = !!(outfitFonts && typeof doc.addFileToVFS === 'function');
-  if (useOutfit) registerOutfitFonts(doc, outfitFonts);
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
 
   const pageW = 210;
+  const pageH = 297;
   const ml = 15;
   const mr = 15;
   const contentW = pageW - ml - mr;
+  const bottomMargin = 14;
   const black = [20, 20, 20];
   const grey = [120, 120, 120];
   const lightGrey = [220, 220, 220];
   const bgGrey = [242, 242, 242];
+  const col1W = contentW * 0.52;
+  const col2W = contentW * 0.28;
+  const col3W = contentW - col1W - col2W;
+  const rowH = 9;
+  const sigRows = [
+    { label: 'Sender &\nCompany' },
+    { label: 'Signed Sender' },
+    { label: 'Receiver &\nCompany' },
+    { label: 'Signed Receiver' },
+  ];
+  const labelW = 36;
+  const sigH = 13;
+  const sigBlockH = 8 + sigRows.length * sigH;
+
+  const dateStr = date.toLocaleDateString('en-GB').replace(/\//g, '  /  ');
+  const timeStr = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
   function setFont(style, size, color) {
-    if (useOutfit) {
-      doc.setFont('Outfit', style === 'bold' ? 'bold' : 'normal');
-    } else {
-      doc.setFont('helvetica', style);
-    }
+    doc.setFont('helvetica', style);
     doc.setFontSize(size);
     doc.setTextColor.apply(doc, color || black);
   }
 
-  if (logo) drawLogo(doc, logo, pageW, mr);
+  function drawMetaFields(startY) {
+    let y = startY;
+    setFont('normal', 9, grey);
+    doc.text('Event:', ml, y);
+    doc.text('Date:', pageW - mr - 36, y);
 
-  setFont('bold', 26, black);
-  doc.text('Delivery Note', ml, 18);
+    y += 3;
+    doc.setDrawColor.apply(doc, lightGrey);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(ml, y, contentW - 42, 9, 1, 1, 'S');
+    setFont('normal', 10, black);
+    doc.text(eventName, ml + 2, y + 6);
 
-  let y = 30;
-  setFont('normal', 9, grey);
-  doc.text('Event:', ml, y);
-  doc.text('Date:', pageW - mr - 36, y);
+    doc.roundedRect(pageW - mr - 38, y, 38, 9, 1, 1, 'S');
+    setFont('normal', 10, black);
+    doc.text(dateStr, pageW - mr - 36, y + 6);
 
-  y += 3;
-  doc.setDrawColor.apply(doc, lightGrey);
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(ml, y, contentW - 42, 9, 1, 1, 'S');
-  setFont('normal', 10, black);
-  doc.text(eventName, ml + 2, y + 6);
+    y += 14;
+    setFont('normal', 9, grey);
+    doc.text('Time:', ml, y);
+    doc.text('Company/Department:', ml + 40, y);
 
-  const dateStr = date.toLocaleDateString('en-GB').replace(/\//g, '  /  ');
-  doc.roundedRect(pageW - mr - 38, y, 38, 9, 1, 1, 'S');
-  setFont('normal', 10, black);
-  doc.text(dateStr, pageW - mr - 36, y + 6);
+    y += 3;
+    doc.roundedRect(ml, y, 35, 9, 1, 1, 'S');
+    setFont('normal', 10, black);
+    doc.text(timeStr, ml + 2, y + 6);
 
-  y += 14;
-  setFont('normal', 9, grey);
-  doc.text('Time:', ml, y);
-  doc.text('Company/Department:', ml + 40, y);
+    doc.roundedRect(ml + 40, y, contentW - 40, 9, 1, 1, 'S');
+    setFont('normal', 10, black);
+    doc.text(recipientName || '', ml + 42, y + 6);
 
-  y += 3;
-  const timeStr = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  doc.roundedRect(ml, y, 35, 9, 1, 1, 'S');
-  setFont('normal', 10, black);
-  doc.text(timeStr, ml + 2, y + 6);
+    return y + 18;
+  }
 
-  doc.roundedRect(ml + 40, y, contentW - 40, 9, 1, 1, 'S');
-  setFont('normal', 10, black);
-  doc.text(recipientName || '', ml + 42, y + 6);
+  function drawTableHeader(startY, title) {
+    let y = startY;
+    setFont('bold', 16, black);
+    doc.text(title, ml, y);
+    y += 6;
+    setFont('normal', 9, grey);
+    doc.text('Product/Item', ml + 2, y + 4);
+    doc.text('Size/Specs', ml + col1W + 2, y + 4);
+    doc.text('(eg 24x330ml, 8x1L, 1x50L)', ml + col1W + 2, y + 7.5);
+    doc.text('Count', ml + col1W + col2W + 2, y + 4);
+    return y + 10;
+  }
 
-  y += 18;
-  setFont('bold', 16, black);
-  doc.text('Counts', ml, y);
+  function drawFirstPageHeader() {
+    if (logo) drawLogo(doc, logo, pageW, mr);
+    setFont('bold', 26, black);
+    doc.text('Delivery Note', ml, 18);
+    return drawTableHeader(drawMetaFields(30), 'Counts');
+  }
 
-  y += 6;
-  const col1W = contentW * 0.52;
-  const col2W = contentW * 0.28;
-  const col3W = contentW - col1W - col2W;
-  setFont('normal', 9, grey);
-  doc.text('Product/Item', ml + 2, y + 4);
-  doc.text('Size/Specs', ml + col1W + 2, y + 4);
-  doc.text('(eg 24x330ml, 8x1L, 1x50L)', ml + col1W + 2, y + 7.5);
-  doc.text('Count', ml + col1W + col2W + 2, y + 4);
+  function drawContinuationChrome() {
+    if (logo) drawLogo(doc, logo, pageW, mr);
+    setFont('bold', 20, black);
+    doc.text('Delivery Note', ml, 16);
+    setFont('normal', 9, grey);
+    doc.text('continued', ml, 22);
+    doc.text(`Event: ${eventName}`, ml, 30);
+    doc.text(`To: ${recipientName || '—'}`, ml + contentW * 0.55, 30);
+  }
 
-  y += 10;
-  const rowH = 9;
-  const maxRows = Math.max(15, lines.length);
-  for (let i = 0; i < maxRows; i++) {
-    const line = lines[i];
-    if (i % 2 === 1) {
+  function drawContinuationHeader() {
+    drawContinuationChrome();
+    return drawTableHeader(38, 'Counts');
+  }
+
+  function drawRow(line, rowIndex, y) {
+    if (rowIndex % 2 === 1) {
       doc.setFillColor.apply(doc, bgGrey);
       doc.rect(ml, y, contentW, rowH, 'F');
     }
@@ -233,49 +258,68 @@ export async function generateDeliveryNotePDF({
       setFont('normal', 9.5, black);
       doc.text(info.name || '', ml + 2, y + 6);
       doc.text(info.size || '', ml + col1W + 2, y + 6);
-      let countText;
-      if (line.cases != null || line.singles != null) {
-        const cs = Number(line.cases) || 0;
-        const sg = Number(line.singles) || 0;
-        const parts = [];
-        if (cs > 0 || sg === 0) parts.push(`${round1(cs)} case${cs === 1 ? '' : 's'}`);
-        if (sg > 0) parts.push(`${Math.round(sg)} single${Math.round(sg) === 1 ? '' : 's'}`);
-        countText = parts.join(' + ');
-      } else {
-        countText = `${line.qty} ${unit}`;
-      }
-      doc.text(countText, ml + col1W + col2W + 2, y + 6);
+      doc.text(formatLineCount(line, unit), ml + col1W + col2W + 2, y + 6);
     }
+  }
+
+  function drawSignatures(startY) {
+    let y = startY + 8;
+    sigRows.forEach((row) => {
+      doc.setDrawColor.apply(doc, lightGrey);
+      doc.setLineWidth(0.4);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(ml, y, contentW, sigH, 'S');
+      doc.setFillColor.apply(doc, bgGrey);
+      doc.rect(ml, y, labelW, sigH, 'F');
+      doc.rect(ml, y, labelW, sigH, 'S');
+      setFont('bold', 8.5, black);
+      const labelLines = row.label.split('\n');
+      if (labelLines.length === 2) {
+        doc.text(labelLines[0], ml + labelW - 2, y + sigH / 2 - 1, { align: 'right' });
+        doc.text(labelLines[1], ml + labelW - 2, y + sigH / 2 + 4, { align: 'right' });
+      } else {
+        doc.text(row.label, ml + labelW - 2, y + sigH / 2 + 1.5, { align: 'right' });
+      }
+      y += sigH;
+    });
+  }
+
+  function stampPageNumbers() {
+    const total = doc.getNumberOfPages();
+    for (let p = 1; p <= total; p++) {
+      doc.setPage(p);
+      setFont('normal', 8, grey);
+      doc.text(`Page ${p} of ${total}`, pageW / 2, pageH - 6, { align: 'center' });
+    }
+  }
+
+  let y = drawFirstPageHeader();
+  const maxRows = Math.max(15, lines.length);
+
+  for (let i = 0; i < maxRows; i++) {
+    const isLastRow = i === maxRows - 1;
+    // Prefer keeping the signature block with the final row when it fits.
+    const needBelow = isLastRow ? rowH + sigBlockH : rowH;
+    if (y + needBelow > pageH - bottomMargin) {
+      if (isLastRow && y + rowH <= pageH - bottomMargin) {
+        drawRow(lines[i], i, y);
+        y += rowH;
+        break;
+      }
+      doc.addPage();
+      y = drawContinuationHeader();
+    }
+    drawRow(lines[i], i, y);
     y += rowH;
   }
 
-  y += 8;
-  const sigRows = [
-    { label: 'Sender &\nCompany' },
-    { label: 'Signed Sender' },
-    { label: 'Receiver &\nCompany' },
-    { label: 'Signed Receiver' },
-  ];
-  const labelW = 36;
-  const sigH = 13;
-  sigRows.forEach((row) => {
-    doc.setDrawColor.apply(doc, lightGrey);
-    doc.setLineWidth(0.4);
-    doc.setFillColor(255, 255, 255);
-    doc.rect(ml, y, contentW, sigH, 'S');
-    doc.setFillColor.apply(doc, bgGrey);
-    doc.rect(ml, y, labelW, sigH, 'F');
-    doc.rect(ml, y, labelW, sigH, 'S');
-    setFont('bold', 8.5, black);
-    const labelLines = row.label.split('\n');
-    if (labelLines.length === 2) {
-      doc.text(labelLines[0], ml + labelW - 2, y + sigH / 2 - 1, { align: 'right' });
-      doc.text(labelLines[1], ml + labelW - 2, y + sigH / 2 + 4, { align: 'right' });
-    } else {
-      doc.text(row.label, ml + labelW - 2, y + sigH / 2 + 1.5, { align: 'right' });
-    }
-    y += sigH;
-  });
+  if (y + sigBlockH > pageH - bottomMargin) {
+    doc.addPage();
+    drawContinuationChrome();
+    y = 36;
+  }
+  drawSignatures(y);
+  stampPageNumbers();
 
   const safeName = (recipientName || 'transfer').replace(/[^a-z0-9]/gi, '_').toLowerCase();
   const dateTag = date.toLocaleDateString('en-GB').replace(/\//g, '-');

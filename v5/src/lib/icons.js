@@ -7,6 +7,7 @@ import { createElement, createIcons } from 'lucide';
 import {
   ArrowLeftRight,
   BarChart3,
+  Bug,
   ChevronDown,
   ChevronsUpDown,
   ClipboardList,
@@ -35,7 +36,6 @@ import {
   Search,
   Settings,
   Share2,
-  Smartphone,
   Store,
   Trash2,
   Truck,
@@ -52,6 +52,7 @@ const iconsByKebab = {
   library: Library,
   truck: Truck,
   package: Package,
+  bug: Bug,
   gauge: Gauge,
   settings: Settings,
   list: List,
@@ -86,7 +87,6 @@ const iconsByKebab = {
   search: Search,
   'chevron-down': ChevronDown,
   'chevrons-up-down': ChevronsUpDown,
-  smartphone: Smartphone,
 };
 
 function toCamelCase(name) {

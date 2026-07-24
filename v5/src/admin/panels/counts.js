@@ -10,6 +10,7 @@ import {
   formToCountStored, countStoredToForm, hasQuantity, inputAttrsPrimary, inputAttrsForSecondary,
 } from '../../stock-entry.js';
 import { countEntryMode, productStockPack } from '../../pack-metrics.js';
+import { printCountSheets } from '../../lib/count-sheets-print.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
@@ -632,10 +633,32 @@ export function mountCountsPanel(route) {
     e.detail.handled = true;
   }
 
+  function handlePrintCountSheets() {
+    if (!ctx.event) {
+      toast('Counts are still loading', true);
+      return;
+    }
+    const result = printCountSheets({
+      event: ctx.event,
+      barProducts: ctx.barProducts,
+      caseSizes: ctx.caseSizes,
+    });
+    if (result.error) {
+      toast(result.error, true);
+      return;
+    }
+    toast(`Opened ${result.barCount} count sheet${result.barCount === 1 ? '' : 's'}`);
+  }
+
   const onToolbarAction = (e) => {
     if (e.detail?.action === 'new-count') {
       e.detail.handled = true;
       openNewSessionSheet();
+      return;
+    }
+    if (e.detail?.action === 'print-count-sheets') {
+      e.detail.handled = true;
+      handlePrintCountSheets();
     }
   };
 

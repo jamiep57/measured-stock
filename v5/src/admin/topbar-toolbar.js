@@ -117,6 +117,18 @@ export const PANEL_TOOLBAR = {
         },
       ],
     },
+    {
+      id: 'print',
+      label: 'Print',
+      items: [
+        {
+          id: 'print-count-sheets',
+          icon: 'printer',
+          label: 'Print count sheets',
+          title: 'Print paper count sheets — one per location',
+        },
+      ],
+    },
   ],
   recon: [
     {
@@ -141,6 +153,34 @@ export const PANEL_TOOLBAR = {
           icon: 'download',
           label: 'Export CSV',
           title: 'Download recon as CSV',
+        },
+      ],
+    },
+  ],
+  reports: [
+    {
+      id: 'data',
+      label: 'Export',
+      items: [
+        {
+          id: 'export-reports',
+          icon: 'download',
+          label: 'Export CSV',
+          title: 'Download supplier delivery cost as CSV',
+        },
+      ],
+    },
+  ],
+  summary: [
+    {
+      id: 'data',
+      label: 'Export',
+      items: [
+        {
+          id: 'export-reports',
+          icon: 'download',
+          label: 'Export CSV',
+          title: 'Download supplier delivery cost as CSV',
         },
       ],
     },
@@ -244,6 +284,21 @@ export const PANEL_TOOLBAR = {
           icon: 'plus',
           label: 'New case size',
           title: 'New case size',
+          primary: true,
+        },
+      ],
+    },
+  ],
+  bugs: [
+    {
+      id: 'actions',
+      label: 'Bug reports',
+      items: [
+        {
+          id: 'new-bug-report',
+          icon: 'plus',
+          label: 'New report',
+          title: 'New report',
           primary: true,
         },
       ],

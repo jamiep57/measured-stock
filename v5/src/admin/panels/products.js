@@ -18,7 +18,7 @@ import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js'
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 
 function fmtNum(n) {
-  if (n == null || !Number.isFinite(Number(n)) || Number(n) === 0) return '—';
+  if (n == null || n === '' || !Number.isFinite(Number(n))) return '—';
   const v = round1(Number(n));
   return Number.isInteger(v) ? String(v) : String(v);
 }
@@ -301,7 +301,7 @@ export function mountProductsPanel(route) {
     const ordered = Number(ep.qty_ordered) || 0;
     const opening = openingForProduct(productId, countedIn, damagedFromDeliveries, ep);
     const variance = round1(cin - ordered);
-    const varLabel = variance === 0 ? '—' : `${variance > 0 ? '+' : ''}${fmtNum(variance)}`;
+    const varLabel = `${variance > 0 ? '+' : ''}${fmtNum(variance)}`;
 
     openProductFormSheet({
       product: full,

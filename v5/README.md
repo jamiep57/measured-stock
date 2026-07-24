@@ -129,6 +129,7 @@ Real URLs (History API), not hash-only:
 /v5/admin/library                      Global product catalogue
 /v5/admin/suppliers                    Supplier list
 /v5/admin/case-sizes                   Pack definitions
+/v5/admin/bugs                         Bug & feature reports
 
 /v5/admin/events/:eventId              Event dashboard (see below)
 /v5/admin/events/:eventId/setup        Bars, dates, suppliers, recipients
@@ -280,6 +281,7 @@ Requires repo-root `/assets/js/db.js` (served in dev by Vite plugin).
 | Summary | `…/summary` | |
 | Stock Levels | `…/stock-levels` | + dashboard widgets |
 | Suppliers / Case sizes | global routes | |
+| Bug & feature reports | `/admin/bugs` | |
 
 ---
 

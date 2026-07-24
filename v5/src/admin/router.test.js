@@ -8,6 +8,7 @@ describe('admin router', () => {
 
   it('parses global routes', () => {
     expect(parseRoute('/v5/admin/library')).toEqual({ view: 'library' });
+    expect(parseRoute('/v5/admin/bugs')).toEqual({ view: 'bugs' });
   });
 
   it('parses event panel routes', () => {

@@ -5,15 +5,23 @@ import { loadDbScript } from '../lib/load-db.js';
 import { loadEventsList } from '../db.js';
 import { parseRoute, navigate, startRouter, linkSidebar } from './router.js';
 import { initSidebar, syncSidebar } from './sidebar.js';
+import { readRememberedEventId, writeRememberedEventId } from './event-workspace.js';
 import { initSheet } from '../components/sheet.js';
+import { initBugSheet } from '../components/bug-sheet.js';
 import { PANEL_TITLES, renderPanel, mountPanel } from './panels/index.js';
+import { syncBugOpenDot, mountBugReportFab, syncBugFabVisibility } from './panels/bugs.js';
 import { initGlobalSearch, applyGenericProductFilter, ADMIN_PRODUCT_FILTER } from './global-search.js';
 import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
 
 const state = {
   events: [],
-  eventId: '',
+  eventId: readRememberedEventId(),
 };
+
+function setEventId(id) {
+  state.eventId = id || '';
+  writeRememberedEventId(state.eventId);
+}
 
 let cleanupPanel = null;
 let globalSearch = null;
@@ -42,7 +50,7 @@ async function render(route) {
     : (PANEL_TITLES[route.view] || 'Admin');
 
   if (route.view === 'event' && route.eventId) {
-    state.eventId = route.eventId;
+    setEventId(route.eventId);
     const event = state.events.find((e) => e.id === route.eventId);
     $('pageTitle').textContent = event ? `${title} · ${event.name}` : title;
   } else {
@@ -57,14 +65,16 @@ async function render(route) {
   $('adminContent').innerHTML = await renderPanel(route, state);
   await globalSearch?.syncRoute(route);
   cleanupPanel = mountPanel(route, state);
+  syncBugFabVisibility();
 }
 
 function wireNav() {
+  // Events list — keep the current workspace (Stock / Sales stay visible).
+  // Leave the workspace only via the switcher → "All events".
   document.getElementById('sidebarPrimary')?.addEventListener('click', (e) => {
     const a = e.target.closest('a[data-route]:not([data-event])');
     if (!a) return;
     e.preventDefault();
-    state.eventId = '';
     navigate({ view: 'home' });
     render(parseRoute());
   });
@@ -102,11 +112,12 @@ async function boot() {
   }
 
   initSheet();
+  initBugSheet();
   initIcons();
   initSpreadsheetCells(document.body);
   wireNav();
   initSidebar((opts = {}) => {
-    if (opts.clearEvent) state.eventId = '';
+    if (opts.clearEvent) setEventId('');
     render(parseRoute());
   });
   wireGenericProductFilter();
@@ -119,7 +130,8 @@ async function boot() {
     toast(err.message || 'Failed to load events', true);
   }
 
-  const route = parseRoute();
+  syncBugOpenDot();
+  mountBugReportFab();
   startRouter(render);
 }
 

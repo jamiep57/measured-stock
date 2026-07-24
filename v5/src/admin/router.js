@@ -11,7 +11,7 @@ export function parseRoute(pathname = location.pathname) {
 
   if (!rest) return { view: 'home' };
 
-  const global = ['library', 'suppliers', 'case-sizes'];
+  const global = ['library', 'suppliers', 'case-sizes', 'bugs'];
   if (global.includes(rest)) return { view: rest };
 
   const m = rest.match(/^events\/([^/]+)(?:\/(.+))?$/);

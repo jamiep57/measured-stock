@@ -80,24 +80,16 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventSales">
+                <a class="nav-link" data-route="reports" data-event><i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="sales" data-event><i data-lucide="store"></i> Square &amp; modifiers <span class="nav-status-dot" title="Modifiers mapping built"></span></a>
+                <a class="nav-link" data-route="projections" data-event><i data-lucide="trending-down"></i> Stock projections <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="recon" data-event><i data-lucide="pound-sterling"></i> Recon</a>
-                <a class="nav-link" data-route="summary" data-event><i data-lucide="pie-chart"></i> Summary</a>
               </nav>
             </div>
           </div>
         </div>
 
-        <footer class="sidebar-footer">
-          <a class="sidebar-footer-link" href="/v5">
-            <span class="sidebar-footer-mark"><i data-lucide="smartphone" aria-hidden="true"></i></span>
-            <span class="sidebar-footer-text">
-              <span class="sidebar-footer-name">Bar app</span>
-              <span class="sidebar-footer-sub">Mobile stock entry</span>
-            </span>
-            <i data-lucide="ellipsis" aria-hidden="true"></i>
-          </a>
-        </footer>
+        <footer class="sidebar-footer" aria-hidden="true"></footer>
       </div>
     </aside>
 
@@ -132,6 +124,15 @@
     </div>
     <div class="sheet-body" id="sheetBody"></div>
     <div class="sheet-foot" id="sheetFoot"></div>
+  </div>
+
+  <div class="sheet sheet--bug-left" id="bugSheet" hidden>
+    <div class="sheet-head">
+      <button class="icon-btn" type="button" id="bugSheetClose" aria-label="Close"><i data-lucide="x"></i></button>
+      <div class="sheet-title" id="bugSheetTitle"></div>
+    </div>
+    <div class="sheet-body" id="bugSheetBody"></div>
+    <div class="sheet-foot" id="bugSheetFoot"></div>
   </div>
 
   <div class="toast" id="toast" role="status"></div>

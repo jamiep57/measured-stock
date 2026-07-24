@@ -5,6 +5,7 @@
 import { escapeHtml } from '../lib/util.js';
 import { initIcons } from '../lib/icons.js';
 import { navigate, hrefForRoute } from './router.js';
+import { resolveActiveEventId } from './event-workspace.js';
 
 const SECTION_STORAGE_KEY = 'v5-admin-sidebar-sections';
 
@@ -24,19 +25,12 @@ function writeSectionState(state) {
   }
 }
 
-function activeEventId(route, state) {
-  if (route.view === 'event' && route.eventId) return route.eventId;
-  // Keep last event workspace while browsing global Catalog pages
-  if (route.view !== 'home' && state.eventId) return state.eventId;
-  return '';
-}
-
 function renderWorkspaceMenu(events, route, rememberedEventId) {
   const menu = document.getElementById('sidebarWorkspaceMenu');
   if (!menu) return;
 
   const items = [
-    `<button type="button" class="sidebar-workspace-item${route.view === 'home' ? ' is-active' : ''}" data-workspace="home">
+    `<button type="button" class="sidebar-workspace-item${!rememberedEventId ? ' is-active' : ''}" data-workspace="home">
       <span class="sidebar-workspace-item-name">All events</span>
       <span class="sidebar-workspace-item-sub">Measured Stock Admin</span>
     </button>`,
@@ -57,7 +51,7 @@ function updateWorkspaceHeader(route, state) {
   const subEl = document.getElementById('sidebarWorkspaceSub');
   if (!nameEl || !subEl) return;
 
-  const eventId = activeEventId(route, state);
+  const eventId = resolveActiveEventId(route, state);
   if (eventId) {
     const event = state.events.find((e) => e.id === eventId);
     nameEl.textContent = event?.name || 'Event';
@@ -148,14 +142,38 @@ function wireWorkspace(onNavigate) {
   });
 }
 
+/** Ensure Reports exists even if a cached admin.html predates the nav link. */
+function ensureReportsNavLink() {
+  const nav = document.getElementById('sidebarEventSales');
+  if (!nav) return;
+  if (nav.querySelector('[data-route="reports"]')) return;
+
+  const summary = nav.querySelector('[data-route="summary"]');
+  if (summary) {
+    summary.dataset.route = 'reports';
+    summary.innerHTML = '<i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span>';
+    return;
+  }
+
+  const link = document.createElement('a');
+  link.className = 'nav-link';
+  link.dataset.route = 'reports';
+  link.dataset.event = '';
+  link.innerHTML = '<i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span>';
+  nav.insertBefore(link, nav.firstChild);
+}
+
 export function initSidebar(onNavigate) {
+  ensureReportsNavLink();
   initSections();
   wireSections();
   wireWorkspace(onNavigate);
 }
 
 export function syncSidebar(route, state) {
-  const eventId = activeEventId(route, state);
+  ensureReportsNavLink();
+
+  const eventId = resolveActiveEventId(route, state);
   updateWorkspaceHeader(route, state);
   renderWorkspaceMenu(state.events, route, eventId);
 
