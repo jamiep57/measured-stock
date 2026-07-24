@@ -6,6 +6,7 @@ import { $, escapeHtml, rid, toast } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { getDB } from '../db.js';
 import { openSheet, closeSheet } from '../components/sheet.js';
+import { mountSupplierSearch } from '../components/supplier-search.js';
 
 function displayOfferPrice(row) {
   if (row?.case_price != null) return row.case_price;
@@ -51,7 +52,7 @@ export function openProductFormSheet(opts) {
   const {
     product: p = null,
     categories = [],
-    suppliers = [],
+    suppliers: suppliersIn = [],
     caseSizes = [],
     allowDelete = false,
     onSaved,
@@ -59,6 +60,7 @@ export function openProductFormSheet(opts) {
     eventContext = null,
   } = opts || {};
 
+  let suppliers = [...(suppliersIn || [])];
   const offerPrefName = `libPref_${rid('p')}`;
   const offerLines = p ? (p.product_suppliers || []).map((r) => ({ ...r })) : [];
 
@@ -166,16 +168,36 @@ export function openProductFormSheet(opts) {
     $('libPoolName').value = p.pool_name || '';
   }
 
+  function syncOfferSupplierPickers(exceptRoot = null) {
+    const wrap = $('libOffers');
+    wrap?.querySelectorAll('.supplier-search').forEach((el) => {
+      if (el === exceptRoot) return;
+      el.updateSuppliers?.(suppliers);
+    });
+  }
+
+  async function createSupplierFromPicker(payload) {
+    const created = await getDB().suppliers.create({
+      name: payload.name,
+      contact_name: payload.contact_name || null,
+      email: null,
+      phone: null,
+      address: null,
+      default_sor_pct: payload.default_sor_pct ?? 0,
+    });
+    if (!created?.id) throw new Error('Supplier was not created.');
+    if (!suppliers.some((s) => s.id === created.id)) {
+      suppliers = [...suppliers, created];
+    }
+    return { supplierId: created.id, supplier: created };
+  }
+
   function offerRowHtml(row = {}) {
-    const supOpts = suppliers.map((s) =>
-      `<option value="${escapeHtml(s.id)}"${s.id === row.supplier_id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+    const offerId = rid('o');
     const priceVal = displayOfferPrice(row);
     return `
-      <div class="lib-offer-row" data-offer-id="${rid('o')}">
-        <select class="admin-select lib-offer-sup">
-          <option value="">— supplier —</option>
-          ${supOpts}
-        </select>
+      <div class="lib-offer-row" data-offer-id="${escapeHtml(offerId)}" data-supplier-id="${escapeHtml(row.supplier_id || '')}">
+        <div class="lib-offer-sup-mount"></div>
         <input type="number" step="any" min="0" class="admin-input lib-offer-price" placeholder="Price £"
           value="${priceVal !== '' ? escapeHtml(String(priceVal)) : ''}">
         <label class="lib-offer-pref" title="Preferred purchase option">
@@ -186,6 +208,32 @@ export function openProductFormSheet(opts) {
           ${icon('x', { size: 14 })}
         </button>
       </div>`;
+  }
+
+  function mountOfferSupplierSearch(rowEl) {
+    const mount = rowEl.querySelector('.lib-offer-sup-mount');
+    if (!mount) return;
+    const offerId = rowEl.dataset.offerId || rid('o');
+    mountSupplierSearch(mount, {
+      suppliers,
+      value: rowEl.dataset.supplierId || '',
+      placeholder: 'Search suppliers…',
+      emptyLabel: '— supplier —',
+      allowEmpty: true,
+      allowCreate: true,
+      dropdownFixed: true,
+      hiddenId: `libOfferSup_${offerId}`,
+      inputId: `libOfferSupInput_${offerId}`,
+      onCreateSupplier: async (payload) => {
+        const result = await createSupplierFromPicker(payload);
+        syncOfferSupplierPickers(mount.querySelector('.supplier-search'));
+        toast('Supplier created');
+        return result;
+      },
+      onSelect: ({ supplierId }) => {
+        rowEl.dataset.supplierId = supplierId || '';
+      },
+    });
   }
 
   function wireOfferRows() {
@@ -209,6 +257,8 @@ export function openProductFormSheet(opts) {
     const wrap = $('libOffers');
     if (!wrap) return;
     wrap.insertAdjacentHTML('beforeend', offerRowHtml(row));
+    const rowEl = wrap.lastElementChild;
+    if (rowEl) mountOfferSupplierSearch(rowEl);
     wireOfferRows();
   }
 
@@ -216,7 +266,9 @@ export function openProductFormSheet(opts) {
     const wrap = $('libOffers');
     const out = [];
     wrap?.querySelectorAll('.lib-offer-row').forEach((row) => {
-      const supplier_id = row.querySelector('.lib-offer-sup')?.value || '';
+      const supplier_id = row.querySelector('.lib-offer-sup')?.value
+        || row.dataset.supplierId
+        || '';
       const priceV = (row.querySelector('.lib-offer-price')?.value || '').trim();
       const is_preferred = row.querySelector('.lib-offer-pref input')?.checked;
       if (!supplier_id && !priceV) return;
