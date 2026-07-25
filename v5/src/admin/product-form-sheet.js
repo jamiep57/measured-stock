@@ -13,6 +13,7 @@ import {
   poolFractionText,
   poolServingsFromFraction,
 } from '../lib/volume-pools.js';
+import { parseQty } from '../stock-entry.js';
 
 function displayOfferPrice(row) {
   if (row?.case_price != null) return row.case_price;
@@ -21,10 +22,9 @@ function displayOfferPrice(row) {
 }
 
 function splitOfferPrice(price, unitsPerCase) {
-  if (price == null || price === '' || !Number.isFinite(Number(price))) {
-    return { case_price: null, unit_price: null };
-  }
-  const n = Number(price);
+  if (price == null || price === '') return { case_price: null, unit_price: null };
+  const n = parseQty(price);
+  if (!Number.isFinite(n)) return { case_price: null, unit_price: null };
   const upc = Number(unitsPerCase) > 0 ? Number(unitsPerCase) : 1;
   return { case_price: n, unit_price: n / upc };
 }
@@ -88,7 +88,7 @@ export function openProductFormSheet(opts) {
     ? `
       <div class="admin-field">
         <label class="admin-label" for="epEditOrdered">Cases ordered</label>
-        <input class="admin-input" type="text" inputmode="decimal" id="epEditOrdered"
+        <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="epEditOrdered"
           value="${eventContext.qtyOrdered != null && eventContext.qtyOrdered !== '' ? escapeHtml(String(eventContext.qtyOrdered)) : ''}"
           placeholder="0">
       </div>
@@ -140,7 +140,7 @@ export function openProductFormSheet(opts) {
         </div>
         <div class="admin-field">
           <label class="admin-label" for="libAbv">ABV (%)</label>
-          <input class="admin-input" type="number" min="0" step="any" id="libAbv" placeholder="Optional">
+          <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libAbv" placeholder="Optional">
         </div>
         <div class="admin-field">
           <label class="admin-label" for="libPoolName">Volume pool</label>
@@ -245,7 +245,7 @@ export function openProductFormSheet(opts) {
     return `
       <div class="lib-offer-row" data-offer-id="${escapeHtml(offerId)}" data-supplier-id="${escapeHtml(row.supplier_id || '')}">
         <div class="lib-offer-sup-mount"></div>
-        <input type="number" step="any" min="0" class="admin-input lib-offer-price" placeholder="Price £"
+        <input type="text" inputmode="decimal" autocomplete="off" class="admin-input lib-offer-price num-math" placeholder="Price £"
           value="${priceVal !== '' ? escapeHtml(String(priceVal)) : ''}">
         <label class="lib-offer-pref" title="Preferred purchase option">
           <input type="radio" name="${escapeHtml(offerPrefName)}"${row.is_preferred ? ' checked' : ''}>
@@ -321,7 +321,7 @@ export function openProductFormSheet(opts) {
       if (!supplier_id && !priceV) return;
       out.push({
         supplier_id,
-        price: priceV === '' ? null : Number(priceV),
+        price: priceV === '' ? null : parseQty(priceV),
         is_preferred: !!is_preferred,
       });
     });
@@ -372,7 +372,7 @@ export function openProductFormSheet(opts) {
     let qtyOrdered = null;
     if (eventContext) {
       const raw = ($('epEditOrdered')?.value || '').trim();
-      qtyOrdered = raw === '' ? 0 : Number(raw);
+      qtyOrdered = raw === '' ? 0 : parseQty(raw);
       if (!Number.isFinite(qtyOrdered) || qtyOrdered < 0) {
         $('libErr').textContent = 'Enter a valid ordered quantity.';
         return;
@@ -408,7 +408,7 @@ export function openProductFormSheet(opts) {
         : (p?.units_per_case ?? 1),
       stock_unit: cs?.stock_unit ?? p?.stock_unit ?? null,
       sku: ($('libSku')?.value || '').trim() || null,
-      abv: $('libAbv')?.value !== '' ? Number($('libAbv').value) : null,
+      abv: $('libAbv')?.value !== '' ? parseQty($('libAbv').value) : null,
       pool_name: poolName,
       pool_servings_per_unit,
       pool_servings_text,

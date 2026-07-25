@@ -8,6 +8,9 @@ describe('admin router', () => {
 
   it('parses global routes', () => {
     expect(parseRoute('/v5/admin/library')).toEqual({ view: 'library' });
+    expect(parseRoute('/v5/admin/kit-library')).toEqual({ view: 'kit-library' });
+    expect(parseRoute('/v5/admin/suppliers')).toEqual({ view: 'suppliers' });
+    expect(parseRoute('/v5/admin/warehouses')).toEqual({ view: 'warehouses' });
     expect(parseRoute('/v5/admin/volume-pools')).toEqual({ view: 'volume-pools' });
     expect(parseRoute('/v5/admin/bugs')).toEqual({ view: 'bugs' });
     expect(parseRoute('/v5/admin/settings')).toEqual({ view: 'settings' });

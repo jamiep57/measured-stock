@@ -324,7 +324,7 @@
       },
       normalise(input) {
         // Map a UI product object to the products table shape.
-        return {
+        const row = {
           name: input.name,
           supplier_id: input.supplier_id || null,
           category_id: input.category_id || null,
@@ -337,6 +337,16 @@
           unit_price: numOrNull(input.unit_price),
           case_price: numOrNull(input.case_price),
         };
+        if (input.product_kind) row.product_kind = input.product_kind;
+        if (input.notes !== undefined) row.notes = input.notes || null;
+        if (input.archived !== undefined) row.archived = !!input.archived;
+        if (input.barcode !== undefined) {
+          const bc = (input.barcode == null ? '' : String(input.barcode)).trim();
+          row.barcode = bc || null;
+        }
+        if (input.is_container !== undefined) row.is_container = !!input.is_container;
+        if (input.image_url !== undefined) row.image_url = input.image_url || null;
+        return row;
       },
       // Remove a product from the library together with every row that
       // references it (events, deliveries, closing stock, etc.).
@@ -349,7 +359,10 @@
           const rpcMissing = /delete_product|PGRST202|42883|does not exist/i.test(msg);
           if (!rpcMissing) throw e;
         }
+        await remove('kit_container_contents',
+          'or=(container_product_id.eq.' + id + ',child_product_id.eq.' + id + ')');
         const childTables = [
+          'kit_movement_lines', 'event_kit_items',
           'stock_count_lines', 'wastage_lines', 'transfer_lines', 'delivery_lines',
           'topup_lines', 'bar_products', 'distribution', 'closing_stock',
           'event_products', 'warehouse_stock', 'product_suppliers',

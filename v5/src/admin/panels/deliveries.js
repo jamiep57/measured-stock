@@ -9,7 +9,7 @@ import { icon } from '../../lib/icons.js';
 import {
   getDB, loadEventFull, loadSuppliers, loadCaseSizes, loadCategories, productFromEvent,
 } from '../../db.js';
-import { formToStored, storedToForm, hasQuantity, totalUnitsForProduct } from '../../stock-entry.js';
+import { formToStored, storedToForm, hasQuantity, totalUnitsForProduct, parseQty } from '../../stock-entry.js';
 import { round1 } from '../../lib/opening-stock.js';
 import { productStockPack } from '../../pack-metrics.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
@@ -143,17 +143,17 @@ function qtyFieldsRowHtml({
       <div class="del-qty-fields del-qty-fields--row">
         <div class="del-qty-field">
           <label class="admin-label">Cases</label>
-          <input type="number" step="any" min="0" class="admin-input del-line-cases"${lid}
+          <input type="text" inputmode="decimal" autocomplete="off" class="admin-input del-line-cases num-math"${lid}
             value="${escapeHtml(cases)}" placeholder="0" aria-label="Cases">
         </div>
         <div class="del-qty-field">
           <label class="admin-label">Singles</label>
-          <input type="number" step="any" min="0" class="admin-input del-line-singles"${lid}
+          <input type="text" inputmode="decimal" autocomplete="off" class="admin-input del-line-singles num-math"${lid}
             value="${escapeHtml(singles)}" placeholder="0" aria-label="Singles">
         </div>
         <div class="del-qty-field">
           <label class="admin-label">Damaged</label>
-          <input type="number" step="any" min="0" class="admin-input del-line-dmg"${lid}
+          <input type="text" inputmode="decimal" autocomplete="off" class="admin-input del-line-dmg num-math"${lid}
             value="${escapeHtml(damagedQty)}" placeholder="0" aria-label="Damaged">
         </div>
       </div>
@@ -162,12 +162,12 @@ function qtyFieldsRowHtml({
         <div class="del-qty-fields del-qty-fields--row del-qty-fields--row-invoice">
           <div class="del-qty-field">
             <label class="admin-label">Cases</label>
-            <input type="number" step="any" min="0" class="admin-input del-line-inv-cases"${lid}
+            <input type="text" inputmode="decimal" autocomplete="off" class="admin-input del-line-inv-cases num-math"${lid}
               value="${escapeHtml(invoiceCases)}" placeholder="0" aria-label="Invoice cases">
           </div>
           <div class="del-qty-field">
             <label class="admin-label">Singles</label>
-            <input type="number" step="any" min="0" class="admin-input del-line-inv-singles"${lid}
+            <input type="text" inputmode="decimal" autocomplete="off" class="admin-input del-line-inv-singles num-math"${lid}
               value="${escapeHtml(invoiceSingles)}" placeholder="0" aria-label="Invoice singles">
           </div>
         </div>
@@ -496,7 +496,7 @@ export function mountDeliveriesPanel(route) {
     const valid = delLines
       .filter((l) => l.productId && (
         hasQuantity(l.cases, l.singles)
-        || parseFloat(l.damagedQty)
+        || parseQty(l.damagedQty)
         || hasQuantity(l.invoiceCases, l.invoiceSingles)
       ))
       .map((l) => {
@@ -506,7 +506,7 @@ export function mountDeliveriesPanel(route) {
           product_id: l.productId,
           qty: stored.qty,
           singles: stored.singles,
-          damaged_qty: parseFloat(l.damagedQty) || 0,
+          damaged_qty: parseQty(l.damagedQty),
           invoice_qty: invoice.invoice_qty,
           invoice_singles: invoice.invoice_singles,
         };

@@ -13,6 +13,11 @@ describe('parseQty', () => {
     expect(parseQty('12')).toBe(12);
     expect(parseQty('0.5')).toBe(0.5);
   });
+  it('evaluates basic arithmetic', () => {
+    expect(parseQty('4+10')).toBe(14);
+    expect(parseQty('2*3+4')).toBe(10);
+    expect(parseQty('(8+4)/2')).toBe(6);
+  });
   it('returns 0 for empty or invalid', () => {
     expect(parseQty('')).toBe(0);
     expect(parseQty('abc')).toBe(0);

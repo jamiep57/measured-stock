@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyRecipientReportPricing,
   buildRecipientTransferReport,
   formatTransferQtyLabel,
+  overrideStorageKey,
   recipientTransferCsv,
 } from './recipient-transfer-report.js';
 
@@ -180,5 +182,38 @@ describe('recipientTransferCsv', () => {
     expect(content).toContain('Test Lager');
     expect(content).toContain('Unit price');
     expect(content).toContain('24.00');
+  });
+});
+
+describe('applyRecipientReportPricing', () => {
+  it('overrides unit prices and bakes markup into charged amounts', () => {
+    const base = buildRecipientTransferReport({ transfers, event, caseSizes: [] });
+    const artist = base.recipientRows.find((r) => r.recipientName === 'Artist Liaison');
+    const lager = artist.products.find((p) => p.productName === 'Test Lager');
+    const key = overrideStorageKey(artist.recipientId, lager);
+
+    const priced = applyRecipientReportPricing(base, {
+      markupByRecipient: { [artist.recipientId]: 10 },
+      unitPriceOverrides: { [key]: 20 },
+    });
+    const row = priced.recipientRows.find((r) => r.recipientName === 'Artist Liaison');
+    const lagerPriced = row.products.find((p) => p.productName === 'Test Lager');
+
+    // 20 override × 1.10 markup = 22 charged unit; qty 8 → 176
+    expect(lagerPriced.overrideUnitPrice).toBe(20);
+    expect(lagerPriced.unitPrice).toBe(22);
+    expect(lagerPriced.cost).toBe(176);
+    expect(row.markupPct).toBe(10);
+  });
+
+  it('leaves invoice-facing lines without a separate markup row', () => {
+    const base = buildRecipientTransferReport({ transfers, event, caseSizes: [] });
+    const priced = applyRecipientReportPricing(base, {
+      markupByRecipient: { r1: 25 },
+    });
+    const artist = priced.recipientRows.find((r) => r.recipientName === 'Artist Liaison');
+    expect(artist.products.every((p) => p.productName !== 'Markup')).toBe(true);
+    // Gin base 16 × 1.25 = 20; qty 2 → 40
+    expect(artist.products.find((p) => p.productName === 'Gin').unitPrice).toBe(20);
   });
 });

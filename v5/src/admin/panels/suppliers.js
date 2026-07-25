@@ -7,6 +7,7 @@ import { icon } from '../../lib/icons.js';
 import { getDB, loadSuppliers, loadLibraryProducts } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { parseQty } from '../../stock-entry.js';
 
 function fmtGbp(n) {
   if (n == null || !Number.isFinite(Number(n))) return '';
@@ -14,7 +15,7 @@ function fmtGbp(n) {
 }
 
 function clampSor(raw) {
-  let sor = Number(raw);
+  let sor = parseQty(raw);
   if (!Number.isFinite(sor)) sor = 0;
   return Math.max(0, Math.min(100, Math.round(sor)));
 }
@@ -307,7 +308,7 @@ export function mountSuppliersPanel() {
             </div>
             <div class="admin-field">
               <label class="admin-label" for="supSor">Default SOR %</label>
-              <input class="admin-input" type="number" id="supSor" min="0" max="100" step="1" placeholder="0">
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="supSor" placeholder="0">
             </div>
           </div>
           <div class="admin-field-grid">

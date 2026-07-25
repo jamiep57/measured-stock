@@ -1,11 +1,12 @@
 /**
- * Workspace settings — global product categories and case sizes.
+ * Workspace settings — warehouses, product categories and case sizes.
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import { getDB, loadCategories, loadCaseSizes, loadLibraryProducts } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { parseQty } from '../../stock-entry.js';
 
 const CATEGORY_COLOURS = [
   { value: 'beer', label: 'Beer (amber)' },
@@ -54,10 +55,36 @@ function categoryProductCount(catId, products) {
     p.category_id === catId || p.category?.id === catId).length;
 }
 
+function addressPreview(address) {
+  const line = String(address || '').split('\n').map((s) => s.trim()).find(Boolean);
+  return line || '';
+}
+
 function renderShell() {
   return `
     <div class="admin-page settings-panel">
       <div class="settings-layout">
+        <section class="settings-card settings-card--warehouses admin-surface">
+          <header class="settings-card-head">
+            <div class="settings-card-head-text">
+              <h2 class="settings-card-title">Warehouses</h2>
+              <p class="settings-card-desc muted">Storage locations for stock that isn’t on an event.</p>
+            </div>
+            <div class="settings-card-actions">
+              <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsAddWh">
+                ${icon('plus', { size: 14 })} Add
+              </button>
+            </div>
+          </header>
+          <div class="settings-card-search">
+            <input type="search" class="admin-input" id="settingsWhSearch"
+              placeholder="Search warehouses…" autocomplete="off" aria-label="Search warehouses">
+          </div>
+          <div class="settings-list" id="settingsWarehouses" role="list">
+            <div class="settings-list-empty muted">Loading…</div>
+          </div>
+        </section>
+
         <section class="settings-card admin-surface">
           <header class="settings-card-head">
             <div class="settings-card-head-text">
@@ -114,17 +141,56 @@ export function renderSettingsShell() {
 }
 
 export function mountSettingsPanel() {
+  const whWrap = $('settingsWarehouses');
   const catWrap = $('settingsCategories');
   const csWrap = $('settingsCaseSizes');
-  if (!catWrap || !csWrap) return () => {};
+  if (!whWrap || !catWrap || !csWrap) return () => {};
 
+  let warehouses = [];
   let categories = [];
   let caseSizes = [];
   let products = [];
   let mergeMode = false;
+  let whQuery = '';
   let catQuery = '';
   let csQuery = '';
   const selected = new Set();
+
+  function paintWarehouses() {
+    const q = whQuery.trim().toLowerCase();
+    const sorted = warehouses
+      .filter((w) => {
+        if (!q) return true;
+        const hay = [w.name, w.address].join(' ').toLowerCase();
+        return hay.includes(q);
+      })
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    if (!sorted.length) {
+      whWrap.innerHTML = `<div class="settings-list-empty muted">${warehouses.length
+        ? 'No warehouses match your search.'
+        : 'No warehouses yet. Add your first one.'}</div>`;
+      return;
+    }
+
+    whWrap.innerHTML = sorted.map((w) => {
+      const addr = addressPreview(w.address);
+      return `
+        <button type="button" class="settings-row settings-row--wh" data-wh-id="${escapeHtml(w.id)}" role="listitem">
+          <span class="settings-row-icon" aria-hidden="true">${icon('warehouse', { size: 14 })}</span>
+          <span class="settings-row-main">
+            <span class="settings-row-name">${escapeHtml(w.name || '—')}</span>
+            <span class="settings-row-meta">${addr ? escapeHtml(addr) : 'No address'}</span>
+          </span>
+          <span class="settings-row-chev">${icon('chevron-right', { size: 16 })}</span>
+        </button>`;
+    }).join('');
+
+    whWrap.querySelectorAll('[data-wh-id]').forEach((btn) => {
+      btn.onclick = () => openWarehouseForm(btn.dataset.whId);
+    });
+  }
 
   function paintCategories() {
     catWrap.classList.toggle('settings-list--merge', mergeMode);
@@ -248,13 +314,119 @@ export function mountSettingsPanel() {
   }
 
   async function refresh() {
-    [categories, caseSizes, products] = await Promise.all([
+    [warehouses, categories, caseSizes, products] = await Promise.all([
+      getDB().warehouses.list(),
       loadCategories(),
       loadCaseSizes(),
       loadLibraryProducts(),
     ]);
+    paintWarehouses();
     paintCategories();
     paintCaseSizes();
+  }
+
+  function openWarehouseForm(editId) {
+    const w = editId ? warehouses.find((x) => x.id === editId) : null;
+
+    openSheet({
+      title: w ? 'Edit warehouse' : 'New warehouse',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="settingsWhErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="settingsWhName">Name</label>
+            <input class="admin-input" type="text" id="settingsWhName" required placeholder="e.g. Main Depot">
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="settingsWhAddress">Address</label>
+            <textarea class="admin-textarea" id="settingsWhAddress" rows="3" placeholder="Street, City, Postcode"></textarea>
+          </div>
+          <p class="wst-form-hint muted">Stock moves in and out of warehouses via Transfers.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          ${w ? '<button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="settingsWhDelete">Delete</button>' : '<span></span>'}
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="settingsWhCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="settingsWhSave">${w ? 'Update warehouse' : 'Save warehouse'}</button>
+          </div>
+        </div>`,
+    });
+
+    if (w) {
+      $('settingsWhName').value = w.name || '';
+      $('settingsWhAddress').value = w.address || '';
+    }
+
+    $('settingsWhCancel').onclick = closeSheet;
+    $('settingsWhSave').onclick = async () => {
+      const name = ($('settingsWhName')?.value || '').trim();
+      if (!name) {
+        $('settingsWhErr').textContent = 'Name is required.';
+        return;
+      }
+      const dupe = warehouses.find((x) =>
+        (x.name || '').toLowerCase() === name.toLowerCase() && (!w || x.id !== w.id));
+      if (dupe) {
+        $('settingsWhErr').textContent = 'A warehouse with that name already exists.';
+        return;
+      }
+      const patch = {
+        name,
+        address: ($('settingsWhAddress')?.value || '').trim() || null,
+      };
+      const btn = $('settingsWhSave');
+      btn.disabled = true;
+      try {
+        const DB = getDB();
+        if (w) await DB.warehouses.update(w.id, patch);
+        else await DB.warehouses.create(patch);
+        closeSheet();
+        await refresh();
+        toast(w ? 'Warehouse updated' : 'Warehouse created');
+      } catch (err) {
+        $('settingsWhErr').textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    if (w) {
+      $('settingsWhDelete').onclick = async () => {
+        const DB = getDB();
+        const enc = DB._.enc;
+        try {
+          const stockRows = await DB.warehouseStock.forWarehouse(w.id);
+          const hasStock = (stockRows || []).some((s) => (Number(s.qty_on_hand) || 0) > 0);
+          if (hasStock && !confirm('This warehouse still holds stock. Delete anyway?')) return;
+
+          const xferRows = await DB.select(
+            'transfers',
+            '?or=(from_warehouse_id.eq.' + enc(w.id) + ',to_warehouse_id.eq.' + enc(w.id) + ')&select=id'
+          );
+          const xferCount = (xferRows || []).length;
+          if (xferCount && !confirm(
+            `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
+            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.'
+          )) return;
+
+          if (!hasStock && !xferCount && !confirm(`Delete “${w.name}”? This cannot be undone.`)) return;
+
+          await DB.warehouses.remove(w.id);
+          closeSheet();
+          await refresh();
+          toast('Warehouse deleted');
+        } catch (err) {
+          const msg = String(err?.message || err);
+          if (/23503/.test(msg) && /warehouse/i.test(msg)) {
+            toast('Can’t delete — transfers still reference this warehouse.', true);
+          } else {
+            toast(err.message || 'Delete failed', true);
+          }
+        }
+      };
+    }
   }
 
   function openCategoryForm(editId) {
@@ -445,7 +617,7 @@ export function mountSettingsPanel() {
           <div class="admin-field-grid">
             <div class="admin-field">
               <label class="admin-label" for="settingsCsUnits">Units per case</label>
-              <input class="admin-input" type="number" min="0" step="any" id="settingsCsUnits" placeholder="1">
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="settingsCsUnits" placeholder="1">
             </div>
             <div class="admin-field">
               <label class="admin-label" for="settingsCsStockUnit">Count as</label>
@@ -455,11 +627,11 @@ export function mountSettingsPanel() {
           <div class="admin-field-grid">
             <div class="admin-field">
               <label class="admin-label" for="settingsCsServings">Servings per unit</label>
-              <input class="admin-input" type="number" min="0" step="any" id="settingsCsServings" placeholder="Optional">
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="settingsCsServings" placeholder="Optional">
             </div>
             <div class="admin-field">
               <label class="admin-label" for="settingsCsSort">Sort order</label>
-              <input class="admin-input" type="number" step="1" id="settingsCsSort" placeholder="0">
+              <input class="admin-input num-math" type="text" inputmode="numeric" autocomplete="off" id="settingsCsSort" placeholder="0">
             </div>
           </div>
           <div class="admin-field">
@@ -495,7 +667,7 @@ export function mountSettingsPanel() {
         return;
       }
       const unitsRaw = ($('settingsCsUnits')?.value || '').trim();
-      const units_per_case = unitsRaw === '' ? NaN : Number(unitsRaw);
+      const units_per_case = unitsRaw === '' ? NaN : parseQty(unitsRaw);
       if (!Number.isFinite(units_per_case) || units_per_case <= 0) {
         $('settingsCsErr').textContent = 'Units per case must be greater than zero.';
         return;
@@ -503,7 +675,7 @@ export function mountSettingsPanel() {
       const stock_unit = $('settingsCsStockUnit')?.value || 'case';
       let servings_per_unit = null;
       if ($('settingsCsServings')?.value !== '') {
-        servings_per_unit = Number($('settingsCsServings').value);
+        servings_per_unit = parseQty($('settingsCsServings').value);
         if (!Number.isFinite(servings_per_unit) || servings_per_unit <= 0) {
           $('settingsCsErr').textContent = 'Servings per unit must be a positive number.';
           return;
@@ -511,7 +683,7 @@ export function mountSettingsPanel() {
       }
       let sort_order = 0;
       if ($('settingsCsSort')?.value !== '') {
-        sort_order = Number($('settingsCsSort').value);
+        sort_order = parseQty($('settingsCsSort').value);
         if (!Number.isFinite(sort_order)) sort_order = 0;
       }
       const patch = {
@@ -557,12 +729,17 @@ export function mountSettingsPanel() {
     }
   }
 
+  $('settingsAddWh')?.addEventListener('click', () => openWarehouseForm(null));
   $('settingsAddCat')?.addEventListener('click', () => openCategoryForm(null));
   $('settingsAddCs')?.addEventListener('click', () => openCaseSizeForm(null));
   $('settingsCatMergeToggle')?.addEventListener('click', () => setMergeMode(true));
   $('settingsCatMergeCancel')?.addEventListener('click', () => setMergeMode(false));
   $('settingsCatMergeBtn')?.addEventListener('click', () => openMergeDialog());
 
+  $('settingsWhSearch')?.addEventListener('input', (e) => {
+    whQuery = e.target.value;
+    paintWarehouses();
+  });
   $('settingsCatSearch')?.addEventListener('input', (e) => {
     catQuery = e.target.value;
     paintCategories();
@@ -573,7 +750,9 @@ export function mountSettingsPanel() {
   });
 
   refresh().catch((err) => {
-    catWrap.innerHTML = `<div class="settings-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    const msg = `<div class="settings-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    whWrap.innerHTML = msg;
+    catWrap.innerHTML = msg;
     csWrap.innerHTML = '';
   });
 

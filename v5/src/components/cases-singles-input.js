@@ -25,15 +25,14 @@ export function renderQtyInputs({
   let html = `<div class="count-inputs qty-inputs" data-pid="${escapeHtml(productId)}">`;
 
   html += `<div class="cell"><label>${escapeHtml(mode.columnLabels.primary)}</label>`;
-  html += `<input id="${primaryId}" class="qty-primary" data-pid="${escapeHtml(productId)}"`;
-  html += ` type="${primaryAttrs.type}" inputmode="${primaryAttrs.inputMode}" step="${primaryAttrs.step}" min="${primaryAttrs.min}"`;
+  html += `<input id="${primaryId}" class="qty-primary num-math" data-pid="${escapeHtml(productId)}"`;
+  html += ` type="${primaryAttrs.type}" inputmode="${primaryAttrs.inputMode}" autocomplete="off"`;
   html += ` value="${escapeHtml(form.cases)}" placeholder="0"></div>`;
 
   if (mode.columnLabels.secondary && secondaryAttrs) {
     html += `<div class="cell"><label>${escapeHtml(mode.columnLabels.secondary)}</label>`;
-    html += `<input id="${secondaryId}" class="qty-secondary" data-pid="${escapeHtml(productId)}"`;
-    html += ` type="${secondaryAttrs.type}" inputmode="${secondaryAttrs.inputMode}" step="${secondaryAttrs.step}" min="${secondaryAttrs.min}"`;
-    if (secondaryAttrs.max) html += ` max="${secondaryAttrs.max}"`;
+    html += `<input id="${secondaryId}" class="qty-secondary num-math" data-pid="${escapeHtml(productId)}"`;
+    html += ` type="${secondaryAttrs.type}" inputmode="${secondaryAttrs.inputMode}" autocomplete="off"`;
     html += ` value="${escapeHtml(form.singles)}" placeholder="0"></div>`;
   }
 

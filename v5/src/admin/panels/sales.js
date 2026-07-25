@@ -24,7 +24,7 @@ function fmtNum(n) {
 }
 
 function renderPortionInput(qty) {
-  return `<input type="text" class="fraction-input mod-ing-qty" inputmode="text"
+  return `<input type="text" class="fraction-input mod-ing-qty num-math" inputmode="text"
     value="${escapeHtml(qty)}" placeholder="1/24" autocomplete="off"
     aria-label="Portion per serving">`;
 }

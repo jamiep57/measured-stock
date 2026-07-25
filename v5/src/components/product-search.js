@@ -274,7 +274,7 @@ export function mountProductSearch(container, options = {}) {
     });
     const filteredProducts = items.filter((p) => {
       if (!query) return true;
-      const hay = [p.name, p.sku, p.case_size, productStockPack(p, caseSizes).label, p.category?.name, offerSummary(p)].join(' ').toLowerCase();
+      const hay = [p.name, p.sku, p.barcode, p.case_size, productStockPack(p, caseSizes).label, p.category?.name, offerSummary(p)].join(' ').toLowerCase();
       return hay.includes(query);
     }).slice(0, 40);
 
@@ -303,9 +303,12 @@ export function mountProductSearch(container, options = {}) {
       const productHtml = filteredProducts.map((p) => {
         const pack = productStockPack(p, caseSizes);
         const selected = p._productId === selectedId ? ' selected' : '';
+        const barcodeMeta = p.barcode ? ` · ${p.barcode}` : '';
+        const packLabel = pack.label || p.case_size || '';
+        const meta = `${packLabel}${barcodeMeta}${offerSummary(p) ? ' · ' + offerSummary(p) : ''}`.replace(/^ · /, '');
         return `<button type="button" class="product-search-item${selected}" data-id="${escapeHtml(p._productId)}">
           <span class="product-search-name">${escapeHtml(p.name)}</span>
-          <span class="product-search-meta">${escapeHtml(pack.label || p.case_size || '')}${offerSummary(p) ? ' · ' + escapeHtml(offerSummary(p)) : ''}</span>
+          <span class="product-search-meta">${escapeHtml(meta)}</span>
         </button>`;
       }).join('');
 

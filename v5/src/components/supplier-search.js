@@ -13,6 +13,7 @@
  */
 
 import { escapeHtml } from '../lib/util.js';
+import { parseQty } from '../stock-entry.js';
 import { openModal, closeModal } from './modal.js';
 
 function sortSuppliers(list) {
@@ -134,7 +135,7 @@ export function mountSupplierSearch(container, options = {}) {
             </div>
             <div class="admin-field">
               <label class="admin-label" for="ssCreateSor">Default SOR %</label>
-              <input type="number" class="admin-input" id="ssCreateSor" min="0" max="100" step="1" placeholder="0">
+              <input type="text" inputmode="decimal" autocomplete="off" class="admin-input num-math" id="ssCreateSor" placeholder="0">
             </div>
           </div>
           <p class="wst-form-hint muted">You can add contact details later in Suppliers.</p>
@@ -171,7 +172,7 @@ export function mountSupplierSearch(container, options = {}) {
       try {
         const contact = modal.querySelector('#ssCreateContact')?.value.trim() || null;
         const sorRaw = modal.querySelector('#ssCreateSor')?.value;
-        let sor = Number(sorRaw);
+        let sor = parseQty(sorRaw);
         if (!Number.isFinite(sor)) sor = 0;
         sor = Math.max(0, Math.min(100, Math.round(sor)));
 

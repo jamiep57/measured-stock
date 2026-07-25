@@ -265,6 +265,21 @@ export const PANEL_TOOLBAR = {
       ],
     },
   ],
+  warehouses: [
+    {
+      id: 'actions',
+      label: 'Warehouses',
+      items: [
+        {
+          id: 'new-warehouse',
+          icon: 'plus',
+          label: 'New warehouse',
+          title: 'New warehouse',
+          primary: true,
+        },
+      ],
+    },
+  ],
   library: [
     {
       id: 'actions',
@@ -282,6 +297,90 @@ export const PANEL_TOOLBAR = {
           icon: 'git-merge',
           label: 'Merge duplicates',
           title: 'Merge duplicates',
+        },
+      ],
+    },
+  ],
+  'kit-library': [
+    {
+      id: 'actions',
+      label: 'Kit library',
+      items: [
+        {
+          id: 'new-kit-item',
+          icon: 'plus',
+          label: 'New kit item',
+          title: 'New kit item',
+          primary: true,
+        },
+        {
+          id: 'kit-mobile-count',
+          icon: 'container',
+          label: 'Mobile count',
+          title: 'Open mobile container counting on this device or phone',
+        },
+        {
+          id: 'kit-label-queue',
+          icon: 'printer',
+          label: 'Print queue',
+          title: 'Print kit labels queued from mobile',
+        },
+        {
+          id: 'manage-kit-categories',
+          icon: 'layers',
+          label: 'Categories',
+          title: 'Manage kit categories',
+        },
+        {
+          id: 'auto-kit-photos',
+          icon: 'wand-sparkles',
+          label: 'Auto photos',
+          title: 'Find and set photos for kit items missing an image',
+        },
+      ],
+    },
+  ],
+  kit: [
+    {
+      id: 'actions',
+      label: 'Kit',
+      items: [
+        {
+          id: 'kit-scan',
+          icon: 'scan-barcode',
+          label: 'Scan',
+          title: 'Pair phone camera as barcode scanner',
+          primary: true,
+        },
+        {
+          id: 'kit-warehouse-in',
+          icon: 'warehouse',
+          label: 'Send own',
+          title: 'Send own kit from warehouse onto this event',
+        },
+        {
+          id: 'kit-hire-in',
+          icon: 'truck',
+          label: 'Hire in',
+          title: 'Hire kit onto this event',
+        },
+        {
+          id: 'kit-warehouse-out',
+          icon: 'undo-2',
+          label: 'Check in',
+          title: 'Return kit to warehouse',
+        },
+        {
+          id: 'kit-hire-return',
+          icon: 'corner-up-left',
+          label: 'Return hire',
+          title: 'Return hired kit',
+        },
+        {
+          id: 'kit-write-off',
+          icon: 'trash',
+          label: 'Write-off',
+          title: 'Write off kit',
         },
       ],
     },

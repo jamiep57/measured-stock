@@ -98,12 +98,12 @@ function qtyFieldsRowHtml({ cases, singles, lineId }) {
     <div class="del-qty-fields del-qty-fields--row wst-qty-fields">
       <div class="del-qty-field">
         <label class="admin-label">Cases</label>
-        <input type="number" step="any" min="0" class="admin-input del-line-cases"${lid}
+        <input type="text" inputmode="decimal" autocomplete="off" class="admin-input del-line-cases num-math"${lid}
           value="${escapeHtml(cases)}" placeholder="0" aria-label="Cases">
       </div>
       <div class="del-qty-field">
         <label class="admin-label">Singles</label>
-        <input type="number" step="any" min="0" class="admin-input del-line-singles"${lid}
+        <input type="text" inputmode="decimal" autocomplete="off" class="admin-input del-line-singles num-math"${lid}
           value="${escapeHtml(singles)}" placeholder="0" aria-label="Singles">
       </div>
     </div>`;

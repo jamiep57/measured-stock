@@ -13,6 +13,7 @@ import {
   openingByProduct,
   round1,
 } from '../../lib/opening-stock.js';
+import { parseQty } from '../../stock-entry.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TABLE_FILTER, getDistControls } from '../table-filter.js';
 import {
@@ -78,7 +79,7 @@ function renderBarCell(bar, ep, ctx) {
       <div class="dist-cell-body">
         <div class="dist-pill lta-badge lta-ok">
           <input type="text" inputmode="decimal" autocomplete="off"
-            class="dist-pill-input"
+            class="dist-pill-input num-math"
             value="${qty ? qty : ''}" placeholder="-"
             aria-label="Cases allocated to ${barName}">
         </div>
@@ -483,7 +484,7 @@ export function mountDistributionPanel(route, state) {
   }
 
   function updateAllocation(productId, barId, val, inputEl) {
-    const qty = round1(parseFloat(val) || 0);
+    const qty = round1(parseQty(val));
     let row = distRowFor(ctx.distRows, barId, productId);
     if (!row) {
       row = {

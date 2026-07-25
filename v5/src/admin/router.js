@@ -14,7 +14,7 @@ export function parseRoute(pathname = location.pathname) {
   // Legacy Catalog → Case sizes URL now lives under Workspace settings.
   if (rest === 'case-sizes') return { view: 'settings' };
 
-  const global = ['library', 'suppliers', 'volume-pools', 'bugs', 'settings'];
+  const global = ['library', 'kit-library', 'suppliers', 'warehouses', 'volume-pools', 'bugs', 'settings'];
   if (global.includes(rest)) return { view: rest };
 
   const m = rest.match(/^events\/([^/]+)(?:\/(.+))?$/);

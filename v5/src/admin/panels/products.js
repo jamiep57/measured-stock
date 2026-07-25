@@ -18,6 +18,7 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { parseQty } from '../../stock-entry.js';
 
 function fmtNum(n) {
   if (n == null || n === '' || !Number.isFinite(Number(n))) return '—';
@@ -49,7 +50,7 @@ function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editi
 
   const orderedCell = editingOrderedId === pid
     ? `<td class="ep-prod-num ep-prod-ordered" onclick="event.stopPropagation()">
-        <input class="ep-ordered-input" type="text" id="epOrd-${escapeHtml(pid)}" value="${ep.qty_ordered != null ? escapeHtml(String(ep.qty_ordered)) : ''}">
+        <input class="ep-ordered-input num-math" type="text" inputmode="decimal" autocomplete="off" id="epOrd-${escapeHtml(pid)}" value="${ep.qty_ordered != null ? escapeHtml(String(ep.qty_ordered)) : ''}">
       </td>`
     : `<td class="ep-prod-num ep-prod-ordered ep-prod-ordered--edit" data-pid="${escapeHtml(pid)}" title="Edit ordered">${fmtNum(ordered)}</td>`;
 
@@ -92,12 +93,6 @@ function openingForProduct(pid, countedIn, damagedFromDeliveries, ep) {
 function renderShell() {
   return `
     <div class="ep-panel">
-      <div class="ep-stats" id="epStats">
-        <div class="wst-stat"><span class="wst-stat-label">Products</span><span class="wst-stat-value" id="epStatProducts">—</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Cases ordered</span><span class="wst-stat-value" id="epStatOrdered">—</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Counted in</span><span class="wst-stat-value" id="epStatCounted">—</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Opening stock</span><span class="wst-stat-value" id="epStatOpening">—</span></div>
-      </div>
       <p class="ep-hint muted">Add products from your library and set ordered quantities. <strong>Counted in</strong> and unusable stock come from deliveries; <strong>opening</strong> = counted in − delivery damages.</p>
       <div class="dist-grid-wrap ep-grid-wrap">
         <table class="dist-grid ep-grid" id="epTable">
@@ -166,29 +161,12 @@ export function mountProductsPanel(route) {
     });
   }
 
-  function paintStats(eps) {
-    const ordered = eps.reduce((s, ep) => s + (Number(ep.qty_ordered) || 0), 0);
-    let counted = 0;
-    let opening = 0;
-    eps.forEach((ep) => {
-      const cin = countedIn[ep.product_id] ?? (ep.delivered_qty != null ? Number(ep.delivered_qty) : 0);
-      counted += cin;
-      opening += openingForProduct(ep.product_id, countedIn, damagedFromDeliveries, ep);
-    });
-    $('epStatProducts').textContent = String(eps.length);
-    $('epStatOrdered').textContent = fmtNum(ordered);
-    $('epStatCounted').textContent = fmtNum(counted);
-    $('epStatOpening').textContent = fmtNum(opening);
-  }
-
   function paintTable() {
     const eps = filteredEps();
     const body = $('epBody');
     const empty = $('epEmpty');
     const table = $('epTable');
     if (!body) return;
-
-    paintStats(event?.event_products?.filter((ep) => ep.product?.name) || []);
 
     if (!(event?.event_products || []).some((ep) => ep.product?.name)) {
       body.innerHTML = '';
@@ -234,7 +212,7 @@ export function mountProductsPanel(route) {
       const saveOrd = async () => {
         const pid = editingOrderedId;
         const raw = ordInp.value.trim();
-        const qty = raw === '' ? 0 : (parseFloat(raw) || 0);
+        const qty = raw === '' ? 0 : parseQty(raw);
         try {
           await getDB().eventProducts.setForEvent(eventId, pid, { qty_ordered: qty });
           const ep = event.event_products.find((x) => x.product_id === pid);

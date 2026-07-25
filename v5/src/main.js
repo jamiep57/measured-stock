@@ -12,6 +12,7 @@ import { initSheet } from './components/sheet.js';
 import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible } from './counts.js';
 import { initDeliveries, loadDeliveriesView, flushPendingDeliveries } from './deliveries.js';
 import { loadDbScript } from './lib/load-db.js';
+import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
 
 const state = {
   eventId: '',
@@ -115,6 +116,7 @@ async function boot() {
 
   $('appFoot').textContent = 'V' + V5_VERSION;
   initSheet();
+  initSpreadsheetCells(document.body);
 
   initCounts(getContext());
   initDeliveries(getContext());

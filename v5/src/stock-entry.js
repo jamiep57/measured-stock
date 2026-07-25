@@ -1,14 +1,41 @@
 /**
- * WYSIWYG stock entry — no save/load conversion, no evalMath.
+ * WYSIWYG stock entry — no save/load conversion.
+ * Typed expressions like 4+10 evaluate when parsing (and on blur via spreadsheet-cells).
  */
 
 import { productStockPack } from './pack-metrics.js';
 
-export function parseQty(raw) {
+const MATH_EXPR = /[+\-*/()]/;
+
+/**
+ * Parse a quantity cell. Supports plain numbers and basic arithmetic (e.g. 4+10, 2*3+1).
+ * @returns {{ display: string, numeric: number, evaluated: boolean }}
+ */
+export function evalQtyExpression(raw) {
   const s = String(raw ?? '').trim();
-  if (!s) return 0;
-  const n = parseFloat(s);
-  return Number.isFinite(n) && n >= 0 ? n : 0;
+  if (!s) return { display: '', numeric: 0, evaluated: false };
+
+  const plain = () => {
+    const n = parseFloat(s);
+    const numeric = Number.isFinite(n) && n >= 0 ? n : 0;
+    return { display: s, numeric, evaluated: false };
+  };
+
+  if (!MATH_EXPR.test(s)) return plain();
+  if (!/^[0-9+\-*/().\s]+$/.test(s)) return plain();
+
+  try {
+    const val = Function('"use strict";return (' + s + ')')();
+    if (typeof val !== 'number' || !Number.isFinite(val) || val < 0) return plain();
+    const display = Number.isInteger(val) ? String(val) : String(Math.round(val * 1000) / 1000);
+    return { display, numeric: val, evaluated: true };
+  } catch {
+    return plain();
+  }
+}
+
+export function parseQty(raw) {
+  return evalQtyExpression(raw).numeric;
 }
 
 /** Form → DB shape for delivery_lines (qty + singles). */
@@ -78,14 +105,14 @@ export function hasQuantity(cases, singles) {
 
 export function inputAttrsForSecondary(mode) {
   if (mode?.secondaryStep === '0.1') {
-    return { type: 'number', inputMode: 'decimal', step: '0.1', min: '0', max: '0.99' };
+    return { type: 'text', inputMode: 'decimal', step: '0.1', min: '0', max: '0.99' };
   }
   if (mode?.secondaryStep) {
-    return { type: 'number', inputMode: 'numeric', step: mode.secondaryStep, min: '0' };
+    return { type: 'text', inputMode: 'numeric', step: mode.secondaryStep, min: '0' };
   }
   return null;
 }
 
 export function inputAttrsPrimary() {
-  return { type: 'number', inputMode: 'decimal', step: 'any', min: '0' };
+  return { type: 'text', inputMode: 'decimal', step: 'any', min: '0' };
 }

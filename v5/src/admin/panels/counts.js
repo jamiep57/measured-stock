@@ -7,7 +7,7 @@ import { icon } from '../../lib/icons.js';
 import { getDB, loadEventFull, loadCaseSizes } from '../../db.js';
 import { barServesProduct, hasBarMenu } from '../../bar-products.js';
 import {
-  formToCountStored, countStoredToForm, hasQuantity, inputAttrsPrimary, inputAttrsForSecondary,
+  formToCountStored, countStoredToForm, hasQuantity, inputAttrsPrimary, inputAttrsForSecondary, parseQty,
 } from '../../stock-entry.js';
 import { countEntryMode, productStockPack } from '../../pack-metrics.js';
 import { printCountSheets } from '../../lib/count-sheets-print.js';
@@ -58,8 +58,8 @@ function renderBarQtyCells(bar, ep, ctx) {
   const mode = countEntryMode(product, ctx.caseSizes);
   const line = countLineFor(ctx.lines, barId, pid);
   const form = countStoredToForm(line);
-  const hasCases = form.cases !== '' && parseFloat(form.cases) > 0;
-  const hasSingles = form.singles !== '' && parseFloat(form.singles) > 0;
+  const hasCases = form.cases !== '' && parseQty(form.cases) > 0;
+  const hasSingles = form.singles !== '' && parseQty(form.singles) > 0;
 
   if (!serves) {
     return `
@@ -80,7 +80,7 @@ function renderBarQtyCells(bar, ep, ctx) {
   const casesCell = `
     <td class="dist-cell dist-cell--on cnt-qty-cell cnt-qty-cell--cases${hasCases ? ' cnt-qty-cell--filled' : ''}"
       data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
-      <input type="text" class="cnt-inp cnt-inp--primary"
+      <input type="text" class="cnt-inp cnt-inp--primary num-math"
         data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}"
         ${attrString(primary)}
         value="${form.cases !== '' ? escapeHtml(form.cases) : ''}"
@@ -95,7 +95,7 @@ function renderBarQtyCells(bar, ep, ctx) {
     ? `
     <td class="dist-cell dist-cell--on cnt-qty-cell cnt-qty-cell--singles${hasSingles ? ' cnt-qty-cell--filled' : ''}"
       data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
-      <input type="text" class="cnt-inp cnt-inp--secondary"
+      <input type="text" class="cnt-inp cnt-inp--secondary num-math"
         data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}"
         ${attrString(secondary)}
         value="${form.singles !== '' ? escapeHtml(form.singles) : ''}"

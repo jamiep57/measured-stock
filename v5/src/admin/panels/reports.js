@@ -9,12 +9,15 @@ import {
   supplierDeliveryCostCsv,
 } from '../../lib/supplier-delivery-cost.js';
 import {
+  applyRecipientReportPricing,
   buildRecipientTransferReport,
+  overrideStorageKey,
   recipientTransferCsv,
 } from '../../lib/recipient-transfer-report.js';
 import { generateRecipientInvoicePDF } from '../../lib/recipient-invoice-pdf.js';
 import { icon, initIcons } from '../../lib/icons.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { parseQty } from '../../stock-entry.js';
 
 function fmtQty(n) {
   if (!Number.isFinite(n)) return '—';
@@ -37,12 +40,41 @@ function supplierOptions(suppliers, selected) {
 }
 
 function recipientOptions(recipients, selected) {
-  return `<option value="">All clients</option>${
-    (recipients || []).map((r) => `
+  if (!(recipients || []).length) {
+    return `<option value="">No clients with transfers</option>`;
+  }
+  return (recipients || []).map((r) => `
       <option value="${escapeHtml(r.id)}"${r.id === selected ? ' selected' : ''}>
         ${escapeHtml(r.name)}
-      </option>`).join('')
-  }`;
+      </option>`).join('');
+}
+
+const PRICING_STORAGE_PREFIX = 'v5ClientReportPricing:';
+
+function emptyPricing() {
+  return { markupByRecipient: {}, unitPriceOverrides: {} };
+}
+
+function loadPricing(eventId) {
+  if (!eventId) return emptyPricing();
+  try {
+    const raw = localStorage.getItem(`${PRICING_STORAGE_PREFIX}${eventId}`);
+    if (!raw) return emptyPricing();
+    const parsed = JSON.parse(raw);
+    return {
+      markupByRecipient: parsed?.markupByRecipient || {},
+      unitPriceOverrides: parsed?.unitPriceOverrides || {},
+    };
+  } catch {
+    return emptyPricing();
+  }
+}
+
+function savePricing(eventId, pricing) {
+  if (!eventId) return;
+  try {
+    localStorage.setItem(`${PRICING_STORAGE_PREFIX}${eventId}`, JSON.stringify(pricing));
+  } catch { /* ignore quota */ }
 }
 
 export function renderReportsShell() {
@@ -72,8 +104,35 @@ export function mountReportsPanel(route) {
     supplierView: 'suppliers',
     abort: false,
     supplierReport: null,
+    baseClientReport: null,
     clientReport: null,
+    pricing: loadPricing(route.eventId),
   };
+
+  function clientsWithTransfers() {
+    const withXfer = new Set(
+      (ctx.transfers || []).map((t) => t.recipient_id).filter(Boolean),
+    );
+    const byId = new Map();
+    for (const r of ctx.event?.recipients || []) {
+      if (!withXfer.has(r.id)) continue;
+      byId.set(r.id, { id: r.id, name: r.name || 'Unnamed' });
+    }
+    for (const t of ctx.transfers || []) {
+      const id = t.recipient_id;
+      if (!id || byId.has(id)) continue;
+      byId.set(id, {
+        id,
+        name: t.recipients?.name || 'Unknown client',
+      });
+    }
+    return [...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
+  function ensureClientSelected(clients) {
+    if (ctx.recipientId && clients.some((c) => c.id === ctx.recipientId)) return;
+    ctx.recipientId = clients[0]?.id || '';
+  }
 
   function compute() {
     ctx.supplierReport = buildSupplierDeliveryCostReport({
@@ -86,7 +145,9 @@ export function mountReportsPanel(route) {
       dateTo: ctx.dateTo,
       qtyMode: ctx.qtyMode,
     });
-    ctx.clientReport = buildRecipientTransferReport({
+    const clients = clientsWithTransfers();
+    ensureClientSelected(clients);
+    ctx.baseClientReport = buildRecipientTransferReport({
       transfers: ctx.transfers,
       event: ctx.event,
       caseSizes: ctx.caseSizes,
@@ -94,6 +155,12 @@ export function mountReportsPanel(route) {
       dateFrom: ctx.dateFrom,
       dateTo: ctx.dateTo,
     });
+    ctx.clientReport = applyRecipientReportPricing(ctx.baseClientReport, ctx.pricing);
+  }
+
+  function persistPricing() {
+    savePricing(ctx.eventId, ctx.pricing);
+    ctx.clientReport = applyRecipientReportPricing(ctx.baseClientReport, ctx.pricing);
   }
 
   function exportCsv() {
@@ -132,21 +199,46 @@ export function mountReportsPanel(route) {
     };
   }
 
-  async function exportInvoice(recipientId = '') {
+  function currentRecipientFilter() {
+    const el = $('rptRecipient');
+    if (el) ctx.recipientId = el.value || '';
+    return ctx.recipientId || '';
+  }
+
+  async function exportInvoice(recipientId) {
     if (ctx.reportKind !== 'clients') {
       toast('Switch to Clients to export invoices', true);
       return;
     }
-    const report = ctx.clientReport;
-    if (!report?.recipientRows?.length) {
-      toast('No client transfers to invoice', true);
-      return;
+    // Prefer an explicit client (per-card button); otherwise the Client dropdown.
+    const targetId = (recipientId != null && recipientId !== '')
+      ? recipientId
+      : currentRecipientFilter();
+
+    let report = ctx.clientReport;
+    let rows = targetId
+      ? (report?.recipientRows || []).filter((r) => String(r.recipientId) === String(targetId))
+      : (report?.recipientRows || []);
+
+    // If the Client filter changed without a recompute, rebuild from full transfers.
+    if (targetId && !rows.length && ctx.event) {
+      const full = applyRecipientReportPricing(
+        buildRecipientTransferReport({
+          transfers: ctx.transfers,
+          event: ctx.event,
+          caseSizes: ctx.caseSizes,
+          recipientId: targetId,
+          dateFrom: ctx.dateFrom,
+          dateTo: ctx.dateTo,
+        }),
+        ctx.pricing,
+      );
+      report = full;
+      rows = full?.recipientRows || [];
     }
-    const rows = recipientId
-      ? report.recipientRows.filter((r) => r.recipientId === recipientId)
-      : report.recipientRows;
+
     if (!rows.length) {
-      toast('Client not found in this report', true);
+      toast(targetId ? 'No transfers for this client to invoice' : 'Select a client to invoice', true);
       return;
     }
     try {
@@ -190,17 +282,15 @@ export function mountReportsPanel(route) {
   }
 
   function renderClientStats(report) {
+    const markupNote = report.recipientRows?.some((r) => (r.markupPct || 0) > 0)
+      ? 'includes hidden markup'
+      : 'at event / offer price';
     return `
-      <div class="wst-stats reports-stats">
+      <div class="wst-stats reports-stats reports-stats--3">
         <div class="wst-stat">
-          <span class="wst-stat-label">Total cost</span>
+          <span class="wst-stat-label">Total charge</span>
           <span class="wst-stat-value">${escapeHtml(formatMoney(report.totalCost || 0))}</span>
-          <span class="wst-stat-label muted">at event / offer price</span>
-        </div>
-        <div class="wst-stat">
-          <span class="wst-stat-label">Clients</span>
-          <span class="wst-stat-value">${report.recipientCount}</span>
-          <span class="wst-stat-label muted">with transfers out</span>
+          <span class="wst-stat-label muted">${escapeHtml(markupNote)}</span>
         </div>
         <div class="wst-stat">
           <span class="wst-stat-label">Transfers</span>
@@ -315,13 +405,24 @@ export function mountReportsPanel(route) {
       </div>`;
   }
 
-  function renderClientList(report) {
-    if (!report.recipientRows.length) {
-      return `<div class="del-empty">No internal transfers to clients yet. Log a transfer to a recipient (Artist Liaison, Production, etc.) on the Transfers page.</div>`;
+  function unitPriceInputValue(p) {
+    if (p.overrideUnitPrice != null && Number.isFinite(p.overrideUnitPrice)) {
+      return String(p.overrideUnitPrice);
+    }
+    if (p.baseUnitPrice != null && Number.isFinite(p.baseUnitPrice)) {
+      return String(p.baseUnitPrice);
+    }
+    return '';
+  }
+
+  function renderClientDetail(report) {
+    const r = report.recipientRows?.[0];
+    if (!r) {
+      return `<div class="del-empty">No transfers for this client in the selected date range.</div>`;
     }
 
-    return report.recipientRows.map((r) => `
-      <article class="del-card reports-client-card">
+    return `
+      <article class="del-card reports-client-card" data-recipient-id="${escapeHtml(r.recipientId)}">
         <div class="del-card-main del-card-main--stacked">
           <div class="del-card-head">
             <div class="del-card-body">
@@ -331,9 +432,19 @@ export function mountReportsPanel(route) {
                 · ${r.products.length} product${r.products.length !== 1 ? 's' : ''}
                 · ${escapeHtml(fmtQty(r.totalQty))} total qty
               </p>
+              <label class="reports-markup-field">
+                <span class="admin-label">Markup % <span class="muted">(hidden on invoice)</span></span>
+                <input type="text" inputmode="decimal" autocomplete="off" class="admin-input reports-markup-input num-math"
+                  data-markup-recipient="${escapeHtml(r.recipientId)}"
+                  value="${escapeHtml(String(r.markupPct || 0))}"
+                  title="Added into unit prices — not shown as a separate line on the invoice">
+              </label>
             </div>
             <div class="reports-client-cost">
-              <span class="reports-client-cost-value">${escapeHtml(fmtCost(r.totalCost))}</span>
+              <span class="reports-client-cost-value" data-client-total="${escapeHtml(r.recipientId)}">${escapeHtml(fmtCost(r.totalCost))}</span>
+              ${(r.markupPct || 0) > 0
+                ? `<span class="muted reports-client-base">before markup ${escapeHtml(fmtCost(r.baseTotalCost))}</span>`
+                : ''}
               ${r.missingPriceCount
                 ? `<span class="reports-miss muted">${r.missingPriceCount} no price</span>`
                 : ''}
@@ -351,20 +462,40 @@ export function mountReportsPanel(route) {
                 <tr>
                   <th>Product</th>
                   <th class="num">Qty</th>
-                  <th class="num">Cost</th>
+                  <th class="num">Unit £</th>
+                  <th class="num">Amount</th>
                 </tr>
               </thead>
               <tbody>
-                ${r.products.map((p) => `
-                  <tr>
-                    <td>${escapeHtml(p.productName)}</td>
+                ${r.products.map((p) => {
+                  const key = overrideStorageKey(r.recipientId, p);
+                  const inputVal = unitPriceInputValue(p);
+                  return `
+                  <tr data-price-key="${escapeHtml(key)}">
+                    <td>${escapeHtml(p.productName)}${
+                      p.priceOverridden
+                        ? ' <span class="catalog-tag">override</span>'
+                        : ''
+                    }</td>
                     <td class="num">${escapeHtml(p.qtyLabel)}</td>
-                    <td class="num reports-cost">${
+                    <td class="num reports-price-cell">
+                      <input type="text" inputmode="decimal" autocomplete="off" class="admin-input reports-price-input num-math"
+                        data-price-recipient="${escapeHtml(r.recipientId)}"
+                        data-price-key="${escapeHtml(key)}"
+                        value="${escapeHtml(inputVal)}"
+                        placeholder="—"
+                        aria-label="Unit price for ${escapeHtml(p.productName)}">
+                      ${(r.markupPct || 0) > 0 && p.unitPrice != null
+                        ? `<span class="muted reports-charged-unit">invoice ${escapeHtml(fmtCost(p.unitPrice))}</span>`
+                        : ''}
+                    </td>
+                    <td class="num reports-cost" data-line-amount>${
                       p.missingPrice
                         ? '<span class="reports-miss">No price</span>'
                         : escapeHtml(fmtCost(p.cost))
                     }</td>
-                  </tr>`).join('')}
+                  </tr>`;
+                }).join('')}
               </tbody>
             </table>
           </div>
@@ -374,7 +505,7 @@ export function mountReportsPanel(route) {
               <ul class="reports-xfer-list">
                 ${r.transfers.map((t) => `
                   <li>
-                    <span class="reports-xfer-date">${escapeHtml(fmtDateTime(t.transferredAt))} · ${escapeHtml(fmtCost(t.totalCost))}</span>
+                    <span class="reports-xfer-date">${escapeHtml(fmtDateTime(t.transferredAt))}</span>
                     <span class="reports-xfer-items">${escapeHtml(
                       t.lines.map((l) => `${l.productName} (${fmtQty(l.qty)})`).join(', '),
                     )}</span>
@@ -382,7 +513,7 @@ export function mountReportsPanel(route) {
               </ul>
             </details>` : ''}
         </div>
-      </article>`).join('');
+      </article>`;
   }
 
   function bind() {
@@ -441,16 +572,66 @@ export function mountReportsPanel(route) {
     });
     root.querySelectorAll('[data-invoice-recipient]').forEach((btn) => {
       btn.onclick = () => {
-        exportInvoice(btn.dataset.invoiceRecipient || '');
+        const id = btn.getAttribute('data-invoice-recipient') || '';
+        if (!id) {
+          toast('Missing client for invoice export', true);
+          return;
+        }
+        exportInvoice(id);
+      };
+    });
+
+    root.querySelectorAll('.reports-price-input').forEach((inp) => {
+      inp.onchange = () => {
+        const key = inp.dataset.priceKey;
+        const rid = inp.dataset.priceRecipient;
+        if (!key) return;
+        const raw = inp.value.trim();
+        const baseProduct = ctx.baseClientReport?.recipientRows
+          ?.find((r) => r.recipientId === rid)
+          ?.products
+          ?.find((p) => overrideStorageKey(rid, p) === key);
+        const catalogUnit = baseProduct?.unitPrice;
+        if (raw === '') {
+          delete ctx.pricing.unitPriceOverrides[key];
+        } else {
+          const n = parseQty(raw);
+          if (!/^[0-9+\-*/().\s]+$/.test(raw) || (!Number.isFinite(n))) {
+            toast('Enter a valid unit price', true);
+            return;
+          }
+          if (catalogUnit != null && Number.isFinite(catalogUnit) && n === catalogUnit) {
+            delete ctx.pricing.unitPriceOverrides[key];
+          } else {
+            ctx.pricing.unitPriceOverrides[key] = n;
+          }
+        }
+        persistPricing();
+        paint();
+      };
+    });
+
+    root.querySelectorAll('.reports-markup-input').forEach((inp) => {
+      inp.onchange = () => {
+        const rid = inp.dataset.markupRecipient;
+        if (!rid) return;
+        const raw = String(inp.value ?? '').trim();
+        if (raw && !/^[0-9+\-*/().\s]+$/.test(raw)) {
+          toast('Enter a valid markup %', true);
+          return;
+        }
+        const n = parseQty(raw);
+        if (n === 0) delete ctx.pricing.markupByRecipient[rid];
+        else ctx.pricing.markupByRecipient[rid] = n;
+        persistPricing();
+        paint();
       };
     });
   }
 
   function paint() {
     const isClients = ctx.reportKind === 'clients';
-    const recipients = (ctx.event?.recipients || [])
-      .slice()
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const recipients = clientsWithTransfers();
 
     let body = '';
     let lead = '';
@@ -466,7 +647,7 @@ export function mountReportsPanel(route) {
         missingPriceCount: 0,
         recipientRows: [],
       };
-      lead = 'Cost of stock transferred out to clients (Artist Liaison, Production, etc.), priced from each product’s event override or preferred supplier offer.';
+      lead = 'Select a client to view transfers. Edit unit prices and add an internal markup % — markup is baked into invoice prices and not shown as its own line.';
       filters = `
         <label class="reports-filter-field">
           <span class="admin-label">Client</span>
@@ -480,9 +661,13 @@ export function mountReportsPanel(route) {
           <span class="admin-label">To</span>
           <input type="date" id="rptDateTo" class="admin-input reports-date" value="${escapeHtml(ctx.dateTo)}">
         </label>`;
-      body = `
+      if (!recipients.length) {
+        body = `<div class="del-empty">No internal transfers to clients yet. Log a transfer to a recipient (Artist Liaison, Production, etc.) on the Transfers page.</div>`;
+      } else {
+        body = `
         ${renderClientStats(report)}
-        <div class="del-list reports-client-list">${renderClientList(report)}</div>`;
+        <div class="reports-client-detail">${renderClientDetail(report)}</div>`;
+      }
     } else {
       const report = ctx.supplierReport || {
         deliveryCount: 0,
@@ -564,7 +749,7 @@ export function mountReportsPanel(route) {
     }
     if (e.detail?.action === 'export-invoice') {
       e.detail.handled = true;
-      exportInvoice();
+      exportInvoice(currentRecipientFilter());
     }
   }
 

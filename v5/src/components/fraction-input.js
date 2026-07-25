@@ -81,7 +81,7 @@ export function mountFractionInput(container, options = {}) {
   const { value = '', placeholder = 'e.g. 1/24', id = '' } = options;
   const root = document.createElement('div');
   root.className = 'fraction-input-wrap';
-  root.innerHTML = `<input type="text" inputmode="text" class="fraction-input" placeholder="${escapeHtml(placeholder)}"${id ? ` id="${escapeHtml(id)}"` : ''} autocomplete="off">`;
+  root.innerHTML = `<input type="text" inputmode="text" class="fraction-input num-math" placeholder="${escapeHtml(placeholder)}"${id ? ` id="${escapeHtml(id)}"` : ''} autocomplete="off">`;
   const input = root.querySelector('input');
   input.value = value;
 

@@ -259,12 +259,24 @@ export function recipientTransferCsv(report, eventName = 'event') {
     const s = String(v ?? '');
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const headers = ['Client', 'Product', 'Qty', 'Qty label', 'Unit price', 'Cost', 'Transfers', 'Summary'];
+  const headers = [
+    'Client',
+    'Product',
+    'Qty',
+    'Qty label',
+    'Base unit price',
+    'Override unit price',
+    'Markup %',
+    'Unit price',
+    'Cost',
+    'Transfers',
+    'Summary',
+  ];
   const lines = [headers.map(esc).join(',')];
 
   for (const r of report.recipientRows || []) {
     if (!r.products.length) {
-      lines.push([r.recipientName, '', '', '', '', '', r.transferCount, ''].map(esc).join(','));
+      lines.push([r.recipientName, '', '', '', '', '', r.markupPct || '', '', '', r.transferCount, ''].map(esc).join(','));
       continue;
     }
     r.products.forEach((p, i) => {
@@ -273,6 +285,9 @@ export function recipientTransferCsv(report, eventName = 'event') {
         p.productName,
         p.qty,
         p.qtyLabel,
+        p.baseUnitPrice == null || !Number.isFinite(p.baseUnitPrice) ? '' : Number(p.baseUnitPrice).toFixed(2),
+        p.overrideUnitPrice == null || !Number.isFinite(p.overrideUnitPrice) ? '' : Number(p.overrideUnitPrice).toFixed(2),
+        i === 0 ? (r.markupPct || 0) : '',
         p.missingPrice || p.unitPrice == null ? '' : Number(p.unitPrice).toFixed(2),
         p.missingPrice ? '' : Number(p.cost || 0).toFixed(2),
         i === 0 ? r.transferCount : '',
@@ -285,5 +300,104 @@ export function recipientTransferCsv(report, eventName = 'event') {
   return {
     filename: `${safeName} Transfers by client.csv`,
     content: lines.join('\r\n'),
+  };
+}
+
+/** Stable key for per-line price overrides within a client. */
+export function productPricingKey(product) {
+  const name = String(product?.productName || '').trim().toLowerCase();
+  if (name) return name;
+  if (product?.productId) return `id:${product.productId}`;
+  return 'unknown';
+}
+
+export function overrideStorageKey(recipientId, product) {
+  return `${recipientId || ''}::${productPricingKey(product)}`;
+}
+
+function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * Apply editable unit-price overrides + a client-hidden markup %.
+ * Markup is baked into charged unit/line prices (not shown as its own invoice line).
+ *
+ * @param {object} report
+ * @param {{
+ *   markupByRecipient?: Record<string, number>,
+ *   unitPriceOverrides?: Record<string, number>,
+ * }} [adjustments]
+ */
+export function applyRecipientReportPricing(report, adjustments = {}) {
+  if (!report) return report;
+  const markupByRecipient = adjustments.markupByRecipient || {};
+  const overrides = adjustments.unitPriceOverrides || {};
+
+  let totalCost = 0;
+  let totalBaseCost = 0;
+  let missingPriceCount = 0;
+
+  const recipientRows = (report.recipientRows || []).map((r) => {
+    const rawMarkup = Number(markupByRecipient[r.recipientId]);
+    const markupPct = Number.isFinite(rawMarkup) ? rawMarkup : 0;
+    const factor = 1 + markupPct / 100;
+    let rowCost = 0;
+    let rowBaseCost = 0;
+    let missing = 0;
+
+    const products = (r.products || []).map((p) => {
+      const key = overrideStorageKey(r.recipientId, p);
+      const rawOverride = overrides[key];
+      const hasOverride = rawOverride != null && rawOverride !== '' && Number.isFinite(Number(rawOverride));
+      const overrideUnitPrice = hasOverride ? Number(rawOverride) : null;
+      const catalogUnit = p.baseUnitPrice != null && Number.isFinite(p.baseUnitPrice)
+        ? p.baseUnitPrice
+        : (p.unitPrice != null && Number.isFinite(p.unitPrice) ? p.unitPrice : null);
+      const sourceUnit = hasOverride ? overrideUnitPrice : catalogUnit;
+      const missingPrice = sourceUnit == null || !Number.isFinite(sourceUnit);
+      const chargedUnit = missingPrice ? null : roundMoney(sourceUnit * factor);
+      const cost = missingPrice ? 0 : roundMoney(chargedUnit * (Number(p.qty) || 0));
+      const preMarkupCost = missingPrice ? 0 : roundMoney(sourceUnit * (Number(p.qty) || 0));
+
+      if (missingPrice) missing += 1;
+      else {
+        rowCost += cost;
+        rowBaseCost += preMarkupCost;
+      }
+
+      return {
+        ...p,
+        baseUnitPrice: catalogUnit,
+        overrideUnitPrice,
+        markupPct,
+        unitPrice: chargedUnit,
+        cost,
+        baseCost: preMarkupCost,
+        missingPrice,
+        priceOverridden: hasOverride,
+      };
+    });
+
+    totalCost += rowCost;
+    totalBaseCost += rowBaseCost;
+    missingPriceCount += missing;
+
+    return {
+      ...r,
+      products,
+      markupPct,
+      totalCost: rowCost,
+      baseTotalCost: rowBaseCost,
+      missingPriceCount: missing,
+    };
+  });
+
+  return {
+    ...report,
+    recipientRows,
+    totalCost,
+    baseTotalCost: totalBaseCost,
+    missingPriceCount,
   };
 }

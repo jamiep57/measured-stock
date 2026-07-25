@@ -8,6 +8,7 @@ import { getDB, loadEventFull } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { syncSidebar } from '../sidebar.js';
 import { parseRoute } from '../router.js';
+import { parseQty } from '../../stock-entry.js';
 
 const STATUS_OPTS = [
   { value: 'draft', label: 'Draft' },
@@ -100,7 +101,7 @@ function renderShell() {
                 <label class="admin-label" for="setupTarget">Target revenue (£)</label>
                 <span class="setup-field-saved" id="setupSaved-target_revenue"></span>
               </div>
-              <input class="admin-input" type="number" id="setupTarget" min="0" step="1000" data-field="target_revenue" placeholder="e.g. 350000">
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="setupTarget" data-field="target_revenue" placeholder="e.g. 350000">
               <p class="wst-form-hint muted">Used on Square to project which products may run out before this revenue target.</p>
             </div>
           </div>
@@ -256,7 +257,7 @@ export function mountSetupPanel(route, state = { events: [] }) {
     if (field === 'target_revenue') {
       if (rawValue === '' || rawValue == null) value = null;
       else {
-        value = Number(rawValue);
+        value = parseQty(rawValue);
         if (!Number.isFinite(value)) value = null;
       }
     }

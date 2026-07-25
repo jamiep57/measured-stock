@@ -4,7 +4,9 @@
  */
 
 import { $, isBoneYard, escapeHtml } from '../lib/util.js';
-import { loadEventFull, loadLibraryProducts } from '../db.js';
+import {
+  loadEventFull, loadLibraryProducts, loadKitLibraryProducts, loadEventKit,
+} from '../db.js';
 import { mountProductSearch } from '../components/product-search.js';
 import { initTableFilterTopbar } from './table-filter.js';
 import { initTopbarToolbar } from './topbar-toolbar.js';
@@ -27,14 +29,19 @@ export function emitProductFilter(detail) {
 
 function placeholderForRoute(route) {
   if (route.view === 'event' && route.panel === 'sales') return 'Search sales…';
+  if (route.view === 'event' && route.panel === 'kit') return 'Filter kit / barcode…';
   if (route.view === 'event') return 'Filter event products…';
   if (route.view === 'library') return 'Search library…';
+  if (route.view === 'kit-library') return 'Search kit / barcode…';
   if (route.view === 'suppliers') return 'Search suppliers…';
   return 'Search products…';
 }
 
 function hideSearchForRoute(route) {
-  return route.view === 'suppliers' || route.view === 'volume-pools' || route.view === 'settings';
+  return route.view === 'suppliers'
+    || route.view === 'warehouses'
+    || route.view === 'volume-pools'
+    || route.view === 'settings';
 }
 
 export function initGlobalSearch() {
@@ -79,6 +86,18 @@ export function initGlobalSearch() {
   }
 
   async function loadPageContext(route) {
+    if (route.view === 'kit-library') {
+      return { products: await loadKitLibraryProducts(), bars: [] };
+    }
+    if (route.view === 'event' && route.panel === 'kit' && route.eventId) {
+      const kit = await loadEventKit(route.eventId);
+      return {
+        products: (kit.items || [])
+          .map((it) => it.product)
+          .filter((p) => p?.name),
+        bars: [],
+      };
+    }
     if (route.view === 'event' && route.eventId) {
       const event = await loadEventFull(route.eventId);
       return {
@@ -94,7 +113,7 @@ export function initGlobalSearch() {
   return {
     async syncRoute(route) {
       const nextKey = route.view === 'event'
-        ? `event:${route.eventId}`
+        ? `event:${route.eventId}:${route.panel || 'dashboard'}`
         : route.view;
       const eventChanged = nextKey !== routeKey;
       routeKey = nextKey;

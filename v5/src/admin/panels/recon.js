@@ -78,7 +78,7 @@ function renderMarkerCell(pid, status) {
 }
 
 function renderInlineInput(pid, fieldId, value) {
-  return `<input type="text" class="recon-cell-input" id="${fieldId}"
+  return `<input type="text" class="recon-cell-input num-math" id="${fieldId}"
     data-rcn-pid="${escapeHtml(pid)}" value="${value ? escapeHtml(String(value)) : ''}"
     autocomplete="off" inputmode="decimal" placeholder="—">`;
 }
@@ -508,12 +508,12 @@ export function mountReconPanel(route) {
           <p class="muted">${escapeHtml(p?.case_size || '')} · ${escapeHtml(ep.product?.category?.name || '')}</p>
           <div class="admin-field">
             <label class="admin-label" for="rcnDrawerCasePrice">Case price override (£)</label>
-            <input class="admin-input" type="number" step="any" min="0" id="rcnDrawerCasePrice"
+            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerCasePrice"
               value="${ep.order_price_override != null ? escapeHtml(String(ep.order_price_override)) : ''}" placeholder="Default from supplier offer">
           </div>
           <div class="admin-field">
             <label class="admin-label" for="rcnDrawerUnitPrice">Unit price override (£)</label>
-            <input class="admin-input" type="number" step="any" min="0" id="rcnDrawerUnitPrice"
+            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerUnitPrice"
               value="${ep.order_unit_price_override != null ? escapeHtml(String(ep.order_unit_price_override)) : ''}" placeholder="Spirits — £/bottle">
           </div>
           <div class="admin-field">
@@ -533,7 +533,7 @@ export function mountReconPanel(route) {
           </div>
           <div class="admin-field">
             <label class="admin-label" for="rcnDrawerBudgetManual">Manual budget (£)</label>
-            <input class="admin-input" type="number" step="any" min="0" id="rcnDrawerBudgetManual"
+            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerBudgetManual"
               value="${cl.budget_override != null ? escapeHtml(String(cl.budget_override)) : ''}">
           </div>
           <label class="admin-check">
@@ -560,12 +560,12 @@ export function mountReconPanel(route) {
         const hidden = $('rcnDrawerHidden').checked;
 
         await DB.eventProducts.setForEvent(ctx.eventId, pid, {
-          order_price_override: casePrice === '' ? null : Number(casePrice),
-          order_unit_price_override: unitPrice === '' ? null : Number(unitPrice),
+          order_price_override: casePrice === '' ? null : parseQty(casePrice),
+          order_unit_price_override: unitPrice === '' ? null : parseQty(unitPrice),
           recon_hidden: hidden,
         });
-        ep.order_price_override = casePrice === '' ? null : Number(casePrice);
-        ep.order_unit_price_override = unitPrice === '' ? null : Number(unitPrice);
+        ep.order_price_override = casePrice === '' ? null : parseQty(casePrice);
+        ep.order_unit_price_override = unitPrice === '' ? null : parseQty(unitPrice);
         ep.recon_hidden = hidden;
 
         let row = closingRowFor(ctx.closingRows, pid);
@@ -576,7 +576,7 @@ export function mountReconPanel(route) {
         row.recon_note = note || null;
         row.budget_method = budgetMethod;
         row.budget_override = budgetMethod === 'manual' && budgetManual !== ''
-          ? Number(budgetManual) : null;
+          ? parseQty(budgetManual) : null;
 
         await DB.closing.setForEvent(ctx.eventId, pid, {
           recon_note: row.recon_note,

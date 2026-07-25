@@ -1,7 +1,7 @@
 import { $, escapeHtml, rid, toast, nowLocalInput, fmtDateTime } from './lib/util.js';
 import { getDB, productFromEvent } from './db.js';
 import { entryMode } from './pack-metrics.js';
-import { formToStored, storedToForm, hasQuantity } from './stock-entry.js';
+import { formToStored, storedToForm, hasQuantity, parseQty } from './stock-entry.js';
 import { enqueueWrite, flushQueue } from './sync-queue.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountSupplierSearch } from './components/supplier-search.js';
@@ -107,11 +107,11 @@ function renderDeliveryLines() {
           <option value="">— product —</option>
           ${opts.map((o) => `<option value="${o.id}"${o.id === line.productId ? ' selected' : ''}>${escapeHtml(o.name)}</option>`).join('')}
         </select>
-        <input type="number" step="any" min="0" class="df-cases" data-lid="${line.lineId}" value="${escapeHtml(line.cases)}" placeholder="${escapeHtml(primaryLabel)}" title="${escapeHtml(mode.columnLabels.primary)}">
-        <input type="number" step="${mode.secondaryStep || 'any'}" min="0" class="df-singles" data-lid="${line.lineId}" value="${escapeHtml(line.singles)}" placeholder="${mode.columnLabels.secondary ? escapeHtml(secondaryLabel) : '—'}" ${mode.columnLabels.secondary ? '' : 'disabled'}>
-        <input type="number" step="any" min="0" class="df-dmg" data-lid="${line.lineId}" value="${escapeHtml(line.damagedQty)}" placeholder="0">
-        <input type="number" step="any" min="0" class="df-inv-cases" data-lid="${line.lineId}" value="${escapeHtml(line.invoiceCases)}" placeholder="0" title="Invoice cases">
-        <input type="number" step="any" min="0" class="df-inv-singles" data-lid="${line.lineId}" value="${escapeHtml(line.invoiceSingles)}" placeholder="0" title="Invoice singles">
+        <input type="text" inputmode="decimal" autocomplete="off" class="df-cases num-math" data-lid="${line.lineId}" value="${escapeHtml(line.cases)}" placeholder="${escapeHtml(primaryLabel)}" title="${escapeHtml(mode.columnLabels.primary)}">
+        <input type="text" inputmode="decimal" autocomplete="off" class="df-singles num-math" data-lid="${line.lineId}" value="${escapeHtml(line.singles)}" placeholder="${mode.columnLabels.secondary ? escapeHtml(secondaryLabel) : '—'}" ${mode.columnLabels.secondary ? '' : 'disabled'}>
+        <input type="text" inputmode="decimal" autocomplete="off" class="df-dmg num-math" data-lid="${line.lineId}" value="${escapeHtml(line.damagedQty)}" placeholder="0">
+        <input type="text" inputmode="decimal" autocomplete="off" class="df-inv-cases num-math" data-lid="${line.lineId}" value="${escapeHtml(line.invoiceCases)}" placeholder="0" title="Invoice cases">
+        <input type="text" inputmode="decimal" autocomplete="off" class="df-inv-singles num-math" data-lid="${line.lineId}" value="${escapeHtml(line.invoiceSingles)}" placeholder="0" title="Invoice singles">
         <button type="button" class="btn btn-sm df-rm" data-lid="${line.lineId}">✕</button>
       </div>`;
   }).join('');
@@ -281,7 +281,7 @@ async function saveDelivery() {
   const valid = delLines
     .filter((l) => l.productId && (
       hasQuantity(l.cases, l.singles)
-      || parseFloat(l.damagedQty)
+      || parseQty(l.damagedQty)
       || hasQuantity(l.invoiceCases, l.invoiceSingles)
     ))
     .map((l) => {
@@ -293,7 +293,7 @@ async function saveDelivery() {
         product_id: l.productId,
         qty: stored.qty,
         singles: stored.singles,
-        damaged_qty: parseFloat(l.damagedQty) || 0,
+        damaged_qty: parseQty(l.damagedQty),
         invoice_qty: invoice ? invoice.qty : null,
         invoice_singles: invoice ? invoice.singles : null,
       };

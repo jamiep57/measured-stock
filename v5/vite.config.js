@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -11,10 +12,29 @@ function serveRootAssets() {
   return {
     name: 'serve-root-assets',
     configureServer(server) {
+      const sendLanOrigins = (_req, res) => {
+        const network = server.resolvedUrls?.network || [];
+        const origins = [];
+        for (const u of network) {
+          try {
+            origins.push(new URL(u).origin);
+          } catch { /* ignore */ }
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(JSON.stringify({ origins }));
+      };
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0] || '';
+        if (url === '/__dev-lan' || url === '/v5/__dev-lan') {
+          sendLanOrigins(req, res);
+          return;
+        }
         if (url.startsWith('/v5/admin/') && !path.extname(url)) {
           req.url = '/v5/admin.html';
+        }
+        if ((url === '/v5/scan' || url === '/v5/scan/') && !path.extname(url)) {
+          req.url = '/v5/scan.html';
         }
         next();
       });
@@ -56,13 +76,16 @@ export default defineConfig({
       input: {
         mobile: path.resolve(__dirname, 'index.html'),
         admin: path.resolve(__dirname, 'admin.html'),
+        scan: path.resolve(__dirname, 'scan.html'),
       },
     },
   },
   server: {
+    host: true,
+    https: true,
     fs: { allow: [repoRoot] },
   },
-  plugins: [serveRootAssets()],
+  plugins: [basicSsl(), serveRootAssets()],
   test: {
     environment: 'node',
   },

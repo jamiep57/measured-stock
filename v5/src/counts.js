@@ -7,6 +7,7 @@ import {
   countStoredToForm,
   hasQuantity,
   totalUnitsForProduct,
+  parseQty,
 } from './stock-entry.js';
 import { enqueueWrite, flushQueue, getQueueStats } from './sync-queue.js';
 import { openSheet, closeSheet } from './components/sheet.js';
@@ -297,12 +298,11 @@ function renderCountItems() {
       html += `<div class="count-item-sub">${escapeHtml(mode.pack.label || ep.product.case_size || '—')}</div></div>`;
       html += `<div class="count-inputs">`;
       html += `<div class="cell"><label>${escapeHtml(mode.columnLabels.primary)}</label>`;
-      html += `<input type="number" inputmode="decimal" step="any" min="0" class="cnt-cases" id="cnt-cases-${pid}" data-pid="${pid}" value="${form.cases !== '' ? escapeHtml(form.cases) : ''}" placeholder="0"></div>`;
+      html += `<input type="text" inputmode="decimal" autocomplete="off" class="cnt-cases num-math" id="cnt-cases-${pid}" data-pid="${pid}" value="${form.cases !== '' ? escapeHtml(form.cases) : ''}" placeholder="0"></div>`;
       if (mode.columnLabels.secondary) {
         const step = mode.secondaryStep || '1';
-        const max = step === '0.1' ? ' max="0.99"' : '';
         html += `<div class="cell"><label>${escapeHtml(mode.columnLabels.secondary)}</label>`;
-        html += `<input type="number" inputmode="${step === '0.1' ? 'decimal' : 'numeric'}" step="${step}" min="0"${max} class="cnt-singles" id="cnt-singles-${pid}" data-pid="${pid}" value="${form.singles !== '' ? escapeHtml(form.singles) : ''}" placeholder="0"></div>`;
+        html += `<input type="text" inputmode="${step === '0.1' ? 'decimal' : 'numeric'}" autocomplete="off" class="cnt-singles num-math" id="cnt-singles-${pid}" data-pid="${pid}" value="${form.singles !== '' ? escapeHtml(form.singles) : ''}" placeholder="0"></div>`;
       }
       html += `</div></div>`;
     });
@@ -331,8 +331,8 @@ function liveCountStats() {
   items.forEach((el) => {
     total++;
     const pid = el.dataset.pid;
-    const c = parseFloat($('cnt-cases-' + pid)?.value) || 0;
-    const s = parseFloat($('cnt-singles-' + pid)?.value) || 0;
+    const c = parseQty($('cnt-cases-' + pid)?.value);
+    const s = parseQty($('cnt-singles-' + pid)?.value);
     const isC = !!(c || s);
     if (isC) counted++;
     el.classList.toggle('counted', isC);

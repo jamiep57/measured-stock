@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "cd v5 && npm ci && npm run build && rm -f index.html admin.html && cp -R dist/. . && rm -rf dist",
+  "buildCommand": "cd v5 && npm install && npm run build && rm -f index.html admin.html && cp -R dist/. . && rm -rf dist",
   "outputDirectory": ".",
   "redirects": [
     {
@@ -26,6 +26,14 @@
     {
       "source": "/v5/admin/:path*",
       "destination": "/v5/admin.html"
+    },
+    {
+      "source": "/v5/scan",
+      "destination": "/v5/scan.html"
+    },
+    {
+      "source": "/v5/scan/",
+      "destination": "/v5/scan.html"
     }
   ],
   "headers": [
@@ -51,6 +59,19 @@
       "source": "/v5",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/v5/scan.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/v5/kit-count.webmanifest",
+      "headers": [
+        { "key": "Content-Type", "value": "application/manifest+json" },
+        { "key": "Cache-Control", "value": "no-cache" }
       ]
     },
     {
