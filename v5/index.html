@@ -1,21 +1,23 @@
 <!DOCTYPE html>
 <!--
-  Measured Stock V5 — staff mobile app
-  Counts + deliveries with WYSIWYG stock entry and offline write queue.
+  Measured — staff mobile PWA
+  Home · Counts · Kit · Deliveries
 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#18181b">
-  <title>Measured Stock V5</title>
-  <link rel="icon" type="image/png" href="/assets/img/favicon.png?v=2">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <title>Measured</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="/v5/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="/v5/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/v5/kit-count-icon-192.png">
+  <link rel="icon" type="image/png" href="/v5/kit-count-icon.png">
+  <link rel="manifest" href="/v5/manifest.webmanifest">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Stock V5">
+  <meta name="apple-mobile-web-app-title" content="Measured">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
@@ -25,21 +27,23 @@
     <header class="topbar">
       <div class="topbar-row">
         <div class="brand">
-          <img src="/assets/img/logomark.png" alt="">
-          <span>Stock <span class="v5-tag">V5</span></span>
+          <img src="/v5/kit-count-icon-192.png" alt="">
+          <span>Measured</span>
         </div>
         <div class="sync-badge" id="syncBadge" hidden title="Pending sync">0</div>
         <button class="icon-btn" id="reloadBtn" type="button" aria-label="Reload"><i class="ph ph-arrow-clockwise"></i></button>
         <button class="icon-btn" id="cntBackTop" type="button" hidden aria-label="Back to sessions"><i class="ph ph-arrow-left"></i></button>
       </div>
-      <div class="event-select-wrap">
+      <div class="event-select-wrap" id="eventSelectWrap">
         <select id="eventPick" aria-label="Select event"></select>
       </div>
     </header>
 
     <main class="main" id="main">
-      <section class="view active" id="view-deliveries"></section>
+      <section class="view active" id="view-home"></section>
       <section class="view" id="view-counts"></section>
+      <section class="view" id="view-kit"></section>
+      <section class="view" id="view-deliveries"></section>
     </main>
 
     <div class="count-save-bar" id="cntSaveBar" hidden>
@@ -48,9 +52,11 @@
       </button>
     </div>
 
-    <nav class="bottomnav">
-      <button class="navbtn active" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
+    <nav class="bottomnav" id="bottomNav">
+      <button class="navbtn active" type="button" data-tab="home"><i class="ph ph-house"></i><span>Home</span></button>
       <button class="navbtn" type="button" data-tab="counts"><i class="ph ph-clipboard-text"></i><span>Counts</span></button>
+      <button class="navbtn" type="button" data-tab="kit"><i class="ph ph-package"></i><span>Kit</span></button>
+      <button class="navbtn" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
     </nav>
   </div>
 

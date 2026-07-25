@@ -1621,16 +1621,16 @@ export function mountKitLibraryPanel() {
       const resolved = await resolvePhoneOrigin();
       if (resolved?.origin) phoneOrigin = resolved.origin;
     } catch { /* use location.origin */ }
-    const url = `${String(phoneOrigin).replace(/\/$/, '')}/v5/scan`;
+    const url = `${String(phoneOrigin).replace(/\/$/, '')}/v5/?tab=kit`;
     openModal({
-      title: 'Mobile container count',
+      title: 'Mobile kit count',
       bodyHtml: `
         <div class="kit-scan-pair" style="padding:4px 0 8px">
           <img class="kit-scan-qr" src="${escapeHtml(qrImageUrl(url, 160))}"
-            width="160" height="160" alt="QR code for mobile kit count">
+            width="160" height="160" alt="QR code for Measured kit count">
           <div class="kit-scan-pair-meta">
             <p class="admin-hint" style="margin:0 0 8px">
-              Open on your phone, then Install / Add to Home Screen for the Kit Count app.
+              Opens Measured on your phone (Kit tab). Install / Add to Home Screen for the app icon.
               Choose event or warehouse, then count containers and what’s inside.
             </p>
             <a class="kit-scan-pair-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>

@@ -1,9 +1,6 @@
 /**
- * Kit phone entry — /v5/scan
- *
- * • ?s=<sessionId>  → event Kit companion scanner (posts barcodes to desktop)
- * • no session      → mobile container counting (create/scan box → add items)
- * • ?c=<productId>  → resume container counting
+ * Kit phone companion — /v5/scan/?s=<sessionId>
+ * Bare /v5/scan redirects into Measured Kit tab.
  */
 
 import { BrowserMultiFormatReader, BarcodeFormat } from '@zxing/browser';
@@ -17,8 +14,6 @@ import {
   normalizeScanMode,
   PHONE_DEBOUNCE_MS,
 } from './lib/kit-scan-session.js';
-import { startKitCountApp } from './kit-count-app.js';
-import { setupKitCountPwaInstall } from './lib/pwa-install.js';
 
 function $(id) {
   return document.getElementById(id);
@@ -27,6 +22,19 @@ function $(id) {
 function sessionIdFromUrl() {
   const params = new URLSearchParams(location.search);
   return (params.get('s') || params.get('session') || '').trim();
+}
+
+function containerIdFromUrl() {
+  const params = new URLSearchParams(location.search);
+  return (params.get('c') || params.get('container') || '').trim();
+}
+
+function redirectToMeasuredKit() {
+  const params = new URLSearchParams();
+  params.set('tab', 'kit');
+  const c = containerIdFromUrl();
+  if (c) params.set('c', c);
+  location.replace(`/v5/?${params.toString()}`);
 }
 
 function setFeedback(msg, kind = '') {
@@ -328,6 +336,12 @@ async function startCompanionScanner(DB, sessionId) {
 }
 
 async function main() {
+  const sessionId = sessionIdFromUrl();
+  if (!sessionId) {
+    redirectToMeasuredKit();
+    return;
+  }
+
   await loadDbScript();
   const DB = window.DB;
   if (!DB) {
@@ -335,16 +349,8 @@ async function main() {
     return;
   }
 
-  const sessionId = sessionIdFromUrl();
-  if (sessionId) {
-    document.title = 'Kit scanner';
-    await startCompanionScanner(DB, sessionId);
-    return;
-  }
-
-  document.title = 'Kit count';
-  setupKitCountPwaInstall();
-  await startKitCountApp(DB);
+  document.title = 'Kit scanner';
+  await startCompanionScanner(DB, sessionId);
 }
 
 main().catch((err) => {

@@ -73,15 +73,72 @@ input:focus, select:focus, textarea:focus {
 }
 .sync-badge.failed { background: var(--danger); }
 .event-select-wrap { margin-top: 10px; }
-html.counting .event-select-wrap { display: none; }
-html.counting .bottomnav { display: none; }
+html.counting .event-select-wrap,
+html.kit-tab .event-select-wrap,
+html.kit-deep .event-select-wrap { display: none; }
+html.counting .bottomnav,
+html.kit-deep .bottomnav { display: none; }
 
 .main {
   flex: 1; padding: calc(var(--header-h) + 12px) var(--gutter) calc(var(--nav-h) + var(--save-bar-h, 0px) + var(--safe-bottom) + 12px);
   overflow-y: auto;
 }
+html.kit-tab .main {
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
+}
+html.kit-deep .main {
+  padding-bottom: var(--safe-bottom);
+}
 .view { display: none; }
 .view.active { display: block; }
+#view-kit.active {
+  min-height: calc(100dvh - var(--header-h) - var(--nav-h) - var(--safe-bottom));
+}
+
+.home-hero { margin-bottom: 18px; }
+.home-hero h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.home-hero p { margin: 0; color: var(--muted-foreground); font-size: 14px; line-height: 1.4; }
+.home-tiles { display: flex; flex-direction: column; gap: 10px; }
+.home-tile {
+  width: 100%;
+  text-align: left;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: inherit;
+}
+.home-tile strong { font-size: 16px; font-weight: 700; }
+.home-tile em {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-weight: 500;
+  line-height: 1.35;
+}
+.home-tile i {
+  font-size: 22px;
+  margin-bottom: 4px;
+  color: var(--primary);
+}
+.home-status {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--secondary);
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
 
 .bottomnav {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;

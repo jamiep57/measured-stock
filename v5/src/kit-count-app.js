@@ -116,10 +116,13 @@ function containerIdFromUrl() {
   return (params.get('c') || params.get('container') || '').trim();
 }
 
-function setUrlContainer(id) {
+function setUrlContainer(id, { embedded = false } = {}) {
   const url = new URL(location.href);
   url.searchParams.delete('s');
   url.searchParams.delete('session');
+  if (embedded || url.pathname.replace(/\/$/, '') === '/v5') {
+    url.searchParams.set('tab', 'kit');
+  }
   if (id) url.searchParams.set('c', id);
   else url.searchParams.delete('c');
   history.replaceState(null, '', url.pathname + url.search);
@@ -127,10 +130,32 @@ function setUrlContainer(id) {
 
 /**
  * @param {object} DB
+ * @param {{
+ *   rootEl?: HTMLElement,
+ *   embedded?: boolean,
+ *   preferredEventId?: string,
+ *   preferredEventName?: string,
+ *   onDeepChange?: (deep: boolean) => void,
+ * }} [opts]
  */
-export async function startKitCountApp(DB) {
-  const app = $('app');
-  if (!app) throw new Error('Missing #app');
+export async function startKitCountApp(DB, opts = {}) {
+  const app = opts.rootEl || $('app');
+  if (!app) throw new Error('Missing kit root');
+  const embedded = !!opts.embedded;
+  const onDeepChange = typeof opts.onDeepChange === 'function' ? opts.onDeepChange : () => {};
+  let preferredEventId = String(opts.preferredEventId || '').trim();
+  let preferredEventName = String(opts.preferredEventName || '').trim();
+
+  if (embedded) app.classList.add('kc-root');
+
+  function writeUrlContainer(id) {
+    setUrlContainer(id, { embedded });
+  }
+
+  function syncDeepMode() {
+    const deep = !['dest', 'pick-event', 'pick-warehouse', 'home'].includes(screen);
+    onDeepChange(deep);
+  }
 
   /** @type {object[]} */
   let products = [];
@@ -225,7 +250,7 @@ export async function startKitCountApp(DB) {
     containerStack = [];
     contents = [];
     stockLines = [];
-    setUrlContainer('');
+    writeUrlContainer('');
     searchQuery = '';
     showCreateSheet = false;
     showCategorySheet = false;
@@ -242,7 +267,7 @@ export async function startKitCountApp(DB) {
     container = null;
     containerStack = [];
     contents = [];
-    setUrlContainer('');
+    writeUrlContainer('');
     if (isEventDest()) {
       const data = await loadEventKit(destination.eventId);
       eventItems = data.items || [];
@@ -428,7 +453,7 @@ export async function startKitCountApp(DB) {
       child: c.child || products.find((p) => p.id === c.child_product_id) || null,
     }));
     pushRecentContainerId(container.id);
-    setUrlContainer(container.id);
+    writeUrlContainer(container.id);
     searchQuery = '';
     showCreateSheet = false;
     showCategorySheet = false;
@@ -481,7 +506,7 @@ export async function startKitCountApp(DB) {
     container = null;
     contents = [];
     containerStack = [];
-    setUrlContainer('');
+    writeUrlContainer('');
     searchQuery = '';
     screen = 'home';
     if (doneMessage) feedback = { msg: doneMessage, kind: 'ok' };
@@ -1879,6 +1904,7 @@ export async function startKitCountApp(DB) {
   }
 
   function paint() {
+    syncDeepMode();
     if (errMsg) {
       app.innerHTML = `<div class="kc-fatal">${escapeHtml(errMsg)}</div>`;
       return;
@@ -1911,6 +1937,32 @@ export async function startKitCountApp(DB) {
   }
 
   // Boot
+  function api() {
+    return {
+      setPreferredEvent(id, name = '') {
+        preferredEventId = String(id || '').trim();
+        preferredEventName = String(name || '').trim();
+        if (!preferredEventId || destination || screen !== 'dest') return;
+        const ev = events.find((e) => e.id === preferredEventId);
+        destination = {
+          type: DEST_EVENT,
+          eventId: preferredEventId,
+          eventName: preferredEventName || ev?.name || 'Event',
+        };
+        storeDestination(destination);
+        enterContainerHome().catch(() => {});
+      },
+    };
+  }
+
+  window.addEventListener('pagehide', stopCamera);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (screen === 'scan-container' || screen === 'scan-item') {
+      $('kcVideo')?.play?.().catch(() => {});
+    }
+  });
+
   app.innerHTML = `<div class="kc-loading">Loading kit library…</div>`;
   try {
     await refreshLibrary();
@@ -1918,7 +1970,7 @@ export async function startKitCountApp(DB) {
   } catch (err) {
     errMsg = err.message || 'Could not load kit library.';
     paint();
-    return;
+    return api();
   }
 
   const resumeId = containerIdFromUrl();
@@ -1935,7 +1987,7 @@ export async function startKitCountApp(DB) {
       const existing = products.find((p) => p.id === resumeId);
       if (existing) {
         await openContainer(existing, { ensureContainer: true, resetStack: true });
-        return;
+        return api();
       }
     } catch { /* fall through */ }
   }
@@ -1944,25 +1996,33 @@ export async function startKitCountApp(DB) {
     destination = stored;
     try {
       await enterContainerHome();
-      return;
+      return api();
     } catch { /* fall through */ }
   }
   if (stored?.type === DEST_WAREHOUSE && stored.warehouseId) {
     destination = stored;
     try {
       await enterContainerHome();
-      return;
+      return api();
+    } catch { /* fall through */ }
+  }
+
+  // Prefill event destination from Measured home event when nothing stored yet.
+  if (preferredEventId && !destination) {
+    const ev = events.find((e) => e.id === preferredEventId);
+    destination = {
+      type: DEST_EVENT,
+      eventId: preferredEventId,
+      eventName: preferredEventName || ev?.name || 'Event',
+    };
+    storeDestination(destination);
+    try {
+      await enterContainerHome();
+      return api();
     } catch { /* fall through */ }
   }
 
   screen = 'dest';
   paint();
-
-  window.addEventListener('pagehide', stopCamera);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
-    if (screen === 'scan-container' || screen === 'scan-item') {
-      $('kcVideo')?.play?.().catch(() => {});
-    }
-  });
+  return api();
 }

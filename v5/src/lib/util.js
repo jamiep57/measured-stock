@@ -52,9 +52,10 @@ export const V5_VERSION = '5.0.0';
 export function syncChromeSizes() {
   const tb = document.querySelector('.topbar');
   const nav = document.querySelector('.bottomnav');
-  const counting = document.documentElement.classList.contains('counting');
+  const hideNav = document.documentElement.classList.contains('counting')
+    || document.documentElement.classList.contains('kit-deep');
   if (tb) document.documentElement.style.setProperty('--header-h', tb.offsetHeight + 'px');
-  if (counting) {
+  if (hideNav) {
     document.documentElement.style.setProperty('--nav-h', '0px');
   } else if (nav) {
     document.documentElement.style.setProperty('--nav-h', nav.offsetHeight + 'px');

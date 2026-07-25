@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-6';
+const VERSION = 'v5-7-measured';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [
@@ -10,12 +10,8 @@ const SHELL_URLS = [
   '/v5/scan',
   '/v5/scan.html',
   '/v5/manifest.webmanifest',
-  '/v5/kit-count.webmanifest',
   '/assets/js/db.js',
   '/assets/img/favicon.png',
-  '/assets/img/icon-192.png',
-  '/assets/img/icon-512.png',
-  '/assets/img/apple-touch-icon.png',
   '/v5/apple-touch-icon.png',
   '/v5/kit-count-icon.png',
   '/v5/kit-count-icon-192.png',

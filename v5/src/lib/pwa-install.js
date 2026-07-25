@@ -1,9 +1,9 @@
 /**
- * Lightweight install prompt for Kit Count PWA.
+ * Lightweight install prompt for Measured PWA.
  * Chromium: uses beforeinstallprompt. iOS: one-time Add to Home Screen tip.
  */
 
-const DISMISS_KEY = 'kit-count-pwa-banner-dismissed';
+const DISMISS_KEY = 'measured-pwa-banner-dismissed';
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches
@@ -24,17 +24,17 @@ function ensureStyles() {
       position: fixed;
       left: 12px;
       right: 12px;
-      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      bottom: calc(76px + env(safe-area-inset-bottom, 0px));
       z-index: 80;
       display: flex;
       align-items: center;
       gap: 10px;
       padding: 12px 14px;
       border-radius: 14px;
-      background: #1a1d24;
-      border: 1px solid #2a2f3a;
-      box-shadow: 0 12px 40px rgba(0,0,0,.45);
-      color: #f4f4f5;
+      background: #18181b;
+      border: 1px solid #27272a;
+      box-shadow: 0 12px 40px rgba(0,0,0,.25);
+      color: #fafafa;
       font: 500 13px/1.35 Outfit, system-ui, sans-serif;
     }
     .kc-pwa-banner p { margin: 0; flex: 1; }
@@ -47,7 +47,7 @@ function ensureStyles() {
       font: 600 13px Outfit, system-ui, sans-serif;
       cursor: pointer;
     }
-    .kc-pwa-install { background: #e8c47c; color: #1a1208; }
+    .kc-pwa-install { background: #fafafa; color: #18181b; }
     .kc-pwa-dismiss { background: transparent; color: #a1a1aa; padding: 0 8px; }
   `;
   document.head.appendChild(style);
@@ -75,10 +75,8 @@ function mountBanner({ text, primaryLabel, onPrimary }) {
   }
 }
 
-/**
- * Call once on the kit-count / scan page.
- */
-export function setupKitCountPwaInstall() {
+/** Call once on Measured /v5/ boot. */
+export function setupMeasuredPwaInstall() {
   if (isStandalone()) return;
   if (localStorage.getItem(DISMISS_KEY) === '1') return;
 
@@ -88,7 +86,7 @@ export function setupKitCountPwaInstall() {
     e.preventDefault();
     deferred = e;
     mountBanner({
-      text: 'Install Kit Count on your home screen for quick access.',
+      text: 'Install Measured on your home screen for quick access.',
       primaryLabel: 'Install',
       onPrimary: async (el) => {
         if (!deferred) return;
@@ -108,10 +106,15 @@ export function setupKitCountPwaInstall() {
       if (document.getElementById('kcPwaBanner')) return;
       if (localStorage.getItem(DISMISS_KEY) === '1') return;
       mountBanner({
-        text: 'Add to Home Screen: tap Share, then “Add to Home Screen”.',
+        text: 'Add Measured to Home Screen: tap Share, then “Add to Home Screen”.',
         primaryLabel: null,
         onPrimary: null,
       });
     }, 1400);
   }
+}
+
+/** @deprecated use setupMeasuredPwaInstall */
+export function setupKitCountPwaInstall() {
+  setupMeasuredPwaInstall();
 }
