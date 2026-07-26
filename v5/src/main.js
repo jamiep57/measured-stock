@@ -6,12 +6,14 @@ import { getDB } from './db.js';
 import {
   flushQueue,
   bindOnlineFlush,
+  getQueueStats,
+  setSyncStatusListener,
 } from './sync-queue.js';
 import { initSheet } from './components/sheet.js';
 import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible, startNewCount } from './counts.js';
 import { initDeliveries, loadDeliveriesView, flushPendingDeliveries, startNewDelivery } from './deliveries.js';
 import { initTransfers, loadTransfersView, startNewTransfer } from './transfers.js';
-import { initWastage, loadWastageView } from './wastage.js';
+import { initWastage, loadWastageView, startNewWastage } from './wastage.js';
 import { loadDbScript } from './lib/load-db.js';
 import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
 import { loadWarehousesList } from './lib/transfer-form.js';
@@ -134,6 +136,12 @@ async function runComposeAction(action) {
     startNewTransfer();
     return;
   }
+  if (action === 'wastage') {
+    switchTab('wastage');
+    await Promise.resolve();
+    startNewWastage();
+    return;
+  }
   if (action === 'kit') {
     switchTab('kit');
     await ensureKit();
@@ -192,6 +200,56 @@ async function flushAll() {
     toast('Sync failed — check connection', true);
     return false;
   }
+}
+
+function syncOfflineBanner() {
+  const banner = $('offlineBanner');
+  if (!banner) return;
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  banner.hidden = !offline;
+}
+
+async function refreshSyncBadge() {
+  const el = $('syncBadge');
+  if (!el) return;
+  try {
+    const stats = await getQueueStats();
+    if (!stats.total) {
+      el.hidden = true;
+      el.textContent = '';
+      el.classList.remove('sync-badge--failed');
+      return;
+    }
+    el.hidden = false;
+    el.classList.toggle('sync-badge--failed', stats.failed > 0);
+    if (stats.failed > 0) {
+      el.textContent = stats.failed === 1
+        ? '1 sync failed'
+        : `${stats.failed} syncs failed`;
+    } else {
+      el.textContent = stats.pending === 1
+        ? '1 pending sync'
+        : `${stats.pending} pending syncs`;
+    }
+  } catch {
+    el.hidden = true;
+  }
+}
+
+function initOfflineBanner() {
+  syncOfflineBanner();
+  window.addEventListener('online', () => {
+    syncOfflineBanner();
+    flushAll().finally(() => refreshSyncBadge());
+  });
+  window.addEventListener('offline', syncOfflineBanner);
+}
+
+function initSyncBadge() {
+  setSyncStatusListener(() => {
+    refreshSyncBadge().catch(() => {});
+  });
+  refreshSyncBadge().catch(() => {});
 }
 
 function initPullToRefresh() {
@@ -514,6 +572,8 @@ async function boot() {
 
   bindOnlineFlush(flushAll);
   setupMeasuredPwaInstall();
+  initOfflineBanner();
+  initSyncBadge();
   initPullToRefresh();
 
   document.querySelectorAll('.navbtn').forEach((btn) => {
@@ -565,6 +625,7 @@ async function boot() {
   }
 
   await flushAll();
+  refreshSyncBadge().catch(() => {});
 
   // Always open with the full-page event selector.
   openEventGate();

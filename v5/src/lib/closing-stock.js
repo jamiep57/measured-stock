@@ -153,18 +153,29 @@ export function computeClosingRows({
   }));
 }
 
-export function closingPatchFromDraft(product, draft, caseSizes = []) {
+export function closingPatchFromDraft(product, draft, caseSizes = [], opts = {}) {
   const cases = Math.max(0, Number(draft?.closingCases) || 0);
   const singles = Math.max(0, Number(draft?.closingSingles) || 0);
   const returnCases = Math.max(0, Number(draft?.returnCases) || 0);
   const returnSingles = Math.max(0, Number(draft?.returnSingles) || 0);
   const closeCount = closeCountTotal(product, cases, singles, caseSizes);
-  const returnAmount = roundN(closeCountTotal(product, returnCases, returnSingles, caseSizes), 2);
+  let returnAmount = roundN(closeCountTotal(product, returnCases, returnSingles, caseSizes), 2);
+  const maxRet = opts.maxReturnable != null ? Number(opts.maxReturnable) : null;
+  const caps = [];
+  if (maxRet != null && maxRet >= 0 && returnAmount > maxRet) {
+    returnAmount = roundN(maxRet, 2);
+    caps.push('max returnable');
+  }
+  if (returnAmount > closeCount) {
+    returnAmount = roundN(closeCount, 2);
+    caps.push('closing count');
+  }
   return {
     closing_cases: cases,
     closing_singles: singles,
     close_count: closeCount,
     return_amount: returnAmount,
     carried_over: carriedOver(closeCount, returnAmount),
+    capped: caps,
   };
 }

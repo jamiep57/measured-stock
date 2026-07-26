@@ -82,7 +82,7 @@ export default async function handler(req, res) {
     'Set-Cookie',
     `${COOKIE_NAME}=${token}; Path=/; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=${MAX_AGE}`
   );
-  // Staff land on the mobile view; admins on the full dashboard.
-  res.writeHead(302, { Location: role === 'staff' ? '/mobile' : '/' });
+  // Staff land on V5 mobile; admins on the full dashboard (still v2 until cutover).
+  res.writeHead(302, { Location: role === 'staff' ? '/v5/' : '/' });
   res.end();
 }

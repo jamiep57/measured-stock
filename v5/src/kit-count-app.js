@@ -1612,11 +1612,11 @@ export async function startKitCountApp(DB, opts = {}) {
           <h2 class="kc-sheet-title" id="kcAddSheetTitle">What do you want to add?</h2>
           <p class="kc-sheet-hint">${escapeHtml(modeHint)}</p>
           <div class="kc-wizard" role="list">
-            <button type="button" class="kc-wizard-card" id="kcWizardBulky" role="listitem">
-              <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-truck"></i></span>
+            <button type="button" class="kc-wizard-card" id="kcWizardNewContainer" role="listitem">
+              <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-plus-circle"></i></span>
               <span class="kc-wizard-copy">
-                <strong>Bulky item</strong>
-                <em>Doesn’t have a container — e.g. pallet truck, trike</em>
+                <strong>Create a new container</strong>
+                <em>Pallet, bale arm crate, tote box, or pallet box</em>
               </span>
               <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
             </button>
@@ -1628,11 +1628,11 @@ export async function startKitCountApp(DB, opts = {}) {
               </span>
               <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
             </button>
-            <button type="button" class="kc-wizard-card" id="kcWizardNewContainer" role="listitem">
-              <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-plus-circle"></i></span>
+            <button type="button" class="kc-wizard-card" id="kcWizardBulky" role="listitem">
+              <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-truck"></i></span>
               <span class="kc-wizard-copy">
-                <strong>Create a new container</strong>
-                <em>Pallet, bale arm crate, tote box, or pallet box</em>
+                <strong>Bulky item</strong>
+                <em>Doesn’t have a container — e.g. pallet truck, trike</em>
               </span>
               <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
             </button>
@@ -1808,24 +1808,26 @@ export async function startKitCountApp(DB, opts = {}) {
     }
 
     app.innerHTML = `
-      <header class="kc-top kc-top--row">
-        <button type="button" class="kc-back" id="kcBack">Back</button>
-        <div class="kc-top-grow">
-          <div class="kc-brand">${escapeHtml(modeBrand)}</div>
-          <h1 class="kc-title kc-title--sm">${escapeHtml(destTitle())}</h1>
-          <p class="kc-meta">${stockLines.length} item${stockLines.length === 1 ? '' : 's'} · ${escapeHtml(String(totalQty))} ${qtyLabel}</p>
-        </div>
-      </header>
+      <div class="kc-chrome">
+        <header class="kc-top kc-top--row">
+          <button type="button" class="kc-back" id="kcBack">Back</button>
+          <div class="kc-top-grow">
+            <div class="kc-brand">${escapeHtml(modeBrand)}</div>
+            <h1 class="kc-title kc-title--sm">${escapeHtml(destTitle())}</h1>
+            <p class="kc-meta">${stockLines.length} item${stockLines.length === 1 ? '' : 's'} · ${escapeHtml(String(totalQty))} ${qtyLabel}</p>
+          </div>
+        </header>
 
-      <div class="kc-add-panel">
-        <div class="kc-search-row">
-          <input class="kc-search" id="kcSearch" type="search" placeholder="Search kit to add…"
-            value="${escapeHtml(searchQuery)}" autocomplete="off" enterkeyhint="search">
-          <button type="button" class="kc-btn kc-btn--icon" id="kcScanItem" title="Scan item">Scan</button>
-        </div>
-        <div class="kc-feedback" id="kcFeedback"> </div>
-        <div class="kc-suggest" id="kcSuggest">
-          ${suggestHtml(q, hits)}
+        <div class="kc-add-panel">
+          <div class="kc-search-row">
+            <input class="kc-search" id="kcSearch" type="search" placeholder="Search kit to add…"
+              value="${escapeHtml(searchQuery)}" autocomplete="off" enterkeyhint="search">
+            <button type="button" class="kc-btn kc-btn--icon" id="kcScanItem" title="Scan item">Scan</button>
+          </div>
+          <div class="kc-feedback" id="kcFeedback"> </div>
+          <div class="kc-suggest" id="kcSuggest">
+            ${suggestHtml(q, hits)}
+          </div>
         </div>
       </div>
 
@@ -2255,28 +2257,30 @@ export async function startKitCountApp(DB, opts = {}) {
     }
 
     app.innerHTML = `
-      <header class="kc-top kc-top--row">
-        <button type="button" class="kc-back" id="kcBack">${escapeHtml(backLabel)}</button>
-        <div class="kc-top-grow">
-          <div class="kc-brand">${parent ? 'Inside container' : escapeHtml(isEventDest() ? 'Kit' : 'Warehouse')}</div>
-          <h1 class="kc-title kc-title--sm">${escapeHtml(container.name || 'Container')}</h1>
-          <p class="kc-meta">${contents.length} item${contents.length === 1 ? '' : 's'} · ${escapeHtml(String(totalQty))} units · ${escapeHtml(destTitle())}</p>
-        </div>
-      </header>
+      <div class="kc-chrome">
+        <header class="kc-top kc-top--row">
+          <button type="button" class="kc-back" id="kcBack">${escapeHtml(backLabel)}</button>
+          <div class="kc-top-grow">
+            <div class="kc-brand">${parent ? 'Inside container' : escapeHtml(isEventDest() ? 'Kit' : 'Warehouse')}</div>
+            <h1 class="kc-title kc-title--sm">${escapeHtml(container.name || 'Container')}</h1>
+            <p class="kc-meta">${contents.length} item${contents.length === 1 ? '' : 's'} · ${escapeHtml(String(totalQty))} units · ${escapeHtml(destTitle())}</p>
+          </div>
+        </header>
 
-      <div class="kc-add-panel">
-        <div class="kc-search-row">
-          <input class="kc-search" id="kcSearch" type="search" placeholder="Search kit to add…"
-            value="${escapeHtml(searchQuery)}" autocomplete="off" enterkeyhint="search">
-          <button type="button" class="kc-btn kc-btn--icon" id="kcScanItem" title="Scan item">Scan</button>
-        </div>
-        <button type="button" class="kc-nested-btn" id="kcCreateNested">
-          <strong>${q ? `Create nested box “${escapeHtml(q)}”` : 'Create a nested box'}</strong>
-          <em>e.g. kit box, bale arm crate, pallet</em>
-        </button>
-        <div class="kc-feedback" id="kcFeedback"> </div>
-        <div class="kc-suggest" id="kcSuggest">
-          ${suggestHtml(q, hits)}
+        <div class="kc-add-panel">
+          <div class="kc-search-row">
+            <input class="kc-search" id="kcSearch" type="search" placeholder="Search kit to add…"
+              value="${escapeHtml(searchQuery)}" autocomplete="off" enterkeyhint="search">
+            <button type="button" class="kc-btn kc-btn--icon" id="kcScanItem" title="Scan item">Scan</button>
+          </div>
+          <button type="button" class="kc-nested-btn" id="kcCreateNested">
+            <strong>${q ? `Create nested box “${escapeHtml(q)}”` : 'Create a nested box'}</strong>
+            <em>e.g. kit box, bale arm crate, pallet</em>
+          </button>
+          <div class="kc-feedback" id="kcFeedback"> </div>
+          <div class="kc-suggest" id="kcSuggest">
+            ${suggestHtml(q, hits)}
+          </div>
         </div>
       </div>
 

@@ -23,6 +23,10 @@ export function parseRoute(pathname = location.pathname) {
     if (panel === 'opening') panel = 'products';
     // Stock projections live on the event dashboard now.
     if (panel === 'projections') panel = 'dashboard';
+    // Stock levels panel is not shipped yet — bookmarks land on dashboard.
+    if (panel === 'stock-levels') panel = 'dashboard';
+    // Legacy "summary" URL is Reports.
+    if (panel === 'summary') panel = 'reports';
     return {
       view: 'event',
       eventId: m[1],

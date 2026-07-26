@@ -309,7 +309,25 @@ export function mountClosingPanel(route) {
     const ep = ctx.event.event_products.find((x) => x.product_id === pid);
     if (!ep) return;
 
-    const patch = closingPatchFromDraft(ep.product, draft, ctx.caseSizes);
+    const preview = buildClosingRow({
+      ep,
+      closingRow: rowFor(ctx.closingRows, pid) || {},
+      suppliers: ctx.suppliers,
+      caseSizes: ctx.caseSizes,
+      draft,
+    });
+    const { capped, ...patch } = closingPatchFromDraft(ep.product, draft, ctx.caseSizes, {
+      maxReturnable: preview.maxReturnable,
+    });
+    if (capped?.length) {
+      toast(`Return capped to ${capped.join(' / ')}`, true);
+      const form = returnAmountToForm(patch.return_amount);
+      ctx.drafts[pid] = {
+        ...draft,
+        returnCases: form.cases,
+        returnSingles: form.singles,
+      };
+    }
     let cl = rowFor(ctx.closingRows, pid);
     if (!cl) {
       cl = { event_id: ctx.eventId, product_id: pid };
@@ -336,6 +354,13 @@ export function mountClosingPanel(route) {
     });
     const carriedEl = document.getElementById(`cl-carried-${pid}`);
     const maxEl = document.getElementById(`cl-max-${pid}`);
+    const retCasesEl = document.getElementById(`cl-return-cases-${pid}`);
+    const retSinglesEl = document.getElementById(`cl-return-singles-${pid}`);
+    if (capped?.length) {
+      const form = returnAmountToForm(patch.return_amount);
+      if (retCasesEl) retCasesEl.value = form.cases;
+      if (retSinglesEl) retSinglesEl.value = form.singles;
+    }
     if (carriedEl) {
       carriedEl.textContent = fmtQty(row.carriedOver);
       carriedEl.title = row.carriedLabel;
@@ -529,6 +554,20 @@ export function mountClosingPanel(route) {
           ? new Date($('clXferDate').value).toISOString()
           : new Date().toISOString();
         const qty = roundN(Number(row.carriedOver) || 0, 4);
+        if (!(qty > 0)) {
+          if (errEl) errEl.textContent = 'No carried-over stock to transfer.';
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Transfer';
+          }
+          return;
+        }
+        const pack = productStockPack(row.p, ctx.caseSizes);
+        const unit = pack?.stockUnit === 'bottle' ? 'bottles'
+          : pack?.stockUnit === 'keg' ? 'kegs'
+            : 'cases';
+        const returnAmt = roundN(Number(row.returnAmount) || 0, 4);
+        const newClose = roundN(Math.max(0, (Number(row.closeCount) || 0) - qty), 4);
         const created = await DB.transfers.create({
           transfer_type: 'event_to_warehouse',
           from_event_id: ctx.eventId,
@@ -538,7 +577,7 @@ export function mountClosingPanel(route) {
           to_bar_id: null,
           to_warehouse_id: warehouseId,
           recipient_id: null,
-          unit: 'cases',
+          unit,
           transferred_at: transferredAt,
         });
         const lineRow = {
@@ -558,9 +597,30 @@ export function mountClosingPanel(route) {
           await DB.transfers.addLines([rest]);
         }
         await adjustWarehouseStock(warehouseId, row.pid, qty);
+
+        // Clear carried-over so the transfer cannot be repeated and Recon
+        // doesn't treat the same stock as both remaining and transferred.
+        // Keep return_amount; reduce close count by the transferred qty.
+        const patch = {
+          closing_cases: newClose,
+          closing_singles: 0,
+          close_count: newClose,
+          return_amount: returnAmt,
+          carried_over: 0,
+        };
+        const saved = await DB.closing.setForEvent(ctx.eventId, row.pid, patch);
+        let cl = rowFor(ctx.closingRows, row.pid);
+        if (!cl) {
+          cl = { event_id: ctx.eventId, product_id: row.pid };
+          ctx.closingRows.push(cl);
+        }
+        Object.assign(cl, patch);
+        if (saved?.id) cl.id = saved.id;
+
         const whName = warehouses.find((w) => w.id === warehouseId)?.name || 'warehouse';
         closeSheet();
         toast(`Transferred ${fmtQty(qty)} to ${whName}`);
+        renderTable();
       } catch (err) {
         if (errEl) errEl.textContent = err.message || 'Transfer failed';
         if (btn) {
@@ -752,7 +812,7 @@ export function mountClosingPanel(route) {
         loadEventFull(ctx.eventId),
         loadCaseSizes(),
         loadSuppliers(),
-        DB.closing.forEvent(ctx.eventId).catch(() => []),
+        DB.closing.forEvent(ctx.eventId),
       ]);
       if (ctx.abort) return;
       ctx.event = event;
@@ -764,8 +824,9 @@ export function mountClosingPanel(route) {
     } catch (err) {
       const body = $('clBody');
       if (body) {
-        body.innerHTML = `<tr><td colspan="${COL_COUNT}" class="dist-empty">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="${COL_COUNT}" class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load closing stock')}</td></tr>`;
       }
+      toast(err.message || 'Failed to load closing stock', true);
     }
   })();
 

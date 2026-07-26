@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   );
 
   if (req.method === 'GET') {
-    res.writeHead(302, { Location: '/mobile' });
+    res.writeHead(302, { Location: '/v5/' });
     res.end();
     return;
   }

@@ -46,6 +46,7 @@
                 <a class="nav-link" href="/v5/admin/kit-library" data-route="kit-library"><i data-lucide="boxes"></i> Kit library <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" href="/v5/admin/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" href="/v5/admin/warehouses" data-route="warehouses"><i data-lucide="warehouse"></i> Warehouses <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" href="/v5/admin/bugs" data-route="bugs"><i data-lucide="bug"></i> Bugs <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>
           </div>
@@ -66,10 +67,9 @@
                 <a class="nav-link" data-route="deliveries" data-event><i data-lucide="container"></i> Deliveries <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="counts" data-event><i data-lucide="clipboard-list"></i> Counts <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="kit" data-event><i data-lucide="boxes"></i> Kit <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" data-route="stock-levels" data-event><i data-lucide="bar-chart-3"></i> Stock levels</a>
                 <a class="nav-link" data-route="transfers" data-event><i data-lucide="arrow-left-right"></i> Transfers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="wastage" data-event><i data-lucide="trash"></i> Wastage <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" data-route="closing" data-event><i data-lucide="lock"></i> Closing <span class="nav-status-dot nav-status-dot--warn" title="In progress"></span></a>
+                <a class="nav-link" data-route="closing" data-event><i data-lucide="lock"></i> Closing <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>
           </div>
@@ -84,7 +84,7 @@
                 <a class="nav-link" data-route="reports" data-event><i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="sales" data-event><i data-lucide="store"></i> Square &amp; modifiers <span class="nav-status-dot" title="Modifiers mapping built"></span></a>
                 <a class="nav-link" href="/v5/admin/volume-pools" data-route="volume-pools"><i data-lucide="layers"></i> Volume pools <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" data-route="recon" data-event><i data-lucide="pound-sterling"></i> Recon <span class="nav-status-dot nav-status-dot--warn" title="In progress"></span></a>
+                <a class="nav-link" data-route="recon" data-event><i data-lucide="pound-sterling"></i> Recon <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>
           </div>
@@ -116,6 +116,10 @@
             <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings" data-route="settings"
               title="Workspace settings" aria-label="Workspace settings">
               <i data-lucide="settings" aria-hidden="true"></i>
+            </a>
+            <a class="topbar-settings" id="topbarLogout" href="/api/logout"
+              title="Sign out" aria-label="Sign out">
+              <i data-lucide="log-out" aria-hidden="true"></i>
             </a>
           </div>
         </header>

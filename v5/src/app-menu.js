@@ -254,6 +254,10 @@ export function initAppMenu(opts = {}) {
       const action = item.getAttribute('data-app-menu');
       if (action === 'settings') openSettingsSheet();
       else if (action === 'bugs') openBugReportSheet();
+      else if (action === 'logout') {
+        closeAppDrawer();
+        window.location.href = '/api/logout';
+      }
     });
   });
 

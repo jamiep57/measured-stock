@@ -95,9 +95,9 @@ function renderRow(r) {
     ? `<span class="recon-note-hint" title="${escapeHtml(r.reconNote)}">${escapeHtml(r.reconNote)}</span>`
     : '';
   const statusClass = r.reconStatus ? ` recon-row-status-${r.reconStatus}` : '';
-  const invVal = r.ep.invoice_qty != null ? String(r.ep.invoice_qty) : '';
-  const closingCasesVal = r.closingCases ? String(r.closingCases) : '';
-  const closingSinglesVal = r.closingSingles ? String(r.closingSingles) : '';
+  const invVal = r.hasInvoice ? String(r.invoiced ?? '') : '';
+  const closingCasesVal = r.hasClosing ? String(r.closingCases ?? 0) : '';
+  const closingSinglesVal = r.hasClosing ? String(r.closingSingles ?? 0) : '';
   const varCls = varianceClass(r.consumption, r.plu, r.variance);
   const varSign = r.variance > 0 ? '+' : '';
   const varPct = (r.consumption !== 0 || r.plu !== 0) ? ` (${r.variancePct}%)` : '';
@@ -118,13 +118,13 @@ function renderRow(r) {
       </td>
       <td class="rcn-num rcn-meta" data-rcn-col="abv">${escapeHtml(r.p.abv != null && r.p.abv !== '' ? `${Number(r.p.abv).toFixed(1)}%` : '—')}</td>
       <td class="rcn-num rcn-num--money recon-drawer-cell" data-rcn-col="case_price" data-rcn-edit="${escapeHtml(r.pid)}" title="Edit price">${formatReconMoney(r.rowPrice)}</td>
-      <td class="rcn-col-supplier" data-rcn-col="supplier" title="${escapeHtml(r.supplierName)}">${escapeHtml(r.supplierName)}</td>
+      <td class="rcn-col-supplier" data-rcn-col="supplier" title="${escapeHtml(r.supplierName)}${r.multiOfferWarn ? ' — multiple supplier offers differ' : ''}">${escapeHtml(r.supplierName)}${r.multiOfferWarn ? ' <span class="recon-offer-warn" title="Multiple supplier offers with different pack or price">⚠</span>' : ''}</td>
       <td class="rcn-num rcn-meta" data-rcn-col="units_per_case">${r.ups || '—'}</td>
       <td class="rcn-num rcn-group-start" data-rcn-col="delivered">${formatReconQty(r.delivered)}</td>
       <td class="rcn-cell--edit" data-rcn-col="invoiced">${renderInlineInput(r.pid, `rcn-inv-${r.pid}`, invVal)}</td>
       <td class="rcn-cell--edit" data-rcn-col="closing_cases">${renderInlineInput(r.pid, `rcn-cl-cases-${r.pid}`, closingCasesVal)}</td>
       <td class="rcn-cell--edit" data-rcn-col="closing_units">${renderInlineInput(r.pid, `rcn-cl-singles-${r.pid}`, closingSinglesVal)}</td>
-      <td class="rcn-num rcn-group-start recon-drawer-cell" data-rcn-col="returned_to_supplier" data-rcn-edit="${escapeHtml(r.pid)}" title="Edit returns">${formatReconQty(r.supplierReturns)}</td>
+      <td class="rcn-num rcn-group-start recon-drawer-cell" data-rcn-col="returned_to_supplier" data-rcn-edit="${escapeHtml(r.pid)}" title="Returns (edit on Closing)">${formatReconQty(r.supplierReturns)}</td>
       <td class="rcn-num" data-rcn-col="transferred">${formatReconQty(r.transferred)}</td>
       <td class="rcn-num" data-rcn-col="wastage">${formatReconQty(r.wastage)}</td>
       <td class="rcn-num rcn-emphasis rcn-group-start" data-rcn-col="consumption">${formatReconQty(r.consumption)}</td>
@@ -408,10 +408,60 @@ export function mountReconPanel(route) {
     syncScrollHint();
   }
 
+  function totalSourceRows() {
+    return (ctx.statusFilter || ctx.categoryFilter)
+      ? visibleRows()
+      : allRows().filter((r) => !r.reconHidden);
+  }
+
+  function refreshStatsAndTotalRow() {
+    const totalSource = totalSourceRows();
+    renderStats(totalSource);
+    const body = $('rcnBody');
+    if (!body) return;
+    const existing = body.querySelector('.recon-total-row');
+    const html = renderTotalRow(reconTotals(totalSource));
+    if (existing) existing.outerHTML = html;
+    else if (body.querySelector('.recon-row')) body.insertAdjacentHTML('beforeend', html);
+    applyColVisibility(panel, ctx.colVis);
+  }
+
+  /** Update derived cells for one product without rebuilding inputs (keeps focus). */
+  function refreshRowDerived(pid) {
+    const row = allRows().find((r) => r.pid === pid);
+    if (!row) return;
+    const tr = panel.querySelector(`.recon-row[data-rcn-pid="${CSS.escape(pid)}"]`);
+    if (!tr) return;
+
+    const setText = (col, text) => {
+      const td = tr.querySelector(`[data-rcn-col="${col}"]`);
+      if (td && !td.classList.contains('rcn-cell--edit')) td.textContent = text;
+    };
+    setText('consumption', formatReconQty(row.consumption));
+    setText('plu', formatReconQty(row.plu));
+    setText('transferred', formatReconQty(row.transferred));
+    setText('wastage', formatReconQty(row.wastage));
+    setText('returned_to_supplier', formatReconQty(row.supplierReturns));
+    setText('delivered', formatReconQty(row.delivered));
+    setText('consumption_charge', formatReconMoney(row.consumptionCharge));
+    setText('consumption_loose', formatReconMoney(row.consumptionLooseCharge));
+    setText('plu_charge', formatReconMoney(row.pluCharge));
+    setText('invoice_charge', formatReconMoney(row.invoiceCharge));
+    setText('budget_cost', formatReconMoney(row.budgetCost));
+
+    const varTd = tr.querySelector('[data-rcn-col="variance"]');
+    if (varTd) {
+      const varCls = varianceClass(row.consumption, row.plu, row.variance);
+      const varSign = row.variance > 0 ? '+' : '';
+      const varPct = (row.consumption !== 0 || row.plu !== 0) ? ` (${row.variancePct}%)` : '';
+      varTd.innerHTML = `<span class="${varCls}">${varSign}${formatReconQty(row.variance)}${varPct}</span>`;
+    }
+    tr.classList.toggle('row-investigate', !!row.investigate);
+  }
+
   async function persistInline(pid) {
     if (!ctx.event) return;
-    const draft = readInlineDraft(pid, ctx.closingRows);
-    ctx.drafts[pid] = draft;
+    const draft = ctx.drafts[pid] || readInlineDraft(pid, ctx.closingRows);
 
     const ep = ctx.event.event_products.find((x) => x.product_id === pid);
     if (!ep) return;
@@ -429,7 +479,8 @@ export function mountReconPanel(route) {
       2,
     );
 
-    ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : ep.invoice_qty;
+    // Empty invoiced field clears the override; calc then falls back to ordered.
+    ep.invoice_qty = draft.invoiceSet ? roundN(draft.invoiced, 3) : null;
 
     let cl = closingRowFor(ctx.closingRows, pid);
     if (!cl) {
@@ -443,9 +494,7 @@ export function mountReconPanel(route) {
     cl.carried_over = roundN(Math.max(0, closeCount - returnAmt), 1);
 
     const DB = getDB();
-    await DB.eventProducts.setForEvent(ctx.eventId, pid,
-      draft.invoiceSet ? { invoice_qty: ep.invoice_qty } : {},
-    );
+    await DB.eventProducts.setForEvent(ctx.eventId, pid, { invoice_qty: ep.invoice_qty });
     await DB.closing.setForEvent(ctx.eventId, pid, {
       closing_cases: cl.closing_cases,
       closing_singles: cl.closing_singles,
@@ -463,9 +512,16 @@ export function mountReconPanel(route) {
   function scheduleSave(pid) {
     clearTimeout(ctx.saveTimers[pid]);
     ctx.drafts[pid] = readInlineDraft(pid, ctx.closingRows);
-    renderTable();
+    refreshRowDerived(pid);
+    refreshStatsAndTotalRow();
     ctx.saveTimers[pid] = setTimeout(() => {
-      persistInline(pid).catch((e) => toast(e.message || 'Save failed', true));
+      delete ctx.saveTimers[pid];
+      persistInline(pid)
+        .then(() => {
+          refreshRowDerived(pid);
+          refreshStatsAndTotalRow();
+        })
+        .catch((e) => toast(e.message || 'Save failed', true));
     }, 400);
   }
 
@@ -540,7 +596,7 @@ export function mountReconPanel(route) {
             <input type="checkbox" id="rcnDrawerHidden"${ep.recon_hidden ? ' checked' : ''}>
             Exclude from recon
           </label>
-          <p class="rcn-drawer-note muted">Supplier returns are summed from return lines logged on Closing.</p>
+          <p class="rcn-drawer-note muted">Supplier returns are edited on Closing. This drawer is for prices, notes, and budget.</p>
         </div>`,
       footHtml: `
         <button type="button" class="btn btn-outline" id="rcnDrawerCancel">Cancel</button>
@@ -735,17 +791,25 @@ export function mountReconPanel(route) {
     if (e.target.matches('.recon-cell-input')) {
       const pid = e.target.dataset.rcnPid;
       clearTimeout(ctx.saveTimers[pid]);
-      persistInline(pid).catch((err) => toast(err.message || 'Save failed', true));
+      delete ctx.saveTimers[pid];
+      ctx.drafts[pid] = readInlineDraft(pid, ctx.closingRows);
+      persistInline(pid)
+        .then(() => {
+          refreshRowDerived(pid);
+          refreshStatsAndTotalRow();
+        })
+        .catch((err) => toast(err.message || 'Save failed', true));
     }
   }, true);
 
-  document.addEventListener('click', (e) => {
+  const onDocClick = (e) => {
     const picker = $('rcnColPicker');
     if (picker && !picker.contains(e.target)) {
       $('rcnColMenu')?.setAttribute('hidden', '');
       $('rcnColBtn')?.setAttribute('aria-expanded', 'false');
     }
-  });
+  };
+  document.addEventListener('click', onDocClick);
 
   const onToolbar = (e) => {
     const action = e.detail?.action;
@@ -772,7 +836,7 @@ export function mountReconPanel(route) {
         loadCaseSizes(),
         loadLibraryProducts(),
         loadSuppliers(),
-        DB.closing.forEvent(ctx.eventId).catch(() => []),
+        DB.closing.forEvent(ctx.eventId),
         DB.tillImports.forEvent(ctx.eventId).catch(() => null),
         DB.recipes.listFull().catch(() => []),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
@@ -804,6 +868,7 @@ export function mountReconPanel(route) {
     ctx.abort = true;
     Object.values(ctx.saveTimers).forEach(clearTimeout);
     window.removeEventListener('resize', onResize);
+    document.removeEventListener('click', onDocClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   };

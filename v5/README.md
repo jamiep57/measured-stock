@@ -194,34 +194,38 @@ delivery_lines           → should record which offer/supplier was used (enhanc
 
 - WYSIWYG counts/deliveries, offline queue, bar menu filter, count UX (save bar, focus mode)
 
-### Phase 1 — Admin shell (in progress)
+### Phase 1 — Admin shell
 
 - [x] `admin.html`, router, sidebar, event context
-- [ ] Extract `src/shared/` from mobile modules
-- [ ] Middleware: staff blocked from `/v5/admin`
-- [ ] Vercel SPA fallback for admin routes
-- [ ] `ProductSearch` component (real implementation)
+- [x] Middleware: staff blocked from `/v5/admin`
+- [x] Vercel SPA fallback for admin routes (`vercel.json`)
+- [x] `ProductSearch` component
+- [ ] Extract `src/shared/` from mobile modules (optional cleanup)
 
 ### Phase 2 — Distribution + products
 
-- Bar-first menu builder
-- Add-to-event-in-context drawer
-- Multi-supplier offer display on product rows
+- [x] Bar-first menu builder
+- [x] Add-to-event-in-context drawer
+- [x] Multi-supplier offer display on product rows
 
 ### Phase 3 — Event ops
 
-- Setup, opening, deliveries (admin), stock levels
+- [x] Setup, products (opening merged), deliveries (admin)
+- [x] Mobile wastage tab (list + log)
+- [ ] Stock levels panel (nav hidden; bookmarks → dashboard)
 
 ### Phase 4 — Sales & recon
 
-- Unified Sales page (Square + modifiers)
-- FractionInput for recipes (no decimal conversion on blur)
-- Recon with explicit supplier/offer column
+- [x] Unified Sales page (Square + modifiers)
+- [x] FractionInput for recipes (no decimal conversion on blur)
+- [x] Recon with supplier/offer column
+- [x] Closing soft-cap returns; recon multi-offer warn; PLU £ = rowPrice
 
 ### Phase 5 — Cutover
 
-- Redirect `/` → `/v5/admin` for admins
-- Retire `v2.html` panel-by-panel
+- [ ] Redirect `/` → `/v5/admin` for admins
+- [ ] Retire `v2.html` panel-by-panel
+- [x] Create-event flow in V5 (admin home)
 
 ---
 

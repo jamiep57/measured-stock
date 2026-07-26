@@ -52,8 +52,43 @@ describe('admin router', () => {
     });
   });
 
+  it('redirects stock-levels to dashboard until the panel ships', () => {
+    expect(parseRoute('/v5/admin/events/abc-123/stock-levels')).toEqual({
+      view: 'event',
+      eventId: 'abc-123',
+      panel: 'dashboard',
+    });
+  });
+
+  it('redirects summary to reports', () => {
+    expect(parseRoute('/v5/admin/events/abc-123/summary')).toEqual({
+      view: 'event',
+      eventId: 'abc-123',
+      panel: 'reports',
+    });
+  });
+
+  it('keeps known event panels', () => {
+    for (const panel of [
+      'dashboard', 'setup', 'products', 'distribution', 'deliveries',
+      'wastage', 'transfers', 'sales', 'counts', 'kit', 'closing', 'recon', 'reports',
+    ]) {
+      expect(parseRoute(`/v5/admin/events/abc-123/${panel}`)).toEqual({
+        view: 'event',
+        eventId: 'abc-123',
+        panel,
+      });
+    }
+  });
+
+  it('returns not-found for unknown paths', () => {
+    expect(parseRoute('/v5/admin/nope')).toEqual({ view: 'not-found' });
+  });
+
   it('builds hrefs', () => {
     expect(hrefForRoute({ view: 'event', eventId: 'x', panel: 'sales' }))
       .toBe('/v5/admin/events/x/sales');
+    expect(hrefForRoute({ view: 'home' })).toBe('/v5/admin');
+    expect(hrefForRoute({ view: 'bugs' })).toBe('/v5/admin/bugs');
   });
 });

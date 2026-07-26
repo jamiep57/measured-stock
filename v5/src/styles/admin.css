@@ -711,6 +711,18 @@ body:has(.admin-app) {
   overflow-y: auto;
   background: color-mix(in srgb, var(--background) 55%, var(--card));
 }
+.admin-content.admin-content--enter > *:first-child {
+  animation: admin-page-in 0.22s ease;
+}
+@keyframes admin-page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-content.admin-content--enter > *:first-child {
+    animation: none;
+  }
+}
 .admin-content:has(.admin-page),
 .admin-content:has(.event-grid),
 .admin-content:has(.panel-placeholder) {
@@ -788,6 +800,20 @@ body:has(.admin-app) {
   gap: 10px;
 }
 
+.home-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.home-lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .event-card {
   display: block;
   padding: 16px 18px;
@@ -826,6 +852,26 @@ body:has(.admin-app) {
   background: var(--secondary);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
+}
+.admin-not-found {
+  max-width: 420px;
+  padding: 28px 24px;
+}
+.admin-not-found h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.admin-not-found .muted {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.admin-not-found .admin-drawer-btn {
+  display: inline-flex;
+  text-decoration: none;
 }
 
 body:has(.admin-app) .toast {
@@ -3329,6 +3375,23 @@ body.admin-drawer-open {
   background: color-mix(in srgb, var(--background) 70%, var(--card));
   width: fit-content;
 }
+.sales-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.sales-toolbar .projections-filter {
+  flex-shrink: 0;
+}
+.sales-toolbar-select {
+  height: 32px;
+  min-width: 140px;
+  max-width: 220px;
+  font-size: 12px;
+  padding: 0 28px 0 10px;
+}
 .sales-tab {
   height: 32px;
   padding: 0 14px;
@@ -4842,6 +4905,11 @@ td.rcn-num:not(:has(*)) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-style: italic;
+}
+.recon-offer-warn {
+  color: #b45309;
+  font-weight: 700;
+  margin-left: 4px;
 }
 .recon-more-btn {
   flex-shrink: 0;

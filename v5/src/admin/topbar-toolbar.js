@@ -12,25 +12,7 @@ export const ADMIN_TOOLBAR_ACTION = 'admin-toolbar-action';
 
 /** Per-panel strips (left of filter/search on distribution). */
 export const PANEL_TOOLBAR = {
-  distribution: [
-    {
-      id: 'edit',
-      label: 'Edit',
-      items: [
-        { id: 'undo', icon: 'undo-2', title: 'Undo', disabled: true },
-        { id: 'redo', icon: 'redo-2', title: 'Redo', disabled: true },
-      ],
-    },
-    {
-      id: 'data',
-      label: 'Import & export',
-      items: [
-        { id: 'upload', icon: 'upload', title: 'Upload' },
-        { id: 'download', icon: 'download', title: 'Download' },
-        { id: 'print', icon: 'printer', title: 'Print' },
-      ],
-    },
-  ],
+  distribution: [],
   deliveries: [
     {
       id: 'actions',
@@ -43,15 +25,6 @@ export const PANEL_TOOLBAR = {
           title: 'Log delivery',
           primary: true,
         },
-      ],
-    },
-    {
-      id: 'data',
-      label: 'Import & export',
-      items: [
-        { id: 'upload', icon: 'upload', title: 'Upload' },
-        { id: 'download', icon: 'download', title: 'Download' },
-        { id: 'print', icon: 'printer', title: 'Print' },
       ],
     },
   ],
@@ -69,15 +42,6 @@ export const PANEL_TOOLBAR = {
         },
       ],
     },
-    {
-      id: 'data',
-      label: 'Import & export',
-      items: [
-        { id: 'upload', icon: 'upload', title: 'Upload' },
-        { id: 'download', icon: 'download', title: 'Download' },
-        { id: 'print', icon: 'printer', title: 'Print' },
-      ],
-    },
   ],
   transfers: [
     {
@@ -91,15 +55,6 @@ export const PANEL_TOOLBAR = {
           title: 'Log transfer',
           primary: true,
         },
-      ],
-    },
-    {
-      id: 'data',
-      label: 'Import & export',
-      items: [
-        { id: 'upload', icon: 'upload', title: 'Upload' },
-        { id: 'download', icon: 'download', title: 'Download' },
-        { id: 'print', icon: 'printer', title: 'Print' },
       ],
     },
   ],
@@ -292,12 +247,6 @@ export const PANEL_TOOLBAR = {
           title: 'New product',
           primary: true,
         },
-        {
-          id: 'merge-products',
-          icon: 'git-merge',
-          label: 'Merge duplicates',
-          title: 'Merge duplicates',
-        },
       ],
     },
   ],
@@ -462,17 +411,21 @@ export function initTopbarToolbar() {
 
   return {
     syncRoute(route) {
-      const globalStrips = PANEL_TOOLBAR[route.view] || null;
-      const eventStrips = route.view === 'event' ? (PANEL_TOOLBAR[route.panel] || null) : null;
-      const strips = eventStrips || globalStrips;
-      const showToolbar = !!(eventStrips || globalStrips);
+      const globalStrips = PANEL_TOOLBAR[route.view];
+      const eventStrips = route.view === 'event' ? PANEL_TOOLBAR[route.panel] : null;
+      const configured = eventStrips !== undefined && eventStrips !== null
+        ? eventStrips
+        : (globalStrips !== undefined && globalStrips !== null ? globalStrips : null);
+      const strips = Array.isArray(configured) ? configured : null;
       const showFilter = route.view === 'event' && route.panel === 'distribution';
+      const showStrips = !!(strips && strips.length);
+      const showToolbar = showStrips || showFilter || configured !== null;
 
       tools.hidden = !showToolbar;
-      stripsEl.hidden = !strips;
+      stripsEl.hidden = !showStrips;
       filterStrip.hidden = !showFilter;
 
-      if (strips) {
+      if (showStrips) {
         stripsEl.innerHTML = strips.map(renderStrip).join('');
         initIcons(stripsEl);
       } else {

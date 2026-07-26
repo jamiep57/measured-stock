@@ -130,7 +130,7 @@ export default async function middleware(request) {
     if (session.role === 'admin' || isStaffAllowed(url.pathname)) {
       return;
     }
-    return Response.redirect(new URL('/mobile', request.url), 302);
+    return Response.redirect(new URL('/v5/', request.url), 302);
   }
 
   return new Response(loginPage(url.searchParams.get('error')), {

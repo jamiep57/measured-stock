@@ -1,7 +1,7 @@
 /**
- * V5 service worker — cache shell only; never cache Supabase.
+ * V5 service worker — cache shell + CDN chrome; never cache Supabase.
  */
-const VERSION = 'v5-57-kit-add-drawer';
+const VERSION = 'v5-60-prod-complete';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [
@@ -17,7 +17,16 @@ const SHELL_URLS = [
   '/v5/kit-count-icon-192.png',
   '/v5/kit-count-icon-512.png',
   '/v5/kit-count-icon-maskable-512.png',
+  'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap',
+  'https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css',
+  'https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css',
 ];
+
+function isCdnHost(hostname) {
+  return hostname === 'fonts.googleapis.com'
+    || hostname === 'fonts.gstatic.com'
+    || hostname === 'unpkg.com';
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -40,6 +49,27 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (url.hostname.includes('supabase.co')) return;
   if (url.pathname.startsWith('/api/')) return;
+
+  // Fonts / icon CSS: cache-first so airplane mode keeps chrome.
+  if (isCdnHost(url.hostname)) {
+    event.respondWith(
+      caches.open(SHELL).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        const network = fetch(event.request).then((res) => {
+          if (res.ok) cache.put(event.request, res.clone());
+          return res;
+        }).catch(() => null);
+        if (cached) {
+          network.catch(() => {});
+          return cached;
+        }
+        const res = await network;
+        if (res) return res;
+        throw new Error('CDN offline and uncached');
+      })
+    );
+    return;
+  }
 
   if (url.pathname.startsWith('/v5')) {
     // Always prefer network for app shell + hashed bundles so hero/UI fixes ship.

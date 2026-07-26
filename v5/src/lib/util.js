@@ -69,6 +69,41 @@ export function syncIosBottomGap() {
 }
 
 /**
+ * Resolve the top safe-area inset into --kc-safe-top.
+ * env() is usually correct; probe + standalone fallback covers WebKit cases
+ * where kit-deep hides the topbar and env() briefly reports 0.
+ */
+export function syncSafeAreaTop() {
+  const probe = document.createElement('div');
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.cssText = [
+    'position:fixed',
+    'left:0',
+    'top:0',
+    'width:0',
+    'visibility:hidden',
+    'pointer-events:none',
+    'padding-top:constant(safe-area-inset-top)',
+    'padding-top:env(safe-area-inset-top, 0px)',
+  ].join(';');
+  document.documentElement.appendChild(probe);
+  let top = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+  probe.remove();
+
+  if (top < 20 && isStandalonePwa()) {
+    const vvTop = Math.round(window.visualViewport?.offsetTop || 0);
+    if (vvTop > top) top = vvTop;
+  }
+  // black-translucent standalone still draws under the status bar / island
+  if (top < 20 && isStandalonePwa()) {
+    top = Math.max(top, 59);
+  }
+
+  document.documentElement.style.setProperty('--kc-safe-top', `${Math.round(top)}px`);
+  return top;
+}
+
+/**
  * Pin the tab bar flush with the physical bottom (including iOS dead zone).
  */
 export function pinBottomNav() {
@@ -94,6 +129,7 @@ export function pinBottomNav() {
 
 export function syncChromeSizes() {
   pinBottomNav();
+  syncSafeAreaTop();
   const tb = document.querySelector('.topbar');
   const nav = document.querySelector('.bottomnav');
   const hideNav = document.documentElement.classList.contains('counting')

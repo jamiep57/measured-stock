@@ -35,7 +35,7 @@ function renderProductSlot({ selectedId, poolName, showRemove }) {
       <input type="hidden" class="mod-ing-pid" value="${escapeHtml(selectedId || '')}">
       <input type="hidden" class="mod-ing-pool" value="${escapeHtml(poolName || '')}">
       <div class="mod-ing-search"></div>
-      <button type="button" class="mod-ing-remove" title="Remove product"
+      <button type="button" class="mod-ing-remove" tabindex="-1" title="Remove product"
         aria-label="Remove product"${showRemove ? '' : ' hidden'}>
         ${icon('x', { size: 14 })}
       </button>
@@ -105,26 +105,62 @@ function renderMapRow({
     </tr>`;
 }
 
-function groupTillByCategory(rows) {
+const MAP_STATUS_RANK = { unmapped: 0, warn: 1, mapped: 2 };
+
+function rowMapStatus(row, recipes, eps, itemKey, variationKey) {
+  const recipe = findRecipe(recipes, row[itemKey], row[variationKey]);
+  if (!recipeIsMapped(recipe)) return 'unmapped';
+  if (!recipeOnEvent(recipe, eps)) return 'warn';
+  return 'mapped';
+}
+
+function sortMapRows(list, ctx, { nameKey, qtyKey, itemKey, variationKey }) {
+  const key = ctx.sortKey || 'name';
+  return list.slice().sort((a, b) => {
+    if (key === 'qty') {
+      return (Number(b[qtyKey]) || 0) - (Number(a[qtyKey]) || 0)
+        || (a[nameKey] || '').localeCompare(b[nameKey] || '');
+    }
+    if (key === 'status') {
+      const sa = MAP_STATUS_RANK[rowMapStatus(a, ctx.recipes, ctx.eps, itemKey, variationKey)] ?? 9;
+      const sb = MAP_STATUS_RANK[rowMapStatus(b, ctx.recipes, ctx.eps, itemKey, variationKey)] ?? 9;
+      if (sa !== sb) return sa - sb;
+      return (a[nameKey] || '').localeCompare(b[nameKey] || '');
+    }
+    return (a[nameKey] || '').localeCompare(b[nameKey] || '');
+  });
+}
+
+function groupTillByCategory(rows, ctx) {
   const grouped = {};
   (rows || []).forEach((r) => {
     const cat = r.category || 'Uncategorised';
     (grouped[cat] = grouped[cat] || []).push(r);
   });
-  Object.values(grouped).forEach((list) => {
-    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  Object.keys(grouped).forEach((cat) => {
+    grouped[cat] = sortMapRows(grouped[cat], ctx, {
+      nameKey: 'name',
+      qtyKey: 'items_sold',
+      itemKey: 'name',
+      variationKey: 'variation',
+    });
   });
   return grouped;
 }
 
-function groupBySet(rows) {
+function groupBySet(rows, ctx) {
   const grouped = {};
   (rows || []).forEach((r) => {
     const set = r.modifier_set || 'Uncategorised';
     (grouped[set] = grouped[set] || []).push(r);
   });
-  Object.values(grouped).forEach((list) => {
-    list.sort((a, b) => (a.modifier || '').localeCompare(b.modifier || ''));
+  Object.keys(grouped).forEach((set) => {
+    grouped[set] = sortMapRows(grouped[set], ctx, {
+      nameKey: 'modifier',
+      qtyKey: 'qty_sold',
+      itemKey: 'modifier',
+      variationKey: 'modifier_set',
+    });
   });
   return grouped;
 }
@@ -137,12 +173,16 @@ function modAttrs(row) {
   return `data-mod-set="${escapeHtml(row.modifier_set || '')}" data-mod-name="${escapeHtml(row.modifier)}"`;
 }
 
+function uniqueGroupLabels(rows, key, fallback = 'Uncategorised') {
+  return [...new Set((rows || []).map((r) => r[key] || fallback))].sort((a, b) => a.localeCompare(b));
+}
+
 function renderTillGridBody(ctx) {
   const rows = filterTillRows(ctx);
   if (!rows.length) {
     return `<tr><td colspan="4" class="dist-empty">No item sales match your filter.</td></tr>`;
   }
-  const grouped = groupTillByCategory(rows);
+  const grouped = groupTillByCategory(rows, ctx);
   let html = '';
   Object.keys(grouped).sort().forEach((cat) => {
     html += `<tr class="dist-cat-row">
@@ -172,7 +212,7 @@ function renderModGridBody(ctx) {
   if (!rows.length) {
     return `<tr><td colspan="4" class="dist-empty">No modifier lines match your filter.</td></tr>`;
   }
-  const grouped = groupBySet(rows);
+  const grouped = groupBySet(rows, ctx);
   let html = '';
   Object.keys(grouped).sort().forEach((set) => {
     html += `<tr class="dist-cat-row">
@@ -196,9 +236,14 @@ function renderModGridBody(ctx) {
 
 function filterTillRows(ctx) {
   const q = (ctx.searchQuery || '').trim().toLowerCase();
-  const rows = ctx.tillRows || [];
-  if (!q) return rows;
-  return rows.filter((r) => {
+  const status = ctx.mapFilter || '';
+  const cat = ctx.categoryFilter || '';
+  return (ctx.tillRows || []).filter((r) => {
+    if (cat && (r.category || 'Uncategorised') !== cat) return false;
+    if (status) {
+      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'name', 'variation') !== status) return false;
+    }
+    if (!q) return true;
     const hay = [r.name, r.variation, r.category].join(' ').toLowerCase();
     return hay.includes(q);
   });
@@ -206,9 +251,14 @@ function filterTillRows(ctx) {
 
 function filterModRows(ctx) {
   const q = (ctx.searchQuery || '').trim().toLowerCase();
-  const rows = ctx.modRows || [];
-  if (!q) return rows;
-  return rows.filter((r) => {
+  const status = ctx.mapFilter || '';
+  const set = ctx.categoryFilter || '';
+  return (ctx.modRows || []).filter((r) => {
+    if (set && (r.modifier_set || 'Uncategorised') !== set) return false;
+    if (status) {
+      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'modifier', 'modifier_set') !== status) return false;
+    }
+    if (!q) return true;
     const hay = [r.modifier, r.modifier_set].join(' ').toLowerCase();
     return hay.includes(q);
   });
@@ -239,6 +289,9 @@ export function mountSalesPanel(route) {
     modRows: [],
     tab: 'items',
     searchQuery: getLastProductFilter().query || '',
+    mapFilter: '',
+    categoryFilter: '',
+    sortKey: 'name',
     saving: new Set(),
     abort: false,
   };
@@ -315,6 +368,75 @@ export function mountSalesPanel(route) {
         <button type="button" class="sales-tab${ctx.tab === 'modifiers' ? ' sales-tab--active' : ''}" data-tab="modifiers" role="tab"
           aria-selected="${ctx.tab === 'modifiers'}">Modifiers${ctx.modRows.length ? ` (${ctx.modRows.length})` : ''}</button>
       </div>`;
+  }
+
+  function paintToolbar() {
+    const isItems = ctx.tab === 'items';
+    const sourceRows = isItems ? ctx.tillRows : ctx.modRows;
+    if (!sourceRows.length) return '';
+
+    const groups = isItems
+      ? uniqueGroupLabels(sourceRows, 'category')
+      : uniqueGroupLabels(sourceRows, 'modifier_set');
+    if (ctx.categoryFilter && !groups.includes(ctx.categoryFilter)) {
+      ctx.categoryFilter = '';
+    }
+    const groupLabel = isItems ? 'Category' : 'Modifier set';
+    const filter = ctx.mapFilter || '';
+    const sort = ctx.sortKey || 'name';
+
+    const seg = (value, label) => {
+      const on = filter === value;
+      return `<button type="button" class="projections-filter-btn${on ? ' is-active' : ''}"
+        data-map-filter="${escapeHtml(value)}" role="tab" aria-selected="${on}">${label}</button>`;
+    };
+
+    return `
+      <div class="sales-toolbar">
+        <div class="projections-filter" role="tablist" aria-label="Mapping status">
+          ${seg('', 'All')}
+          ${seg('unmapped', 'Need mapping')}
+          ${seg('mapped', 'Mapped')}
+          ${seg('warn', 'Stock warn')}
+        </div>
+        <select class="admin-select sales-toolbar-select" id="salesCatFilter" aria-label="${escapeHtml(groupLabel)}">
+          <option value="">All ${isItems ? 'categories' : 'modifier sets'}</option>
+          ${groups.map((g) => `<option value="${escapeHtml(g)}"${g === ctx.categoryFilter ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('')}
+        </select>
+        <select class="admin-select sales-toolbar-select" id="salesSort" aria-label="Sort by">
+          <option value="name"${sort === 'name' ? ' selected' : ''}>Name A–Z</option>
+          <option value="qty"${sort === 'qty' ? ' selected' : ''}>Qty sold ↓</option>
+          <option value="status"${sort === 'status' ? ' selected' : ''}>Need mapping first</option>
+        </select>
+      </div>`;
+  }
+
+  function bindToolbar() {
+    panel.querySelectorAll('[data-map-filter]').forEach((btn) => {
+      btn.onclick = () => {
+        ctx.mapFilter = btn.dataset.mapFilter || '';
+        paintBodyOnly();
+        panel.querySelectorAll('[data-map-filter]').forEach((b) => {
+          const on = (b.dataset.mapFilter || '') === ctx.mapFilter;
+          b.classList.toggle('is-active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+      };
+    });
+    const catSel = panel.querySelector('#salesCatFilter');
+    if (catSel) {
+      catSel.onchange = () => {
+        ctx.categoryFilter = catSel.value || '';
+        paintBodyOnly();
+      };
+    }
+    const sortSel = panel.querySelector('#salesSort');
+    if (sortSel) {
+      sortSel.onchange = () => {
+        ctx.sortKey = sortSel.value || 'name';
+        paintBodyOnly();
+      };
+    }
   }
 
   function recipeKeysFromEl(recipeEl) {
@@ -457,7 +579,67 @@ export function mountSalesPanel(route) {
     const slot = ings.lastElementChild;
     if (slot) mountIngredientSearch(slot, recipeEl);
     bindRecipeControls(recipeEl);
-    slot?.querySelector('.product-search-input')?.focus();
+    const qtyInput = portionStack.lastElementChild;
+    qtyInput?.focus();
+    qtyInput?.select?.();
+  }
+
+  /** Portion + product sit in separate columns; Tab should move sideways per ingredient. */
+  function onRecipeTabNav(e) {
+    if (e.key !== 'Tab') return;
+
+    const qty = e.target.matches?.('.mod-portion-cell .mod-ing-qty') ? e.target : null;
+    if (qty) {
+      const tr = qty.closest('tr');
+      const recipeEl = tr?.querySelector('.mod-recipe');
+      const stack = tr?.querySelector('.mod-portion-stack');
+      if (!recipeEl || !stack) return;
+      const qtys = [...stack.querySelectorAll('.mod-ing-qty')];
+      const index = qtys.indexOf(qty);
+      if (index < 0) return;
+      const slots = [...recipeEl.querySelectorAll('.mod-ing')];
+
+      if (e.shiftKey) {
+        if (index === 0) return;
+        e.preventDefault();
+        const prev = slots[index - 1]?.querySelector('.product-search-input');
+        prev?.focus();
+        prev?.select?.();
+        return;
+      }
+
+      e.preventDefault();
+      const search = slots[index]?.querySelector('.product-search-input');
+      search?.focus();
+      search?.select?.();
+      return;
+    }
+
+    const search = e.target.matches?.('.mod-ing-search .product-search-input') ? e.target : null;
+    if (!search) return;
+    const slot = search.closest('.mod-ing');
+    const recipeEl = search.closest('.mod-recipe');
+    const tr = recipeEl?.closest('tr');
+    const stack = tr?.querySelector('.mod-portion-stack');
+    if (!slot || !recipeEl || !stack) return;
+    const slots = [...recipeEl.querySelectorAll('.mod-ing')];
+    const index = slots.indexOf(slot);
+    const qtys = [...stack.querySelectorAll('.mod-ing-qty')];
+
+    if (e.shiftKey) {
+      e.preventDefault();
+      const qtyInput = qtys[index];
+      qtyInput?.focus();
+      qtyInput?.select?.();
+      return;
+    }
+
+    if (index < qtys.length - 1) {
+      e.preventDefault();
+      const nextQty = qtys[index + 1];
+      nextQty?.focus();
+      nextQty?.select?.();
+    }
   }
 
   function bindRecipeControls(scope = panel) {
@@ -560,8 +742,12 @@ export function mountSalesPanel(route) {
 
     try {
       await saveRecipe(item, variation, ingredients);
-      updateRowState(recipeEl);
-      refreshStats();
+      if (ctx.mapFilter || ctx.sortKey === 'status') {
+        paintBodyOnly();
+      } else {
+        updateRowState(recipeEl);
+        refreshStats();
+      }
       if (toastOnSave) {
         if (ingredients.length) toast('Recipe saved');
         else if (hadRecipe) toast('Mapping cleared');
@@ -583,6 +769,7 @@ export function mountSalesPanel(route) {
     panel.innerHTML = `
       ${paintTabs()}
       ${stats}
+      ${rows.length ? paintToolbar() : ''}
       ${rows.length
     ? gridShell({
       nameCol: isItems ? 'Till item' : 'Modifier',
@@ -593,10 +780,14 @@ export function mountSalesPanel(route) {
 
     panel.querySelectorAll('.sales-tab').forEach((btn) => {
       btn.onclick = () => {
-        ctx.tab = btn.dataset.tab;
+        const next = btn.dataset.tab;
+        if (next === ctx.tab) return;
+        ctx.tab = next;
+        ctx.categoryFilter = '';
         paint();
       };
     });
+    bindToolbar();
     bindRecipeControls();
     syncTheadHeight();
   }
@@ -787,6 +978,7 @@ export function mountSalesPanel(route) {
 
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  panel.addEventListener('keydown', onRecipeTabNav);
 
   reload().catch((err) => {
     panel.innerHTML = `<div class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
@@ -796,6 +988,7 @@ export function mountSalesPanel(route) {
     ctx.abort = true;
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    panel.removeEventListener('keydown', onRecipeTabNav);
     tillFileInput?.remove();
     modFileInput?.remove();
   };

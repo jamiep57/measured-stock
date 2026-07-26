@@ -97,6 +97,23 @@ describe('closingPatchFromDraft', () => {
       close_count: 4,
       return_amount: 1,
       carried_over: 3,
+      capped: [],
+    });
+  });
+
+  it('soft-caps return to max returnable and closing count', () => {
+    expect(closingPatchFromDraft(product, {
+      closingCases: 2,
+      closingSingles: 0,
+      returnCases: 9,
+      returnSingles: 0,
+    }, [], { maxReturnable: 5 })).toEqual({
+      closing_cases: 2,
+      closing_singles: 0,
+      close_count: 2,
+      return_amount: 2,
+      carried_over: 0,
+      capped: ['max returnable', 'closing count'],
     });
   });
 });

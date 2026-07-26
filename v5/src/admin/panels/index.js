@@ -79,6 +79,10 @@ import {
   renderKitShell,
   mountKitPanel,
 } from './kit.js';
+import {
+  renderHomeShell,
+  mountHomePanel,
+} from './home.js';
 
 export const PANEL_TITLES = {
   home: 'Events',
@@ -117,28 +121,24 @@ function placeholder(title, bullets) {
     </div>`;
 }
 
+function notFoundPage() {
+  return `
+    <div class="admin-page">
+      <div class="admin-surface admin-not-found">
+        <h2>Page not found</h2>
+        <p class="muted">That URL doesn’t match a V5 admin page. Check the link or pick an event from the sidebar.</p>
+        <a class="admin-drawer-btn admin-drawer-btn--primary" href="/v5/admin">Back to events</a>
+      </div>
+    </div>`;
+}
+
 export async function renderPanel(route, state) {
   if (route.view === 'not-found') {
-    return `<div class="admin-page">${placeholder('Page not found', ['Check the URL or pick an event from the sidebar.'])}</div>`;
+    return notFoundPage();
   }
 
   if (route.view === 'home') {
-    if (!state.events.length) {
-      return `
-        <div class="admin-page">
-          <div class="admin-empty">No events yet. Create one in v2 admin until Setup is ported.</div>
-        </div>`;
-    }
-    return `
-      <div class="admin-page">
-        <div class="event-grid">
-          ${state.events.map((e) => `
-            <a class="event-card" href="/v5/admin/events/${e.id}/dashboard">
-              <div class="event-card-name">${escapeHtml(e.name)}</div>
-              <div class="event-card-meta">Open dashboard →</div>
-            </a>`).join('')}
-        </div>
-      </div>`;
+    return renderHomeShell(state.events);
   }
 
   if (route.view === 'library') {
@@ -284,6 +284,9 @@ export async function renderPanel(route, state) {
 
 /** Wire interactive panels after HTML is inserted. Returns cleanup fn. */
 export function mountPanel(route, state) {
+  if (route.view === 'home') {
+    return mountHomePanel();
+  }
   if (route.view === 'event' && route.panel === 'distribution') {
     return mountDistributionPanel(route, state);
   }

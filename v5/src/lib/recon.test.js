@@ -35,6 +35,58 @@ describe('buildReconRow', () => {
     expect(row.plu).toBe(75);
     expect(row.variance).toBe(-5);
     expect(row.supplierName).toBe('Acme');
+    expect(row.hasClosing).toBe(true);
+    expect(row.hasInvoice).toBe(false);
+    expect(row.pluCharge).toBe(row.plu * row.rowPrice);
+    expect(row.multiOfferWarn).toBe(false);
+  });
+
+  it('warns when multiple supplier offers differ', () => {
+    const multi = {
+      ...product,
+      product_suppliers: [
+        { supplier_id: 's1', is_preferred: true, case_price: 24, purchase_case_size_id: 'a', supplier: { name: 'Acme' } },
+        { supplier_id: 's2', case_price: 30, purchase_case_size_id: 'b', supplier: { name: 'Beta' } },
+      ],
+    };
+    const ep = { product_id: 'p1', product: multi, delivered_qty: 10 };
+    const row = buildReconRow({
+      ep,
+      closingRow: {},
+      pluByPid: {},
+      suppliers: [{ id: 's1', name: 'Acme' }, { id: 's2', name: 'Beta' }],
+      caseSizes: [],
+      wastageMap: {},
+      transferMap: {},
+      supplierReturns: [],
+      event: { id: 'e1', event_products: [ep] },
+    });
+    expect(row.multiOfferWarn).toBe(true);
+  });
+
+  it('tracks invoice draft and explicit zero closing', () => {
+    const ep = {
+      product_id: 'p1',
+      product,
+      delivered_qty: 10,
+      invoice_qty: 12,
+    };
+    const row = buildReconRow({
+      ep,
+      closingRow: { closing_cases: 0, closing_singles: 0 },
+      pluByPid: {},
+      suppliers: [{ id: 's1', name: 'Acme' }],
+      caseSizes: [],
+      wastageMap: {},
+      transferMap: {},
+      supplierReturns: [],
+      event: { id: 'e1', event_products: [ep] },
+      draft: { invoiceSet: true, invoiced: 9, closingCases: 0, closingSingles: 0 },
+    });
+    expect(row.hasInvoice).toBe(true);
+    expect(row.invoiced).toBe(9);
+    expect(row.hasClosing).toBe(true);
+    expect(row.closingCases).toBe(0);
   });
 });
 

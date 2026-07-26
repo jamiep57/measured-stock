@@ -379,13 +379,23 @@ export function buildReconRow(ctx) {
   const rowPrice = reconRowPrice(ep, draft, caseSizes);
   const consumptionCharge = consumption * rowPrice;
   const consumptionLooseCharge = consumption * rowPrice;
-  const pluCharge = plu * casePrice;
+  // PLU is already in stock units — charge at the same unit price as consumption.
+  const pluCharge = plu * rowPrice;
   const invoiceCharge = invoiced * casePrice;
 
   const budgetCl = {
     budget_method: draft?.budgetMethod != null ? draft.budgetMethod : cl.budget_method,
     budget_override: draft?.budgetOverride != null ? draft.budgetOverride : cl.budget_override,
   };
+
+  const offers = Array.isArray(p.product_suppliers) ? p.product_suppliers : [];
+  const offerPacks = new Set(
+    offers.map((o) => String(o.purchase_case_size_id || o.pack_size || o.units_per_case || '')),
+  );
+  const offerPrices = new Set(
+    offers.map((o) => String(o.case_price ?? o.unit_price ?? '')),
+  );
+  const multiOfferWarn = offers.length > 1 && (offerPacks.size > 1 || offerPrices.size > 1);
 
   const charges = {
     ep, pid, p, ups, delivered, invoiced, closingCases, closingSingles,
@@ -411,6 +421,12 @@ export function buildReconRow(ctx) {
   const reconHidden = draft?.reconHidden !== undefined
     ? !!draft.reconHidden
     : !!ep.recon_hidden;
+  const hasClosing = !!(cl && (
+    cl.closing_cases != null || cl.closing_singles != null || cl.close_count != null
+  ));
+  const hasInvoice = draft?.invoiceSet != null
+    ? !!draft.invoiceSet
+    : (ep.invoice_qty != null && ep.invoice_qty !== '');
 
   return {
     ...charges,
@@ -424,6 +440,9 @@ export function buildReconRow(ctx) {
     reconStatus,
     reconHidden,
     budgetMethod: budgetCl.budget_method || 'auto',
+    hasClosing,
+    hasInvoice,
+    multiOfferWarn,
   };
 }
 

@@ -40,7 +40,53 @@
 .kc-root .kc-actions {
   padding-top: 12px;
 }
+/*
+ * Deep mode: topbar is gone. Pin a sticky chrome bar that clears the notch
+ * the same way .topbar does (padding + opaque background), so list scroll
+ * never tucks Back / title under the Dynamic Island.
+ */
+html.kit-deep .kc-chrome,
+html.kit-deep .kc-root > .kc-top {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding-top: calc(10px + var(--kc-safe-top, env(safe-area-inset-top, 0px)));
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-bottom: 8px;
+  background: var(--background, var(--bg, #0f1115));
+}
+html.kit-deep .kc-chrome {
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+}
+html.kit-deep .kc-chrome > .kc-top {
+  position: static;
+  top: auto;
+  z-index: auto;
+  padding-top: 0;
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-bottom: 8px;
+  background: transparent;
+}
+html.kit-deep .kc-chrome > .kc-add-panel {
+  padding-top: 4px;
+  padding-bottom: 8px;
+  background: var(--background, var(--bg, #0f1115));
+}
+html.kit-deep .kc-root > .kc-section,
+html.kit-deep .kc-root > .kc-actions,
+html.kit-deep .kc-root > .kc-form {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+html.kit-deep .kc-scan .kc-top {
+  padding-top: calc(8px + var(--kc-safe-top, env(safe-area-inset-top, 0px)));
+}
 html.kit-deep .kc-root .kc-complete-bar {
+  padding-bottom: calc(12px + constant(safe-area-inset-bottom));
   padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
@@ -1066,7 +1112,8 @@ html.kit-deep .kc-root .kc-complete-bar {
   border-left: none;
   border-right: none;
   border-bottom: none;
-  padding: 10px 16px calc(16px + var(--safe-bottom));
+  /* Match top breathing room (handle + pad) and clear the tab bar overlay */
+  padding: 10px 16px calc(22px + var(--nav-h, 56px));
   animation: kc-sheet-up 180ms ease-out;
 }
 .kc-sheet-handle {

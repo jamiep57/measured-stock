@@ -9,6 +9,7 @@ import { readRememberedEventId, writeRememberedEventId } from './event-workspace
 import { initSheet } from '../components/sheet.js';
 import { initBugSheet } from '../components/bug-sheet.js';
 import { PANEL_TITLES, renderPanel, mountPanel } from './panels/index.js';
+import { ADMIN_EVENTS_CHANGED } from './panels/home.js';
 import { syncBugOpenDot, mountBugReportFab, syncBugFabVisibility } from './panels/bugs.js';
 import { initGlobalSearch, applyGenericProductFilter, ADMIN_PRODUCT_FILTER } from './global-search.js';
 import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
@@ -62,10 +63,15 @@ async function render(route) {
     cleanupPanel = null;
   }
 
-  $('adminContent').innerHTML = await renderPanel(route, state);
+  const content = $('adminContent');
+  content.classList.remove('admin-content--enter');
+  content.innerHTML = await renderPanel(route, state);
   await globalSearch?.syncRoute(route);
   cleanupPanel = mountPanel(route, state);
   syncBugFabVisibility();
+  requestAnimationFrame(() => {
+    content.classList.add('admin-content--enter');
+  });
 }
 
 function wireNav() {
@@ -143,6 +149,18 @@ async function boot() {
 
   syncBugOpenDot();
   mountBugReportFab();
+
+  document.addEventListener(ADMIN_EVENTS_CHANGED, async (e) => {
+    try {
+      await loadEvents();
+    } catch (err) {
+      console.warn(err);
+    }
+    const eventId = e.detail?.eventId;
+    if (eventId) setEventId(eventId);
+    render(parseRoute());
+  });
+
   startRouter(render);
 }
 

@@ -118,7 +118,10 @@ export function initGlobalSearch() {
       const eventChanged = nextKey !== routeKey;
       routeKey = nextKey;
 
-      if (eventChanged) query = '';
+      if (eventChanged) {
+        query = '';
+        emitProductFilter({ query: '', productId: null, source: 'route-change' });
+      }
 
       container.hidden = hideSearchForRoute(route);
       if (container.hidden) {
