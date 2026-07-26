@@ -66,16 +66,15 @@
           <select id="eventPick" class="topbar-event-native" hidden aria-hidden="true" tabindex="-1"></select>
         </div>
 
-        <div class="topbar-side topbar-side--right">
-          <button class="topbar-avatar topbar-avatar--sync" id="reloadBtn" type="button" aria-label="Sync">
-            <i class="ph ph-arrow-clockwise"></i>
-            <span class="topbar-dot" id="syncBadge" hidden aria-hidden="true"></span>
-          </button>
-        </div>
+        <div class="topbar-side topbar-side--right" aria-hidden="true"></div>
       </div>
     </header>
 
     <main class="main" id="main">
+      <div class="ptr" id="pullRefresh" hidden aria-hidden="true">
+        <i class="ph ph-arrow-clockwise" aria-hidden="true"></i>
+        <span class="ptr-label">Pull to refresh</span>
+      </div>
       <section class="view active" id="view-counts"></section>
       <section class="view" id="view-kit" hidden inert></section>
       <section class="view" id="view-deliveries" hidden inert></section>
@@ -104,33 +103,21 @@
   <div class="compose-fab" id="composeFab" hidden>
     <div class="compose-fab-backdrop" id="composeFabBackdrop" hidden></div>
     <div class="compose-fab-menu" id="composeFabMenu" hidden role="menu" aria-label="Add">
-      <button type="button" class="compose-fab-item" role="menuitem" data-compose="count">
-        <span class="compose-fab-item-icon"><i class="ph-bold ph-clipboard-text"></i></span>
-        <span class="compose-fab-item-copy">
-          <strong>New count</strong>
-          <em>Start a stock count session</em>
-        </span>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="delivery" aria-label="Log delivery">
+        <i class="ph-bold ph-shipping-container" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Delivery</span>
       </button>
-      <button type="button" class="compose-fab-item" role="menuitem" data-compose="delivery">
-        <span class="compose-fab-item-icon"><i class="ph-bold ph-shipping-container"></i></span>
-        <span class="compose-fab-item-copy">
-          <strong>Log delivery</strong>
-          <em>Record a supplier delivery</em>
-        </span>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="transfer" aria-label="Log transfer">
+        <i class="ph-bold ph-arrows-left-right" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Transfer</span>
       </button>
-      <button type="button" class="compose-fab-item" role="menuitem" data-compose="transfer">
-        <span class="compose-fab-item-icon"><i class="ph-bold ph-arrows-left-right"></i></span>
-        <span class="compose-fab-item-copy">
-          <strong>Log transfer</strong>
-          <em>Move stock between bars or locations</em>
-        </span>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="count" aria-label="New count">
+        <i class="ph-bold ph-clipboard-text" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Count</span>
       </button>
-      <button type="button" class="compose-fab-item" role="menuitem" data-compose="kit">
-        <span class="compose-fab-item-icon"><i class="ph-bold ph-package"></i></span>
-        <span class="compose-fab-item-copy">
-          <strong>Count kit</strong>
-          <em>Scan, create, or count loose items</em>
-        </span>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="kit" aria-label="Count kit">
+        <i class="ph-bold ph-package" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Kit</span>
       </button>
     </div>
     <button type="button" class="compose-fab-btn" id="composeFabBtn" aria-label="Add" aria-haspopup="menu" aria-expanded="false">

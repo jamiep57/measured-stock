@@ -6,8 +6,6 @@ import { getDB } from './db.js';
 import {
   flushQueue,
   bindOnlineFlush,
-  setSyncStatusListener,
-  getQueueStats,
 } from './sync-queue.js';
 import { initSheet } from './components/sheet.js';
 import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible, startNewCount } from './counts.js';
@@ -144,26 +142,6 @@ function initComposeFab() {
   });
 }
 
-async function updateSyncBadge() {
-  const badge = $('syncBadge');
-  if (!badge) return;
-  try {
-    const stats = await getQueueStats();
-    if (stats.total > 0) {
-      badge.hidden = false;
-      badge.classList.toggle('failed', stats.failed > 0);
-      badge.title = stats.failed
-        ? `${stats.failed} failed sync — tap to retry`
-        : `${stats.pending} pending sync — tap to sync`;
-    } else {
-      badge.hidden = true;
-      badge.removeAttribute('title');
-    }
-  } catch {
-    badge.hidden = true;
-  }
-}
-
 function updateEventPickerLabel() {
   const label = $('eventPickerLabel');
   const wrap = $('eventSelectWrap');
@@ -179,11 +157,104 @@ async function flushAll() {
     await flushQueue(DB);
     await flushPendingCounts();
     await flushPendingDeliveries();
-    await updateSyncBadge();
+    return true;
   } catch (err) {
     console.warn('flush', err);
     toast('Sync failed — check connection', true);
+    return false;
   }
+}
+
+function initPullToRefresh() {
+  const main = $('main');
+  const ptr = $('pullRefresh');
+  if (!main || !ptr) return;
+
+  const THRESHOLD = 64;
+  let startY = null;
+  let pulling = false;
+  let refreshing = false;
+
+  function resetPtr() {
+    ptr.classList.remove('is-ready', 'is-refreshing');
+    ptr.style.height = '0px';
+    ptr.hidden = true;
+    ptr.setAttribute('aria-hidden', 'true');
+    const label = ptr.querySelector('.ptr-label');
+    if (label) label.textContent = 'Pull to refresh';
+  }
+
+  function canPull() {
+    if (!state.ready || refreshing) return false;
+    if (document.documentElement.classList.contains('counting')) return false;
+    if (document.documentElement.classList.contains('kit-deep')) return false;
+    return main.scrollTop <= 0;
+  }
+
+  main.addEventListener('touchstart', (e) => {
+    if (!canPull()) {
+      startY = null;
+      pulling = false;
+      return;
+    }
+    startY = e.touches[0].clientY;
+    pulling = true;
+  }, { passive: true });
+
+  main.addEventListener('touchmove', (e) => {
+    if (!pulling || startY == null || refreshing) return;
+    if (main.scrollTop > 0) {
+      pulling = false;
+      resetPtr();
+      return;
+    }
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 8) return;
+    const pull = Math.min(dy * 0.4, 88);
+    ptr.hidden = false;
+    ptr.setAttribute('aria-hidden', 'false');
+    ptr.style.height = `${pull}px`;
+    const ready = pull >= THRESHOLD;
+    ptr.classList.toggle('is-ready', ready);
+    const label = ptr.querySelector('.ptr-label');
+    if (label) label.textContent = ready ? 'Release to refresh' : 'Pull to refresh';
+  }, { passive: true });
+
+  main.addEventListener('touchend', () => {
+    if (!pulling) return;
+    pulling = false;
+    startY = null;
+    const ready = ptr.classList.contains('is-ready');
+    if (!ready || refreshing) {
+      resetPtr();
+      return;
+    }
+
+    refreshing = true;
+    ptr.hidden = false;
+    ptr.style.height = '48px';
+    ptr.classList.add('is-refreshing');
+    ptr.classList.remove('is-ready');
+    const label = ptr.querySelector('.ptr-label');
+    if (label) label.textContent = 'Refreshing…';
+
+    flushAll()
+      .then((ok) => {
+        if (!ok) return;
+        if (state.ready) reloadTab();
+        toast('Synced');
+      })
+      .finally(() => {
+        refreshing = false;
+        resetPtr();
+      });
+  }, { passive: true });
+
+  main.addEventListener('touchcancel', () => {
+    pulling = false;
+    startY = null;
+    if (!refreshing) resetPtr();
+  }, { passive: true });
 }
 
 async function ensureKit() {
@@ -345,9 +416,9 @@ async function boot() {
   initTransfers(getContext());
   initWastage(getContext());
 
-  setSyncStatusListener(updateSyncBadge);
   bindOnlineFlush(flushAll);
   setupMeasuredPwaInstall();
+  initPullToRefresh();
 
   document.querySelectorAll('.navbtn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -356,12 +427,6 @@ async function boot() {
         return;
       }
       switchTab(btn.dataset.tab);
-    });
-  });
-  $('reloadBtn')?.addEventListener('click', () => {
-    flushAll().then(() => {
-      toast('Synced');
-      if (state.ready) reloadTab();
     });
   });
   $('eventPickerBtn')?.addEventListener('click', () => {
