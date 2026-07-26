@@ -15,7 +15,6 @@ export function loadHomeView(opts) {
   const el = $('view-home');
   if (!el) return;
 
-  const eventName = opts.event?.name || '';
   const hasEvent = !!opts.eventId;
   const kitDest = loadStoredDestination();
   let kitMeta = 'Event or warehouse';
@@ -30,11 +29,8 @@ export function loadHomeView(opts) {
       <p class="page-kicker">Today</p>
       <h1 class="page-title">What are you doing?</h1>
       ${hasEvent
-    ? `<div class="event-pill" title="${escapeHtml(eventName)}">
-          <i class="ph ph-calendar-blank"></i>
-          <span>${escapeHtml(eventName)}</span>
-        </div>`
-    : `<p class="page-sub">Pick an event in the bar above for stock counts and deliveries. Kit works with events or warehouses.</p>`}
+    ? ''
+    : `<p class="page-sub">Tap the event name above to choose where you’re working. Kit also supports warehouses.</p>`}
     </div>
 
     <div class="action-list" role="list">

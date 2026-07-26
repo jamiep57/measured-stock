@@ -67,17 +67,32 @@ async function updateSyncBadge() {
     const stats = await getQueueStats();
     if (stats.total > 0) {
       badge.hidden = false;
-      badge.textContent = String(stats.total);
       badge.classList.toggle('failed', stats.failed > 0);
       badge.title = stats.failed
-        ? `${stats.failed} failed sync — tap reload`
-        : `${stats.pending} pending sync`;
+        ? `${stats.failed} failed sync — tap mark to retry`
+        : `${stats.pending} pending sync — tap mark to sync`;
     } else {
       badge.hidden = true;
+      badge.removeAttribute('title');
     }
   } catch {
     badge.hidden = true;
   }
+}
+
+function updateEventPickerLabel() {
+  const label = $('eventPickerLabel');
+  const wrap = $('eventSelectWrap');
+  if (!label || !wrap) return;
+
+  if (state.tab === 'kit') {
+    wrap.classList.add('is-static');
+    label.textContent = 'Kit';
+    return;
+  }
+
+  wrap.classList.remove('is-static');
+  label.textContent = state.event?.name || 'Select event';
 }
 
 async function flushAll() {
@@ -141,6 +156,7 @@ function switchTab(tab) {
   });
 
   onCountsTabVisible(tab === 'counts');
+  updateEventPickerLabel();
   reloadTab();
   syncChromeSizes();
 }
@@ -185,6 +201,7 @@ async function onEventChange(id) {
     }
   }
   kitApi?.setPreferredEvent?.(state.eventId, state.event?.name || '');
+  updateEventPickerLabel();
   reloadTab();
 }
 

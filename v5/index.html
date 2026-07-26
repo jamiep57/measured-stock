@@ -26,19 +26,25 @@
   <div class="app" id="app">
     <header class="topbar">
       <div class="topbar-row">
-        <div class="brand">
-          <img src="/v5/kit-count-icon-192.png" alt="" class="brand-mark">
-          <span>Measured</span>
+        <div class="topbar-side topbar-side--left">
+          <button class="topbar-avatar" id="reloadBtn" type="button" aria-label="Sync">
+            <img src="/v5/kit-count-icon-192.png" alt="" class="topbar-avatar-img">
+            <span class="topbar-dot" id="syncBadge" hidden aria-hidden="true"></span>
+          </button>
+          <button class="topbar-avatar topbar-avatar--back" id="cntBackTop" type="button" hidden aria-label="Back to sessions">
+            <i class="ph ph-arrow-left"></i>
+          </button>
         </div>
-        <div class="topbar-actions">
-          <div class="sync-badge" id="syncBadge" hidden title="Pending sync">0</div>
-          <button class="icon-btn" id="reloadBtn" type="button" aria-label="Reload"><i class="ph ph-arrow-clockwise"></i></button>
-          <button class="icon-btn" id="cntBackTop" type="button" hidden aria-label="Back to sessions"><i class="ph ph-arrow-left"></i></button>
+
+        <div class="topbar-center" id="eventSelectWrap">
+          <div class="topbar-event" id="eventPickerFace">
+            <span class="topbar-event-label" id="eventPickerLabel">Select event</span>
+            <i class="ph ph-caret-down topbar-event-caret" aria-hidden="true"></i>
+          </div>
+          <select id="eventPick" class="topbar-event-native" aria-label="Select event"></select>
         </div>
-      </div>
-      <div class="event-select-wrap" id="eventSelectWrap">
-        <label class="event-select-label" for="eventPick">Event</label>
-        <select id="eventPick" aria-label="Select event"></select>
+
+        <div class="topbar-side topbar-side--right" aria-hidden="true"></div>
       </div>
     </header>
 
