@@ -148,6 +148,70 @@ html.kit-deep .kc-root .kc-complete-bar {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
+.kc-quick--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.kc-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 16px;
+}
+.kc-wizard-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.kc-wizard-card:active {
+  background: var(--card-2);
+}
+.kc-wizard-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-2);
+  color: var(--accent, #e8c47c);
+  font-size: 20px;
+}
+.kc-wizard-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kc-wizard-copy strong {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.kc-wizard-copy em {
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.kc-wizard-caret {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--muted);
+  opacity: 0.75;
+}
 .kc-quick-item {
   display: flex;
   flex-direction: column;

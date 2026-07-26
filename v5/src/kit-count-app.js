@@ -161,7 +161,7 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   function syncDeepMode() {
-    const deep = !['dest', 'pick-event', 'pick-warehouse', 'home'].includes(screen);
+    const deep = !['dest', 'pick-event', 'pick-warehouse', 'home', 'add-wizard', 'pick-container'].includes(screen);
     onDeepChange(deep);
   }
 
@@ -195,19 +195,23 @@ export async function startKitCountApp(DB, opts = {}) {
   let containerStack = [];
   /** @type {Array<{ child_product_id: string, qty: number, child?: object }>} */
   let contents = [];
-  /** @type {'dest'|'pick-event'|'pick-warehouse'|'home'|'scan-container'|'create-container'|'count'|'scan-item'|'stock-count'} */
+  /** @type {'dest'|'pick-event'|'pick-warehouse'|'home'|'add-wizard'|'pick-container'|'scan-container'|'create-container'|'count'|'scan-item'|'stock-count'} */
   let screen = 'dest';
   let feedback = { msg: '', kind: '' };
   let saving = false;
   let createDraft = { name: '', categoryId: '', barcode: '', qty: '1', asContainer: false, queueLabel: true };
+  /** Where create-container Back should return. */
+  let createReturnScreen = 'home';
   let showCreateSheet = false;
   let showCategorySheet = false;
   let newCategoryName = '';
   let searchQuery = '';
+  /** Search query on the pick-existing-container wizard step. */
+  let pickContainerQuery = '';
   /** Event home tab: pick list vs physical on-event stock. */
   let homeEventTab = 'pick';
   /**
-   * Write target for Scan / Create / Loose / open-container.
+   * Write target for Scan / Add / open-container.
    * Locked when a counting session starts so switching tabs mid-flow doesn’t flip writes.
    * @type {'pick'|'on-event'|''}
    */
@@ -891,6 +895,7 @@ export async function startKitCountApp(DB, opts = {}) {
           return;
         }
         createDraft = { name: '', categoryId: '', barcode: code, qty: '1', asContainer: false };
+        createReturnScreen = 'home';
         screen = 'create-container';
         stopCamera();
         feedback = { msg: 'Unknown barcode — create the container', kind: 'ok' };
@@ -1395,18 +1400,18 @@ export async function startKitCountApp(DB, opts = {}) {
         <button type="button" class="kc-back" id="kcChangeDest">Change</button>
         <div class="kc-top-grow">${heroHtml}</div>
       </header>`}
-      ${eventTabsHtml}
       ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback">${escapeHtml(feedback.msg)}</div>` : ''}
       <div class="kc-actions kc-actions--home">
+        <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
+          placeholder="Search..." value="${escapeHtml(searchQuery)}"
+          autocomplete="off" enterkeyhint="search">
         ${isEventDest() ? `
         <p class="kc-write-mode" id="kcWriteMode">
           <span class="kc-write-mode-label">${activeWriteMode() === 'on-event' ? 'Counting onto' : 'Packing onto'}</span>
           <strong>${activeWriteMode() === 'on-event' ? 'what’s onsite' : 'the pick list'}</strong>
         </p>` : ''}
-        <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
-          placeholder="Search containers…" value="${escapeHtml(searchQuery)}"
-          autocomplete="off" enterkeyhint="search">
-        <div class="kc-quick" role="group" aria-label="Quick actions">
+        ${eventTabsHtml}
+        <div class="kc-quick kc-quick--two" role="group" aria-label="Quick actions">
           <button type="button" class="kc-quick-item" id="kcScanContainer">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-barcode"></i></span>
             <strong>Scan</strong>
@@ -1414,19 +1419,10 @@ export async function startKitCountApp(DB, opts = {}) {
     ? (activeWriteMode() === 'on-event' ? 'Onsite' : 'Pick list')
     : 'Container'}</em>
           </button>
-          <button type="button" class="kc-quick-item" id="kcCreateContainer">
+          <button type="button" class="kc-quick-item" id="kcAddWizard">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-plus"></i></span>
-            <strong>Create</strong>
-            <em>${isEventDest()
-    ? (activeWriteMode() === 'on-event' ? 'Onsite' : 'Pick list')
-    : 'Container'}</em>
-          </button>
-          <button type="button" class="kc-quick-item" id="kcLooseItems">
-            <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
-            <strong>Loose</strong>
-            <em>${isEventDest()
-    ? (activeWriteMode() === 'on-event' ? 'Onsite' : 'Pick list')
-    : 'No box'}</em>
+            <strong>Add</strong>
+            <em>Guided</em>
           </button>
         </div>
       </div>
@@ -1495,18 +1491,11 @@ export async function startKitCountApp(DB, opts = {}) {
       paint();
       startCameraUi();
     };
-    $('kcCreateContainer').onclick = () => {
+    $('kcAddWizard').onclick = () => {
       beginWriteSession();
-      createDraft = { name: '', categoryId: '', barcode: '', qty: '1', asContainer: false, queueLabel: true };
-      screen = 'create-container';
+      feedback = { msg: '', kind: '' };
+      screen = 'add-wizard';
       paint();
-      $('kcName')?.focus();
-    };
-    $('kcLooseItems').onclick = () => {
-      openLooseCount().catch((err) => {
-        feedback = { msg: err.message || 'Could not open', kind: 'err' };
-        paint();
-      });
     };
 
     const homeSearch = $('kcHomeSearch');
@@ -1532,6 +1521,174 @@ export async function startKitCountApp(DB, opts = {}) {
         const fromEvent = eventItems.find((it) => it.product_id === id)?.product;
         const p = products.find((x) => x.id === id)
           || resolveEventProduct(id, fromEvent);
+        if (p) openContainer(p, { resetStack: true, ensureContainer: true });
+      };
+    });
+  }
+
+  function openAddWizard() {
+    beginWriteSession();
+    feedback = { msg: '', kind: '' };
+    pickContainerQuery = '';
+    screen = 'add-wizard';
+    paint();
+  }
+
+  function paintAddWizard() {
+    const modeHint = isEventDest()
+      ? (isPhysicalWriteMode()
+        ? 'These will count onto what’s onsite.'
+        : 'These will pack onto the pick list.')
+      : 'Choose how you want to add kit.';
+    app.innerHTML = `
+      <header class="kc-top kc-top--row">
+        <button type="button" class="kc-back" id="kcBack">Back</button>
+        <div class="kc-top-grow">
+          <div class="kc-brand">Measured · ${escapeHtml(writeModeLabel())}</div>
+          <h1 class="kc-title kc-title--sm">What do you want to add?</h1>
+          <p class="kc-meta">${escapeHtml(modeHint)}</p>
+        </div>
+      </header>
+      ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback">${escapeHtml(feedback.msg)}</div>` : ''}
+      <div class="kc-wizard" role="list">
+        <button type="button" class="kc-wizard-card" id="kcWizardBulky" role="listitem">
+          <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-truck"></i></span>
+          <span class="kc-wizard-copy">
+            <strong>Bulky item</strong>
+            <em>Doesn’t have a container — e.g. pallet truck, trike</em>
+          </span>
+          <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="kc-wizard-card" id="kcWizardExisting" role="listitem">
+          <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
+          <span class="kc-wizard-copy">
+            <strong>Add to an existing container</strong>
+            <em>Open a box, pallet, or crate and add what’s inside</em>
+          </span>
+          <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="kc-wizard-card" id="kcWizardNewContainer" role="listitem">
+          <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-plus-circle"></i></span>
+          <span class="kc-wizard-copy">
+            <strong>Create a new container</strong>
+            <em>Pallet, bale arm crate, tote box, or pallet box</em>
+          </span>
+          <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+        </button>
+      </div>
+    `;
+
+    $('kcBack').onclick = () => {
+      writeMode = '';
+      screen = 'home';
+      paint();
+    };
+    $('kcWizardBulky').onclick = () => {
+      openLooseCount().catch((err) => {
+        feedback = { msg: err.message || 'Could not open', kind: 'err' };
+        paint();
+      });
+    };
+    $('kcWizardExisting').onclick = () => {
+      pickContainerQuery = '';
+      screen = 'pick-container';
+      paint();
+    };
+    $('kcWizardNewContainer').onclick = () => {
+      createDraft = {
+        name: '', categoryId: '', barcode: '', qty: '1', asContainer: true, queueLabel: true,
+      };
+      createReturnScreen = 'add-wizard';
+      screen = 'create-container';
+      paint();
+      $('kcName')?.focus();
+    };
+  }
+
+  function paintPickContainer() {
+    const q = pickContainerQuery.trim();
+    const containerProducts = products.filter((p) => p.is_container);
+    const recent = recentContainers();
+    const recentIds = new Set(recent.map((p) => p.id));
+    const hits = q
+      ? filterKitProducts(containerProducts, q, { limit: 40 })
+      : recent.concat(containerProducts.filter((p) => !recentIds.has(p.id)).slice(0, 20));
+    const seen = new Set();
+    const list = [];
+    for (const p of hits) {
+      if (!p?.id || seen.has(p.id)) continue;
+      seen.add(p.id);
+      list.push(p);
+    }
+
+    app.innerHTML = `
+      <header class="kc-top kc-top--row">
+        <button type="button" class="kc-back" id="kcBack">Back</button>
+        <div class="kc-top-grow">
+          <div class="kc-brand">Measured · ${escapeHtml(writeModeLabel())}</div>
+          <h1 class="kc-title kc-title--sm">Choose a container</h1>
+          <p class="kc-meta">Search or pick a box to add items into</p>
+        </div>
+      </header>
+      <div class="kc-actions">
+        <input class="kc-search kc-search--block" id="kcPickSearch" type="search"
+          placeholder="Search..." value="${escapeHtml(pickContainerQuery)}"
+          autocomplete="off" enterkeyhint="search">
+      </div>
+      <section class="kc-section">
+        <div class="kc-table" id="kcPickList">
+          ${list.length
+    ? list.map((p) => `
+            <button type="button" class="kc-table-row" data-open="${escapeHtml(p.id)}">
+              <span class="kc-table-main">
+                <span class="kc-table-topline">
+                  <span class="kc-table-title">${escapeHtml(p.name || 'Container')}</span>
+                </span>
+                <span class="kc-table-sub">${escapeHtml(p.category?.name || 'Container')}</span>
+              </span>
+              <i class="ph ph-caret-right kc-table-caret" aria-hidden="true"></i>
+            </button>`).join('')
+    : `<p class="kc-empty">${q ? `No containers match “${escapeHtml(q)}”` : 'No containers yet — create one instead.'}</p>`}
+        </div>
+      </section>
+      <div class="kc-actions">
+        <button type="button" class="kc-btn kc-btn--ghost kc-btn--block" id="kcPickCreate">
+          Create a new container instead
+        </button>
+      </div>
+    `;
+
+    $('kcBack').onclick = () => {
+      screen = 'add-wizard';
+      paint();
+    };
+    $('kcPickCreate').onclick = () => {
+      createDraft = {
+        name: '', categoryId: '', barcode: '', qty: '1', asContainer: true, queueLabel: true,
+      };
+      createReturnScreen = 'pick-container';
+      screen = 'create-container';
+      paint();
+      $('kcName')?.focus();
+    };
+    const pickSearch = $('kcPickSearch');
+    let pickTimer = 0;
+    pickSearch?.addEventListener('input', () => {
+      pickContainerQuery = pickSearch.value || '';
+      window.clearTimeout(pickTimer);
+      pickTimer = window.setTimeout(() => {
+        paintPickContainer();
+        const again = $('kcPickSearch');
+        if (again) {
+          again.focus();
+          const len = again.value.length;
+          again.setSelectionRange(len, len);
+        }
+      }, 80);
+    });
+    app.querySelectorAll('[data-open]').forEach((btn) => {
+      btn.onclick = () => {
+        const p = products.find((x) => x.id === btn.dataset.open);
         if (p) openContainer(p, { resetStack: true, ensureContainer: true });
       };
     });
@@ -1863,8 +2020,11 @@ export async function startKitCountApp(DB, opts = {}) {
     });
     $('kcBack').onclick = () => {
       showCategorySheet = false;
-      writeMode = '';
-      screen = 'home';
+      const back = createReturnScreen === 'add-wizard' || createReturnScreen === 'pick-container'
+        ? createReturnScreen
+        : 'home';
+      if (back === 'home') writeMode = '';
+      screen = back;
       paint();
     };
     $('kcNewCat').onclick = () => {
@@ -2412,6 +2572,8 @@ export async function startKitCountApp(DB, opts = {}) {
     if (screen === 'pick-event') return paintPickEvent();
     if (screen === 'pick-warehouse') return paintPickWarehouse();
     if (screen === 'home') return paintHome();
+    if (screen === 'add-wizard') return paintAddWizard();
+    if (screen === 'pick-container') return paintPickContainer();
     if (screen === 'stock-count') return paintStockCount();
     if (screen === 'scan-container') {
       paintScanShell({
@@ -2463,25 +2625,9 @@ export async function startKitCountApp(DB, opts = {}) {
       startCameraUi();
       return true;
     }
-    if (action === 'create') {
-      beginWriteSession();
-      createDraft = {
-        name: '', categoryId: '', barcode: '', qty: '1', asContainer: false, queueLabel: true,
-      };
-      screen = 'create-container';
-      paint();
-      $('kcName')?.focus();
+    if (action === 'add' || action === 'create' || action === 'loose') {
+      openAddWizard();
       return true;
-    }
-    if (action === 'loose') {
-      try {
-        await openLooseCount();
-        return true;
-      } catch (err) {
-        feedback = { msg: err.message || 'Could not open', kind: 'err' };
-        paint();
-        return false;
-      }
     }
     return false;
   }
