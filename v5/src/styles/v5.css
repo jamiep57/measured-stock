@@ -980,6 +980,147 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   color: var(--muted-foreground);
 }
 
+/* Create supplier / product popup (shared modal component) */
+.admin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgb(0 0 0 / 0.55);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.admin-modal-backdrop--visible { opacity: 1; }
+.admin-modal {
+  position: fixed;
+  z-index: 250;
+  left: 50%;
+  top: 50%;
+  width: min(400px, calc(100vw - 32px));
+  max-height: min(90vh, 640px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.5);
+  overflow: hidden;
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 8px));
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.admin-modal--visible {
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+.admin-modal-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.admin-modal-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+.admin-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.admin-modal-foot {
+  flex-shrink: 0;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+}
+.admin-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.admin-drawer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.admin-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.admin-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.admin-input,
+.admin-select {
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+}
+.admin-input:focus,
+.admin-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(232 196 124 / 0.2);
+}
+.admin-drawer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.admin-drawer-btn--solid {
+  background: var(--secondary);
+}
+.admin-drawer-btn--primary {
+  background: var(--primary);
+  color: var(--background);
+  border-color: var(--primary);
+}
+.wst-form-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}
+.del-form-err {
+  margin: 0;
+  font-size: 13px;
+  color: #fecaca;
+  min-height: 0;
+}
+.del-form-err:empty,
+.product-create-form .del-form-err:empty {
+  display: none;
+}
+.product-search-create-trigger .product-search-name {
+  color: var(--accent);
+}
+
 /* Delivery line cards */
 .del-products { display: flex; flex-direction: column; gap: 10px; }
 .del-products > label { margin-bottom: 0; }

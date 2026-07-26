@@ -417,6 +417,23 @@ function openDeliveryForm(editId) {
     emptyLabel: '— Optional —',
     inputClass: 'supplier-search-input',
     dropdownFixed: false,
+    allowCreate: true,
+    onCreateSupplier: async (payload) => {
+      const created = await getDB().suppliers.create({
+        name: payload.name,
+        contact_name: payload.contact_name || null,
+        email: null,
+        phone: null,
+        address: null,
+        default_sor_pct: payload.default_sor_pct ?? 0,
+      });
+      if (!created?.id) throw new Error('Supplier was not created.');
+      if (!ctx.suppliers.some((s) => s.id === created.id)) {
+        ctx.suppliers = [...ctx.suppliers, created];
+      }
+      toast('Supplier created');
+      return { supplierId: created.id, supplier: created };
+    },
   });
 
   $('dfCancel').onclick = closeSheet;
