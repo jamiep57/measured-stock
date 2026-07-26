@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-52-event-kit-tabs';
+const VERSION = 'v5-53-kit-write-mode';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [

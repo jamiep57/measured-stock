@@ -183,6 +183,30 @@ html.kit-deep .kc-root .kc-complete-bar {
   font-weight: 650;
   line-height: 1.2;
 }
+.kc-quick-item em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted);
+}
+.kc-write-mode {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent, #e8c47c) 10%, var(--card));
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.kc-write-mode-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+.kc-write-mode strong {
+  font-weight: 700;
+}
 .kc-quick-copy {
   flex: 1;
   min-width: 0;
@@ -299,9 +323,9 @@ html.kit-deep .kc-root .kc-complete-bar {
 }
 .kc-event-tab {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  min-height: 64px;
+  min-height: 52px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 14px;

@@ -42,10 +42,13 @@ import {
   storeDestination,
   applyEventPackDelta,
   setEventPackedQty,
+  applyEventPhysicalDelta,
+  setEventPhysicalQty,
   loadWarehouseKitStockMap,
   applyWarehouseDelta,
   setWarehouseQty,
   eventPackLines,
+  eventPhysicalLines,
 } from './lib/kit-count-dest.js';
 
 function $(id) {
@@ -203,6 +206,12 @@ export async function startKitCountApp(DB, opts = {}) {
   let searchQuery = '';
   /** Event home tab: pick list vs physical on-event stock. */
   let homeEventTab = 'pick';
+  /**
+   * Write target for Scan / Create / Loose / open-container.
+   * Locked when a counting session starts so switching tabs mid-flow doesn’t flip writes.
+   * @type {'pick'|'on-event'|''}
+   */
+  let writeMode = '';
   let errMsg = '';
   /** Focus the search field once after entering a container (not on every re-paint). */
   let focusSearchNext = false;
@@ -359,13 +368,35 @@ export async function startKitCountApp(DB, opts = {}) {
     searchQuery = '';
     showCreateSheet = false;
     showCategorySheet = false;
+    writeMode = '';
     screen = 'home';
     stopCamera();
     paint();
   }
 
+  function isPhysicalWriteMode() {
+    return isEventDest() && activeWriteMode() === 'on-event';
+  }
+
+  function activeWriteMode() {
+    if (!isEventDest()) return 'pick';
+    if (writeMode === 'on-event' || writeMode === 'pick') return writeMode;
+    return homeEventTab === 'on-event' ? 'on-event' : 'pick';
+  }
+
+  /** Lock writes to the current Needs / Here tab before starting an action. */
+  function beginWriteSession(mode = homeEventTab) {
+    writeMode = mode === 'on-event' ? 'on-event' : 'pick';
+  }
+
+  function writeModeLabel() {
+    if (!isEventDest()) return isWarehouseDest() ? 'Warehouse' : 'Kit';
+    return activeWriteMode() === 'on-event' ? 'What’s onsite' : 'Pick list';
+  }
+
   /** Count loose / bulky items straight onto the event or warehouse (no container). */
   async function openLooseCount() {
+    beginWriteSession();
     searchQuery = '';
     showCreateSheet = false;
     showCategorySheet = false;
@@ -376,10 +407,24 @@ export async function startKitCountApp(DB, opts = {}) {
     if (isEventDest()) {
       const data = await loadEventKit(destination.eventId);
       eventItems = data.items || [];
-      stockLines = eventPackLines(eventItems).filter((line) => {
-        const p = line.product || products.find((x) => x.id === line.product_id);
-        return p && !p.is_container;
-      });
+      eventBalances = balancesByProduct(data.movements || []);
+      boundEventId = destination.eventId;
+      boundWarehouseId = '';
+      if (isPhysicalWriteMode()) {
+        const byId = new Map(products.map((p) => [p.id, p]));
+        for (const it of eventItems) {
+          if (it.product_id && it.product) byId.set(it.product_id, it.product);
+        }
+        stockLines = eventPhysicalLines(eventBalances, byId).filter((line) => {
+          const p = line.product || products.find((x) => x.id === line.product_id);
+          return p && !p.is_container;
+        });
+      } else {
+        stockLines = eventPackLines(eventItems).filter((line) => {
+          const p = line.product || products.find((x) => x.id === line.product_id);
+          return p && !p.is_container;
+        });
+      }
     } else if (isWarehouseDest()) {
       stockMap = await loadWarehouseKitStockMap(DB, destination.warehouseId);
       stockLines = [];
@@ -393,10 +438,24 @@ export async function startKitCountApp(DB, opts = {}) {
     paint();
   }
 
-  /** Mirror a qty delta onto the chosen event / warehouse destination. */
+  /** Mirror a qty delta onto pick list, physical on-event, or warehouse. */
   async function applyDestDelta(product, delta) {
     if (!product?.id || !delta) return;
     if (isEventDest()) {
+      if (isPhysicalWriteMode()) {
+        const res = await applyEventPhysicalDelta(
+          DB,
+          destination.eventId,
+          eventItems,
+          eventBalances,
+          product,
+          delta,
+          { notes: 'Phone count · On event' },
+        );
+        eventItems = res.items;
+        eventBalances = res.balances;
+        return;
+      }
       const res = await applyEventPackDelta(
         DB,
         destination.eventId,
@@ -405,7 +464,9 @@ export async function startKitCountApp(DB, opts = {}) {
         delta,
       );
       eventItems = res.items;
-    } else if (isWarehouseDest()) {
+      return;
+    }
+    if (isWarehouseDest()) {
       const res = await applyWarehouseDelta(
         DB,
         destination.warehouseId,
@@ -440,16 +501,32 @@ export async function startKitCountApp(DB, opts = {}) {
     saving = true;
     try {
       if (isEventDest()) {
-        const res = await applyEventPackDelta(
-          DB,
-          destination.eventId,
-          eventItems,
-          product,
-          delta,
-        );
-        eventItems = res.items;
-        if (res.line) syncStockLine(res.line.product_id, res.line.qty, res.line.product);
-        else syncStockLine(product.id, 0, product);
+        if (isPhysicalWriteMode()) {
+          const res = await applyEventPhysicalDelta(
+            DB,
+            destination.eventId,
+            eventItems,
+            eventBalances,
+            product,
+            delta,
+            { notes: 'Phone count · On event' },
+          );
+          eventItems = res.items;
+          eventBalances = res.balances;
+          if (res.line) syncStockLine(res.line.product_id, res.line.qty, res.line.product);
+          else syncStockLine(product.id, 0, product);
+        } else {
+          const res = await applyEventPackDelta(
+            DB,
+            destination.eventId,
+            eventItems,
+            product,
+            delta,
+          );
+          eventItems = res.items;
+          if (res.line) syncStockLine(res.line.product_id, res.line.qty, res.line.product);
+          else syncStockLine(product.id, 0, product);
+        }
       } else if (isWarehouseDest()) {
         const res = await applyWarehouseDelta(
           DB,
@@ -480,16 +557,32 @@ export async function startKitCountApp(DB, opts = {}) {
     saving = true;
     try {
       if (isEventDest()) {
-        const res = await setEventPackedQty(
-          DB,
-          destination.eventId,
-          eventItems,
-          product,
-          qty,
-        );
-        eventItems = res.items;
-        if (res.line) syncStockLine(res.line.product_id, res.line.qty, res.line.product);
-        else syncStockLine(product.id, 0, product);
+        if (isPhysicalWriteMode()) {
+          const res = await setEventPhysicalQty(
+            DB,
+            destination.eventId,
+            eventItems,
+            eventBalances,
+            product,
+            qty,
+            { notes: 'Phone count · On event' },
+          );
+          eventItems = res.items;
+          eventBalances = res.balances;
+          if (res.line) syncStockLine(res.line.product_id, res.line.qty, res.line.product);
+          else syncStockLine(product.id, 0, product);
+        } else {
+          const res = await setEventPackedQty(
+            DB,
+            destination.eventId,
+            eventItems,
+            product,
+            qty,
+          );
+          eventItems = res.items;
+          if (res.line) syncStockLine(res.line.product_id, res.line.qty, res.line.product);
+          else syncStockLine(product.id, 0, product);
+        }
       } else if (isWarehouseDest()) {
         const res = await setWarehouseQty(
           DB,
@@ -534,12 +627,17 @@ export async function startKitCountApp(DB, opts = {}) {
     let destNote = '';
     if (resetStack && !pushParent && hasStockDest()) {
       try {
+        if (!writeMode) beginWriteSession();
         const before = isEventDest()
-          ? (Number(eventItems.find((it) => it.product_id === container.id)?.qty_packed) || 0)
+          ? (isPhysicalWriteMode()
+            ? (Number(eventBalances.get(container.id)?.onHand) || 0)
+            : (Number(eventItems.find((it) => it.product_id === container.id)?.qty_packed) || 0))
           : (Number(stockMap.get(container.id)) || 0);
         await ensureContainerOnDestination(container);
         if (before <= 0) {
-          destNote = `Added to ${destTitle()}`;
+          destNote = isPhysicalWriteMode()
+            ? `Counted on ${destTitle()}`
+            : `Packed on ${destTitle()} pick list`;
         }
       } catch (err) {
         destNote = '';
@@ -574,12 +672,18 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   /**
-   * Ensure a scanned/selected container is on the event pack list (or
-   * warehouse on-hand) so it appears under “On this event”.
+   * Ensure a scanned/selected container is on the active destination:
+   * Needs tab → pick list packed qty; Here tab → physical on-event qty.
    */
   async function ensureContainerOnDestination(product) {
     if (!product?.id || !hasStockDest()) return;
     if (isEventDest()) {
+      if (isPhysicalWriteMode()) {
+        const onHand = Number(eventBalances.get(product.id)?.onHand) || 0;
+        if (onHand > 0) return;
+        await applyDestDelta(product, 1);
+        return;
+      }
       const existing = eventItems.find((it) => it.product_id === product.id);
       const packed = Number(existing?.qty_packed) || 0;
       if (packed > 0) return;
@@ -613,6 +717,7 @@ export async function startKitCountApp(DB, opts = {}) {
     containerStack = [];
     writeUrlContainer('');
     searchQuery = '';
+    writeMode = '';
     screen = 'home';
     if (doneMessage) feedback = { msg: doneMessage, kind: 'ok' };
     if (isEventDest()) {
@@ -713,7 +818,9 @@ export async function startKitCountApp(DB, opts = {}) {
     };
     paint();
     await persistContents();
-    if (applied) {
+    // Contents edits update the library BOM. Only mirror child qty onto the
+    // pick list when packing Needs — Here mode counts the container itself.
+    if (applied && !isPhysicalWriteMode()) {
       try {
         await applyDestDelta(product, applied);
       } catch (err) {
@@ -1239,7 +1346,7 @@ export async function startKitCountApp(DB, opts = {}) {
     const homeSub = isEventDest()
       ? (homeEventTab === 'pick'
         ? 'What this event needs'
-        : 'Physical kit already here')
+        : 'What’s onsite')
       : 'Scan, search, or create a box, then add what’s inside.';
     const heroHtml = `
       <div class="page-hero page-hero--compact">
@@ -1249,7 +1356,7 @@ export async function startKitCountApp(DB, opts = {}) {
       </div>`;
 
     const pickEmpty = '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span><span class="kc-empty-title">No pick list yet</span><span class="kc-empty-copy">Add Need qty in admin, or scan / create containers here to start packing.</span></p>';
-    const onEventEmpty = '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing on this event yet</span><span class="kc-empty-copy">Shows kit sent from warehouse or hired in. Packing updates Need progress on the pick list.</span></p>';
+    const onEventEmpty = '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing onsite yet</span><span class="kc-empty-copy">Shows kit sent from warehouse or hired in. Packing updates Need progress on the pick list.</span></p>';
     const eventListHtml = !isEventDest() ? '' : (homeEventTab === 'pick'
       ? (pickList.length
         ? `<div class="kc-table" id="kcHomeList">${pickList.map(pickListRowHtml).join('')}</div>`
@@ -1265,8 +1372,7 @@ export async function startKitCountApp(DB, opts = {}) {
           id="kcTabPick" data-event-tab="pick">
           <span class="kc-event-tab-icon" aria-hidden="true"><i class="ph-bold ph-clipboard-text"></i></span>
           <span class="kc-event-tab-copy">
-            <strong>Needs</strong>
-            <em>What this event needs</em>
+            <strong>Pick List</strong>
           </span>
           ${pickList.length ? `<span class="kc-event-tab-count">${pickList.length}</span>` : ''}
         </button>
@@ -1275,8 +1381,7 @@ export async function startKitCountApp(DB, opts = {}) {
           id="kcTabOnEvent" data-event-tab="on-event">
           <span class="kc-event-tab-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
           <span class="kc-event-tab-copy">
-            <strong>Here</strong>
-            <em>Physical kit here</em>
+            <strong>What’s onsite</strong>
           </span>
           ${onEvent.length ? `<span class="kc-event-tab-count">${onEvent.length}</span>` : ''}
         </button>
@@ -1293,6 +1398,11 @@ export async function startKitCountApp(DB, opts = {}) {
       ${eventTabsHtml}
       ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback">${escapeHtml(feedback.msg)}</div>` : ''}
       <div class="kc-actions kc-actions--home">
+        ${isEventDest() ? `
+        <p class="kc-write-mode" id="kcWriteMode">
+          <span class="kc-write-mode-label">${activeWriteMode() === 'on-event' ? 'Counting onto' : 'Packing onto'}</span>
+          <strong>${activeWriteMode() === 'on-event' ? 'what’s onsite' : 'the pick list'}</strong>
+        </p>` : ''}
         <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
           placeholder="Search containers…" value="${escapeHtml(searchQuery)}"
           autocomplete="off" enterkeyhint="search">
@@ -1300,14 +1410,23 @@ export async function startKitCountApp(DB, opts = {}) {
           <button type="button" class="kc-quick-item" id="kcScanContainer">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-barcode"></i></span>
             <strong>Scan</strong>
+            <em>${isEventDest()
+    ? (activeWriteMode() === 'on-event' ? 'Onsite' : 'Pick list')
+    : 'Container'}</em>
           </button>
           <button type="button" class="kc-quick-item" id="kcCreateContainer">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-plus"></i></span>
             <strong>Create</strong>
+            <em>${isEventDest()
+    ? (activeWriteMode() === 'on-event' ? 'Onsite' : 'Pick list')
+    : 'Container'}</em>
           </button>
           <button type="button" class="kc-quick-item" id="kcLooseItems">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
             <strong>Loose</strong>
+            <em>${isEventDest()
+    ? (activeWriteMode() === 'on-event' ? 'Onsite' : 'Pick list')
+    : 'No box'}</em>
           </button>
         </div>
       </div>
@@ -1364,17 +1483,20 @@ export async function startKitCountApp(DB, opts = {}) {
         const next = btn.dataset.eventTab === 'on-event' ? 'on-event' : 'pick';
         if (homeEventTab === next) return;
         homeEventTab = next;
+        writeMode = next;
         searchQuery = '';
         paintHome();
       };
     });
     $('kcScanContainer').onclick = () => {
+      beginWriteSession();
       screen = 'scan-container';
       feedback = { msg: '', kind: '' };
       paint();
       startCameraUi();
     };
     $('kcCreateContainer').onclick = () => {
+      beginWriteSession();
       createDraft = { name: '', categoryId: '', barcode: '', qty: '1', asContainer: false, queueLabel: true };
       screen = 'create-container';
       paint();
@@ -1406,6 +1528,7 @@ export async function startKitCountApp(DB, opts = {}) {
     app.querySelectorAll('[data-open]').forEach((btn) => {
       btn.onclick = () => {
         const id = btn.dataset.open;
+        beginWriteSession();
         const fromEvent = eventItems.find((it) => it.product_id === id)?.product;
         const p = products.find((x) => x.id === id)
           || resolveEventProduct(id, fromEvent);
@@ -1424,7 +1547,15 @@ export async function startKitCountApp(DB, opts = {}) {
       })
       : [];
     const totalQty = stockLines.reduce((s, c) => s + (Number(c.qty) || 0), 0);
-    const qtyLabel = isEventDest() ? 'packed' : 'on hand';
+    const qtyLabel = isEventDest()
+      ? (isPhysicalWriteMode() ? 'onsite' : 'packed')
+      : 'on hand';
+    const modeBrand = isEventDest()
+      ? (isPhysicalWriteMode() ? 'What’s onsite · loose' : 'Pick list · loose')
+      : 'Warehouse · loose / bulky';
+    const completeLabel = isPhysicalWriteMode()
+      ? 'Complete onsite count'
+      : 'Complete loose count';
 
     function suggestHtml(query, list) {
       if (!query) {
@@ -1450,7 +1581,7 @@ export async function startKitCountApp(DB, opts = {}) {
       <header class="kc-top kc-top--row">
         <button type="button" class="kc-back" id="kcBack">Back</button>
         <div class="kc-top-grow">
-          <div class="kc-brand">${escapeHtml(isEventDest() ? 'Kit' : 'Warehouse')} · loose / bulky</div>
+          <div class="kc-brand">${escapeHtml(modeBrand)}</div>
           <h1 class="kc-title kc-title--sm">${escapeHtml(destTitle())}</h1>
           <p class="kc-meta">${stockLines.length} item${stockLines.length === 1 ? '' : 's'} · ${escapeHtml(String(totalQty))} ${qtyLabel}</p>
         </div>
@@ -1498,7 +1629,7 @@ export async function startKitCountApp(DB, opts = {}) {
 
       <div class="kc-complete-bar">
         <button type="button" class="kc-btn kc-btn--primary kc-btn--block" id="kcComplete">
-          Complete loose count
+          ${escapeHtml(completeLabel)}
         </button>
       </div>
 
@@ -1509,6 +1640,7 @@ export async function startKitCountApp(DB, opts = {}) {
 
     $('kcBack').onclick = () => {
       searchQuery = '';
+      writeMode = '';
       screen = 'home';
       paint();
     };
@@ -1522,6 +1654,7 @@ export async function startKitCountApp(DB, opts = {}) {
       };
       searchQuery = '';
       stockLines = [];
+      writeMode = '';
       screen = 'home';
       if (isEventDest()) {
         try {
@@ -1659,8 +1792,10 @@ export async function startKitCountApp(DB, opts = {}) {
     paintStatus();
     $('kcBack').onclick = () => {
       stopCamera();
+      writeMode = backScreen === 'home' ? '' : writeMode;
       screen = backScreen
         || (container ? 'count' : (hasStockDest() ? 'stock-count' : 'home'));
+      if (screen === 'home') writeMode = '';
       paint();
     };
     $('kcManualForm').onsubmit = (e) => {
@@ -1680,12 +1815,18 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   function paintCreateContainer() {
+    const modeLine = isEventDest()
+      ? (isPhysicalWriteMode()
+        ? 'Creates a container and counts it onsite'
+        : 'Creates a container and adds it to the pick list')
+      : 'Creates a container in the kit library';
     app.innerHTML = `
       <header class="kc-top kc-top--row">
         <button type="button" class="kc-back" id="kcBack">Back</button>
         <div>
-          <div class="kc-brand">Measured · Kit</div>
+          <div class="kc-brand">Measured · ${escapeHtml(writeModeLabel())}</div>
           <h1 class="kc-title kc-title--sm">New container</h1>
+          <p class="kc-meta">${escapeHtml(modeLine)}</p>
         </div>
       </header>
       <form class="kc-form" id="kcCreateForm">
@@ -1722,6 +1863,7 @@ export async function startKitCountApp(DB, opts = {}) {
     });
     $('kcBack').onclick = () => {
       showCategorySheet = false;
+      writeMode = '';
       screen = 'home';
       paint();
     };
@@ -2273,8 +2415,10 @@ export async function startKitCountApp(DB, opts = {}) {
     if (screen === 'stock-count') return paintStockCount();
     if (screen === 'scan-container') {
       paintScanShell({
-        title: 'Scan box / pallet',
-        hint: 'Point at a box, pallet box, or container label. Unknown codes can create a new one.',
+        title: isPhysicalWriteMode() ? 'Scan · what’s onsite' : 'Scan · pick list',
+        hint: isPhysicalWriteMode()
+          ? 'Counts physical kit onsite. Unknown codes can create a new container.'
+          : 'Packs onto this event’s pick list. Unknown codes can create a new container.',
         backLabel: 'Back',
         backScreen: 'home',
       });
@@ -2283,7 +2427,9 @@ export async function startKitCountApp(DB, opts = {}) {
     if (screen === 'scan-item') {
       paintScanShell({
         title: 'Scan item',
-        hint: `Adding into ${container?.name || 'loose / bulky'} (${destTitle()}). Unknown → create new.`,
+        hint: isPhysicalWriteMode()
+          ? `Adding into ${container?.name || 'loose / bulky'} (library contents). Container was counted onsite.`
+          : `Packing into ${container?.name || 'loose / bulky'} on the pick list (${destTitle()}). Unknown → create new.`,
         backLabel: 'Back',
         backScreen: container ? 'count' : 'stock-count',
       });
@@ -2310,6 +2456,7 @@ export async function startKitCountApp(DB, opts = {}) {
     }
 
     if (action === 'scan') {
+      beginWriteSession();
       screen = 'scan-container';
       feedback = { msg: '', kind: '' };
       paint();
@@ -2317,6 +2464,7 @@ export async function startKitCountApp(DB, opts = {}) {
       return true;
     }
     if (action === 'create') {
+      beginWriteSession();
       createDraft = {
         name: '', categoryId: '', barcode: '', qty: '1', asContainer: false, queueLabel: true,
       };

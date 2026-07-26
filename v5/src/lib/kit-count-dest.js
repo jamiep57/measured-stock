@@ -1,3 +1,5 @@
+import { validateEventStock } from './kit-stock.js';
+
 /**
  * Mobile kit count destinations — library BOM, event pack, warehouse receive.
  */
@@ -59,6 +61,62 @@ export function storeDestination(dest) {
 
 function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
+}
+
+function cloneBalances(balances) {
+  const map = new Map();
+  for (const [pid, row] of balances || []) {
+    map.set(pid, {
+      onHand: round1(row?.onHand) || 0,
+      owned: round1(row?.owned) || 0,
+      hired: round1(row?.hired) || 0,
+    });
+  }
+  return map;
+}
+
+function bumpBalanceOwned(balances, productId, delta) {
+  const map = cloneBalances(balances);
+  const row = map.get(productId) || { onHand: 0, owned: 0, hired: 0 };
+  const owned = round1(row.owned + delta);
+  const hired = round1(row.hired);
+  map.set(productId, {
+    owned,
+    hired,
+    onHand: round1(owned + hired),
+  });
+  return map;
+}
+
+/**
+ * Ensure an event_kit_items row exists without inventing Need/Packed.
+ * @returns {Promise<{ items: object[], item: object }>}
+ */
+export async function ensureEventKitRow(DB, eventId, items, product, { source = 'own' } = {}) {
+  if (!eventId || !product?.id) throw new Error('Missing event or product');
+  const list = (items || []).slice();
+  const existing = list.find((it) => it.product_id === product.id);
+  if (existing) {
+    existing.product = existing.product || product;
+    return { items: list, item: existing };
+  }
+  const [row] = await DB.insert('event_kit_items', {
+    event_id: eventId,
+    product_id: product.id,
+    qty_planned: 0,
+    qty_packed: 0,
+    source,
+  });
+  const full = {
+    ...(row || {}),
+    product_id: product.id,
+    qty_planned: 0,
+    qty_packed: 0,
+    source,
+    product,
+  };
+  list.push(full);
+  return { items: list, item: full };
 }
 
 /**
@@ -133,6 +191,116 @@ export async function setEventPackedQty(DB, eventId, items, product, qty) {
   }
   if (next <= 0) return { items, line: null };
   return applyEventPackDelta(DB, eventId, items, product, next);
+}
+
+/**
+ * Count physical kit onto / off an event via adjust / write_off movements.
+ * Does not change warehouse stock.
+ * @returns {Promise<{ items: object[], balances: Map, line: { product_id: string, qty: number, product: object } | null, onHand: number }>}
+ */
+export async function applyEventPhysicalDelta(
+  DB,
+  eventId,
+  items,
+  balances,
+  product,
+  delta,
+  { notes = 'Phone count' } = {},
+) {
+  if (!eventId || !product?.id) throw new Error('Missing event or product');
+  const d = round1(delta);
+  const current = round1(balances?.get(product.id)?.onHand) || 0;
+  if (!d) {
+    return { items, balances, line: { product_id: product.id, qty: current, product }, onHand: current };
+  }
+
+  const next = round1(current + d);
+  if (next < 0) throw new Error('On event can’t go below zero');
+
+  const movementType = d > 0 ? 'adjust' : 'write_off';
+  const qty = Math.abs(d);
+  if (movementType === 'write_off') {
+    const check = validateEventStock(balances || new Map(), movementType, [
+      { product_id: product.id, qty },
+    ]);
+    if (!check.ok) {
+      throw new Error(
+        `Not enough on event (have ${round1(check.available)}, need ${round1(check.needed)})`,
+      );
+    }
+  }
+
+  const ensured = await ensureEventKitRow(DB, eventId, items, product);
+  const list = ensured.items;
+
+  const [header] = await DB.insert('kit_movements', {
+    event_id: eventId,
+    movement_type: movementType,
+    moved_at: new Date().toISOString(),
+    notes: notes || null,
+  });
+  if (!header?.id) throw new Error('Could not save event count');
+
+  await DB.insert('kit_movement_lines', [{
+    movement_id: header.id,
+    product_id: product.id,
+    qty,
+    warehouse_id: null,
+    supplier_id: null,
+    hire_company: null,
+  }]);
+
+  const nextBalances = bumpBalanceOwned(balances, product.id, d);
+  return {
+    items: list,
+    balances: nextBalances,
+    line: { product_id: product.id, qty: next, product },
+    onHand: next,
+  };
+}
+
+/**
+ * Set absolute physical on-event qty via adjust / write_off.
+ */
+export async function setEventPhysicalQty(
+  DB,
+  eventId,
+  items,
+  balances,
+  product,
+  qty,
+  opts = {},
+) {
+  const current = round1(balances?.get(product.id)?.onHand) || 0;
+  const next = Math.max(0, round1(qty));
+  return applyEventPhysicalDelta(
+    DB,
+    eventId,
+    items,
+    balances,
+    product,
+    next - current,
+    opts,
+  );
+}
+
+/**
+ * Display lines for physical on-event counting (onHand > 0).
+ */
+export function eventPhysicalLines(balances, productsById = new Map()) {
+  const out = [];
+  for (const [productId, bal] of balances || []) {
+    const onHand = round1(bal?.onHand) || 0;
+    if (onHand <= 0) continue;
+    out.push({
+      product_id: productId,
+      qty: onHand,
+      product: productsById.get(productId) || null,
+    });
+  }
+  out.sort((a, b) =>
+    String(a.product?.name || '').localeCompare(String(b.product?.name || '')));
+  return out;
 }
 
 /**
