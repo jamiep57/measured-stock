@@ -56,6 +56,12 @@ html.kit-deep .kc-root .kc-complete-bar {
 .kc-top {
   padding: calc(14px + var(--safe-top)) 16px 8px;
 }
+.kc-top .page-hero {
+  margin-bottom: 0;
+}
+.kc-top .page-hero--compact {
+  margin-bottom: 0;
+}
 .kc-top--row {
   display: flex;
   align-items: flex-start;

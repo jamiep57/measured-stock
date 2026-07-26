@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-37-ios-bottom-gap';
+const VERSION = 'v5-38-kit-page-hero';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [

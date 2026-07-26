@@ -359,6 +359,10 @@ html.kit-tab .main {
   padding-right: 0;
   padding-bottom: var(--nav-h);
 }
+html.kit-tab .page-hero {
+  padding-left: 0;
+  padding-right: 0;
+}
 html.kit-deep .main {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }

@@ -8,7 +8,7 @@ export const DEST_WAREHOUSE = 'warehouse';
 
 export const DEST_LABELS = {
   [DEST_LIBRARY]: 'Library containers',
-  [DEST_EVENT]: 'Event pack',
+  [DEST_EVENT]: 'Kit',
   [DEST_WAREHOUSE]: 'Warehouse',
 };
 

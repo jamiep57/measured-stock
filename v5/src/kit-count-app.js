@@ -868,7 +868,7 @@ export async function startKitCountApp(DB, opts = {}) {
       <header class="kc-top kc-top--row">
         <button type="button" class="kc-back" id="kcBack">Back</button>
         <div class="kc-top-grow">
-          <div class="kc-brand">Event pack</div>
+          <div class="kc-brand">Kit</div>
           <h1 class="kc-title kc-title--sm">Choose event</h1>
         </div>
       </header>
@@ -1032,21 +1032,19 @@ export async function startKitCountApp(DB, opts = {}) {
     }
 
     const eventLocked = hasPreferredEvent() && isEventDest();
-    const homeHeading = eventLocked
-      ? 'Containers'
-      : destTitle();
+    const brandLabel = isEventDest() ? 'Kit' : 'Warehouse';
+    const homeSub = 'Scan, search, or create a box, then add what’s inside.';
 
     app.innerHTML = `
       <header class="kc-top${eventLocked ? '' : ' kc-top--row'}">
         ${eventLocked ? '' : `
         <button type="button" class="kc-back" id="kcChangeDest">Change</button>`}
-        <div class="kc-top-grow">
-          <div class="kc-brand">${escapeHtml(isEventDest() ? 'Event pack' : 'Warehouse')}</div>
-          ${eventLocked
-    ? `<p class="kc-meta kc-meta--lead">Scan, search, or create a box, then add what’s inside.</p>`
-    : `
-          <h1 class="kc-title kc-title--sm">${escapeHtml(homeHeading)}</h1>
-          <p class="kc-meta">Scan, search, or create a box, then add what’s inside.</p>`}
+        <div class="${eventLocked ? '' : 'kc-top-grow'}">
+          <div class="page-hero page-hero--compact">
+            <p class="page-kicker">Stock</p>
+            <h1 class="page-title">${escapeHtml(brandLabel)}</h1>
+            <p class="page-sub">${escapeHtml(homeSub)}</p>
+          </div>
         </div>
       </header>
       ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback" style="margin:0 16px">${escapeHtml(feedback.msg)}</div>` : ''}
@@ -1211,7 +1209,7 @@ export async function startKitCountApp(DB, opts = {}) {
       <header class="kc-top kc-top--row">
         <button type="button" class="kc-back" id="kcBack">Back</button>
         <div class="kc-top-grow">
-          <div class="kc-brand">${escapeHtml(isEventDest() ? 'Event pack' : 'Warehouse')} · loose / bulky</div>
+          <div class="kc-brand">${escapeHtml(isEventDest() ? 'Kit' : 'Warehouse')} · loose / bulky</div>
           <h1 class="kc-title kc-title--sm">${escapeHtml(destTitle())}</h1>
           <p class="kc-meta">${stockLines.length} item${stockLines.length === 1 ? '' : 's'} · ${escapeHtml(String(totalQty))} ${qtyLabel}</p>
         </div>
@@ -1626,7 +1624,7 @@ export async function startKitCountApp(DB, opts = {}) {
       <header class="kc-top kc-top--row">
         <button type="button" class="kc-back" id="kcBack">${escapeHtml(backLabel)}</button>
         <div class="kc-top-grow">
-          <div class="kc-brand">${parent ? 'Inside container' : escapeHtml(isEventDest() ? 'Event pack' : 'Warehouse')}</div>
+          <div class="kc-brand">${parent ? 'Inside container' : escapeHtml(isEventDest() ? 'Kit' : 'Warehouse')}</div>
           <h1 class="kc-title kc-title--sm">${escapeHtml(container.name || 'Container')}</h1>
           <p class="kc-meta">${contents.length} item${contents.length === 1 ? '' : 's'} · ${escapeHtml(String(totalQty))} units · ${escapeHtml(destTitle())}</p>
         </div>
