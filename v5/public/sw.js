@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-40-transfers-wastage-tabs';
+const VERSION = 'v5-41-mobile-transfers';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [

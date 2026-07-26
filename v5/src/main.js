@@ -12,7 +12,7 @@ import {
 import { initSheet } from './components/sheet.js';
 import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible, startNewCount } from './counts.js';
 import { initDeliveries, loadDeliveriesView, flushPendingDeliveries, startNewDelivery } from './deliveries.js';
-import { initTransfers, loadTransfersView } from './transfers.js';
+import { initTransfers, loadTransfersView, startNewTransfer } from './transfers.js';
 import { initWastage, loadWastageView } from './wastage.js';
 import { loadDbScript } from './lib/load-db.js';
 import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
@@ -106,6 +106,12 @@ async function runComposeAction(action) {
     switchTab('deliveries');
     await Promise.resolve();
     startNewDelivery();
+    return;
+  }
+  if (action === 'transfer') {
+    switchTab('transfers');
+    await Promise.resolve();
+    startNewTransfer();
     return;
   }
   if (action === 'kit') {
