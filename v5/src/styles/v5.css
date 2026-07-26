@@ -21,23 +21,17 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html {
+html, body {
   margin: 0;
   padding: 0;
+  width: 100%;
   height: 100%;
-  height: -webkit-fill-available;
+  overflow: hidden;
+  background: var(--background);
 }
 body {
-  margin: 0;
-  padding: 0;
-  min-height: 100%;
-  min-height: 100dvh;
-  min-height: -webkit-fill-available;
-  overflow: hidden;
   font-family: 'Outfit', system-ui, sans-serif;
   color: var(--foreground);
-  /* Match tab bar so any iOS home-indicator strip never shows as a black gap */
-  background: var(--card);
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -60,14 +54,12 @@ input:focus, select:focus, textarea:focus {
 }
 option { background: var(--card); color: var(--foreground); }
 
+/* Full-screen shell — never use height calc with safe-area (breaks on iOS) */
 .app {
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  /* Stop above the home indicator — safe strip is painted separately */
-  height: calc(100dvh - env(safe-area-inset-bottom, 0px));
-  height: calc(-webkit-fill-available - env(safe-area-inset-bottom, 0px));
-  max-height: calc(100dvh - env(safe-area-inset-bottom, 0px));
-  max-height: calc(-webkit-fill-available - env(safe-area-inset-bottom, 0px));
   overflow: hidden;
   background: var(--background);
 }
@@ -630,7 +622,6 @@ html.kit-deep .main {
   z-index: 40;
   width: 100%;
   margin: 0;
-  margin-top: auto;
   background: var(--card);
   border: none;
   border-top: 1px solid var(--border);
@@ -643,23 +634,19 @@ html.kit-deep .main {
   display: flex;
   gap: 0;
   width: 100%;
-  padding: 3px 2px 3px;
+  padding: 4px 2px 4px;
 }
-
-/* Home-indicator strip only — do not also pad the tab bar or it doubles the height */
-.safe-bottom-fill {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+/* Exact home-indicator height only — sibling of the tab row, not padding on it */
+.bottomnav-safe {
+  flex-shrink: 0;
+  width: 100%;
   height: constant(safe-area-inset-bottom);
   height: env(safe-area-inset-bottom, 0px);
   background: var(--card);
-  z-index: 39;
   pointer-events: none;
 }
-html.counting .safe-bottom-fill,
-html.kit-deep .safe-bottom-fill {
+html.counting .bottomnav-safe,
+html.kit-deep .bottomnav-safe {
   display: none;
 }
 
@@ -1144,9 +1131,6 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   }
 
   .main { max-width: 640px; margin-left: auto; margin-right: auto; width: 100%; }
-
-  body { background: var(--card); }
-  .app { background: var(--background); }
 
   input:focus, select:focus, textarea:focus {
     border-color: var(--primary);
