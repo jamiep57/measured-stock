@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   Measured — staff mobile PWA
-  Home · Counts · Kit · Deliveries · Transfers · Wastage
+  Deliveries · Transfers · Wastage · Counts · Kit
 -->
 <html lang="en">
 <head>
@@ -76,8 +76,7 @@
     </header>
 
     <main class="main" id="main">
-      <section class="view active" id="view-home"></section>
-      <section class="view" id="view-counts" hidden inert></section>
+      <section class="view active" id="view-counts"></section>
       <section class="view" id="view-kit" hidden inert></section>
       <section class="view" id="view-deliveries" hidden inert></section>
       <section class="view" id="view-transfers" hidden inert></section>
@@ -94,12 +93,11 @@
   <!-- Viewport-fixed (not inside .app) so iOS can't leave a gap under a nested absolute bar -->
   <nav class="bottomnav" id="bottomNav">
     <div class="bottomnav-inner">
-      <button class="navbtn active" type="button" data-tab="home"><i class="ph ph-house"></i><span>Home</span></button>
-      <button class="navbtn" type="button" data-tab="counts"><i class="ph ph-clipboard-text"></i><span>Counts</span></button>
-      <button class="navbtn" type="button" data-tab="kit"><i class="ph ph-package"></i><span>Kit</span></button>
       <button class="navbtn" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
       <button class="navbtn" type="button" data-tab="transfers"><i class="ph ph-arrows-left-right"></i><span>Transfers</span></button>
       <button class="navbtn" type="button" data-tab="wastage"><i class="ph ph-trash"></i><span>Wastage</span></button>
+      <button class="navbtn active" type="button" data-tab="counts"><i class="ph ph-clipboard-text"></i><span>Counts</span></button>
+      <button class="navbtn" type="button" data-tab="kit"><i class="ph ph-package"></i><span>Kit</span></button>
     </div>
   </nav>
 

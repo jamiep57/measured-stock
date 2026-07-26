@@ -799,15 +799,6 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   white-space: nowrap;
 }
 .navbtn.active { color: var(--accent); }
-.navbtn.active::before {
-  content: '';
-  position: absolute;
-  top: 1px; left: 50%;
-  width: 14px; height: 2px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  background: var(--accent);
-}
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

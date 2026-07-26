@@ -16,19 +16,19 @@ import { initTransfers, loadTransfersView, startNewTransfer } from './transfers.
 import { initWastage, loadWastageView } from './wastage.js';
 import { loadDbScript } from './lib/load-db.js';
 import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
-import { loadHomeView } from './home.js';
 import { startKitCountApp } from './kit-count-app.js';
 import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
 
-const TABS = new Set(['home', 'counts', 'kit', 'deliveries', 'transfers', 'wastage']);
+const TABS = new Set(['counts', 'kit', 'deliveries', 'transfers', 'wastage']);
+const DEFAULT_TAB = 'counts';
 
 const state = {
   eventId: '',
   event: null,
   suppliers: [],
   caseSizes: [],
-  tab: 'home',
+  tab: DEFAULT_TAB,
   /** @type {Array<{ id: string, name?: string, status?: string }>} */
   events: [],
   ready: false,
@@ -53,12 +53,12 @@ function getContext() {
 function tabFromUrl() {
   const params = new URLSearchParams(location.search);
   const tab = (params.get('tab') || '').trim().toLowerCase();
-  return TABS.has(tab) ? tab : 'home';
+  return TABS.has(tab) ? tab : DEFAULT_TAB;
 }
 
 function setUrlTab(tab) {
   const url = new URL(location.href);
-  if (tab && tab !== 'home') url.searchParams.set('tab', tab);
+  if (tab && tab !== DEFAULT_TAB) url.searchParams.set('tab', tab);
   else url.searchParams.delete('tab');
   if (tab !== 'kit') url.searchParams.delete('c');
   history.replaceState(null, '', url.pathname + url.search);
@@ -219,7 +219,7 @@ async function ensureKit() {
 }
 
 function switchTab(tab) {
-  if (!TABS.has(tab)) tab = 'home';
+  if (!TABS.has(tab)) tab = DEFAULT_TAB;
   state.tab = tab;
   setUrlTab(tab);
 
@@ -254,13 +254,7 @@ function reloadTab() {
   initTransfers(getContext());
   initWastage(getContext());
 
-  if (state.tab === 'home') {
-    loadHomeView({
-      eventId: state.eventId,
-      event: state.event,
-      onNavigate: switchTab,
-    });
-  } else if (state.tab === 'deliveries') {
+  if (state.tab === 'deliveries') {
     loadDeliveriesView();
   } else if (state.tab === 'counts') {
     loadCountsView();
