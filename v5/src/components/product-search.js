@@ -171,6 +171,10 @@ export function mountProductSearch(container, options = {}) {
   });
   if (dropdownFixed) {
     window.addEventListener('resize', syncListPosition, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', syncListPosition, { passive: true });
+      window.visualViewport.addEventListener('scroll', syncListPosition, { passive: true });
+    }
   }
 
   function selectProduct(id, product) {
@@ -329,6 +333,10 @@ export function mountProductSearch(container, options = {}) {
     }
     list.hidden = false;
     syncListPosition();
+    // Keep the field in view above results + keyboard on mobile.
+    requestAnimationFrame(() => {
+      input.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
   }
 
   input.addEventListener('focus', () => {

@@ -297,7 +297,7 @@ function mountProductComposer() {
     value: '',
     placeholder: xferSource ? 'Search product to add…' : 'Select a source first…',
     allowCreate: !!xferSource,
-    dropdownFixed: true,
+    dropdownFixed: false,
     onCreateProduct: createProductForTransfer,
     onSelect: ({ productId }) => {
       const lineId = addProductLine(productId);

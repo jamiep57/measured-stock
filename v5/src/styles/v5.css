@@ -663,8 +663,8 @@ html.kit-deep .main {
 /* Global compose FAB — radial speed dial, bottom right above nav */
 .compose-fab {
   --fab-size: 56px;
-  --fab-action: 50px;
-  --fab-radius: 84px;
+  --fab-action: 48px;
+  --fab-radius: 120px;
   position: fixed;
   left: auto;
   right: 16px;
@@ -925,18 +925,26 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 }
 .product-search-list,
 .supplier-search-list {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 300;
-  max-height: min(280px, 45vh);
+  /* In-flow under the input so typing stays visible (esp. with iOS keyboard) */
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
+  z-index: 5;
+  width: 100%;
+  margin-top: 6px;
+  max-height: min(240px, 38vh);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
   padding: 4px;
+}
+.product-search-list[hidden],
+.supplier-search-list[hidden] {
+  display: none !important;
 }
 .product-search-item {
   display: flex;

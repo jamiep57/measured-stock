@@ -302,7 +302,7 @@ function mountProductComposer() {
     caseSizes: ctx.caseSizes || [],
     value: '',
     placeholder: 'Search product to add…',
-    dropdownFixed: true,
+    dropdownFixed: false,
     onSelect: ({ productId }) => {
       if (!productId) return;
       const lineId = addProductLine(productId);
@@ -416,7 +416,7 @@ function openDeliveryForm(editId) {
     placeholder: 'Search suppliers…',
     emptyLabel: '— Optional —',
     inputClass: 'supplier-search-input',
-    dropdownFixed: true,
+    dropdownFixed: false,
   });
 
   $('dfCancel').onclick = closeSheet;
