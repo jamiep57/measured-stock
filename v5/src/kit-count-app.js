@@ -201,6 +201,8 @@ export async function startKitCountApp(DB, opts = {}) {
   let showCategorySheet = false;
   let newCategoryName = '';
   let searchQuery = '';
+  /** Event home tab: pick list vs physical on-event stock. */
+  let homeEventTab = 'pick';
   let errMsg = '';
   /** Focus the search field once after entering a container (not on every re-paint). */
   let focusSearchNext = false;
@@ -1235,7 +1237,9 @@ export async function startKitCountApp(DB, opts = {}) {
       && ((hasPreferredEvent() && isEventDest()) || (hasPreferredWarehouse() && isWarehouseDest()));
     const homeTitle = isWarehouseDest() ? 'Warehouse' : (isEventDest() ? 'Event kit' : 'Kit');
     const homeSub = isEventDest()
-      ? 'Pick list is what you need. On this event is what’s already here.'
+      ? (homeEventTab === 'pick'
+        ? 'What this event needs — pack against Need.'
+        : 'Physical kit already here from warehouse or hire.')
       : 'Scan, search, or create a box, then add what’s inside.';
     const heroHtml = `
       <div class="page-hero page-hero--compact">
@@ -1243,6 +1247,16 @@ export async function startKitCountApp(DB, opts = {}) {
         <h1 class="page-title">${escapeHtml(homeTitle)}</h1>
         <p class="page-sub">${escapeHtml(homeSub)}</p>
       </div>`;
+
+    const pickEmpty = '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span><span class="kc-empty-title">No pick list yet</span><span class="kc-empty-copy">Add Need qty in admin, or scan / create containers here to start packing.</span></p>';
+    const onEventEmpty = '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing on this event yet</span><span class="kc-empty-copy">Shows kit sent from warehouse or hired in. Packing updates Need progress on the pick list.</span></p>';
+    const eventListHtml = !isEventDest() ? '' : (homeEventTab === 'pick'
+      ? (pickList.length
+        ? `<div class="kc-table" id="kcHomeList">${pickList.map(pickListRowHtml).join('')}</div>`
+        : pickEmpty)
+      : (onEvent.length
+        ? `<div class="kc-table" id="kcHomeList">${onEvent.map(onEventRowHtml).join('')}</div>`
+        : onEventEmpty));
 
     app.innerHTML = `
       ${locationLocked
@@ -1260,27 +1274,15 @@ export async function startKitCountApp(DB, opts = {}) {
         <div class="kc-quick" role="group" aria-label="Quick actions">
           <button type="button" class="kc-quick-item" id="kcScanContainer">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-barcode"></i></span>
-            <span class="kc-quick-copy">
-              <strong>Scan</strong>
-              <em>Box, pallet or container</em>
-            </span>
-            <i class="ph ph-caret-right kc-quick-caret" aria-hidden="true"></i>
+            <strong>Scan</strong>
           </button>
           <button type="button" class="kc-quick-item" id="kcCreateContainer">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-plus"></i></span>
-            <span class="kc-quick-copy">
-              <strong>Create</strong>
-              <em>New box, pallet or container</em>
-            </span>
-            <i class="ph ph-caret-right kc-quick-caret" aria-hidden="true"></i>
+            <strong>Create</strong>
           </button>
           <button type="button" class="kc-quick-item" id="kcLooseItems">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
-            <span class="kc-quick-copy">
-              <strong>Loose / bulky</strong>
-              <em>Count items without a container</em>
-            </span>
-            <i class="ph ph-caret-right kc-quick-caret" aria-hidden="true"></i>
+            <strong>Loose</strong>
           </button>
         </div>
       </div>
@@ -1299,24 +1301,20 @@ export async function startKitCountApp(DB, opts = {}) {
         </section>` : ''}
 
       ${!q && isEventDest() ? `
-        <section class="kc-section kc-section--pick">
-          <div class="kc-section-head">
-            <h2 class="kc-section-title">Pick list</h2>
-            <p class="kc-section-copy">What this event needs</p>
-          </div>
-          ${pickList.length
-    ? `<div class="kc-table">${pickList.map(pickListRowHtml).join('')}</div>`
-    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span><span class="kc-empty-title">No pick list yet</span><span class="kc-empty-copy">Add Need qty in admin, or scan / create containers here to start packing.</span></p>'}
-        </section>
-
-        <section class="kc-section kc-section--on-event">
-          <div class="kc-section-head">
-            <h2 class="kc-section-title">On this event</h2>
-            <p class="kc-section-copy">Physical kit already here</p>
-          </div>
-          ${onEvent.length
-    ? `<div class="kc-table" id="kcHomeList">${onEvent.map(onEventRowHtml).join('')}</div>`
-    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing on this event yet</span><span class="kc-empty-copy">Shows kit sent from warehouse or hired in. Packing the pick list updates Need progress above.</span></p>'}
+        <div class="kc-event-tabs" role="tablist" aria-label="Event kit views">
+          <button type="button" class="kc-event-tab${homeEventTab === 'pick' ? ' is-active' : ''}"
+            role="tab" aria-selected="${homeEventTab === 'pick' ? 'true' : 'false'}"
+            id="kcTabPick" data-event-tab="pick">
+            Pick list${pickList.length ? ` <span class="kc-event-tab-count">${pickList.length}</span>` : ''}
+          </button>
+          <button type="button" class="kc-event-tab${homeEventTab === 'on-event' ? ' is-active' : ''}"
+            role="tab" aria-selected="${homeEventTab === 'on-event' ? 'true' : 'false'}"
+            id="kcTabOnEvent" data-event-tab="on-event">
+            On event${onEvent.length ? ` <span class="kc-event-tab-count">${onEvent.length}</span>` : ''}
+          </button>
+        </div>
+        <section class="kc-section kc-section--event-tab" aria-labelledby="${homeEventTab === 'pick' ? 'kcTabPick' : 'kcTabOnEvent'}">
+          ${eventListHtml}
         </section>` : ''}
 
       ${!q && recent.length ? `
@@ -1347,6 +1345,15 @@ export async function startKitCountApp(DB, opts = {}) {
       storeDestination(null);
       screen = 'dest';
       paint();
+    });
+    app.querySelectorAll('[data-event-tab]').forEach((btn) => {
+      btn.onclick = () => {
+        const next = btn.dataset.eventTab === 'on-event' ? 'on-event' : 'pick';
+        if (homeEventTab === next) return;
+        homeEventTab = next;
+        searchQuery = '';
+        paintHome();
+      };
     });
     $('kcScanContainer').onclick = () => {
       screen = 'scan-container';
