@@ -387,6 +387,15 @@ async function boot() {
   openEventGate();
 
   window.addEventListener('resize', syncChromeSizes);
+  window.addEventListener('orientationchange', () => {
+    window.setTimeout(syncChromeSizes, 50);
+    window.setTimeout(syncChromeSizes, 300);
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncChromeSizes);
+    window.visualViewport.addEventListener('scroll', syncChromeSizes);
+  }
+  syncChromeSizes();
 }
 
 if ('serviceWorker' in navigator) {

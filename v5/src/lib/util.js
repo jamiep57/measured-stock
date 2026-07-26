@@ -49,7 +49,27 @@ export function isBoneYard(bar) {
 
 export const V5_VERSION = '5.0.0';
 
+/**
+ * Pin the tab bar to the viewport bottom.
+ * Nested absolute bars inside a fixed .app leave a gap on some iOS PWAs.
+ * Always use bottom: 0 — visualViewport offsets can wrongly lift the bar in standalone.
+ */
+export function pinBottomNav() {
+  const nav = document.getElementById('bottomNav');
+  if (!nav) return;
+
+  nav.style.setProperty('position', 'fixed', 'important');
+  nav.style.setProperty('left', '0px', 'important');
+  nav.style.setProperty('right', '0px', 'important');
+  nav.style.setProperty('bottom', '0px', 'important');
+  nav.style.setProperty('transform', 'none', 'important');
+  nav.style.setProperty('width', '100%', 'important');
+  nav.style.setProperty('margin', '0', 'important');
+  nav.style.setProperty('border-radius', '0', 'important');
+}
+
 export function syncChromeSizes() {
+  pinBottomNav();
   const tb = document.querySelector('.topbar');
   const nav = document.querySelector('.bottomnav');
   const hideNav = document.documentElement.classList.contains('counting')
@@ -63,7 +83,6 @@ export function syncChromeSizes() {
   if (hideNav || !nav) {
     document.documentElement.style.setProperty('--nav-h', '0px');
   } else {
-    // Full bar height including safe-area padding (absolute-docked).
     const h = Math.ceil(nav.getBoundingClientRect().height || nav.offsetHeight || 0);
     document.documentElement.style.setProperty('--nav-h', `${h}px`);
   }
