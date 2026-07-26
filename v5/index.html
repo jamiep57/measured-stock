@@ -7,10 +7,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" media="(max-width: 767px)" content="#0f1115">
+  <meta name="theme-color" media="(max-width: 767px)" content="#1a1d24">
   <meta name="theme-color" media="(min-width: 768px)" content="#fafafa">
-  <meta name="theme-color" content="#0f1115">
+  <meta name="theme-color" content="#1a1d24">
   <title>Measured</title>
+  <!-- iOS standalone: viewport can lie short of the physical screen; measure before paint -->
+  <script>
+    (function () {
+      function standalone() {
+        return window.navigator.standalone === true
+          || window.matchMedia('(display-mode: standalone)').matches;
+      }
+      function syncGap() {
+        var gap = 0;
+        if (standalone()) {
+          gap = Math.max(0, Math.round(window.screen.height - window.innerHeight));
+        }
+        document.documentElement.style.setProperty('--ios-bottom-gap', gap + 'px');
+      }
+      syncGap();
+      window.addEventListener('resize', syncGap);
+      window.addEventListener('orientationchange', function () {
+        setTimeout(syncGap, 50);
+        setTimeout(syncGap, 300);
+      });
+    })();
+  </script>
   <link rel="apple-touch-icon" sizes="180x180" href="/v5/apple-touch-icon.png">
   <link rel="apple-touch-icon" href="/v5/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/v5/kit-count-icon-192.png">
