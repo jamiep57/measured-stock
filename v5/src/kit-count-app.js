@@ -1238,8 +1238,8 @@ export async function startKitCountApp(DB, opts = {}) {
     const homeTitle = isWarehouseDest() ? 'Warehouse' : (isEventDest() ? 'Event kit' : 'Kit');
     const homeSub = isEventDest()
       ? (homeEventTab === 'pick'
-        ? 'What this event needs — pack against Need.'
-        : 'Physical kit already here from warehouse or hire.')
+        ? 'What this event needs'
+        : 'Physical kit already here')
       : 'Scan, search, or create a box, then add what’s inside.';
     const heroHtml = `
       <div class="page-hero page-hero--compact">
@@ -1258,6 +1258,30 @@ export async function startKitCountApp(DB, opts = {}) {
         ? `<div class="kc-table" id="kcHomeList">${onEvent.map(onEventRowHtml).join('')}</div>`
         : onEventEmpty));
 
+    const eventTabsHtml = isEventDest() ? `
+      <div class="kc-event-tabs" role="tablist" aria-label="Event kit views">
+        <button type="button" class="kc-event-tab${homeEventTab === 'pick' ? ' is-active' : ''}"
+          role="tab" aria-selected="${homeEventTab === 'pick' ? 'true' : 'false'}"
+          id="kcTabPick" data-event-tab="pick">
+          <span class="kc-event-tab-icon" aria-hidden="true"><i class="ph-bold ph-clipboard-text"></i></span>
+          <span class="kc-event-tab-copy">
+            <strong>Needs</strong>
+            <em>What this event needs</em>
+          </span>
+          ${pickList.length ? `<span class="kc-event-tab-count">${pickList.length}</span>` : ''}
+        </button>
+        <button type="button" class="kc-event-tab${homeEventTab === 'on-event' ? ' is-active' : ''}"
+          role="tab" aria-selected="${homeEventTab === 'on-event' ? 'true' : 'false'}"
+          id="kcTabOnEvent" data-event-tab="on-event">
+          <span class="kc-event-tab-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
+          <span class="kc-event-tab-copy">
+            <strong>Here</strong>
+            <em>Physical kit here</em>
+          </span>
+          ${onEvent.length ? `<span class="kc-event-tab-count">${onEvent.length}</span>` : ''}
+        </button>
+      </div>` : '';
+
     app.innerHTML = `
       ${locationLocked
     ? heroHtml
@@ -1266,6 +1290,7 @@ export async function startKitCountApp(DB, opts = {}) {
         <button type="button" class="kc-back" id="kcChangeDest">Change</button>
         <div class="kc-top-grow">${heroHtml}</div>
       </header>`}
+      ${eventTabsHtml}
       ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback">${escapeHtml(feedback.msg)}</div>` : ''}
       <div class="kc-actions kc-actions--home">
         <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
@@ -1301,18 +1326,6 @@ export async function startKitCountApp(DB, opts = {}) {
         </section>` : ''}
 
       ${!q && isEventDest() ? `
-        <div class="kc-event-tabs" role="tablist" aria-label="Event kit views">
-          <button type="button" class="kc-event-tab${homeEventTab === 'pick' ? ' is-active' : ''}"
-            role="tab" aria-selected="${homeEventTab === 'pick' ? 'true' : 'false'}"
-            id="kcTabPick" data-event-tab="pick">
-            Pick list${pickList.length ? ` <span class="kc-event-tab-count">${pickList.length}</span>` : ''}
-          </button>
-          <button type="button" class="kc-event-tab${homeEventTab === 'on-event' ? ' is-active' : ''}"
-            role="tab" aria-selected="${homeEventTab === 'on-event' ? 'true' : 'false'}"
-            id="kcTabOnEvent" data-event-tab="on-event">
-            On event${onEvent.length ? ` <span class="kc-event-tab-count">${onEvent.length}</span>` : ''}
-          </button>
-        </div>
         <section class="kc-section kc-section--event-tab" aria-labelledby="${homeEventTab === 'pick' ? 'kcTabPick' : 'kcTabOnEvent'}">
           ${eventListHtml}
         </section>` : ''}
