@@ -346,17 +346,17 @@ html.kit-deep .bottomnav { display: none; }
 .main {
   flex: 1;
   min-height: 0;
-  padding: calc(var(--header-h) + 12px) var(--gutter) calc(12px + var(--save-bar-h, 0px));
+  padding: calc(var(--header-h) + 12px) var(--gutter) calc(var(--nav-h) + 12px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 html.kit-tab .main {
   padding-left: 0;
   padding-right: 0;
-  padding-bottom: 0;
+  padding-bottom: var(--nav-h);
 }
 html.kit-deep .main {
-  padding-bottom: var(--safe-bottom);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .view {
   display: none !important;
@@ -617,8 +617,10 @@ html.kit-deep .main {
 }
 
 .bottomnav {
-  position: relative;
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 40;
   width: 100%;
   margin: 0;
@@ -626,7 +628,10 @@ html.kit-deep .main {
   border: none;
   border-top: 1px solid var(--border);
   border-radius: 0;
+  /* One safe-area pad on the bar itself — background runs to the screen edge */
   padding: 0;
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   box-shadow: 0 -6px 20px rgb(0 0 0 / 0.3);
   transform: none;
 }
@@ -634,20 +639,8 @@ html.kit-deep .main {
   display: flex;
   gap: 0;
   width: 100%;
-  padding: 4px 2px 4px;
-}
-/* Exact home-indicator height only — sibling of the tab row, not padding on it */
-.bottomnav-safe {
-  flex-shrink: 0;
-  width: 100%;
-  height: constant(safe-area-inset-bottom);
-  height: env(safe-area-inset-bottom, 0px);
-  background: var(--card);
-  pointer-events: none;
-}
-html.counting .bottomnav-safe,
-html.kit-deep .bottomnav-safe {
-  display: none;
+  /* Keep tabs tight; safe-area padding below handles the home indicator */
+  padding: 6px 2px 4px;
 }
 
 /* Global compose FAB — bottom right, above nav */
@@ -655,7 +648,7 @@ html.kit-deep .bottomnav-safe {
   position: fixed;
   left: auto;
   right: 16px;
-  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 10px);
+  bottom: calc(var(--nav-h) + 10px);
   z-index: 45;
   display: flex;
   flex-direction: column;
@@ -1082,7 +1075,7 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 
 .count-save-bar {
   position: fixed; left: var(--gutter); right: var(--gutter);
-  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 10px);
+  bottom: calc(var(--nav-h) + 10px);
   z-index: 35; padding: 10px var(--gutter);
   background: var(--card); border: 1px solid var(--border);
   border-radius: 16px;
@@ -1090,7 +1083,7 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 }
 
 .toast {
-  position: fixed; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + var(--save-bar-h, 0px) + 12px); left: var(--gutter); right: var(--gutter);
+  position: fixed; bottom: calc(var(--nav-h) + var(--save-bar-h, 0px) + 12px); left: var(--gutter); right: var(--gutter);
   z-index: 200; padding: 12px 16px; border-radius: var(--radius);
   background: var(--secondary); color: var(--foreground); font-weight: 600; font-size: 14px;
   border: 1px solid var(--border);

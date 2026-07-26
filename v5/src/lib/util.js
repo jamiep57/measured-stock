@@ -63,9 +63,8 @@ export function syncChromeSizes() {
   if (hideNav || !nav) {
     document.documentElement.style.setProperty('--nav-h', '0px');
   } else {
-    // Tab row only (safe-area strip is a sibling).
-    const row = nav.querySelector('.bottomnav-inner') || nav;
-    const h = Math.ceil(row.getBoundingClientRect().height || row.offsetHeight || 0);
+    // Full bar height including safe-area padding (absolute-docked).
+    const h = Math.ceil(nav.getBoundingClientRect().height || nav.offsetHeight || 0);
     document.documentElement.style.setProperty('--nav-h', `${h}px`);
   }
 }
