@@ -55,10 +55,13 @@ html.kit-deep .kc-root .kc-complete-bar {
   padding: 0 0 8px;
 }
 .kc-top .page-hero {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .kc-top .page-hero--compact {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+.kc-root > .page-hero--compact {
+  margin-bottom: 12px;
 }
 /* Match Counts / Deliveries hero type inside the Kit tab */
 .kc-root .page-kicker {
@@ -140,13 +143,14 @@ html.kit-deep .kc-root .kc-complete-bar {
   padding: 8px 0 8px;
 }
 .kc-actions--home {
-  gap: 12px;
+  gap: 10px;
   padding-top: 0;
+  margin-bottom: 4px;
 }
 .kc-quick {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 .kc-quick--two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -214,14 +218,14 @@ html.kit-deep .kc-root .kc-complete-bar {
 }
 .kc-quick-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 76px;
-  padding: 12px 8px;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--card);
   color: var(--fg);
   font: inherit;
@@ -232,15 +236,20 @@ html.kit-deep .kc-root .kc-complete-bar {
 .kc-quick-item:active { background: var(--card-2); }
 .kc-quick-icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--card-2);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent, #e8c47c) 16%, transparent);
   color: var(--accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 15px;
+}
+.kc-quick-label {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.2;
 }
 .kc-quick-item strong {
   font-size: 13px;
@@ -256,20 +265,21 @@ html.kit-deep .kc-root .kc-complete-bar {
 }
 .kc-write-mode {
   margin: 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--accent, #e8c47c) 10%, var(--card));
-  color: var(--fg);
-  font-size: 13px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
   line-height: 1.35;
+  font-weight: 500;
 }
 .kc-write-mode-label {
   color: var(--muted);
   font-weight: 500;
 }
 .kc-write-mode strong {
-  font-weight: 700;
+  color: var(--fg);
+  font-weight: 650;
 }
 .kc-quick-copy {
   flex: 1;
@@ -357,8 +367,15 @@ html.kit-deep .kc-root .kc-complete-bar {
   flex-shrink: 0;
 }
 .kc-btn:disabled { opacity: 0.55; }
+.kc-actions--home .kc-search--block {
+  height: 44px;
+  font-size: 15px;
+}
 .kc-section {
-  padding: 16px 0 8px;
+  padding: 10px 0 8px;
+}
+.kc-section--event-tab {
+  padding-top: 6px;
 }
 .kc-section--grow { flex: 1; }
 .kc-section-head {
@@ -382,79 +399,63 @@ html.kit-deep .kc-root .kc-complete-bar {
 .kc-event-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 0 0 14px;
+  gap: 4px;
+  margin: 0;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-2, var(--secondary, #22262f));
 }
 .kc-event-tab {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--card);
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
   color: var(--muted);
   font: inherit;
-  text-align: left;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 .kc-event-tab.is-active {
   color: var(--fg);
-  border-color: color-mix(in srgb, var(--accent, #e8c47c) 55%, var(--border));
-  background: color-mix(in srgb, var(--accent, #e8c47c) 12%, var(--card));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #e8c47c) 28%, transparent);
+  background: var(--card);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.22);
 }
 .kc-event-tab-icon {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--card-2, var(--secondary, #22262f));
-  color: var(--accent, #e8c47c);
-  font-size: 17px;
-}
-.kc-event-tab.is-active .kc-event-tab-icon {
-  background: color-mix(in srgb, var(--accent, #e8c47c) 22%, transparent);
+  display: none;
 }
 .kc-event-tab-copy {
-  flex: 1;
+  display: inline;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 .kc-event-tab-copy strong {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 650;
   line-height: 1.2;
   color: inherit;
 }
 .kc-event-tab-copy em {
-  font-style: normal;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.3;
-  color: var(--muted);
-}
-.kc-event-tab.is-active .kc-event-tab-copy em {
-  color: color-mix(in srgb, var(--fg) 72%, var(--muted));
+  display: none;
 }
 .kc-event-tab-count {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.5em;
-  padding: 2px 7px;
+  min-width: 1.35em;
+  padding: 1px 6px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--muted) 18%, transparent);
   color: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.3;
 }
@@ -462,7 +463,7 @@ html.kit-deep .kc-root .kc-complete-bar {
   background: color-mix(in srgb, var(--accent, #e8c47c) 28%, transparent);
 }
 .kc-section--event-tab {
-  padding-top: 4px;
+  padding-top: 8px;
 }
 .kc-table-row--search {
   cursor: default;

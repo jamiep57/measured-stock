@@ -1411,20 +1411,12 @@ export async function startKitCountApp(DB, opts = {}) {
         <button type="button" class="kc-event-tab${homeEventTab === 'pick' ? ' is-active' : ''}"
           role="tab" aria-selected="${homeEventTab === 'pick' ? 'true' : 'false'}"
           id="kcTabPick" data-event-tab="pick">
-          <span class="kc-event-tab-icon" aria-hidden="true"><i class="ph-bold ph-clipboard-text"></i></span>
-          <span class="kc-event-tab-copy">
-            <strong>Pick List</strong>
-          </span>
-          ${pickList.length ? `<span class="kc-event-tab-count">${pickList.length}</span>` : ''}
+          Pick List${pickList.length ? ` <span class="kc-event-tab-count">${pickList.length}</span>` : ''}
         </button>
         <button type="button" class="kc-event-tab${homeEventTab === 'on-event' ? ' is-active' : ''}"
           role="tab" aria-selected="${homeEventTab === 'on-event' ? 'true' : 'false'}"
           id="kcTabOnEvent" data-event-tab="on-event">
-          <span class="kc-event-tab-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
-          <span class="kc-event-tab-copy">
-            <strong>What’s onsite</strong>
-          </span>
-          ${onEvent.length ? `<span class="kc-event-tab-count">${onEvent.length}</span>` : ''}
+          What’s onsite${onEvent.length ? ` <span class="kc-event-tab-count">${onEvent.length}</span>` : ''}
         </button>
       </div>` : '';
 
@@ -1441,24 +1433,19 @@ export async function startKitCountApp(DB, opts = {}) {
         <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
           placeholder="Search..." value="${escapeHtml(searchQuery)}"
           autocomplete="off" enterkeyhint="search">
+        ${eventTabsHtml}
         ${isEventDest() ? `
         <p class="kc-write-mode" id="kcWriteMode">
-          <span class="kc-write-mode-label">${activeWriteMode() === 'on-event' ? 'Counting onto' : 'Packing onto'}</span>
-          <strong>${activeWriteMode() === 'on-event' ? 'what’s onsite' : 'the pick list'}</strong>
+          ${activeWriteMode() === 'on-event' ? 'Scan &amp; Add count onto <strong>what’s onsite</strong>' : 'Scan &amp; Add pack onto <strong>the pick list</strong>'}
         </p>` : ''}
-        ${eventTabsHtml}
         <div class="kc-quick kc-quick--two" role="group" aria-label="Quick actions">
           <button type="button" class="kc-quick-item" id="kcScanContainer">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-barcode"></i></span>
-            <strong>Scan</strong>
-            <em>${isEventDest()
-    ? (activeWriteMode() === 'on-event' ? 'Onsite' : 'Pick list')
-    : 'Container'}</em>
+            <span class="kc-quick-label">Scan</span>
           </button>
           <button type="button" class="kc-quick-item" id="kcAddWizard">
             <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-plus"></i></span>
-            <strong>Add</strong>
-            <em>Guided</em>
+            <span class="kc-quick-label">Add</span>
           </button>
         </div>
       </div>
