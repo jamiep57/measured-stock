@@ -67,10 +67,10 @@ export async function loadCountsView() {
   if (!ctx.eventId) {
     exitCountMode();
     el.innerHTML = `
-      <div class="empty empty--card">
-        <i class="ph ph-calendar-blank"></i>
+      <div class="empty empty--panel">
+        <span class="empty-icon" aria-hidden="true"><i class="ph ph-calendar-blank"></i></span>
         <p class="empty-title">Choose an event</p>
-        <p>Select an event in the top bar to start a stock count.</p>
+        <p class="empty-copy">Select an event in the top bar to start a stock count.</p>
       </div>`;
     return;
   }
@@ -78,7 +78,12 @@ export async function loadCountsView() {
   try {
     counts = await getDB().stockCounts.forEvent(ctx.eventId);
   } catch (err) {
-    el.innerHTML = `<div class="empty empty--card"><p>${escapeHtml(err.message)}</p></div>`;
+    el.innerHTML = `
+      <div class="empty empty--panel">
+        <span class="empty-icon" aria-hidden="true"><i class="ph ph-warning-circle"></i></span>
+        <p class="empty-title">Couldn’t load counts</p>
+        <p class="empty-copy">${escapeHtml(err.message)}</p>
+      </div>`;
     return;
   }
 
@@ -93,12 +98,8 @@ export async function loadCountsView() {
       <h1 class="page-title">Counts</h1>
       <p class="page-sub">Open a session and work through bar stock.</p>
     </div>
-    <button class="btn btn-primary btn-block btn-lg btn-cta" type="button" id="newCountBtn">
-      <i class="ph-bold ph-plus"></i> New count session
-    </button>
     <div id="countList" class="session-list"></div>
   `;
-  $('newCountBtn').onclick = openNewCountSheet;
   renderCountList();
 }
 
@@ -107,9 +108,10 @@ function renderCountList() {
   if (!list) return;
   if (!counts.length) {
     list.innerHTML = `
-      <div class="empty empty--inline">
+      <div class="empty empty--panel">
+        <span class="empty-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span>
         <p class="empty-title">No sessions yet</p>
-        <p>Start a new count session for this event.</p>
+        <p class="empty-copy">Tap + to start a new count session for this event.</p>
       </div>`;
     return;
   }
@@ -156,11 +158,23 @@ function openNewCountSheet() {
         </select>
       </div>`,
     footHtml: `
-      <button class="btn btn-block" type="button" id="ncCancel">Cancel</button>
-      <button class="btn btn-primary btn-block" type="button" id="ncSave">Create & count</button>`,
+      <div class="sheet-foot-row">
+        <button class="btn" type="button" id="ncCancel">Cancel</button>
+        <button class="btn btn-primary" type="button" id="ncSave">Create & count</button>
+      </div>`,
   });
   $('ncCancel').onclick = closeSheet;
   $('ncSave').onclick = createCountSession;
+}
+
+/** Open the new count session sheet (requires an event). */
+export function startNewCount() {
+  if (!ctx?.eventId) {
+    toast('Choose an event first', true);
+    return false;
+  }
+  openNewCountSheet();
+  return true;
 }
 
 async function createCountSession() {
@@ -333,8 +347,16 @@ function renderCountItems() {
 
   $('cntItemList').innerHTML = html || (
     barId
-      ? `<div class="empty"><p>No products assigned to ${escapeHtml(activeBar?.name || 'this bar')} in Distribution.</p></div>`
-      : '<div class="empty"><p>Select a bar to start counting.</p></div>'
+      ? `<div class="empty empty--panel">
+          <span class="empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span>
+          <p class="empty-title">Nothing on this bar</p>
+          <p class="empty-copy">No products assigned to ${escapeHtml(activeBar?.name || 'this bar')} in Distribution.</p>
+        </div>`
+      : `<div class="empty empty--panel">
+          <span class="empty-icon" aria-hidden="true"><i class="ph ph-map-pin"></i></span>
+          <p class="empty-title">Select a bar</p>
+          <p class="empty-copy">Choose a bar above to start counting.</p>
+        </div>`
   );
 
   $('cntItemList').querySelectorAll('.cnt-cases, .cnt-singles').forEach((input) => {

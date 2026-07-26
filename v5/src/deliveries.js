@@ -25,10 +25,10 @@ export async function loadDeliveriesView() {
   const el = $('view-deliveries');
   if (!ctx.eventId) {
     el.innerHTML = `
-      <div class="empty empty--card">
-        <i class="ph ph-calendar-blank"></i>
+      <div class="empty empty--panel">
+        <span class="empty-icon" aria-hidden="true"><i class="ph ph-calendar-blank"></i></span>
         <p class="empty-title">Choose an event</p>
-        <p>Select an event in the top bar to log deliveries.</p>
+        <p class="empty-copy">Select an event in the top bar to log deliveries.</p>
       </div>`;
     return;
   }
@@ -36,7 +36,12 @@ export async function loadDeliveriesView() {
   try {
     deliveries = await getDB().deliveries.forEvent(ctx.eventId);
   } catch (err) {
-    el.innerHTML = `<div class="empty empty--card"><p>${escapeHtml(err.message)}</p></div>`;
+    el.innerHTML = `
+      <div class="empty empty--panel">
+        <span class="empty-icon" aria-hidden="true"><i class="ph ph-warning-circle"></i></span>
+        <p class="empty-title">Couldn’t load deliveries</p>
+        <p class="empty-copy">${escapeHtml(err.message)}</p>
+      </div>`;
     return;
   }
 
@@ -46,12 +51,8 @@ export async function loadDeliveriesView() {
       <h1 class="page-title">Deliveries</h1>
       <p class="page-sub">Log what arrived for this event.</p>
     </div>
-    <button class="btn btn-primary btn-block btn-lg btn-cta" type="button" id="newDelBtn">
-      <i class="ph-bold ph-plus"></i> Log delivery
-    </button>
     <div id="delList" class="session-list"></div>
   `;
-  $('newDelBtn').onclick = () => openDeliveryForm();
   renderDeliveryList();
 }
 
@@ -60,9 +61,10 @@ function renderDeliveryList() {
   if (!list) return;
   if (!deliveries.length) {
     list.innerHTML = `
-      <div class="empty empty--inline">
+      <div class="empty empty--panel">
+        <span class="empty-icon" aria-hidden="true"><i class="ph ph-shipping-container"></i></span>
         <p class="empty-title">No deliveries yet</p>
-        <p>Log the first delivery for this event.</p>
+        <p class="empty-copy">Tap + to log the first delivery for this event.</p>
       </div>`;
     return;
   }
@@ -314,6 +316,16 @@ function mountProductComposer() {
       });
     },
   });
+}
+
+/** Open a blank delivery form (requires an event). */
+export function startNewDelivery() {
+  if (!ctx?.eventId) {
+    toast('Choose an event first', true);
+    return false;
+  }
+  openDeliveryForm();
+  return true;
 }
 
 function openDeliveryForm(editId) {

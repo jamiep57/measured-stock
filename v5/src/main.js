@@ -10,8 +10,8 @@ import {
   getQueueStats,
 } from './sync-queue.js';
 import { initSheet } from './components/sheet.js';
-import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible } from './counts.js';
-import { initDeliveries, loadDeliveriesView, flushPendingDeliveries } from './deliveries.js';
+import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible, startNewCount } from './counts.js';
+import { initDeliveries, loadDeliveriesView, flushPendingDeliveries, startNewDelivery } from './deliveries.js';
 import { loadDbScript } from './lib/load-db.js';
 import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
 import { loadHomeView } from './home.js';
@@ -32,7 +32,10 @@ const state = {
   ready: false,
 };
 
-/** @type {null | { setPreferredEvent?: (id: string, name?: string) => void }} */
+/** @type {null | {
+ *   setPreferredEvent?: (id: string, name?: string) => void,
+ *   runHomeAction?: (action: string) => Promise<boolean> | boolean,
+ * }} */
 let kitApi = null;
 let kitStarting = false;
 
@@ -61,7 +64,76 @@ function setUrlTab(tab) {
 
 function setKitDeep(deep) {
   document.documentElement.classList.toggle('kit-deep', !!deep);
+  syncComposeFab();
   syncChromeSizes();
+}
+
+function setComposeFabOpen(open) {
+  const root = $('composeFab');
+  const menu = $('composeFabMenu');
+  const backdrop = $('composeFabBackdrop');
+  const btn = $('composeFabBtn');
+  if (!root || !menu || !btn) return;
+  root.classList.toggle('is-open', open);
+  menu.hidden = !open;
+  if (backdrop) backdrop.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function syncComposeFab() {
+  const fab = $('composeFab');
+  if (!fab) return;
+  const show = state.ready
+    && !document.documentElement.classList.contains('counting')
+    && !document.documentElement.classList.contains('kit-deep');
+  fab.hidden = !show;
+  if (!show) setComposeFabOpen(false);
+}
+
+async function runComposeAction(action) {
+  setComposeFabOpen(false);
+
+  if (action === 'count') {
+    switchTab('counts');
+    // Wait a tick so the counts view has rendered / context is fresh.
+    await Promise.resolve();
+    startNewCount();
+    return;
+  }
+  if (action === 'delivery') {
+    switchTab('deliveries');
+    await Promise.resolve();
+    startNewDelivery();
+    return;
+  }
+  if (action === 'kit') {
+    switchTab('kit');
+    await ensureKit();
+    return;
+  }
+}
+
+function initComposeFab() {
+  const btn = $('composeFabBtn');
+  const backdrop = $('composeFabBackdrop');
+  if (!btn) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const root = $('composeFab');
+    setComposeFabOpen(!root?.classList.contains('is-open'));
+  });
+  backdrop?.addEventListener('click', () => setComposeFabOpen(false));
+
+  document.querySelectorAll('[data-compose]').forEach((item) => {
+    item.addEventListener('click', () => {
+      runComposeAction(item.dataset.compose);
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setComposeFabOpen(false);
+  });
 }
 
 async function updateSyncBadge() {
@@ -88,12 +160,6 @@ function updateEventPickerLabel() {
   const label = $('eventPickerLabel');
   const wrap = $('eventSelectWrap');
   if (!label || !wrap) return;
-
-  if (state.tab === 'kit') {
-    wrap.classList.add('is-static');
-    label.textContent = 'Kit';
-    return;
-  }
 
   wrap.classList.remove('is-static');
   label.textContent = state.event?.name || 'Select event';
@@ -170,6 +236,7 @@ function switchTab(tab) {
   onCountsTabVisible(tab === 'counts');
   updateEventPickerLabel();
   reloadTab();
+  syncComposeFab();
   syncChromeSizes();
 }
 
@@ -209,6 +276,7 @@ function openEventGate() {
         state.ready = true;
         document.documentElement.classList.add('app-ready');
         switchTab(tabFromUrl());
+        syncComposeFab();
         // Measure after the float-in starts so content clears the bar.
         requestAnimationFrame(() => {
           syncChromeSizes();
@@ -217,6 +285,7 @@ function openEventGate() {
       } else {
         updateEventPickerLabel();
         reloadTab();
+        syncComposeFab();
         syncChromeSizes();
       }
     },
@@ -261,6 +330,7 @@ async function boot() {
 
   initSheet();
   initSpreadsheetCells(document.body);
+  initComposeFab();
 
   initCounts(getContext());
   initDeliveries(getContext());
@@ -285,7 +355,6 @@ async function boot() {
     });
   });
   $('eventPickerBtn')?.addEventListener('click', () => {
-    if (state.tab === 'kit') return;
     openEventGate();
   });
 

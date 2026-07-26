@@ -72,6 +72,36 @@
       <button class="navbtn" type="button" data-tab="kit"><i class="ph ph-package"></i><span>Kit</span></button>
       <button class="navbtn" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
     </nav>
+
+    <div class="compose-fab" id="composeFab" hidden>
+      <div class="compose-fab-backdrop" id="composeFabBackdrop" hidden></div>
+      <div class="compose-fab-menu" id="composeFabMenu" hidden role="menu" aria-label="Add">
+        <button type="button" class="compose-fab-item" role="menuitem" data-compose="count">
+          <span class="compose-fab-item-icon"><i class="ph-bold ph-clipboard-text"></i></span>
+          <span class="compose-fab-item-copy">
+            <strong>New count</strong>
+            <em>Start a stock count session</em>
+          </span>
+        </button>
+        <button type="button" class="compose-fab-item" role="menuitem" data-compose="delivery">
+          <span class="compose-fab-item-icon"><i class="ph-bold ph-shipping-container"></i></span>
+          <span class="compose-fab-item-copy">
+            <strong>Log delivery</strong>
+            <em>Record a supplier delivery</em>
+          </span>
+        </button>
+        <button type="button" class="compose-fab-item" role="menuitem" data-compose="kit">
+          <span class="compose-fab-item-icon"><i class="ph-bold ph-package"></i></span>
+          <span class="compose-fab-item-copy">
+            <strong>Count kit</strong>
+            <em>Scan, create, or count loose items</em>
+          </span>
+        </button>
+      </div>
+      <button type="button" class="compose-fab-btn" id="composeFabBtn" aria-label="Add" aria-haspopup="menu" aria-expanded="false">
+        <i class="ph-bold ph-plus"></i>
+      </button>
+    </div>
   </div>
 
   <div class="sheet" id="sheet" hidden>

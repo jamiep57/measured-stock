@@ -233,6 +233,30 @@ export async function startKitCountApp(DB, opts = {}) {
     return isEventDest() || isWarehouseDest();
   }
 
+  function hasPreferredEvent() {
+    return !!preferredEventId;
+  }
+
+  function preferredEventDestination() {
+    if (!preferredEventId) return null;
+    const ev = events.find((e) => e.id === preferredEventId);
+    return {
+      type: DEST_EVENT,
+      eventId: preferredEventId,
+      eventName: preferredEventName || ev?.name || 'Event',
+    };
+  }
+
+  /** Bind Kit to the main-app event and open container home. */
+  async function enterPreferredEventHome() {
+    const next = preferredEventDestination();
+    if (!next) return false;
+    destination = next;
+    storeDestination(destination);
+    await enterContainerHome();
+    return true;
+  }
+
   function destTitle() {
     if (isEventDest()) return destination.eventName || 'Event';
     if (isWarehouseDest()) return destination.warehouseName || 'Warehouse';
@@ -794,6 +818,16 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   function paintDest() {
+    // Main-app event is already selected — skip warehouse / event pick.
+    if (hasPreferredEvent()) {
+      enterPreferredEventHome().catch((err) => {
+        feedback = { msg: err.message || 'Could not open event', kind: 'err' };
+        preferredEventId = '';
+        paintDest();
+      });
+      return;
+    }
+
     app.innerHTML = `
       <header class="kc-top">
         <div class="kc-brand">Kit</div>
@@ -948,39 +982,115 @@ export async function startKitCountApp(DB, opts = {}) {
       ? containerProducts.slice(0, 12)
       : [];
 
-    function containerRowHtml(p, meta) {
+    function containerInitials(name) {
+      const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
+    }
+
+    function containerAvatarTone(seed) {
+      const tones = ['teal', 'green', 'amber', 'rose', 'violet', 'sky', 'orange'];
+      const s = String(seed || '');
+      let h = 0;
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      return tones[h % tones.length];
+    }
+
+    function containerRowHtml(p, { category = '', subtitle = '', trail = '' } = {}) {
+      const name = p.name || 'Container';
+      const cat = category || p.category?.name || '';
       return `
-        <button type="button" class="kc-row" data-open="${escapeHtml(p.id)}">
-          <span class="kc-row-name">${escapeHtml(p.name || 'Container')}</span>
-          <span class="kc-row-meta">${escapeHtml(meta || p.category?.name || 'Container')}</span>
+        <button type="button" class="kc-table-row" data-open="${escapeHtml(p.id)}">
+          <span class="kc-table-avatar" data-tone="${escapeHtml(containerAvatarTone(p.id || name))}" aria-hidden="true">${escapeHtml(containerInitials(name))}</span>
+          <span class="kc-table-main">
+            <span class="kc-table-topline">
+              <span class="kc-table-title">
+                ${escapeHtml(name)}${cat ? ` <em class="kc-table-cat">(${escapeHtml(cat)})</em>` : ''}
+              </span>
+              ${trail ? `<span class="kc-table-trail">${escapeHtml(trail)}</span>` : ''}
+            </span>
+            ${subtitle ? `<span class="kc-table-sub">${escapeHtml(subtitle)}</span>` : ''}
+          </span>
+          <i class="ph ph-caret-right kc-table-caret" aria-hidden="true"></i>
         </button>`;
     }
 
+    function eventContainerRowHtml({ product: p, packed, planned }) {
+      const statusBits = [
+        packed ? `Packed ${packed}` : null,
+        planned ? `Need ${planned}` : null,
+      ].filter(Boolean);
+      const trail = packed || planned
+        ? `${packed || 0}${planned ? `/${planned}` : ''}`
+        : '';
+      return containerRowHtml(p, {
+        category: p.category?.name || '',
+        subtitle: statusBits.join(' · ') || 'Container',
+        trail,
+      });
+    }
+
+    const eventLocked = hasPreferredEvent() && isEventDest();
+    const homeHeading = eventLocked
+      ? 'Containers'
+      : destTitle();
+
     app.innerHTML = `
-      <header class="kc-top kc-top--row">
-        <button type="button" class="kc-back" id="kcChangeDest">Change</button>
+      <header class="kc-top${eventLocked ? '' : ' kc-top--row'}">
+        ${eventLocked ? '' : `
+        <button type="button" class="kc-back" id="kcChangeDest">Change</button>`}
         <div class="kc-top-grow">
-          <div class="kc-brand">${escapeHtml(isEventDest() ? 'Event pack' : 'Warehouse')} · containers</div>
-          <h1 class="kc-title kc-title--sm">${escapeHtml(destTitle())}</h1>
-          <p class="kc-meta">Scan, search, or create a box, then add what’s inside.</p>
+          <div class="kc-brand">${escapeHtml(isEventDest() ? 'Event pack' : 'Warehouse')}</div>
+          ${eventLocked
+    ? `<p class="kc-meta kc-meta--lead">Scan, search, or create a box, then add what’s inside.</p>`
+    : `
+          <h1 class="kc-title kc-title--sm">${escapeHtml(homeHeading)}</h1>
+          <p class="kc-meta">Scan, search, or create a box, then add what’s inside.</p>`}
         </div>
       </header>
       ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback" style="margin:0 16px">${escapeHtml(feedback.msg)}</div>` : ''}
-      <div class="kc-actions">
+      <div class="kc-actions kc-actions--home">
         <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
           placeholder="Search containers…" value="${escapeHtml(searchQuery)}"
           autocomplete="off" enterkeyhint="search">
-        <button type="button" class="kc-btn kc-btn--primary" id="kcScanContainer">Scan box / pallet / container</button>
-        <button type="button" class="kc-btn" id="kcCreateContainer">Create box / pallet / container</button>
-        <button type="button" class="kc-btn" id="kcLooseItems">Add loose / bulky items</button>
+        <div class="kc-quick" role="group" aria-label="Quick actions">
+          <button type="button" class="kc-quick-item" id="kcScanContainer">
+            <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-barcode"></i></span>
+            <span class="kc-quick-copy">
+              <strong>Scan</strong>
+              <em>Box, pallet or container</em>
+            </span>
+            <i class="ph ph-caret-right kc-quick-caret" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="kc-quick-item" id="kcCreateContainer">
+            <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-plus"></i></span>
+            <span class="kc-quick-copy">
+              <strong>Create</strong>
+              <em>New box, pallet or container</em>
+            </span>
+            <i class="ph ph-caret-right kc-quick-caret" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="kc-quick-item" id="kcLooseItems">
+            <span class="kc-quick-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
+            <span class="kc-quick-copy">
+              <strong>Loose / bulky</strong>
+              <em>Count items without a container</em>
+            </span>
+            <i class="ph ph-caret-right kc-quick-caret" aria-hidden="true"></i>
+          </button>
+        </div>
       </div>
 
       ${q ? `
         <section class="kc-section">
           <h2 class="kc-section-title">Search results</h2>
-          <div class="kc-list" id="kcHomeList">
+          <div class="kc-table" id="kcHomeList">
             ${searchHits.length
-    ? searchHits.map((p) => containerRowHtml(p, p.category?.name || 'Container')).join('')
+    ? searchHits.map((p) => containerRowHtml(p, {
+      category: p.category?.name || '',
+      subtitle: 'Container',
+    })).join('')
     : `<p class="kc-empty">No containers match “${escapeHtml(q)}”</p>`}
           </div>
         </section>` : ''}
@@ -988,44 +1098,40 @@ export async function startKitCountApp(DB, opts = {}) {
       ${!q && isEventDest() ? `
         <section class="kc-section">
           <h2 class="kc-section-title">On this event</h2>
-          <div class="kc-list" id="kcHomeList">
-            ${onEvent.length
-    ? onEvent.map(({ product: p, packed, planned }) =>
-      containerRowHtml(
-        p,
-        [
-          packed ? `Packed ${packed}` : null,
-          planned ? `Need ${planned}` : null,
-          p.category?.name || null,
-        ].filter(Boolean).join(' · ') || 'Container',
-      )).join('')
-    : '<p class="kc-empty">No containers on this event yet — scan, search, or create one.</p>'}
-          </div>
+          ${onEvent.length
+    ? `<div class="kc-table" id="kcHomeList">${onEvent.map(eventContainerRowHtml).join('')}</div>`
+    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">No containers yet</span><span class="kc-empty-copy">Scan, search, or create one to start packing this event.</span></p>'}
         </section>` : ''}
 
       ${!q && recent.length ? `
         <section class="kc-section">
           <h2 class="kc-section-title">Recent</h2>
-          <div class="kc-list" id="kcHomeList">
-            ${recent.map((p) => containerRowHtml(p, p.category?.name || 'Container')).join('')}
+          <div class="kc-table" id="kcHomeList">
+            ${recent.map((p) => containerRowHtml(p, {
+              category: p.category?.name || '',
+              subtitle: 'Recent',
+            })).join('')}
           </div>
         </section>` : ''}
 
       ${!q && fallbackContainers.length ? `
         <section class="kc-section">
           <h2 class="kc-section-title">Containers</h2>
-          <div class="kc-list" id="kcHomeList">
-            ${fallbackContainers.map((p) => containerRowHtml(p, p.category?.name || 'Container')).join('')}
+          <div class="kc-table" id="kcHomeList">
+            ${fallbackContainers.map((p) => containerRowHtml(p, {
+              category: p.category?.name || '',
+              subtitle: 'Container',
+            })).join('')}
           </div>
         </section>` : ''}
     `;
 
-    $('kcChangeDest').onclick = () => {
+    $('kcChangeDest')?.addEventListener('click', () => {
       destination = null;
       storeDestination(null);
       screen = 'dest';
       paint();
-    };
+    });
     $('kcScanContainer').onclick = () => {
       screen = 'scan-container';
       feedback = { msg: '', kind: '' };
@@ -1937,21 +2043,72 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   // Boot
+  async function runHomeAction(action) {
+    if (!destination) {
+      if (preferredEventId) {
+        try {
+          await enterPreferredEventHome();
+        } catch {
+          return false;
+        }
+      } else {
+        screen = 'dest';
+        paint();
+        return false;
+      }
+    }
+
+    if (action === 'scan') {
+      screen = 'scan-container';
+      feedback = { msg: '', kind: '' };
+      paint();
+      startCameraUi();
+      return true;
+    }
+    if (action === 'create') {
+      createDraft = {
+        name: '', categoryId: '', barcode: '', qty: '1', asContainer: false, queueLabel: true,
+      };
+      screen = 'create-container';
+      paint();
+      $('kcName')?.focus();
+      return true;
+    }
+    if (action === 'loose') {
+      try {
+        await openLooseCount();
+        return true;
+      } catch (err) {
+        feedback = { msg: err.message || 'Could not open', kind: 'err' };
+        paint();
+        return false;
+      }
+    }
+    return false;
+  }
+
   function api() {
     return {
       setPreferredEvent(id, name = '') {
         preferredEventId = String(id || '').trim();
         preferredEventName = String(name || '').trim();
-        if (!preferredEventId || destination || screen !== 'dest') return;
-        const ev = events.find((e) => e.id === preferredEventId);
-        destination = {
-          type: DEST_EVENT,
-          eventId: preferredEventId,
-          eventName: preferredEventName || ev?.name || 'Event',
-        };
-        storeDestination(destination);
-        enterContainerHome().catch(() => {});
+        if (!preferredEventId) return;
+
+        const sameEvent = isEventDest() && destination.eventId === preferredEventId;
+        if (sameEvent) {
+          destination.eventName = preferredEventName || destination.eventName || 'Event';
+          storeDestination(destination);
+          if (screen === 'home') paint();
+          return;
+        }
+
+        // Don't yank the user out of an active count/scan.
+        const shallow = ['dest', 'pick-event', 'pick-warehouse', 'home'].includes(screen);
+        if (!shallow && destination) return;
+
+        enterPreferredEventHome().catch(() => {});
       },
+      runHomeAction,
     };
   }
 
@@ -1992,6 +2149,14 @@ export async function startKitCountApp(DB, opts = {}) {
     } catch { /* fall through */ }
   }
 
+  // Main-app event wins — skip warehouse / choose-event entirely.
+  if (preferredEventId) {
+    try {
+      await enterPreferredEventHome();
+      return api();
+    } catch { /* fall through */ }
+  }
+
   if (stored?.type === DEST_EVENT && stored.eventId) {
     destination = stored;
     try {
@@ -2001,21 +2166,6 @@ export async function startKitCountApp(DB, opts = {}) {
   }
   if (stored?.type === DEST_WAREHOUSE && stored.warehouseId) {
     destination = stored;
-    try {
-      await enterContainerHome();
-      return api();
-    } catch { /* fall through */ }
-  }
-
-  // Prefill event destination from Measured home event when nothing stored yet.
-  if (preferredEventId && !destination) {
-    const ev = events.find((e) => e.id === preferredEventId);
-    destination = {
-      type: DEST_EVENT,
-      eventId: preferredEventId,
-      eventName: preferredEventName || ev?.name || 'Event',
-    };
-    storeDestination(destination);
     try {
       await enterContainerHome();
       return api();
