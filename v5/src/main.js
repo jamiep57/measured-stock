@@ -387,6 +387,13 @@ async function boot() {
   openEventGate();
 
   window.addEventListener('resize', syncChromeSizes);
+
+  // iOS: clear any leftover transform from the nav entrance animation so
+  // position:fixed stays viewport-fixed (not document-relative).
+  $('bottomNav')?.addEventListener('animationend', (e) => {
+    if (e.animationName !== 'nav-float-in') return;
+    e.currentTarget.style.transform = 'none';
+  });
 }
 
 if ('serviceWorker' in navigator) {

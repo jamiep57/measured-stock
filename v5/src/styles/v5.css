@@ -611,13 +611,18 @@ html.kit-deep .main {
   border-radius: 22px;
   padding: 6px 4px;
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
-  transform: translate3d(0, calc(100% + 28px), 0);
+  /* Resting state must NOT keep a transform — iOS then treats fixed as document-relative. */
+  transform: none;
   opacity: 0;
   pointer-events: none;
+  visibility: hidden;
 }
 html.app-ready .bottomnav {
-  animation: nav-float-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+  /* fill-mode none so transform is cleared after the entrance animation */
+  animation: nav-float-in 0.55s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes nav-float-in {
   from {
@@ -664,7 +669,8 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
   transition: transform 0.18s ease, background 0.15s ease;
 }
-.compose-fab-btn:active { transform: scale(0.94); }
+.compose-fab-btn:active { transform: none; filter: brightness(0.92); }
+.compose-fab-btn:active i { transform: scale(0.94); }
 .compose-fab.is-open .compose-fab-btn {
   background: var(--secondary);
   color: var(--foreground);
