@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-56-kit-home-density';
+const VERSION = 'v5-57-kit-add-drawer';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [

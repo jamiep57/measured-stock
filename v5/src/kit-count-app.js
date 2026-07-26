@@ -161,7 +161,7 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   function syncDeepMode() {
-    const deep = !['dest', 'pick-event', 'pick-warehouse', 'home', 'add-wizard', 'pick-container'].includes(screen);
+    const deep = !['dest', 'pick-event', 'pick-warehouse', 'home', 'pick-container'].includes(screen);
     onDeepChange(deep);
   }
 
@@ -195,7 +195,7 @@ export async function startKitCountApp(DB, opts = {}) {
   let containerStack = [];
   /** @type {Array<{ child_product_id: string, qty: number, child?: object }>} */
   let contents = [];
-  /** @type {'dest'|'pick-event'|'pick-warehouse'|'home'|'add-wizard'|'pick-container'|'scan-container'|'create-container'|'count'|'scan-item'|'stock-count'} */
+  /** @type {'dest'|'pick-event'|'pick-warehouse'|'home'|'pick-container'|'scan-container'|'create-container'|'count'|'scan-item'|'stock-count'} */
   let screen = 'dest';
   let feedback = { msg: '', kind: '' };
   let saving = false;
@@ -204,6 +204,8 @@ export async function startKitCountApp(DB, opts = {}) {
   let createReturnScreen = 'home';
   let showCreateSheet = false;
   let showCategorySheet = false;
+  /** Add options bottom drawer on home. */
+  let showAddWizard = false;
   let newCategoryName = '';
   let searchQuery = '';
   /** Search query on the pick-existing-container wizard step. */
@@ -372,6 +374,7 @@ export async function startKitCountApp(DB, opts = {}) {
     searchQuery = '';
     showCreateSheet = false;
     showCategorySheet = false;
+    showAddWizard = false;
     writeMode = '';
     screen = 'home';
     stopCamera();
@@ -1491,6 +1494,7 @@ export async function startKitCountApp(DB, opts = {}) {
             })).join('')}
           </div>
         </section>` : ''}
+      ${showAddWizard ? addWizardSheetHtml() : ''}
     `;
 
     $('kcChangeDest')?.addEventListener('click', () => {
@@ -1517,10 +1521,7 @@ export async function startKitCountApp(DB, opts = {}) {
       startCameraUi();
     };
     $('kcAddWizard').onclick = () => {
-      beginWriteSession();
-      feedback = { msg: '', kind: '' };
-      screen = 'add-wizard';
-      paint();
+      openAddWizard();
     };
 
     const homeSearch = $('kcHomeSearch');
@@ -1582,77 +1583,90 @@ export async function startKitCountApp(DB, opts = {}) {
         }
       };
     });
+
+    if (showAddWizard) wireAddWizardSheet();
   }
 
   function openAddWizard() {
     beginWriteSession();
     feedback = { msg: '', kind: '' };
     pickContainerQuery = '';
-    screen = 'add-wizard';
+    showAddWizard = true;
+    if (screen !== 'home') {
+      screen = 'home';
+    }
     paint();
   }
 
-  function paintAddWizard() {
+  function addWizardSheetHtml() {
     const modeHint = isEventDest()
       ? (isPhysicalWriteMode()
         ? 'These will count onto what’s onsite.'
         : 'These will pack onto the pick list.')
       : 'Choose how you want to add kit.';
-    app.innerHTML = `
-      <header class="kc-top kc-top--row">
-        <button type="button" class="kc-back" id="kcBack">Back</button>
-        <div class="kc-top-grow">
-          <div class="kc-brand">Measured · ${escapeHtml(writeModeLabel())}</div>
-          <h1 class="kc-title kc-title--sm">What do you want to add?</h1>
-          <p class="kc-meta">${escapeHtml(modeHint)}</p>
+    return `
+      <div class="kc-sheet kc-sheet--add" id="kcAddSheet" role="dialog" aria-modal="true" aria-labelledby="kcAddSheetTitle">
+        <button type="button" class="kc-sheet-backdrop" id="kcAddSheetDismiss" aria-label="Close"></button>
+        <div class="kc-sheet-card kc-sheet-card--drawer">
+          <div class="kc-sheet-handle" aria-hidden="true"></div>
+          <h2 class="kc-sheet-title" id="kcAddSheetTitle">What do you want to add?</h2>
+          <p class="kc-sheet-hint">${escapeHtml(modeHint)}</p>
+          <div class="kc-wizard" role="list">
+            <button type="button" class="kc-wizard-card" id="kcWizardBulky" role="listitem">
+              <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-truck"></i></span>
+              <span class="kc-wizard-copy">
+                <strong>Bulky item</strong>
+                <em>Doesn’t have a container — e.g. pallet truck, trike</em>
+              </span>
+              <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="kc-wizard-card" id="kcWizardExisting" role="listitem">
+              <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
+              <span class="kc-wizard-copy">
+                <strong>Add to an existing container</strong>
+                <em>Open a box, pallet, or crate and add what’s inside</em>
+              </span>
+              <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="kc-wizard-card" id="kcWizardNewContainer" role="listitem">
+              <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-plus-circle"></i></span>
+              <span class="kc-wizard-copy">
+                <strong>Create a new container</strong>
+                <em>Pallet, bale arm crate, tote box, or pallet box</em>
+              </span>
+              <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="kc-sheet-actions">
+            <button type="button" class="kc-btn kc-btn--block" id="kcAddSheetCancel">Cancel</button>
+          </div>
         </div>
-      </header>
-      ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback">${escapeHtml(feedback.msg)}</div>` : ''}
-      <div class="kc-wizard" role="list">
-        <button type="button" class="kc-wizard-card" id="kcWizardBulky" role="listitem">
-          <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-truck"></i></span>
-          <span class="kc-wizard-copy">
-            <strong>Bulky item</strong>
-            <em>Doesn’t have a container — e.g. pallet truck, trike</em>
-          </span>
-          <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
-        </button>
-        <button type="button" class="kc-wizard-card" id="kcWizardExisting" role="listitem">
-          <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-package"></i></span>
-          <span class="kc-wizard-copy">
-            <strong>Add to an existing container</strong>
-            <em>Open a box, pallet, or crate and add what’s inside</em>
-          </span>
-          <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
-        </button>
-        <button type="button" class="kc-wizard-card" id="kcWizardNewContainer" role="listitem">
-          <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-plus-circle"></i></span>
-          <span class="kc-wizard-copy">
-            <strong>Create a new container</strong>
-            <em>Pallet, bale arm crate, tote box, or pallet box</em>
-          </span>
-          <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
-        </button>
-      </div>
-    `;
+      </div>`;
+  }
 
-    $('kcBack').onclick = () => {
+  function wireAddWizardSheet() {
+    const close = () => {
+      showAddWizard = false;
       writeMode = '';
-      screen = 'home';
-      paint();
+      paintHome();
     };
+    $('kcAddSheetDismiss')?.addEventListener('click', close);
+    $('kcAddSheetCancel')?.addEventListener('click', close);
     $('kcWizardBulky').onclick = () => {
+      showAddWizard = false;
       openLooseCount().catch((err) => {
         feedback = { msg: err.message || 'Could not open', kind: 'err' };
         paint();
       });
     };
     $('kcWizardExisting').onclick = () => {
+      showAddWizard = false;
       pickContainerQuery = '';
       screen = 'pick-container';
       paint();
     };
     $('kcWizardNewContainer').onclick = () => {
+      showAddWizard = false;
       createDraft = {
         name: '', categoryId: '', barcode: '', qty: '1', asContainer: true, queueLabel: true,
       };
@@ -1717,7 +1731,8 @@ export async function startKitCountApp(DB, opts = {}) {
     `;
 
     $('kcBack').onclick = () => {
-      screen = 'add-wizard';
+      showAddWizard = true;
+      screen = 'home';
       paint();
     };
     $('kcPickCreate').onclick = () => {
@@ -2080,11 +2095,19 @@ export async function startKitCountApp(DB, opts = {}) {
     });
     $('kcBack').onclick = () => {
       showCategorySheet = false;
-      const back = createReturnScreen === 'add-wizard' || createReturnScreen === 'pick-container'
-        ? createReturnScreen
-        : 'home';
-      if (back === 'home') writeMode = '';
-      screen = back;
+      if (createReturnScreen === 'add-wizard') {
+        showAddWizard = true;
+        screen = 'home';
+        paint();
+        return;
+      }
+      if (createReturnScreen === 'pick-container') {
+        screen = 'pick-container';
+        paint();
+        return;
+      }
+      writeMode = '';
+      screen = 'home';
       paint();
     };
     $('kcNewCat').onclick = () => {
@@ -2632,7 +2655,6 @@ export async function startKitCountApp(DB, opts = {}) {
     if (screen === 'pick-event') return paintPickEvent();
     if (screen === 'pick-warehouse') return paintPickWarehouse();
     if (screen === 'home') return paintHome();
-    if (screen === 'add-wizard') return paintAddWizard();
     if (screen === 'pick-container') return paintPickContainer();
     if (screen === 'stock-count') return paintStockCount();
     if (screen === 'scan-container') {

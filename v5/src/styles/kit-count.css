@@ -1030,6 +1030,19 @@ html.kit-deep .kc-root .kc-complete-bar {
   justify-content: center;
   padding: 16px 12px calc(16px + var(--safe-bottom));
 }
+.kc-sheet--add {
+  padding: 0;
+  background: transparent;
+}
+.kc-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(0,0,0,0.55);
+  cursor: pointer;
+}
 .kc-sheet-card {
   width: min(480px, 100%);
   max-height: min(90vh, 640px);
@@ -1041,6 +1054,39 @@ html.kit-deep .kc-root .kc-complete-bar {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.kc-sheet-card--drawer {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: none;
+  max-height: min(86vh, 720px);
+  margin: 0;
+  border-radius: 20px 20px 0 0;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  padding: 10px 16px calc(16px + var(--safe-bottom));
+  animation: kc-sheet-up 180ms ease-out;
+}
+.kc-sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  margin: 2px auto 6px;
+}
+@keyframes kc-sheet-up {
+  from { transform: translateY(18px); opacity: 0.85; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.kc-sheet--add .kc-sheet-actions {
+  justify-content: stretch;
+  margin-top: 2px;
+}
+.kc-sheet--add .kc-wizard {
+  padding: 0;
+  gap: 8px;
 }
 .kc-sheet-title {
   margin: 0;
