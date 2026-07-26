@@ -1146,6 +1146,9 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 
   .main { max-width: 640px; margin-left: auto; margin-right: auto; width: 100%; }
 
+  body { background: var(--card); }
+  .app { background: var(--background); }
+
   input:focus, select:focus, textarea:focus {
     border-color: var(--primary);
     box-shadow: 0 0 0 2px rgb(24 24 27 / 0.08);
