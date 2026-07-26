@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-30-nav-flex';
+const VERSION = 'v5-31-safe-fill';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [

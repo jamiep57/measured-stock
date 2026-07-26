@@ -61,10 +61,12 @@
     </main>
 
     <nav class="bottomnav" id="bottomNav">
-      <button class="navbtn active" type="button" data-tab="home"><i class="ph ph-house"></i><span>Home</span></button>
-      <button class="navbtn" type="button" data-tab="counts"><i class="ph ph-clipboard-text"></i><span>Counts</span></button>
-      <button class="navbtn" type="button" data-tab="kit"><i class="ph ph-package"></i><span>Kit</span></button>
-      <button class="navbtn" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
+      <div class="bottomnav-inner">
+        <button class="navbtn active" type="button" data-tab="home"><i class="ph ph-house"></i><span>Home</span></button>
+        <button class="navbtn" type="button" data-tab="counts"><i class="ph ph-clipboard-text"></i><span>Counts</span></button>
+        <button class="navbtn" type="button" data-tab="kit"><i class="ph ph-package"></i><span>Kit</span></button>
+        <button class="navbtn" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
+      </div>
     </nav>
 
     <div class="count-save-bar" id="cntSaveBar" hidden>
@@ -73,6 +75,8 @@
       </button>
     </div>
   </div>
+
+  <div class="safe-bottom-fill" aria-hidden="true"></div>
 
   <div class="compose-fab" id="composeFab" hidden>
     <div class="compose-fab-backdrop" id="composeFabBackdrop" hidden></div>
