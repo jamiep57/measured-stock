@@ -411,7 +411,8 @@ html.kit-deep .kc-root .kc-complete-bar {
 }
 .kc-field em { font-style: normal; font-weight: 500; opacity: 0.7; }
 .kc-field input,
-.kc-field select {
+.kc-field select,
+.kc-field .search-select-input {
   height: 48px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -422,8 +423,13 @@ html.kit-deep .kc-root .kc-complete-bar {
   font-size: 16px;
   font-weight: 500;
 }
-.kc-field-row { display: flex; gap: 8px; }
-.kc-field-row select { flex: 1; min-width: 0; }
+.kc-field-row { display: flex; gap: 8px; align-items: flex-start; }
+.kc-field-row select,
+.kc-field-row .kc-search-select-mount { flex: 1; min-width: 0; }
+.kc-field-row .search-select { width: 100%; }
+.kc-field .search-select-list {
+  max-height: min(200px, 32vh);
+}
 .kc-field-grid {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
@@ -547,12 +553,22 @@ html.kit-deep .kc-root .kc-complete-bar {
   min-width: 0;
   height: 52px;
   border-radius: 12px;
-  border: 1px solid var(--border);
+  border: 1.5px solid color-mix(in srgb, var(--border) 45%, var(--fg));
   background: var(--card);
   color: var(--fg);
   padding: 0 16px;
   font: inherit;
   font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.kc-search::placeholder {
+  color: var(--muted);
+}
+.kc-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(232 196 124 / 0.2);
 }
 .kc-search--block {
   width: 100%;

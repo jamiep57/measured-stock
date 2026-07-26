@@ -14,7 +14,7 @@ import {
   loadEventsList,
   loadEventKit,
 } from './db.js';
-import { contentsByContainer } from './lib/kit-stock.js';
+import { contentsByContainer, balancesByProduct } from './lib/kit-stock.js';
 import { findProductByBarcode, PHONE_DEBOUNCE_MS } from './lib/kit-scan-session.js';
 import {
   bumpContentsLine,
@@ -32,6 +32,7 @@ import {
 } from './lib/kit-container-count.js';
 import { resolveKitLabelPayload } from './lib/kit-label-payload.js';
 import { enqueueKitLabel, loadPendingKitLabelQueue } from './lib/kit-label-queue.js';
+import { mountSearchSelect } from './components/search-select.js';
 import {
   DEST_EVENT,
   DEST_WAREHOUSE,
@@ -173,6 +174,13 @@ export async function startKitCountApp(DB, opts = {}) {
   let destination = null;
   /** @type {object[]} */
   let eventItems = [];
+  /** @type {Map<string, { onHand: number, owned: number, hired: number }>} */
+  let eventBalances = new Map();
+  /** Event / warehouse id whose pack list or stock map is currently in `eventItems` / `stockMap`. */
+  let boundEventId = '';
+  let boundWarehouseId = '';
+  /** Bumped on every location load so older in-flight requests cannot paint stale lists. */
+  let locationLoadGen = 0;
   /** @type {Map<string, number>} */
   let stockMap = new Map();
   /** @type {Array<{ product_id: string, qty: number, product?: object }>} */
@@ -273,20 +281,31 @@ export async function startKitCountApp(DB, opts = {}) {
   async function enterPreferredEventHome() {
     const next = preferredEventDestination();
     if (!next) return false;
+    // Drop the previous event's lists immediately so a paint cannot show the wrong event.
+    eventItems = [];
+    eventBalances = new Map();
+    stockMap = new Map();
+    boundEventId = '';
+    boundWarehouseId = '';
     destination = next;
     storeDestination(destination);
     await enterContainerHome();
-    return true;
+    return boundEventId === next.eventId;
   }
 
   /** Bind Kit to the main-app warehouse and open container home. */
   async function enterPreferredWarehouseHome() {
     const next = preferredWarehouseDestination();
     if (!next) return false;
+    eventItems = [];
+    eventBalances = new Map();
+    stockMap = new Map();
+    boundEventId = '';
+    boundWarehouseId = '';
     destination = next;
     storeDestination(destination);
     await enterContainerHome();
-    return true;
+    return boundWarehouseId === next.warehouseId;
   }
 
   async function enterPreferredLocationHome() {
@@ -302,11 +321,33 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   async function enterContainerHome() {
+    const gen = ++locationLoadGen;
+    const expectEventId = isEventDest() ? destination.eventId : '';
+    const expectWarehouseId = isWarehouseDest() ? destination.warehouseId : '';
+
     if (isEventDest()) {
       const data = await loadEventKit(destination.eventId);
+      if (gen !== locationLoadGen) return;
+      if (!isEventDest() || destination.eventId !== expectEventId) return;
       eventItems = data.items || [];
+      eventBalances = balancesByProduct(data.movements || []);
+      boundEventId = expectEventId;
+      boundWarehouseId = '';
     } else if (isWarehouseDest()) {
-      stockMap = await loadWarehouseKitStockMap(DB, destination.warehouseId);
+      const map = await loadWarehouseKitStockMap(DB, destination.warehouseId);
+      if (gen !== locationLoadGen) return;
+      if (!isWarehouseDest() || destination.warehouseId !== expectWarehouseId) return;
+      stockMap = map;
+      eventItems = [];
+      eventBalances = new Map();
+      boundWarehouseId = expectWarehouseId;
+      boundEventId = '';
+    } else {
+      eventItems = [];
+      eventBalances = new Map();
+      stockMap = new Map();
+      boundEventId = '';
+      boundWarehouseId = '';
     }
     container = null;
     containerStack = [];
@@ -576,6 +617,8 @@ export async function startKitCountApp(DB, opts = {}) {
       loadEventKit(destination.eventId)
         .then((data) => {
           eventItems = data.items || [];
+          boundEventId = destination.eventId;
+          boundWarehouseId = '';
           if (screen === 'home') paint();
         })
         .catch(() => paint());
@@ -839,13 +882,36 @@ export async function startKitCountApp(DB, opts = {}) {
     el.className = 'kc-feedback' + (feedback.kind ? ` is-${feedback.kind}` : '');
   }
 
-  function categoryOptionsHtml(selectedId) {
-    const opts = [
-      `<option value="">Category…</option>`,
-      ...categories.map((c) =>
-        `<option value="${escapeHtml(c.id)}"${c.id === selectedId ? ' selected' : ''}>${escapeHtml(c.name)}</option>`),
-    ];
-    return opts.join('');
+  function categorySelectOptions() {
+    return categories.map((c) => ({
+      value: c.id,
+      label: c.name || 'Category',
+    }));
+  }
+
+  /** @type {ReturnType<typeof mountSearchSelect> | null} */
+  let categoryPicker = null;
+
+  function mountCategorySelect(mountEl, {
+    hiddenId = 'kcCategory',
+    inputId = 'kcCategoryInput',
+    value = '',
+  } = {}) {
+    if (!mountEl) return null;
+    categoryPicker = mountSearchSelect(mountEl, {
+      options: categorySelectOptions(),
+      value: value || '',
+      placeholder: 'Search categories…',
+      emptyLabel: 'Category…',
+      allowEmpty: true,
+      hiddenId,
+      inputId,
+      inputClass: 'search-select-input kc-search-select-input',
+      onSelect: ({ value: next }) => {
+        createDraft.categoryId = next || '';
+      },
+    });
+    return categoryPicker;
   }
 
   function recentContainers() {
@@ -989,19 +1055,27 @@ export async function startKitCountApp(DB, opts = {}) {
     });
   }
 
-  function containersOnEvent() {
+  function resolveEventProduct(productId, fallback) {
+    const lib = products.find((p) => p.id === productId);
+    const p = lib || fallback;
+    if (!p?.id) return null;
+    return { ...p, is_container: !!(lib?.is_container || p.is_container) };
+  }
+
+  /** What this event needs (planned pick list). */
+  function pickListRows() {
     const out = [];
     const seen = new Set();
     for (const it of eventItems || []) {
-      const lib = products.find((p) => p.id === it.product_id);
-      const p = lib || it.product;
+      const planned = Number(it.qty_planned) || 0;
+      if (planned <= 0) continue;
+      const p = resolveEventProduct(it.product_id, it.product);
       if (!p?.id || seen.has(p.id)) continue;
-      if (!(lib?.is_container || p.is_container)) continue;
       seen.add(p.id);
       out.push({
-        product: { ...p, is_container: true },
+        product: p,
+        planned,
         packed: Number(it.qty_packed) || 0,
-        planned: Number(it.qty_planned) || 0,
       });
     }
     out.sort((a, b) =>
@@ -1009,9 +1083,56 @@ export async function startKitCountApp(DB, opts = {}) {
     return out;
   }
 
+  /**
+   * Physical kit already on the event (movements), plus items counted/packed
+   * on mobile that aren't in the pick list yet.
+   */
+  function onEventRows() {
+    const out = [];
+    const seen = new Set();
+    const itemByProduct = new Map((eventItems || []).map((it) => [it.product_id, it]));
+
+    for (const [productId, bal] of eventBalances || []) {
+      const onHand = Number(bal?.onHand) || 0;
+      if (onHand <= 0) continue;
+      const it = itemByProduct.get(productId);
+      const p = resolveEventProduct(productId, it?.product);
+      if (!p?.id || seen.has(p.id)) continue;
+      seen.add(p.id);
+      out.push({
+        product: p,
+        onHand,
+        owned: Number(bal?.owned) || 0,
+        hired: Number(bal?.hired) || 0,
+        packed: Number(it?.qty_packed) || 0,
+      });
+    }
+
+    // Packed / counted on phone but not yet moved onto the event.
+    for (const it of eventItems || []) {
+      const packed = Number(it.qty_packed) || 0;
+      if (packed <= 0 || seen.has(it.product_id)) continue;
+      const p = resolveEventProduct(it.product_id, it.product);
+      if (!p?.id) continue;
+      seen.add(p.id);
+      out.push({
+        product: p,
+        onHand: 0,
+        owned: 0,
+        hired: 0,
+        packed,
+      });
+    }
+
+    out.sort((a, b) =>
+      String(a.product.name || '').localeCompare(String(b.product.name || '')));
+    return out;
+  }
+
   function paintHome() {
     const q = searchQuery.trim();
-    const onEvent = isEventDest() ? containersOnEvent() : [];
+    const pickList = isEventDest() ? pickListRows() : [];
+    const onEvent = isEventDest() ? onEventRows() : [];
     const containerProducts = products.filter((p) => p.is_container);
     const searchHits = q
       ? filterKitProducts(containerProducts, q, { limit: 40 })
@@ -1036,11 +1157,17 @@ export async function startKitCountApp(DB, opts = {}) {
       return tones[h % tones.length];
     }
 
-    function containerRowHtml(p, { category = '', subtitle = '', trail = '' } = {}) {
+    function containerRowHtml(p, { category = '', subtitle = '', trail = '', openable = true } = {}) {
       const name = p.name || 'Container';
       const cat = category || p.category?.name || '';
+      const openAttr = openable && p.is_container ? ` data-open="${escapeHtml(p.id)}"` : '';
+      const tag = openable && p.is_container ? 'button' : 'div';
+      const typeAttr = tag === 'button' ? ' type="button"' : '';
+      const caret = openable && p.is_container
+        ? '<i class="ph ph-caret-right kc-table-caret" aria-hidden="true"></i>'
+        : '';
       return `
-        <button type="button" class="kc-table-row" data-open="${escapeHtml(p.id)}">
+        <${tag}${typeAttr} class="kc-table-row${openable && p.is_container ? '' : ' kc-table-row--static'}"${openAttr}>
           <span class="kc-table-avatar" data-tone="${escapeHtml(containerAvatarTone(p.id || name))}" aria-hidden="true">${escapeHtml(containerInitials(name))}</span>
           <span class="kc-table-main">
             <span class="kc-table-topline">
@@ -1051,29 +1178,53 @@ export async function startKitCountApp(DB, opts = {}) {
             </span>
             ${subtitle ? `<span class="kc-table-sub">${escapeHtml(subtitle)}</span>` : ''}
           </span>
-          <i class="ph ph-caret-right kc-table-caret" aria-hidden="true"></i>
-        </button>`;
+          ${caret}
+        </${tag}>`;
     }
 
-    function eventContainerRowHtml({ product: p, packed, planned }) {
+    function pickListRowHtml({ product: p, packed, planned }) {
+      const short = planned > 0 && packed < planned;
       const statusBits = [
-        packed ? `Packed ${packed}` : null,
-        planned ? `Need ${planned}` : null,
-      ].filter(Boolean);
-      const trail = packed || planned
-        ? `${packed || 0}${planned ? `/${planned}` : ''}`
-        : '';
+        `Need ${planned}`,
+        packed ? `Packed ${packed}` : 'Not packed',
+      ];
       return containerRowHtml(p, {
         category: p.category?.name || '',
-        subtitle: statusBits.join(' · ') || 'Container',
+        subtitle: statusBits.join(' · '),
+        trail: `${packed || 0}/${planned}`,
+        openable: !!p.is_container,
+      }).replace(
+        'kc-table-row',
+        `kc-table-row${short ? ' kc-table-row--short' : ''}`,
+      );
+    }
+
+    function onEventRowHtml({ product: p, onHand, owned, hired, packed }) {
+      const statusBits = [];
+      if (onHand > 0) {
+        statusBits.push(`Here ${onHand}`);
+        if (owned > 0 && hired > 0) statusBits.push(`Own ${owned} · Hire ${hired}`);
+        else if (hired > 0) statusBits.push('Hire-in');
+        else if (owned > 0) statusBits.push('Own');
+      } else if (packed > 0) {
+        statusBits.push(`Packed ${packed}`);
+        statusBits.push('Counted — not moved on yet');
+      }
+      const trail = onHand > 0 ? String(onHand) : (packed ? `P${packed}` : '');
+      return containerRowHtml(p, {
+        category: p.category?.name || '',
+        subtitle: statusBits.join(' · ') || 'On event',
         trail,
+        openable: !!p.is_container,
       });
     }
 
     const locationLocked = hasPreferredLocation()
       && ((hasPreferredEvent() && isEventDest()) || (hasPreferredWarehouse() && isWarehouseDest()));
-    const homeTitle = isWarehouseDest() ? 'Warehouse' : 'Kit';
-    const homeSub = 'Scan, search, or create a box, then add what’s inside.';
+    const homeTitle = isWarehouseDest() ? 'Warehouse' : (isEventDest() ? 'Event kit' : 'Kit');
+    const homeSub = isEventDest()
+      ? 'Pick list is what you need. On this event is what’s already here.'
+      : 'Scan, search, or create a box, then add what’s inside.';
     const heroHtml = `
       <div class="page-hero page-hero--compact">
         <p class="page-kicker">Stock</p>
@@ -1136,11 +1287,24 @@ export async function startKitCountApp(DB, opts = {}) {
         </section>` : ''}
 
       ${!q && isEventDest() ? `
-        <section class="kc-section">
-          <h2 class="kc-section-title">On this event</h2>
+        <section class="kc-section kc-section--pick">
+          <div class="kc-section-head">
+            <h2 class="kc-section-title">Pick list</h2>
+            <p class="kc-section-copy">What this event needs</p>
+          </div>
+          ${pickList.length
+    ? `<div class="kc-table">${pickList.map(pickListRowHtml).join('')}</div>`
+    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span><span class="kc-empty-title">No pick list yet</span><span class="kc-empty-copy">Add Need qty in admin, or scan / create containers here to start packing.</span></p>'}
+        </section>
+
+        <section class="kc-section kc-section--on-event">
+          <div class="kc-section-head">
+            <h2 class="kc-section-title">On this event</h2>
+            <p class="kc-section-copy">Physical kit already here</p>
+          </div>
           ${onEvent.length
-    ? `<div class="kc-table" id="kcHomeList">${onEvent.map(eventContainerRowHtml).join('')}</div>`
-    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">No containers yet</span><span class="kc-empty-copy">Scan, search, or create one to start packing this event.</span></p>'}
+    ? `<div class="kc-table" id="kcHomeList">${onEvent.map(onEventRowHtml).join('')}</div>`
+    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing on this event yet</span><span class="kc-empty-copy">Kit shows here once it’s sent from warehouse, hired in, or packed on the phone.</span></p>'}
         </section>` : ''}
 
       ${!q && recent.length ? `
@@ -1328,6 +1492,8 @@ export async function startKitCountApp(DB, opts = {}) {
         try {
           const data = await loadEventKit(destination.eventId);
           eventItems = data.items || [];
+          boundEventId = destination.eventId;
+          boundWarehouseId = '';
         } catch { /* ignore */ }
       }
       paint();
@@ -1494,7 +1660,7 @@ export async function startKitCountApp(DB, opts = {}) {
         <label class="kc-field">
           <span>Category</span>
           <div class="kc-field-row">
-            <select id="kcCategory">${categoryOptionsHtml(createDraft.categoryId)}</select>
+            <div id="kcCategoryMount" class="kc-search-select-mount"></div>
             <button type="button" class="kc-btn kc-btn--compact" id="kcNewCat">+ New</button>
           </div>
         </label>
@@ -1513,6 +1679,11 @@ export async function startKitCountApp(DB, opts = {}) {
     `;
     $('kcName').value = createDraft.name;
     $('kcBarcode').value = createDraft.barcode;
+    mountCategorySelect($('kcCategoryMount'), {
+      hiddenId: 'kcCategory',
+      inputId: 'kcCategoryInput',
+      value: createDraft.categoryId || '',
+    });
     $('kcBack').onclick = () => {
       showCategorySheet = false;
       screen = 'home';
@@ -1520,7 +1691,7 @@ export async function startKitCountApp(DB, opts = {}) {
     };
     $('kcNewCat').onclick = () => {
       createDraft.name = $('kcName')?.value || '';
-      createDraft.categoryId = $('kcCategory')?.value || '';
+      createDraft.categoryId = categoryPicker?.getValue?.() || $('kcCategory')?.value || '';
       createDraft.barcode = $('kcBarcode')?.value || '';
       newCategoryName = '';
       showCategorySheet = true;
@@ -1532,7 +1703,7 @@ export async function startKitCountApp(DB, opts = {}) {
     $('kcCreateForm').onsubmit = async (e) => {
       e.preventDefault();
       const name = ($('kcName')?.value || '').trim();
-      const categoryId = $('kcCategory')?.value || null;
+      const categoryId = categoryPicker?.getValue?.() || $('kcCategory')?.value || null;
       const barcode = ($('kcBarcode')?.value || '').trim() || null;
       const queueLabel = !!$('kcQueueLabel')?.checked;
       const err = $('kcFormErr');
@@ -1918,7 +2089,7 @@ export async function startKitCountApp(DB, opts = {}) {
           <label class="kc-field">
             <span>Category</span>
             <div class="kc-field-row">
-              <select id="kcItemCategory">${categoryOptionsHtml(createDraft.categoryId)}</select>
+              <div id="kcItemCategoryMount" class="kc-search-select-mount"></div>
               <button type="button" class="kc-btn kc-btn--compact" id="kcItemNewCat">+ New</button>
             </div>
           </label>
@@ -1949,13 +2120,17 @@ export async function startKitCountApp(DB, opts = {}) {
 
   function wireCreateItemSheet() {
     const nameEl = $('kcItemName');
-    const catEl = $('kcItemCategory');
     const qtyEl = $('kcItemQty');
     const bcEl = $('kcItemBarcode');
     const asContainer = !!createDraft.asContainer && !!container;
     if (nameEl) nameEl.value = createDraft.name;
     if (qtyEl) qtyEl.value = createDraft.qty || '1';
     if (bcEl) bcEl.value = createDraft.barcode || '';
+    mountCategorySelect($('kcItemCategoryMount'), {
+      hiddenId: 'kcItemCategory',
+      inputId: 'kcItemCategoryInput',
+      value: createDraft.categoryId || '',
+    });
     nameEl?.focus();
 
     $('kcItemCancel').onclick = () => {
@@ -1964,7 +2139,7 @@ export async function startKitCountApp(DB, opts = {}) {
     };
     $('kcItemNewCat').onclick = () => {
       createDraft.name = nameEl?.value || '';
-      createDraft.categoryId = catEl?.value || '';
+      createDraft.categoryId = categoryPicker?.getValue?.() || $('kcItemCategory')?.value || '';
       createDraft.barcode = bcEl?.value || '';
       createDraft.qty = qtyEl?.value || '1';
       createDraft.queueLabel = !!$('kcItemQueueLabel')?.checked;
@@ -1974,7 +2149,7 @@ export async function startKitCountApp(DB, opts = {}) {
     };
     $('kcItemSave').onclick = async () => {
       const name = (nameEl?.value || '').trim();
-      const categoryId = catEl?.value || null;
+      const categoryId = categoryPicker?.getValue?.() || $('kcItemCategory')?.value || null;
       const barcode = (bcEl?.value || '').trim() || null;
       const qty = parseContentsQty(qtyEl?.value);
       const queueLabel = !!$('kcItemQueueLabel')?.checked;
@@ -2129,6 +2304,11 @@ export async function startKitCountApp(DB, opts = {}) {
 
   function api() {
     return {
+      /**
+       * Main-app event is the source of truth. Always reload that event's pack list
+       * (Need / Packed) when the preferred id changes — including mid-count.
+       * @returns {Promise<void>}
+       */
       setPreferredEvent(id, name = '') {
         preferredEventId = String(id || '').trim();
         preferredEventName = String(name || '').trim();
@@ -2136,22 +2316,26 @@ export async function startKitCountApp(DB, opts = {}) {
           preferredWarehouseId = '';
           preferredWarehouseName = '';
         }
-        if (!preferredEventId) return;
+        if (!preferredEventId) return Promise.resolve();
 
-        const sameEvent = isEventDest() && destination.eventId === preferredEventId;
-        if (sameEvent) {
+        const alreadyBound = isEventDest()
+          && destination.eventId === preferredEventId
+          && boundEventId === preferredEventId;
+        if (alreadyBound) {
           destination.eventName = preferredEventName || destination.eventName || 'Event';
           storeDestination(destination);
           if (screen === 'home') paint();
-          return;
+          return Promise.resolve();
         }
 
-        // Don't yank the user out of an active count/scan.
-        const shallow = ['dest', 'pick-event', 'pick-warehouse', 'home'].includes(screen);
-        if (!shallow && destination) return;
-
-        enterPreferredEventHome().catch(() => {});
+        return enterPreferredEventHome().then(() => {}).catch((err) => {
+          feedback = { msg: err?.message || 'Could not load event kit', kind: 'err' };
+          paint();
+        });
       },
+      /**
+       * @returns {Promise<void>}
+       */
       setPreferredWarehouse(id, name = '') {
         preferredWarehouseId = String(id || '').trim();
         preferredWarehouseName = String(name || '').trim();
@@ -2159,20 +2343,22 @@ export async function startKitCountApp(DB, opts = {}) {
           preferredEventId = '';
           preferredEventName = '';
         }
-        if (!preferredWarehouseId) return;
+        if (!preferredWarehouseId) return Promise.resolve();
 
-        const sameWh = isWarehouseDest() && destination.warehouseId === preferredWarehouseId;
-        if (sameWh) {
+        const alreadyBound = isWarehouseDest()
+          && destination.warehouseId === preferredWarehouseId
+          && boundWarehouseId === preferredWarehouseId;
+        if (alreadyBound) {
           destination.warehouseName = preferredWarehouseName || destination.warehouseName || 'Warehouse';
           storeDestination(destination);
           if (screen === 'home') paint();
-          return;
+          return Promise.resolve();
         }
 
-        const shallow = ['dest', 'pick-event', 'pick-warehouse', 'home'].includes(screen);
-        if (!shallow && destination) return;
-
-        enterPreferredWarehouseHome().catch(() => {});
+        return enterPreferredWarehouseHome().then(() => {}).catch((err) => {
+          feedback = { msg: err?.message || 'Could not load warehouse kit', kind: 'err' };
+          paint();
+        });
       },
       runHomeAction,
     };
@@ -2204,8 +2390,12 @@ export async function startKitCountApp(DB, opts = {}) {
       if (isEventDest()) {
         const data = await loadEventKit(destination.eventId);
         eventItems = data.items || [];
+        boundEventId = destination.eventId;
+        boundWarehouseId = '';
       } else if (isWarehouseDest()) {
         stockMap = await loadWarehouseKitStockMap(DB, destination.warehouseId);
+        boundWarehouseId = destination.warehouseId;
+        boundEventId = '';
       }
       const existing = products.find((p) => p.id === resumeId);
       if (existing) {

@@ -11,6 +11,7 @@ import {
 } from './stock-entry.js';
 import { enqueueWrite, flushQueue, getQueueStats } from './sync-queue.js';
 import { openSheet, closeSheet } from './components/sheet.js';
+import { mountSearchSelect } from './components/search-select.js';
 
 let ctx = null;
 let counts = [];
@@ -151,17 +152,29 @@ function openNewCountSheet() {
     title: 'New count session',
     bodyHtml: `
       <div class="err" id="ncErr"></div>
-      <div class="field"><label>Session name</label><input type="text" id="ncName" placeholder="e.g. Friday close"></div>
-      <div class="field"><label>Bar</label>
-        <select id="ncBar"><option value="">All bars</option>
-        ${bars.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}
-        </select>
+      <div class="field"><label for="ncName">Session name</label><input type="text" id="ncName" placeholder="e.g. Friday close"></div>
+      <div class="field"><label for="ncBarInput">Bar</label>
+        <div id="ncBarMount"></div>
       </div>`,
     footHtml: `
       <div class="sheet-foot-row">
         <button class="btn" type="button" id="ncCancel">Cancel</button>
         <button class="btn btn-primary" type="button" id="ncSave">Create & count</button>
       </div>`,
+  });
+  mountSearchSelect($('ncBarMount'), {
+    options: bars.map((b) => ({
+      value: b.id,
+      label: b.name || 'Bar',
+      meta: 'Bar',
+    })),
+    value: '',
+    placeholder: 'Search bars…',
+    emptyLabel: 'All bars',
+    allowEmpty: true,
+    hiddenId: 'ncBar',
+    inputId: 'ncBarInput',
+    inputClass: 'search-select-input',
   });
   $('ncCancel').onclick = closeSheet;
   $('ncSave').onclick = createCountSession;

@@ -18,6 +18,7 @@ import { loadWarehousesList } from './lib/transfer-form.js';
 import { startKitCountApp } from './kit-count-app.js';
 import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
+import { initAppMenu, closeAppDrawer } from './app-menu.js';
 
 const TABS = new Set(['counts', 'kit', 'deliveries', 'transfers', 'wastage']);
 const DEFAULT_TAB = 'counts';
@@ -40,8 +41,8 @@ const state = {
 };
 
 /** @type {null | {
- *   setPreferredEvent?: (id: string, name?: string) => void,
- *   setPreferredWarehouse?: (id: string, name?: string) => void,
+ *   setPreferredEvent?: (id: string, name?: string) => void | Promise<void>,
+ *   setPreferredWarehouse?: (id: string, name?: string) => void | Promise<void>,
  *   runHomeAction?: (action: string) => Promise<boolean> | boolean,
  * }} */
 let kitApi = null;
@@ -94,6 +95,7 @@ function setComposeFabOpen(open) {
   const backdrop = $('composeFabBackdrop');
   const btn = $('composeFabBtn');
   if (!root || !menu || !btn) return;
+  if (open) closeAppDrawer();
   root.classList.toggle('is-open', open);
   menu.hidden = !open;
   if (backdrop) backdrop.hidden = !open;
@@ -284,18 +286,22 @@ function initPullToRefresh() {
   }, { passive: true });
 }
 
-function syncKitPreferred() {
+async function syncKitPreferred() {
   if (!kitApi) return;
   if (state.warehouseId) {
-    kitApi.setPreferredWarehouse?.(state.warehouseId, state.warehouse?.name || '');
+    await Promise.resolve(
+      kitApi.setPreferredWarehouse?.(state.warehouseId, state.warehouse?.name || ''),
+    );
     return;
   }
-  kitApi.setPreferredEvent?.(state.eventId, state.event?.name || '');
+  await Promise.resolve(
+    kitApi.setPreferredEvent?.(state.eventId, state.event?.name || ''),
+  );
 }
 
 async function ensureKit() {
   if (kitApi) {
-    syncKitPreferred();
+    await syncKitPreferred();
     return kitApi;
   }
   if (kitStarting) return null;
@@ -399,6 +405,7 @@ function afterLocationReady(preferTab) {
 }
 
 function openEventGate() {
+  closeAppDrawer();
   document.documentElement.classList.toggle('event-gate-ready', state.ready);
   showEventGate({
     events: state.events,
@@ -492,6 +499,13 @@ async function boot() {
   initSheet();
   initSpreadsheetCells(document.body);
   initComposeFab();
+  initAppMenu({
+    onChangeLocation: () => {
+      closeAppDrawer();
+      openEventGate();
+    },
+    onOpen: () => setComposeFabOpen(false),
+  });
 
   initCounts(getContext());
   initDeliveries(getContext());

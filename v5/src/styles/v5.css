@@ -70,7 +70,7 @@ option { background: var(--card); color: var(--foreground); }
 
 .topbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 40;
-  background: transparent;
+  background: var(--background);
   border-bottom: none;
   padding: calc(8px + var(--safe-top)) 14px 8px;
   pointer-events: none;
@@ -108,17 +108,14 @@ option { background: var(--card); color: var(--foreground); }
   font-size: 18px;
 }
 .topbar-avatar:active { transform: scale(0.96); background: #2a2f3a; }
-.topbar-avatar--back {
+.topbar-avatar--back,
+.topbar-avatar--menu {
   font-size: 20px;
 }
-html:not(.has-back) .topbar-side--left {
-  visibility: hidden;
-  pointer-events: none;
-}
-html.has-back .topbar-side--left {
-  visibility: visible;
-  pointer-events: auto;
-}
+html:not(.has-back) .topbar-avatar--back { display: none; }
+html.has-back .topbar-avatar--menu { display: none; }
+html.counting .topbar-avatar--menu,
+html.kit-deep .topbar-avatar--menu { display: none; }
 
 .topbar-center {
   position: relative;
@@ -208,16 +205,48 @@ html.event-gate:not(.event-gate-ready) .event-dd-backdrop {
 
 .event-dd-menu {
   max-height: min(52vh, 360px);
-  overflow-y: auto;
+  overflow: hidden;
   border-radius: 16px;
   border: 1px solid var(--border);
   background: var(--card);
   box-shadow: 0 18px 50px rgb(0 0 0 / 0.45);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.event-dd-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.event-dd-search > i {
+  color: var(--muted-foreground);
+  font-size: 16px;
+}
+.event-dd-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  padding: 0;
+  outline: none;
+}
+.event-dd-results {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-height: min(42vh, 320px);
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  -webkit-overflow-scrolling: touch;
 }
 .event-dd-section {
   display: flex;
@@ -892,6 +921,116 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .err { color: var(--danger); font-size: 13px; margin-bottom: 10px; }
+.muted { color: var(--muted-foreground); }
+
+/* Left app menu drawer */
+.app-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+.app-drawer[hidden] { display: none !important; }
+.app-drawer.is-open { pointer-events: auto; }
+.app-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.5);
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+.app-drawer.is-open .app-drawer-backdrop { opacity: 1; }
+.app-drawer-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(300px, 86vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 32px rgb(0 0 0 / 0.35);
+  transform: translateX(-105%);
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+.app-drawer.is-open .app-drawer-panel { transform: translateX(0); }
+.app-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.app-drawer-brand {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.app-drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 10px;
+}
+.app-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--foreground);
+  font: 600 15px/1.2 Outfit, system-ui, sans-serif;
+  text-align: left;
+}
+.app-drawer-item i { font-size: 20px; color: var(--muted-foreground); }
+.app-drawer-item:active { background: var(--secondary); }
+body.app-drawer-open { overflow: hidden; }
+
+.app-settings-lead {
+  margin: 0 0 18px;
+  font-size: 14px;
+}
+.app-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+}
+.app-settings-row:active { background: var(--secondary); }
+.app-settings-row-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.app-settings-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.app-settings-row-title { font-weight: 600; font-size: 15px; }
+.app-settings-row-desc { font-size: 13px; color: var(--muted-foreground); }
+.app-settings-row-chev { font-size: 16px; color: var(--muted-foreground); }
 
 .sheet {
   position: fixed; inset: 0; z-index: 100; background: var(--background);
@@ -919,11 +1058,13 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   min-height: 44px;
 }
 
-/* Searchable product / supplier pickers (mobile sheet) */
+/* Searchable product / supplier / generic pickers (mobile sheet) */
 .product-search,
-.supplier-search { position: relative; }
+.supplier-search,
+.search-select { position: relative; }
 .product-search-input,
-.supplier-search-input { width: 100%; }
+.supplier-search-input,
+.search-select-input { width: 100%; }
 .product-search-pack {
   position: absolute;
   right: 10px;
@@ -942,7 +1083,8 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   padding-right: calc(10px + min(42%, 10em));
 }
 .product-search-list,
-.supplier-search-list {
+.supplier-search-list,
+.search-select-list {
   /* In-flow under the input so typing stays visible (esp. with iOS keyboard) */
   position: relative;
   left: auto;
@@ -961,8 +1103,17 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   padding: 4px;
 }
 .product-search-list[hidden],
-.supplier-search-list[hidden] {
+.supplier-search-list[hidden],
+.search-select-list[hidden] {
   display: none !important;
+}
+.search-select-group {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 .product-search-item {
   display: flex;

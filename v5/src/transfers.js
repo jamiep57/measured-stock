@@ -7,14 +7,15 @@ import { entryMode, productStockPack } from './pack-metrics.js';
 import { formToStored, storedToForm, hasQuantity } from './stock-entry.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountProductSearch } from './components/product-search.js';
+import { mountSearchSelect } from './components/search-select.js';
 import {
   parseSourceValue,
   transferSourceFromSaved,
   transferDestValueFromSaved,
   transferSourceLabel,
   transferDestLabel,
-  sourceSelectOptions,
-  destSelectOptions,
+  sourceSelectItems,
+  destSelectItems,
   buildTransferPayload,
   lineCasesFromForm,
   lineCasesFromDb,
@@ -32,6 +33,10 @@ let editingId = null;
 let xferSource = null;
 /** @type {Array<{ lineId: string, productId: string, cases: string, singles: string }>} */
 let xferLines = [];
+/** @type {ReturnType<typeof mountSearchSelect> | null} */
+let sourcePicker = null;
+/** @type {ReturnType<typeof mountSearchSelect> | null} */
+let destPicker = null;
 
 export function initTransfers(context) {
   ctx = context;
@@ -208,36 +213,59 @@ function renderTransferLines() {
   });
 }
 
+function currentSourceValue() {
+  return xferSource ? `${xferSource.type}:${xferSource.id}` : '';
+}
+
+function currentDestValue() {
+  return destPicker?.getValue?.() || $('xfDest')?.value || '';
+}
+
 function refreshSourceSelect() {
-  const sel = $('xfSource');
-  if (!sel) return;
-  const { html, value } = sourceSelectOptions(ctx.event, warehouses, xferSource);
-  sel.innerHTML = html;
-  if (value) sel.value = value;
+  const mount = $('xfSourceMount');
+  if (!mount) return;
+  const value = currentSourceValue();
+  sourcePicker = mountSearchSelect(mount, {
+    options: sourceSelectItems(ctx.event, warehouses),
+    value,
+    placeholder: 'Search source…',
+    emptyLabel: '— Select source —',
+    allowEmpty: true,
+    hiddenId: 'xfSource',
+    inputId: 'xfSourceInput',
+    inputClass: 'search-select-input',
+    onSelect: () => onSourceChange(),
+  });
 }
 
 function refreshDestSelect(preserveValue = true) {
-  const sel = $('xfDest');
-  if (!sel) return;
-  const prev = preserveValue ? sel.value : '';
-  sel.innerHTML = destSelectOptions(ctx.event, warehouses, xferSource);
-  if (preserveValue && prev) {
-    const stillValid = Array.from(sel.options).some((o) => o.value === prev);
-    sel.value = stillValid ? prev : '';
-  }
+  const mount = $('xfDestMount');
+  if (!mount) return;
+  const prev = preserveValue ? currentDestValue() : '';
+  const options = destSelectItems(ctx.event, warehouses, xferSource);
+  const stillValid = prev && options.some((o) => o.value === prev);
+  destPicker = mountSearchSelect(mount, {
+    options,
+    value: stillValid ? prev : '',
+    placeholder: 'Search destination…',
+    emptyLabel: '— Select destination —',
+    allowEmpty: true,
+    hiddenId: 'xfDest',
+    inputId: 'xfDestInput',
+    inputClass: 'search-select-input',
+  });
 }
 
 function onSourceChange() {
-  const sel = $('xfSource');
-  xferSource = parseSourceValue(sel?.value);
-  const destSel = $('xfDest');
-  if (destSel && xferSource) {
-    const dv = parseSourceValue(destSel.value);
+  xferSource = parseSourceValue(sourcePicker?.getValue?.() || $('xfSource')?.value);
+  const destVal = currentDestValue();
+  if (xferSource && destVal) {
+    const dv = parseSourceValue(destVal);
     const siteCollision = xferSource.type === 'site' && dv && (dv.type === 'event' || dv.type === 'bar');
     if (dv && (siteCollision
       || (dv.type === 'event' && xferSource.type === 'event')
       || (dv.type === 'bar' && xferSource.type === 'bar' && dv.id === xferSource.id))) {
-      destSel.value = '';
+      destPicker?.setValue?.('', { silent: true });
     }
   }
   refreshDestSelect(true);
@@ -349,12 +377,12 @@ async function openTransferForm(editId) {
     bodyHtml: `
       <div class="err" id="xfErr"></div>
       <div class="field">
-        <label for="xfSource">Stock comes from</label>
-        <select id="xfSource"></select>
+        <label for="xfSourceInput">Stock comes from</label>
+        <div id="xfSourceMount"></div>
       </div>
       <div class="field">
-        <label for="xfDest">Transfer to</label>
-        <select id="xfDest"></select>
+        <label for="xfDestInput">Transfer to</label>
+        <div id="xfDestMount"></div>
       </div>
       <div class="field">
         <label for="xfDate">Transferred on</label>
@@ -374,6 +402,8 @@ async function openTransferForm(editId) {
       editingId = null;
       xferSource = null;
       xferLines = [];
+      sourcePicker = null;
+      destPicker = null;
     },
   });
 
@@ -386,12 +416,11 @@ async function openTransferForm(editId) {
       const dt = new Date(editTransfer.transferred_at);
       $('xfDate').value = new Date(dt - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     }
-    $('xfDest').value = transferDestValueFromSaved(editTransfer);
+    destPicker?.setValue?.(transferDestValueFromSaved(editTransfer), { silent: true });
   } else {
     $('xfDate').value = nowLocalInput();
   }
 
-  $('xfSource').onchange = onSourceChange;
   $('xfCancel').onclick = closeSheet;
   $('xfSave').onclick = () => saveTransfer();
   mountProductComposer();
@@ -406,7 +435,7 @@ async function saveTransfer() {
     if (errEl) errEl.textContent = 'Pick where the stock is coming from.';
     return;
   }
-  const dest = parseSourceValue($('xfDest')?.value);
+  const dest = parseSourceValue(currentDestValue());
   if (!dest) {
     if (errEl) errEl.textContent = 'Select where the stock is going.';
     return;

@@ -78,10 +78,105 @@ export function transferDestLabel(t, event, warehouses) {
   return '—';
 }
 
+/** Flat options for searchable source picker. */
+export function sourceSelectItems(event, warehouses = []) {
+  /** @type {Array<{ value: string, label: string, meta?: string, group?: string }>} */
+  const items = [];
+  if (event) {
+    const group = event.name || 'Event';
+    items.push({
+      value: `site:${event.id}`,
+      label: 'Whole event (all locations)',
+      group,
+      meta: 'All locations',
+    });
+    items.push({
+      value: `event:${event.id}`,
+      label: 'Bone Yard (goods in)',
+      group,
+      meta: 'Bone Yard',
+    });
+    eventServingBars(event).forEach((b) => {
+      items.push({
+        value: `bar:${b.id}`,
+        label: b.name || 'Bar',
+        group,
+        meta: 'Bar',
+      });
+    });
+  }
+  (warehouses || []).forEach((w) => {
+    items.push({
+      value: `warehouse:${w.id}`,
+      label: w.name || 'Warehouse',
+      group: 'Warehouses',
+      meta: 'Warehouse',
+    });
+  });
+  return items;
+}
+
+/** Flat options for searchable destination picker. */
+export function destSelectItems(event, warehouses = [], xferSource = null) {
+  /** @type {Array<{ value: string, label: string, meta?: string, group?: string }>} */
+  const items = [];
+  const recips = event?.recipients || [];
+  recips.forEach((r) => {
+    items.push({
+      value: `recipient:${r.id}`,
+      label: r.name || 'Recipient',
+      group: 'Recipients',
+      meta: 'Recipient',
+    });
+  });
+
+  const srcIsBone = xferSource?.type === 'event';
+  const srcIsSite = xferSource?.type === 'site';
+  const srcBarId = xferSource?.type === 'bar' ? xferSource.id : null;
+  const internalGroup = `Within ${event?.name || 'event'}`;
+  if (!srcIsSite) {
+    if (event && !srcIsBone) {
+      items.push({
+        value: `event:${event.id}`,
+        label: 'Bone Yard (goods in)',
+        group: internalGroup,
+        meta: 'Bone Yard',
+      });
+    }
+    eventServingBars(event).forEach((b) => {
+      if (b.id === srcBarId) return;
+      items.push({
+        value: `bar:${b.id}`,
+        label: b.name || 'Bar',
+        group: internalGroup,
+        meta: 'Bar',
+      });
+    });
+  }
+
+  const srcWhId = xferSource?.type === 'warehouse' ? xferSource.id : null;
+  ;(warehouses || [])
+    .filter((w) => w.id !== srcWhId)
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .forEach((w) => {
+      items.push({
+        value: `warehouse:${w.id}`,
+        label: w.name || 'Warehouse',
+        group: 'Warehouses',
+        meta: 'Warehouse',
+      });
+    });
+
+  return items;
+}
+
 export function sourceSelectOptions(event, warehouses, current) {
+  const items = sourceSelectItems(event, warehouses);
+  const eventName = event?.name || 'Event';
   const bars = eventServingBars(event);
   const eventGroup = event
-    ? `<optgroup label="${escapeHtml(event.name)}">` +
+    ? `<optgroup label="${escapeHtml(eventName)}">` +
       `<option value="site:${event.id}">Whole event (all locations)</option>` +
       `<option value="event:${event.id}">Bone Yard (goods in)</option>` +
       bars.map((b) => `<option value="bar:${b.id}">${escapeHtml(b.name)}</option>`).join('') +
@@ -95,10 +190,12 @@ export function sourceSelectOptions(event, warehouses, current) {
   return {
     html: '<option value="">— Select source —</option>' + eventGroup + whGroup,
     value: cur,
+    items,
   };
 }
 
 export function destSelectOptions(event, warehouses, xferSource) {
+  const items = destSelectItems(event, warehouses, xferSource);
   const recips = event?.recipients || [];
   const recipGroup = recips.length
     ? `<optgroup label="Recipients">${recips.map((r) =>

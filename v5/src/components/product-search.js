@@ -17,6 +17,7 @@
 import { escapeHtml } from '../lib/util.js';
 import { productStockPack } from '../pack-metrics.js';
 import { openModal, closeModal } from './modal.js';
+import { mountSearchSelect } from './search-select.js';
 
 function normaliseProducts(list) {
   return (list || []).map((item) => {
@@ -46,18 +47,6 @@ function offerSummary(product) {
   const extra = offers.length > 1 ? ` (+${offers.length - 1})` : '';
   const price = pref.unit_price != null ? ` · £${pref.unit_price}` : pref.case_price != null ? ` · £${pref.case_price}/case` : '';
   return name + extra + price;
-}
-
-function categoryOptionsHtml(categories) {
-  return (categories || [])
-    .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`)
-    .join('');
-}
-
-function caseSizeOptionsHtml(caseSizes) {
-  return (caseSizes || [])
-    .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label || c.name || '')}</option>`)
-    .join('');
 }
 
 /**
@@ -218,18 +207,12 @@ export function mountProductSearch(container, options = {}) {
               <input type="text" class="admin-input" id="psCreateName" value="${escapeHtml(name)}" required>
             </div>
             <div class="admin-field">
-              <label class="admin-label" for="psCreateCategory">Category</label>
-              <select class="admin-select" id="psCreateCategory">
-                <option value="">— Optional —</option>
-                ${categoryOptionsHtml(categories)}
-              </select>
+              <label class="admin-label" for="psCreateCategoryInput">Category</label>
+              <div id="psCreateCategoryMount"></div>
             </div>
             <div class="admin-field">
-              <label class="admin-label" for="psCreateCase">Case size</label>
-              <select class="admin-select" id="psCreateCase">
-                <option value="">— Optional —</option>
-                ${caseSizeOptionsHtml(caseSizes)}
-              </select>
+              <label class="admin-label" for="psCreateCaseInput">Case size</label>
+              <div id="psCreateCaseMount"></div>
             </div>
             <div class="del-form-err" id="psCreateErr"></div>
           </div>`,
@@ -243,6 +226,37 @@ export function mountProductSearch(container, options = {}) {
       const nameEl = modal.querySelector('#psCreateName');
       const errEl = modal.querySelector('#psCreateErr');
       const submitBtn = modal.querySelector('#psCreateSubmit');
+
+      mountSearchSelect(modal.querySelector('#psCreateCategoryMount'), {
+        options: (categories || []).map((c) => ({
+          value: c.id,
+          label: c.name || 'Category',
+        })),
+        value: '',
+        placeholder: 'Search categories…',
+        emptyLabel: '— Optional —',
+        allowEmpty: true,
+        dropdownFixed: true,
+        hiddenId: 'psCreateCategory',
+        inputId: 'psCreateCategoryInput',
+        inputClass: 'search-select-input admin-input',
+      });
+
+      mountSearchSelect(modal.querySelector('#psCreateCaseMount'), {
+        options: (caseSizes || []).map((c) => ({
+          value: c.id,
+          label: c.label || c.name || 'Case size',
+          meta: c.units_per_case != null ? `${c.units_per_case} units` : '',
+        })),
+        value: '',
+        placeholder: 'Search case sizes…',
+        emptyLabel: '— Optional —',
+        allowEmpty: true,
+        dropdownFixed: true,
+        hiddenId: 'psCreateCase',
+        inputId: 'psCreateCaseInput',
+        inputClass: 'search-select-input admin-input',
+      });
 
       modal.querySelector('#psCreateCancel')?.addEventListener('click', closeModal);
 
