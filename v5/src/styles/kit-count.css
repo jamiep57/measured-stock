@@ -462,9 +462,6 @@ html.kit-deep .kc-root .kc-complete-bar {
 .kc-event-tab.is-active .kc-event-tab-count {
   background: color-mix(in srgb, var(--accent, #e8c47c) 28%, transparent);
 }
-.kc-section--event-tab {
-  padding-top: 8px;
-}
 .kc-table-row--search {
   cursor: default;
 }
