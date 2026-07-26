@@ -64,14 +64,19 @@ export async function loadCountsView() {
   const el = $('view-counts');
   if (!ctx.eventId) {
     exitCountMode();
-    el.innerHTML = '<div class="empty"><i class="ph ph-calendar-blank"></i><p>Select an event to start counting.</p></div>';
+    el.innerHTML = `
+      <div class="empty empty--card">
+        <i class="ph ph-calendar-blank"></i>
+        <p class="empty-title">Choose an event</p>
+        <p>Select an event in the top bar to start a stock count.</p>
+      </div>`;
     return;
   }
 
   try {
     counts = await getDB().stockCounts.forEvent(ctx.eventId);
   } catch (err) {
-    el.innerHTML = `<div class="empty"><p>${escapeHtml(err.message)}</p></div>`;
+    el.innerHTML = `<div class="empty empty--card"><p>${escapeHtml(err.message)}</p></div>`;
     return;
   }
 
@@ -81,8 +86,15 @@ export async function loadCountsView() {
   }
 
   el.innerHTML = `
-    <button class="btn btn-primary btn-block btn-lg" type="button" id="newCountBtn"><i class="ph-bold ph-plus"></i> New count session</button>
-    <div id="countList" style="margin-top:16px"></div>
+    <div class="page-hero page-hero--compact">
+      <p class="page-kicker">Stock</p>
+      <h1 class="page-title">Counts</h1>
+      <p class="page-sub">Open a session and work through bar stock.</p>
+    </div>
+    <button class="btn btn-primary btn-block btn-lg btn-cta" type="button" id="newCountBtn">
+      <i class="ph-bold ph-plus"></i> New count session
+    </button>
+    <div id="countList" class="session-list"></div>
   `;
   $('newCountBtn').onclick = openNewCountSheet;
   renderCountList();
@@ -92,31 +104,40 @@ function renderCountList() {
   const list = $('countList');
   if (!list) return;
   if (!counts.length) {
-    list.innerHTML = '<div class="empty" style="padding:24px"><p>No count sessions yet.</p></div>';
+    list.innerHTML = `
+      <div class="empty empty--inline">
+        <p class="empty-title">No sessions yet</p>
+        <p>Start a new count session for this event.</p>
+      </div>`;
     return;
   }
-  list.innerHTML = counts.map((c) => {
+  list.innerHTML = `
+    <h2 class="section-label">Sessions</h2>
+    ${counts.map((c) => {
     const bar = (ctx.event?.bars || []).find((b) => b.id === c.bar_id);
+    const when = new Date(c.counted_at).toLocaleString('en-GB', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+    });
     return `
-      <div class="card">
-        <div class="card-head">
-          <div>
-            <div class="card-title">${escapeHtml(c.name || 'Count')}</div>
-            <div class="card-meta">${escapeHtml(bar?.name || 'All bars')} · ${new Date(c.counted_at).toLocaleString('en-GB')}</div>
-          </div>
-          <div class="card-actions">
-            <button class="btn btn-sm btn-primary" type="button" data-open="${c.id}">Open</button>
-            <button class="btn btn-sm" type="button" data-del="${c.id}" aria-label="Delete"><i class="ph ph-trash"></i></button>
-          </div>
-        </div>
+      <div class="session-card">
+        <button type="button" class="session-card-main" data-open="${c.id}">
+          <span class="session-card-title">${escapeHtml(c.name || 'Count')}</span>
+          <span class="session-card-meta">${escapeHtml(bar?.name || 'All bars')} · ${escapeHtml(when)}</span>
+        </button>
+        <button class="icon-btn session-card-del" type="button" data-del="${c.id}" aria-label="Delete">
+          <i class="ph ph-trash"></i>
+        </button>
       </div>`;
-  }).join('');
+  }).join('')}`;
 
   list.querySelectorAll('[data-open]').forEach((btn) => {
     btn.onclick = () => activateCount(btn.dataset.open);
   });
   list.querySelectorAll('[data-del]').forEach((btn) => {
-    btn.onclick = () => deleteCount(btn.dataset.del);
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      deleteCount(btn.dataset.del);
+    };
   });
 }
 

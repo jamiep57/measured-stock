@@ -1,6 +1,6 @@
 import './styles/v5.css';
 import './styles/kit-count.css';
-import { $, toast, V5_VERSION, syncChromeSizes } from './lib/util.js';
+import { $, toast, syncChromeSizes } from './lib/util.js';
 import { loadCaseSizes, loadEventsList, loadEventFull, loadSuppliers } from './db.js';
 import { getDB } from './db.js';
 import {
@@ -196,7 +196,7 @@ async function boot() {
     return;
   }
 
-  $('appFoot').textContent = 'V' + V5_VERSION;
+  // Version stamp removed from chrome for a cleaner mobile shell
   initSheet();
   initSpreadsheetCells(document.body);
 

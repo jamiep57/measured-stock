@@ -796,7 +796,7 @@ export async function startKitCountApp(DB, opts = {}) {
   function paintDest() {
     app.innerHTML = `
       <header class="kc-top">
-        <div class="kc-brand">Measured · Kit</div>
+        <div class="kc-brand">Kit</div>
         <h1 class="kc-title">Where to count?</h1>
         <p class="kc-sub">Choose event or warehouse, then count containers and what’s inside.</p>
       </header>

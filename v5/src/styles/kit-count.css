@@ -1,17 +1,16 @@
 /**
- * Kit count UI — embedded in Measured /v5/ Kit tab.
- * Uses light Measured tokens by default.
+ * Kit count UI — embedded in Measured /v5/ Kit tab (dark theme).
  */
 .kc-root {
-  --bg: var(--background, #fafafa);
-  --fg: var(--foreground, #09090b);
-  --muted: var(--muted-foreground, #71717a);
-  --card: var(--card, #ffffff);
-  --card-2: var(--secondary, #f4f4f5);
-  --ok: var(--success, #16a34a);
-  --err: var(--danger, #dc2626);
-  --border: var(--border, #e4e4e7);
-  --accent: #a8893a;
+  --bg: var(--background, #0f1115);
+  --fg: var(--foreground, #f4f4f5);
+  --muted: var(--muted-foreground, #a1a1aa);
+  --card: var(--card, #1a1d24);
+  --card-2: var(--secondary, #22262f);
+  --ok: var(--success, #22c55e);
+  --err: var(--danger, #ef4444);
+  --border: var(--border, #2a2f3a);
+  --accent: var(--accent, #e8c47c);
   --safe-top: 0px;
   --safe-bottom: 0px;
   min-height: 100%;
@@ -20,23 +19,30 @@
   color: var(--fg);
 }
 
-/* Feedback colors on light bg */
-.kc-root .kc-feedback.is-ok { color: #166534; background: #f0fdf4; }
-.kc-root .kc-feedback.is-err { color: #991b1b; background: #fef2f2; }
-.kc-root .kc-err { color: var(--err); }
-.kc-root .kc-fatal { color: var(--err); }
+.kc-root .kc-feedback.is-ok { border-color: var(--ok); color: #bbf7d0; }
+.kc-root .kc-feedback.is-err { border-color: var(--err); color: #fecaca; }
+.kc-root .kc-err { color: #fecaca; }
+.kc-root .kc-fatal {
+  color: #fecaca;
+  border: 1px solid var(--err);
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--card);
+}
 .kc-root .kc-label-btn.is-queued {
-  border-color: #86efac;
-  color: #166534;
-  background: #f0fdf4;
+  border-color: #3d5a40;
+  color: #bbf7d0;
+  background: #162018;
 }
 .kc-root .kc-content-row.is-container {
-  border-color: #e8d9b0;
-  background: #faf6eb;
+  border-color: #3a3428;
+  background: #1c1a16;
 }
-.kc-root .kc-complete-bar {
-  background: linear-gradient(to top, var(--bg) 70%, transparent);
-  padding-bottom: 12px;
+.kc-root .kc-top {
+  padding-top: 8px;
+}
+.kc-root .kc-actions {
+  padding-top: 12px;
 }
 html.kit-deep .kc-root .kc-complete-bar {
   padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));

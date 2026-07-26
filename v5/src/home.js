@@ -18,38 +18,53 @@ export function loadHomeView(opts) {
   const eventName = opts.event?.name || '';
   const hasEvent = !!opts.eventId;
   const kitDest = loadStoredDestination();
-  let kitStatus = 'Choose event or warehouse when you open Kit';
+  let kitMeta = 'Event or warehouse';
   if (kitDest?.type === DEST_EVENT && kitDest.eventName) {
-    kitStatus = `Last kit destination: ${kitDest.eventName}`;
+    kitMeta = kitDest.eventName;
   } else if (kitDest?.type === DEST_WAREHOUSE && kitDest.warehouseName) {
-    kitStatus = `Last kit destination: ${kitDest.warehouseName}`;
+    kitMeta = kitDest.warehouseName;
   }
 
   el.innerHTML = `
-    <div class="home-hero">
-      <h1>Measured</h1>
-      <p>${hasEvent
-    ? `Working on <strong>${escapeHtml(eventName || 'event')}</strong>`
-    : 'Select an event above for stock counts and deliveries.'}</p>
+    <div class="page-hero">
+      <p class="page-kicker">Today</p>
+      <h1 class="page-title">What are you doing?</h1>
+      ${hasEvent
+    ? `<div class="event-pill" title="${escapeHtml(eventName)}">
+          <i class="ph ph-calendar-blank"></i>
+          <span>${escapeHtml(eventName)}</span>
+        </div>`
+    : `<p class="page-sub">Pick an event in the bar above for stock counts and deliveries. Kit works with events or warehouses.</p>`}
     </div>
-    <div class="home-tiles">
-      <button type="button" class="home-tile" data-go="counts">
-        <i class="ph ph-clipboard-text"></i>
-        <strong>Stock count</strong>
-        <em>${hasEvent ? 'Open count sessions for this event' : 'Pick an event first, then count bar stock'}</em>
+
+    <div class="action-list" role="list">
+      <button type="button" class="action-row${hasEvent ? '' : ' is-soft'}" data-go="counts" role="listitem">
+        <span class="action-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span>
+        <span class="action-copy">
+          <strong>Stock count</strong>
+          <em>${hasEvent ? 'Bar stock sessions for this event' : 'Needs an event selected'}</em>
+        </span>
+        <i class="ph ph-caret-right action-chevron" aria-hidden="true"></i>
       </button>
-      <button type="button" class="home-tile" data-go="kit">
-        <i class="ph ph-package"></i>
-        <strong>Kit</strong>
-        <em>Count boxes, pallets, and loose kit into events or warehouses</em>
+
+      <button type="button" class="action-row" data-go="kit" role="listitem">
+        <span class="action-icon action-icon--accent" aria-hidden="true"><i class="ph ph-package"></i></span>
+        <span class="action-copy">
+          <strong>Kit</strong>
+          <em>Boxes, pallets &amp; loose items · ${escapeHtml(kitMeta)}</em>
+        </span>
+        <i class="ph ph-caret-right action-chevron" aria-hidden="true"></i>
       </button>
-      <button type="button" class="home-tile" data-go="deliveries">
-        <i class="ph ph-shipping-container"></i>
-        <strong>Deliveries</strong>
-        <em>${hasEvent ? 'Log supplier deliveries for this event' : 'Pick an event first, then log deliveries'}</em>
+
+      <button type="button" class="action-row${hasEvent ? '' : ' is-soft'}" data-go="deliveries" role="listitem">
+        <span class="action-icon" aria-hidden="true"><i class="ph ph-shipping-container"></i></span>
+        <span class="action-copy">
+          <strong>Deliveries</strong>
+          <em>${hasEvent ? 'Log supplier deliveries' : 'Needs an event selected'}</em>
+        </span>
+        <i class="ph ph-caret-right action-chevron" aria-hidden="true"></i>
       </button>
     </div>
-    <div class="home-status">${escapeHtml(kitStatus)}</div>
   `;
 
   el.querySelectorAll('[data-go]').forEach((btn) => {

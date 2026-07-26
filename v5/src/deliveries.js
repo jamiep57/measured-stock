@@ -23,20 +23,32 @@ export function initDeliveries(context) {
 export async function loadDeliveriesView() {
   const el = $('view-deliveries');
   if (!ctx.eventId) {
-    el.innerHTML = '<div class="empty"><i class="ph ph-calendar-blank"></i><p>Select an event to log deliveries.</p></div>';
+    el.innerHTML = `
+      <div class="empty empty--card">
+        <i class="ph ph-calendar-blank"></i>
+        <p class="empty-title">Choose an event</p>
+        <p>Select an event in the top bar to log deliveries.</p>
+      </div>`;
     return;
   }
 
   try {
     deliveries = await getDB().deliveries.forEvent(ctx.eventId);
   } catch (err) {
-    el.innerHTML = `<div class="empty"><p>${escapeHtml(err.message)}</p></div>`;
+    el.innerHTML = `<div class="empty empty--card"><p>${escapeHtml(err.message)}</p></div>`;
     return;
   }
 
   el.innerHTML = `
-    <button class="btn btn-primary btn-block btn-lg" type="button" id="newDelBtn"><i class="ph-bold ph-plus"></i> Log delivery</button>
-    <div id="delList" style="margin-top:16px"></div>
+    <div class="page-hero page-hero--compact">
+      <p class="page-kicker">Stock</p>
+      <h1 class="page-title">Deliveries</h1>
+      <p class="page-sub">Log what arrived for this event.</p>
+    </div>
+    <button class="btn btn-primary btn-block btn-lg btn-cta" type="button" id="newDelBtn">
+      <i class="ph-bold ph-plus"></i> Log delivery
+    </button>
+    <div id="delList" class="session-list"></div>
   `;
   $('newDelBtn').onclick = () => openDeliveryForm();
   renderDeliveryList();
@@ -46,32 +58,38 @@ function renderDeliveryList() {
   const list = $('delList');
   if (!list) return;
   if (!deliveries.length) {
-    list.innerHTML = '<div class="empty" style="padding:24px"><p>No deliveries yet.</p></div>';
+    list.innerHTML = `
+      <div class="empty empty--inline">
+        <p class="empty-title">No deliveries yet</p>
+        <p>Log the first delivery for this event.</p>
+      </div>`;
     return;
   }
-  list.innerHTML = deliveries.map((d) => {
+  list.innerHTML = `
+    <h2 class="section-label">Recent</h2>
+    ${deliveries.map((d) => {
     const sup = d.supplier?.name || '—';
     const lineCount = (d.lines || []).length;
     return `
-      <div class="card">
-        <div class="card-head">
-          <div>
-            <div class="card-title">${escapeHtml(sup)}</div>
-            <div class="card-meta">${fmtDateTime(d.delivered_at)} · ${lineCount} product${lineCount !== 1 ? 's' : ''}${d.reference ? ' · ' + escapeHtml(d.reference) : ''}</div>
-          </div>
-          <div class="card-actions">
-            <button class="btn btn-sm" type="button" data-edit="${d.id}"><i class="ph ph-pencil-simple"></i></button>
-            <button class="btn btn-sm" type="button" data-del="${d.id}"><i class="ph ph-trash"></i></button>
-          </div>
-        </div>
+      <div class="session-card">
+        <button type="button" class="session-card-main" data-edit="${d.id}">
+          <span class="session-card-title">${escapeHtml(sup)}</span>
+          <span class="session-card-meta">${fmtDateTime(d.delivered_at)} · ${lineCount} product${lineCount !== 1 ? 's' : ''}${d.reference ? ' · ' + escapeHtml(d.reference) : ''}</span>
+        </button>
+        <button class="icon-btn session-card-del" type="button" data-del="${d.id}" aria-label="Delete">
+          <i class="ph ph-trash"></i>
+        </button>
       </div>`;
-  }).join('');
+  }).join('')}`;
 
   list.querySelectorAll('[data-edit]').forEach((btn) => {
     btn.onclick = () => openDeliveryForm(btn.dataset.edit);
   });
   list.querySelectorAll('[data-del]').forEach((btn) => {
-    btn.onclick = () => deleteDelivery(btn.dataset.del);
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      deleteDelivery(btn.dataset.del);
+    };
   });
 }
 

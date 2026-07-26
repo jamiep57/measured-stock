@@ -7,7 +7,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#18181b">
+  <meta name="theme-color" content="#0f1115">
   <title>Measured</title>
   <link rel="apple-touch-icon" sizes="180x180" href="/v5/apple-touch-icon.png">
   <link rel="apple-touch-icon" href="/v5/apple-touch-icon.png">
@@ -27,14 +27,17 @@
     <header class="topbar">
       <div class="topbar-row">
         <div class="brand">
-          <img src="/v5/kit-count-icon-192.png" alt="">
+          <img src="/v5/kit-count-icon-192.png" alt="" class="brand-mark">
           <span>Measured</span>
         </div>
-        <div class="sync-badge" id="syncBadge" hidden title="Pending sync">0</div>
-        <button class="icon-btn" id="reloadBtn" type="button" aria-label="Reload"><i class="ph ph-arrow-clockwise"></i></button>
-        <button class="icon-btn" id="cntBackTop" type="button" hidden aria-label="Back to sessions"><i class="ph ph-arrow-left"></i></button>
+        <div class="topbar-actions">
+          <div class="sync-badge" id="syncBadge" hidden title="Pending sync">0</div>
+          <button class="icon-btn" id="reloadBtn" type="button" aria-label="Reload"><i class="ph ph-arrow-clockwise"></i></button>
+          <button class="icon-btn" id="cntBackTop" type="button" hidden aria-label="Back to sessions"><i class="ph ph-arrow-left"></i></button>
+        </div>
       </div>
       <div class="event-select-wrap" id="eventSelectWrap">
+        <label class="event-select-label" for="eventPick">Event</label>
         <select id="eventPick" aria-label="Select event"></select>
       </div>
     </header>
@@ -70,7 +73,6 @@
   </div>
 
   <div class="toast" id="toast" role="status"></div>
-  <footer class="app-foot" id="appFoot">V5.0.0</footer>
 
   <script type="module" src="/src/main.js"></script>
 </body>
