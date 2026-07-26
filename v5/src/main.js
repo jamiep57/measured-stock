@@ -12,6 +12,8 @@ import {
 import { initSheet } from './components/sheet.js';
 import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible, startNewCount } from './counts.js';
 import { initDeliveries, loadDeliveriesView, flushPendingDeliveries, startNewDelivery } from './deliveries.js';
+import { initTransfers, loadTransfersView } from './transfers.js';
+import { initWastage, loadWastageView } from './wastage.js';
 import { loadDbScript } from './lib/load-db.js';
 import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
 import { loadHomeView } from './home.js';
@@ -19,7 +21,7 @@ import { startKitCountApp } from './kit-count-app.js';
 import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
 
-const TABS = new Set(['home', 'counts', 'kit', 'deliveries']);
+const TABS = new Set(['home', 'counts', 'kit', 'deliveries', 'transfers', 'wastage']);
 
 const state = {
   eventId: '',
@@ -243,6 +245,8 @@ function switchTab(tab) {
 function reloadTab() {
   initCounts(getContext());
   initDeliveries(getContext());
+  initTransfers(getContext());
+  initWastage(getContext());
 
   if (state.tab === 'home') {
     loadHomeView({
@@ -256,6 +260,10 @@ function reloadTab() {
     loadCountsView();
   } else if (state.tab === 'kit') {
     ensureKit();
+  } else if (state.tab === 'transfers') {
+    loadTransfersView();
+  } else if (state.tab === 'wastage') {
+    loadWastageView();
   }
 }
 
@@ -334,6 +342,8 @@ async function boot() {
 
   initCounts(getContext());
   initDeliveries(getContext());
+  initTransfers(getContext());
+  initWastage(getContext());
 
   setSyncStatusListener(updateSyncBadge);
   bindOnlineFlush(flushAll);

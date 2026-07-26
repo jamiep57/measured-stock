@@ -58,6 +58,24 @@ export function loadHomeView(opts) {
         </span>
         <i class="ph ph-caret-right action-chevron" aria-hidden="true"></i>
       </button>
+
+      <button type="button" class="action-row${hasEvent ? '' : ' is-soft'}" data-go="transfers" role="listitem">
+        <span class="action-icon" aria-hidden="true"><i class="ph ph-arrows-left-right"></i></span>
+        <span class="action-copy">
+          <strong>Transfers</strong>
+          <em>${hasEvent ? 'Move stock between bars' : 'Needs an event selected'}</em>
+        </span>
+        <i class="ph ph-caret-right action-chevron" aria-hidden="true"></i>
+      </button>
+
+      <button type="button" class="action-row${hasEvent ? '' : ' is-soft'}" data-go="wastage" role="listitem">
+        <span class="action-icon" aria-hidden="true"><i class="ph ph-trash"></i></span>
+        <span class="action-copy">
+          <strong>Wastage</strong>
+          <em>${hasEvent ? 'Log breakage and comps' : 'Needs an event selected'}</em>
+        </span>
+        <i class="ph ph-caret-right action-chevron" aria-hidden="true"></i>
+      </button>
     </div>
   `;
 
