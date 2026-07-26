@@ -630,16 +630,16 @@ html.app-ready .bottomnav {
   }
 }
 
-/* Global compose FAB — bottom left, above nav */
+/* Global compose FAB — bottom right, above nav */
 .compose-fab {
   position: fixed;
-  left: var(--gutter);
-  right: auto;
+  left: auto;
+  right: calc(var(--nav-inset) + 4px);
   bottom: calc(var(--nav-inset) + var(--safe-bottom) + var(--nav-h) + 10px);
   z-index: 45;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 10px;
   pointer-events: none;
 }
@@ -699,7 +699,7 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   border: 1px solid var(--border);
   background: var(--card);
   box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
-  transform-origin: bottom left;
+  transform-origin: bottom right;
   animation: compose-menu-in 0.18s ease both;
 }
 .compose-fab-menu[hidden] { display: none !important; }
