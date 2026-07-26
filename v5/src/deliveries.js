@@ -1,5 +1,5 @@
 import { $, escapeHtml, rid, toast, nowLocalInput, fmtDateTime } from './lib/util.js';
-import { getDB, productFromEvent } from './db.js';
+import { getDB, productFromEvent, loadCategories } from './db.js';
 import { entryMode, productStockPack } from './pack-metrics.js';
 import { formToStored, storedToForm, hasQuantity, parseQty } from './stock-entry.js';
 import { flushQueue } from './sync-queue.js';
@@ -16,6 +16,7 @@ let delLines = [];
 let delNote = null;
 let delPhotos = [];
 let delDamages = [];
+let categories = [];
 
 export function initDeliveries(context) {
   ctx = context;
@@ -300,9 +301,13 @@ function mountProductComposer() {
   mountProductSearch(el, {
     products: ctx.event?.event_products || [],
     caseSizes: ctx.caseSizes || [],
+    categories,
     value: '',
     placeholder: 'Search product to add…',
+    allowCreate: true,
+    createContextLabel: 'this delivery',
     dropdownFixed: false,
+    onCreateProduct: createProductForDelivery,
     onSelect: ({ productId }) => {
       if (!productId) return;
       const lineId = addProductLine(productId);
@@ -318,6 +323,37 @@ function mountProductComposer() {
   });
 }
 
+async function createProductForDelivery({ name, category_id, case_size_id }) {
+  const DB = getDB();
+  const cs = (ctx.caseSizes || []).find((c) => c.id === case_size_id);
+  const category = categories.find((c) => c.id === category_id);
+  const created = await DB.products.create({
+    name: name.trim(),
+    category_id: category_id || null,
+    case_size_id: case_size_id || null,
+    case_size: cs?.label || null,
+    units_per_case: cs?.units_per_case ?? 1,
+  });
+
+  const ep = await DB.eventProducts.setForEvent(ctx.eventId, created.id, {});
+  const product = {
+    ...created,
+    category: category
+      ? { id: category.id, name: category.name, colour_key: category.colour_key }
+      : null,
+  };
+  if (ctx.event) {
+    ctx.event.event_products = [...(ctx.event.event_products || []), {
+      id: ep.id,
+      event_id: ctx.eventId,
+      product_id: created.id,
+      product,
+    }];
+  }
+
+  return { productId: created.id, product };
+}
+
 /** Open a blank delivery form (requires an event). */
 export function startNewDelivery() {
   if (!ctx?.eventId) {
@@ -328,11 +364,17 @@ export function startNewDelivery() {
   return true;
 }
 
-function openDeliveryForm(editId) {
+async function openDeliveryForm(editId) {
   editingId = editId || null;
   delNote = null;
   delPhotos = [];
   delDamages = [];
+
+  try {
+    categories = await loadCategories();
+  } catch {
+    categories = [];
+  }
 
   if (editId) {
     const d = deliveries.find((x) => x.id === editId);

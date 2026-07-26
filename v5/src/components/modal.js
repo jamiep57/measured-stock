@@ -58,7 +58,7 @@ export function openModal({ title, bodyHtml, footHtml, onClose }) {
     <div class="admin-modal-head">
       <div class="admin-modal-title">${escapeHtml(title || '')}</div>
       <button type="button" class="icon-btn admin-modal-close" aria-label="Close">
-        <i class="ph ph-x" aria-hidden="true"></i>
+        <span aria-hidden="true" style="font-size:22px;line-height:1">×</span>
       </button>
     </div>
     <div class="admin-modal-body">${bodyHtml || ''}</div>

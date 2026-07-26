@@ -1002,7 +1002,7 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 .admin-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 240;
+  z-index: 320;
   background: rgb(0 0 0 / 0.55);
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -1010,7 +1010,7 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 .admin-modal-backdrop--visible { opacity: 1; }
 .admin-modal {
   position: fixed;
-  z-index: 250;
+  z-index: 330;
   left: 50%;
   top: 50%;
   width: min(400px, calc(100vw - 32px));

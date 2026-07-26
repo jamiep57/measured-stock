@@ -297,6 +297,7 @@ function mountProductComposer() {
     value: '',
     placeholder: xferSource ? 'Search product to add…' : 'Select a source first…',
     allowCreate: !!xferSource,
+    createContextLabel: 'this transfer',
     dropdownFixed: false,
     onCreateProduct: createProductForTransfer,
     onSelect: ({ productId }) => {

@@ -73,6 +73,7 @@ export function mountProductSearch(container, options = {}) {
     poolValue = '',
     placeholder = 'Search products…',
     allowCreate = false,
+    createContextLabel = 'this event',
     dropdownFixed = false,
     onCreateProduct,
     onSelect,
@@ -200,87 +201,92 @@ export function mountProductSearch(container, options = {}) {
   }
 
   function openCreateModal(initialName) {
-    const name = initialName.trim();
+    if (!onCreateProduct) return;
+    const name = String(initialName || '').trim();
     list.hidden = true;
+    resetListPosition();
+    input.blur();
 
-    const modal = openModal({
-      title: 'New product',
-      bodyHtml: `
-        <div class="admin-drawer-form product-create-form">
-          <div class="admin-field">
-            <label class="admin-label" for="psCreateName">Name</label>
-            <input type="text" class="admin-input" id="psCreateName" value="${escapeHtml(name)}" required>
-          </div>
-          <div class="admin-field">
-            <label class="admin-label" for="psCreateCategory">Category</label>
-            <select class="admin-select" id="psCreateCategory">
-              <option value="">— Optional —</option>
-              ${categoryOptionsHtml(categories)}
-            </select>
-          </div>
-          <div class="admin-field">
-            <label class="admin-label" for="psCreateCase">Case size</label>
-            <select class="admin-select" id="psCreateCase">
-              <option value="">— Optional —</option>
-              ${caseSizeOptionsHtml(caseSizes)}
-            </select>
-          </div>
-          <div class="del-form-err" id="psCreateErr"></div>
-        </div>`,
-      footHtml: `
-        <div class="admin-modal-actions">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="psCreateCancel">Cancel</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="psCreateSubmit">Create &amp; add</button>
-        </div>`,
-    });
+    // Wait for iOS keyboard to settle so the dialog isn’t hidden behind it.
+    window.setTimeout(() => {
+      const modal = openModal({
+        title: 'New product',
+        bodyHtml: `
+          <div class="admin-drawer-form product-create-form">
+            <div class="admin-field">
+              <label class="admin-label" for="psCreateName">Name</label>
+              <input type="text" class="admin-input" id="psCreateName" value="${escapeHtml(name)}" required>
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="psCreateCategory">Category</label>
+              <select class="admin-select" id="psCreateCategory">
+                <option value="">— Optional —</option>
+                ${categoryOptionsHtml(categories)}
+              </select>
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="psCreateCase">Case size</label>
+              <select class="admin-select" id="psCreateCase">
+                <option value="">— Optional —</option>
+                ${caseSizeOptionsHtml(caseSizes)}
+              </select>
+            </div>
+            <div class="del-form-err" id="psCreateErr"></div>
+          </div>`,
+        footHtml: `
+          <div class="admin-modal-actions">
+            <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="psCreateCancel">Cancel</button>
+            <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="psCreateSubmit">Create &amp; add</button>
+          </div>`,
+      });
 
-    const nameEl = modal.querySelector('#psCreateName');
-    const errEl = modal.querySelector('#psCreateErr');
-    const submitBtn = modal.querySelector('#psCreateSubmit');
+      const nameEl = modal.querySelector('#psCreateName');
+      const errEl = modal.querySelector('#psCreateErr');
+      const submitBtn = modal.querySelector('#psCreateSubmit');
 
-    modal.querySelector('#psCreateCancel')?.addEventListener('click', closeModal);
+      modal.querySelector('#psCreateCancel')?.addEventListener('click', closeModal);
 
-    submitBtn?.addEventListener('click', async () => {
-      const nameVal = nameEl?.value.trim();
-      if (!nameVal) {
-        if (errEl) errEl.textContent = 'Product name is required.';
-        nameEl?.focus();
-        return;
-      }
-      if (!onCreateProduct) return;
-
-      if (errEl) errEl.textContent = '';
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Creating…';
-      }
-
-      try {
-        const categoryId = modal.querySelector('#psCreateCategory')?.value || null;
-        const caseSizeId = modal.querySelector('#psCreateCase')?.value || null;
-        const result = await onCreateProduct({
-          name: nameVal,
-          category_id: categoryId,
-          case_size_id: caseSizeId,
-        });
-        if (result?.product) {
-          items = items.some((p) => p._productId === result.productId)
-            ? items
-            : [...items, { ...result.product, _productId: result.productId }];
+      submitBtn?.addEventListener('click', async () => {
+        const nameVal = nameEl?.value.trim();
+        if (!nameVal) {
+          if (errEl) errEl.textContent = 'Product name is required.';
+          nameEl?.focus();
+          return;
         }
-        closeModal();
-        selectProduct(result.productId, result.product);
-      } catch (err) {
-        if (errEl) errEl.textContent = err.message || 'Could not create product.';
+
+        if (errEl) errEl.textContent = '';
         if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Create & add';
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Creating…';
         }
-      }
-    });
 
-    nameEl?.focus();
-    nameEl?.select();
+        try {
+          const categoryId = modal.querySelector('#psCreateCategory')?.value || null;
+          const caseSizeId = modal.querySelector('#psCreateCase')?.value || null;
+          const result = await onCreateProduct({
+            name: nameVal,
+            category_id: categoryId,
+            case_size_id: caseSizeId,
+          });
+          if (result?.product) {
+            items = items.some((p) => p._productId === result.productId)
+              ? items
+              : [...items, { ...result.product, _productId: result.productId }];
+          }
+          closeModal();
+          selectProduct(result.productId, result.product);
+        } catch (err) {
+          if (errEl) errEl.textContent = err.message || 'Could not create product.';
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create & add';
+          }
+        }
+      });
+
+      nameEl?.focus();
+      nameEl?.select();
+    }, 80);
   }
 
   function renderList(q = '') {
@@ -296,12 +302,12 @@ export function mountProductSearch(container, options = {}) {
     }).slice(0, 40);
 
     if (!filteredPools.length && !filteredProducts.length) {
-      if (allowCreate && q.trim()) {
+      if (allowCreate && onCreateProduct && q.trim()) {
         list.innerHTML = `
           <div class="product-search-empty">No products match “${escapeHtml(q.trim())}”</div>
           <button type="button" class="product-search-item product-search-create-trigger">
             <span class="product-search-name">+ Create “${escapeHtml(q.trim())}”</span>
-            <span class="product-search-meta">Add to library and this delivery</span>
+            <span class="product-search-meta">Add to library and ${escapeHtml(createContextLabel)}</span>
           </button>`;
       } else {
         list.innerHTML = '<div class="product-search-empty">No matches</div>';
@@ -361,7 +367,9 @@ export function mountProductSearch(container, options = {}) {
   });
 
   list.addEventListener('click', (e) => {
-    if (e.target.closest('.product-search-create-trigger')) {
+    const createBtn = e.target.closest('.product-search-create-trigger');
+    if (createBtn) {
+      e.preventDefault();
       e.stopPropagation();
       openCreateModal(input.value);
       return;
