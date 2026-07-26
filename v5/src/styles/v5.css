@@ -327,13 +327,13 @@ html.kit-deep .bottomnav { display: none; }
 }
 
 .main {
-  flex: 1; padding: calc(var(--header-h) + 12px) var(--gutter) calc(var(--nav-h) + var(--save-bar-h, 0px) + var(--safe-bottom) + 12px);
+  flex: 1; padding: calc(var(--header-h) + 12px) var(--gutter) calc(var(--nav-h) + var(--save-bar-h, 0px) + 12px);
   overflow-y: auto;
 }
 html.kit-tab .main {
   padding-left: 0;
   padding-right: 0;
-  padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
+  padding-bottom: var(--nav-h);
 }
 html.kit-deep .main {
   padding-bottom: var(--safe-bottom);
@@ -598,20 +598,21 @@ html.kit-deep .main {
 
 .bottomnav {
   position: fixed;
-  left: var(--nav-inset);
-  right: var(--nav-inset);
-  bottom: calc(var(--nav-inset) + var(--safe-bottom));
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 40;
   display: flex;
   gap: 2px;
-  background: rgb(26 29 36 / 0.92);
+  background: rgb(26 29 36 / 0.96);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  padding: 6px 4px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
-  /* Resting state must NOT keep a transform — iOS then treats fixed as document-relative. */
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 18px 18px 0 0;
+  padding: 8px 6px calc(8px + var(--safe-bottom));
+  box-shadow: 0 -10px 32px rgb(0 0 0 / 0.4);
+  /* Never leave a transform on this node — iOS breaks position:fixed. */
   transform: none;
   opacity: 0;
   pointer-events: none;
@@ -621,26 +622,19 @@ html.app-ready .bottomnav {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  /* fill-mode none so transform is cleared after the entrance animation */
-  animation: nav-float-in 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: nav-rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
-@keyframes nav-float-in {
-  from {
-    transform: translate3d(0, calc(100% + 28px), 0);
-    opacity: 0;
-  }
-  to {
-    transform: translate3d(0, 0, 0);
-    opacity: 1;
-  }
+@keyframes nav-rise-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Global compose FAB — bottom right, above nav */
 .compose-fab {
   position: fixed;
   left: auto;
-  right: calc(var(--nav-inset) + 4px);
-  bottom: calc(var(--nav-inset) + var(--safe-bottom) + var(--nav-h) + 10px);
+  right: 16px;
+  bottom: calc(var(--nav-h) + 12px);
   z-index: 45;
   display: flex;
   flex-direction: column;
@@ -1065,7 +1059,7 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 
 .count-save-bar {
   position: fixed; left: var(--gutter); right: var(--gutter);
-  bottom: calc(var(--nav-h) + 8px);
+  bottom: calc(var(--nav-h) + 10px);
   z-index: 35; padding: 10px var(--gutter);
   background: var(--card); border: 1px solid var(--border);
   border-radius: 16px;
@@ -1124,8 +1118,8 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   .icon-btn:active { background: #e4e4e7; }
 
   .bottomnav {
-    background: rgb(255 255 255 / 0.94);
-    box-shadow: 0 12px 40px rgb(0 0 0 / 0.12);
+    background: rgb(255 255 255 / 0.96);
+    box-shadow: 0 -8px 28px rgb(0 0 0 / 0.08);
   }
 
   .count-save-bar {

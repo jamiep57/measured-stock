@@ -388,10 +388,9 @@ async function boot() {
 
   window.addEventListener('resize', syncChromeSizes);
 
-  // iOS: clear any leftover transform from the nav entrance animation so
-  // position:fixed stays viewport-fixed (not document-relative).
+  // Keep nav free of transforms so position:fixed stays viewport-pinned on iOS.
   $('bottomNav')?.addEventListener('animationend', (e) => {
-    if (e.animationName !== 'nav-float-in') return;
+    if (!String(e.animationName || '').includes('nav-')) return;
     e.currentTarget.style.transform = 'none';
   });
 }
