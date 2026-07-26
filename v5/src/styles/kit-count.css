@@ -271,13 +271,37 @@ html.kit-deep .kc-root .kc-complete-bar {
   padding: 16px 0 8px;
 }
 .kc-section--grow { flex: 1; }
-.kc-section-title {
+.kc-section-head {
   margin: 0 0 10px;
+}
+.kc-section-title {
+  margin: 0;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+}
+.kc-section-copy {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--fg);
+  font-weight: 500;
+}
+.kc-section--pick .kc-section-title,
+.kc-section--on-event .kc-section-title {
+  color: var(--muted);
+}
+.kc-table-row--static {
+  cursor: default;
+}
+.kc-table-row--static:active {
+  background: transparent;
+}
+.kc-table-row--short .kc-table-trail {
+  color: var(--danger, #c44);
+  font-weight: 700;
 }
 .kc-list { display: flex; flex-direction: column; gap: 8px; }
 .kc-row {

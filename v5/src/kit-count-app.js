@@ -617,6 +617,7 @@ export async function startKitCountApp(DB, opts = {}) {
       loadEventKit(destination.eventId)
         .then((data) => {
           eventItems = data.items || [];
+          eventBalances = balancesByProduct(data.movements || []);
           boundEventId = destination.eventId;
           boundWarehouseId = '';
           if (screen === 'home') paint();
@@ -1084,8 +1085,8 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   /**
-   * Physical kit already on the event (movements), plus items counted/packed
-   * on mobile that aren't in the pick list yet.
+   * Physical kit already on the event (movements), plus packed extras that
+   * aren’t on the pick list (Need = 0).
    */
   function onEventRows() {
     const out = [];
@@ -1108,10 +1109,11 @@ export async function startKitCountApp(DB, opts = {}) {
       });
     }
 
-    // Packed / counted on phone but not yet moved onto the event.
+    // Packed on phone but not planned and not moved onto the event yet.
     for (const it of eventItems || []) {
       const packed = Number(it.qty_packed) || 0;
-      if (packed <= 0 || seen.has(it.product_id)) continue;
+      const planned = Number(it.qty_planned) || 0;
+      if (packed <= 0 || planned > 0 || seen.has(it.product_id)) continue;
       const p = resolveEventProduct(it.product_id, it.product);
       if (!p?.id) continue;
       seen.add(p.id);
@@ -1157,17 +1159,29 @@ export async function startKitCountApp(DB, opts = {}) {
       return tones[h % tones.length];
     }
 
-    function containerRowHtml(p, { category = '', subtitle = '', trail = '', openable = true } = {}) {
+    function containerRowHtml(p, {
+      category = '',
+      subtitle = '',
+      trail = '',
+      openable = true,
+      rowClass = '',
+    } = {}) {
       const name = p.name || 'Container';
       const cat = category || p.category?.name || '';
-      const openAttr = openable && p.is_container ? ` data-open="${escapeHtml(p.id)}"` : '';
-      const tag = openable && p.is_container ? 'button' : 'div';
+      const canOpen = openable && p.is_container;
+      const openAttr = canOpen ? ` data-open="${escapeHtml(p.id)}"` : '';
+      const tag = canOpen ? 'button' : 'div';
       const typeAttr = tag === 'button' ? ' type="button"' : '';
-      const caret = openable && p.is_container
+      const classes = [
+        'kc-table-row',
+        canOpen ? '' : 'kc-table-row--static',
+        rowClass,
+      ].filter(Boolean).join(' ');
+      const caret = canOpen
         ? '<i class="ph ph-caret-right kc-table-caret" aria-hidden="true"></i>'
         : '';
       return `
-        <${tag}${typeAttr} class="kc-table-row${openable && p.is_container ? '' : ' kc-table-row--static'}"${openAttr}>
+        <${tag}${typeAttr} class="${classes}"${openAttr}>
           <span class="kc-table-avatar" data-tone="${escapeHtml(containerAvatarTone(p.id || name))}" aria-hidden="true">${escapeHtml(containerInitials(name))}</span>
           <span class="kc-table-main">
             <span class="kc-table-topline">
@@ -1193,10 +1207,8 @@ export async function startKitCountApp(DB, opts = {}) {
         subtitle: statusBits.join(' · '),
         trail: `${packed || 0}/${planned}`,
         openable: !!p.is_container,
-      }).replace(
-        'kc-table-row',
-        `kc-table-row${short ? ' kc-table-row--short' : ''}`,
-      );
+        rowClass: short ? 'kc-table-row--short' : '',
+      });
     }
 
     function onEventRowHtml({ product: p, onHand, owned, hired, packed }) {
@@ -1304,7 +1316,7 @@ export async function startKitCountApp(DB, opts = {}) {
           </div>
           ${onEvent.length
     ? `<div class="kc-table" id="kcHomeList">${onEvent.map(onEventRowHtml).join('')}</div>`
-    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing on this event yet</span><span class="kc-empty-copy">Kit shows here once it’s sent from warehouse, hired in, or packed on the phone.</span></p>'}
+    : '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing on this event yet</span><span class="kc-empty-copy">Shows kit sent from warehouse or hired in. Packing the pick list updates Need progress above.</span></p>'}
         </section>` : ''}
 
       ${!q && recent.length ? `
@@ -1373,7 +1385,10 @@ export async function startKitCountApp(DB, opts = {}) {
 
     app.querySelectorAll('[data-open]').forEach((btn) => {
       btn.onclick = () => {
-        const p = products.find((x) => x.id === btn.dataset.open);
+        const id = btn.dataset.open;
+        const fromEvent = eventItems.find((it) => it.product_id === id)?.product;
+        const p = products.find((x) => x.id === id)
+          || resolveEventProduct(id, fromEvent);
         if (p) openContainer(p, { resetStack: true, ensureContainer: true });
       };
     });
@@ -1492,6 +1507,7 @@ export async function startKitCountApp(DB, opts = {}) {
         try {
           const data = await loadEventKit(destination.eventId);
           eventItems = data.items || [];
+          eventBalances = balancesByProduct(data.movements || []);
           boundEventId = destination.eventId;
           boundWarehouseId = '';
         } catch { /* ignore */ }
@@ -2390,6 +2406,7 @@ export async function startKitCountApp(DB, opts = {}) {
       if (isEventDest()) {
         const data = await loadEventKit(destination.eventId);
         eventItems = data.items || [];
+        eventBalances = balancesByProduct(data.movements || []);
         boundEventId = destination.eventId;
         boundWarehouseId = '';
       } else if (isWarehouseDest()) {
