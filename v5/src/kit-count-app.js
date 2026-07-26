@@ -1032,22 +1032,24 @@ export async function startKitCountApp(DB, opts = {}) {
     }
 
     const eventLocked = hasPreferredEvent() && isEventDest();
-    const brandLabel = isEventDest() ? 'Kit' : 'Warehouse';
+    const homeTitle = isWarehouseDest() ? 'Warehouse' : 'Kit';
     const homeSub = 'Scan, search, or create a box, then add what’s inside.';
+    const heroHtml = `
+      <div class="page-hero page-hero--compact">
+        <p class="page-kicker">Stock</p>
+        <h1 class="page-title">${escapeHtml(homeTitle)}</h1>
+        <p class="page-sub">${escapeHtml(homeSub)}</p>
+      </div>`;
 
     app.innerHTML = `
-      <header class="kc-top${eventLocked ? '' : ' kc-top--row'}">
-        ${eventLocked ? '' : `
-        <button type="button" class="kc-back" id="kcChangeDest">Change</button>`}
-        <div class="${eventLocked ? '' : 'kc-top-grow'}">
-          <div class="page-hero page-hero--compact">
-            <p class="page-kicker">Stock</p>
-            <h1 class="page-title">${escapeHtml(brandLabel)}</h1>
-            <p class="page-sub">${escapeHtml(homeSub)}</p>
-          </div>
-        </div>
-      </header>
-      ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback" style="margin:0 16px">${escapeHtml(feedback.msg)}</div>` : ''}
+      ${eventLocked
+    ? heroHtml
+    : `
+      <header class="kc-top kc-top--row">
+        <button type="button" class="kc-back" id="kcChangeDest">Change</button>
+        <div class="kc-top-grow">${heroHtml}</div>
+      </header>`}
+      ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback">${escapeHtml(feedback.msg)}</div>` : ''}
       <div class="kc-actions kc-actions--home">
         <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
           placeholder="Search containers…" value="${escapeHtml(searchQuery)}"

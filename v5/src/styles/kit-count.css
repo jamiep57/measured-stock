@@ -54,13 +54,38 @@ html.kit-deep .kc-root .kc-complete-bar {
 }
 .kc-fatal { color: #fecaca; border: 1px solid var(--err); padding: 16px; border-radius: 12px; background: var(--card); }
 .kc-top {
-  padding: calc(14px + var(--safe-top)) 16px 8px;
+  padding: 0 0 8px;
 }
 .kc-top .page-hero {
-  margin-bottom: 0;
+  margin-bottom: 16px;
 }
 .kc-top .page-hero--compact {
-  margin-bottom: 0;
+  margin-bottom: 16px;
+}
+/* Match Counts / Deliveries hero type inside the Kit tab */
+.kc-root .page-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.kc-root .page-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-transform: none;
+  color: var(--fg);
+}
+.kc-root .page-sub {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.4;
+  font-weight: 400;
 }
 .kc-top--row {
   display: flex;
@@ -114,11 +139,11 @@ html.kit-deep .kc-root .kc-complete-bar {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 20px 16px 8px;
+  padding: 8px 0 8px;
 }
 .kc-actions--home {
   gap: 12px;
-  padding-top: 12px;
+  padding-top: 0;
 }
 .kc-quick {
   display: flex;
@@ -243,7 +268,7 @@ html.kit-deep .kc-root .kc-complete-bar {
 }
 .kc-btn:disabled { opacity: 0.55; }
 .kc-section {
-  padding: 16px 16px 8px;
+  padding: 16px 0 8px;
 }
 .kc-section--grow { flex: 1; }
 .kc-section-title {

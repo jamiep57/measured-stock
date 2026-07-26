@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-38-kit-page-hero';
+const VERSION = 'v5-39-kit-hero-match';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [
@@ -42,9 +42,11 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return;
 
   if (url.pathname.startsWith('/v5')) {
+    // Always prefer network for app shell + hashed bundles so hero/UI fixes ship.
     event.respondWith(
       fetch(event.request).then((res) => {
-        if (res.ok && res.type === 'basic') {
+        const isHashedAsset = /\/v5\/assets\/.+-[A-Za-z0-9_-]{6,}\.(js|css)$/.test(url.pathname);
+        if (res.ok && res.type === 'basic' && !isHashedAsset) {
           caches.open(SHELL).then((c) => c.put(event.request, res.clone()));
         }
         return res;
