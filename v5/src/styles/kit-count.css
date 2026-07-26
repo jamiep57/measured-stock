@@ -464,11 +464,31 @@ html.kit-deep .kc-root .kc-complete-bar {
 .kc-section--event-tab {
   padding-top: 4px;
 }
-.kc-table-row--static {
+.kc-table-row--search {
   cursor: default;
 }
-.kc-table-row--static:active {
+.kc-table-row--search:active {
   background: transparent;
+}
+.kc-search-add {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #e8c47c) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent, #e8c47c) 16%, var(--card));
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.kc-search-add:active {
+  background: color-mix(in srgb, var(--accent, #e8c47c) 28%, var(--card));
+}
+.kc-search-add:disabled {
+  opacity: 0.55;
 }
 .kc-table-row--short .kc-table-trail {
   color: var(--danger, #c44);
@@ -636,6 +656,23 @@ html.kit-deep .kc-root .kc-complete-bar {
   font-size: 13px;
   font-weight: 500;
 }
+.kc-scan {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.kc-scan .kc-top {
+  flex-shrink: 0;
+  padding: 8px 16px 8px;
+}
+.kc-scan .kc-sub {
+  flex-shrink: 0;
+  margin-top: 0;
+  margin-bottom: 4px;
+}
 .kc-stage {
   position: relative;
   margin: 8px 12px 0;
@@ -645,6 +682,10 @@ html.kit-deep .kc-root .kc-complete-bar {
   border: 1px solid var(--border);
   min-height: 260px;
   flex: 1;
+}
+.kc-scan .kc-stage {
+  flex: 1 1 0;
+  min-height: 0;
 }
 .kc-stage video,
 .kc-stage canvas {
@@ -676,6 +717,13 @@ html.kit-deep .kc-root .kc-complete-bar {
   border: 1px solid var(--border);
   font-size: 14px;
   font-weight: 600;
+}
+.kc-scan .kc-feedback,
+.kc-scan .kc-manual {
+  flex-shrink: 0;
+}
+.kc-scan .kc-manual {
+  margin-bottom: 12px;
 }
 .kc-add-panel .kc-feedback {
   margin: 8px 0 0;

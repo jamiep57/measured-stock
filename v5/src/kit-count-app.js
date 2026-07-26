@@ -1250,8 +1250,22 @@ export async function startKitCountApp(DB, opts = {}) {
     const pickList = isEventDest() ? pickListRows() : [];
     const onEvent = isEventDest() ? onEventRows() : [];
     const containerProducts = products.filter((p) => p.is_container);
+    const onEventIds = new Set();
+    if (isEventDest()) {
+      for (const it of eventItems || []) {
+        if ((Number(it.qty_planned) || 0) > 0 || (Number(it.qty_packed) || 0) > 0) {
+          onEventIds.add(it.product_id);
+        }
+      }
+      for (const [pid, bal] of eventBalances || []) {
+        if ((Number(bal?.onHand) || 0) > 0) onEventIds.add(pid);
+      }
+    }
+    const searchPool = isEventDest()
+      ? products.filter((p) => p?.id && !onEventIds.has(p.id))
+      : containerProducts;
     const searchHits = q
-      ? filterKitProducts(containerProducts, q, { limit: 40 })
+      ? filterKitProducts(searchPool, q, { limit: 40 })
       : [];
     const recent = !isEventDest() && !q ? recentContainers() : [];
     const fallbackContainers = !isEventDest() && !q && !recent.length
@@ -1308,6 +1322,28 @@ export async function startKitCountApp(DB, opts = {}) {
           </span>
           ${caret}
         </${tag}>`;
+    }
+
+    function searchResultRowHtml(p) {
+      const name = p.name || 'Item';
+      const cat = p.category?.name || '';
+      const kind = p.is_container ? 'Container' : 'Item';
+      const addLabel = isEventDest()
+        ? (activeWriteMode() === 'on-event' ? 'Add onsite' : 'Add to list')
+        : 'Add';
+      return `
+        <div class="kc-table-row kc-table-row--search" data-search-id="${escapeHtml(p.id)}">
+          <span class="kc-table-avatar" data-tone="${escapeHtml(containerAvatarTone(p.id || name))}" aria-hidden="true">${escapeHtml(containerInitials(name))}</span>
+          <span class="kc-table-main">
+            <span class="kc-table-topline">
+              <span class="kc-table-title">
+                ${escapeHtml(name)}${cat ? ` <em class="kc-table-cat">(${escapeHtml(cat)})</em>` : ''}
+              </span>
+            </span>
+            <span class="kc-table-sub">${escapeHtml(kind)} · not on this event</span>
+          </span>
+          <button type="button" class="kc-search-add" data-add="${escapeHtml(p.id)}">${escapeHtml(addLabel)}</button>
+        </div>`;
     }
 
     function pickListRowHtml({ product: p, packed, planned }) {
@@ -1429,14 +1465,16 @@ export async function startKitCountApp(DB, opts = {}) {
 
       ${q ? `
         <section class="kc-section">
-          <h2 class="kc-section-title">Search results</h2>
+          <h2 class="kc-section-title">${isEventDest() ? 'Not on this event' : 'Search results'}</h2>
           <div class="kc-table" id="kcHomeList">
             ${searchHits.length
-    ? searchHits.map((p) => containerRowHtml(p, {
-      category: p.category?.name || '',
-      subtitle: 'Container',
-    })).join('')
-    : `<p class="kc-empty">No containers match “${escapeHtml(q)}”</p>`}
+    ? searchHits.map((p) => (isEventDest()
+      ? searchResultRowHtml(p)
+      : containerRowHtml(p, {
+        category: p.category?.name || '',
+        subtitle: 'Container',
+      }))).join('')
+    : `<p class="kc-empty">No kit matches “${escapeHtml(q)}”${isEventDest() ? ' that aren’t already on this event' : ''}</p>`}
           </div>
         </section>` : ''}
 
@@ -1522,6 +1560,39 @@ export async function startKitCountApp(DB, opts = {}) {
         const p = products.find((x) => x.id === id)
           || resolveEventProduct(id, fromEvent);
         if (p) openContainer(p, { resetStack: true, ensureContainer: true });
+      };
+    });
+
+    app.querySelectorAll('[data-add]').forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = btn.dataset.add;
+        const p = products.find((x) => x.id === id);
+        if (!p) return;
+        beginWriteSession();
+        btn.disabled = true;
+        try {
+          await applyDestDelta(p, 1);
+          feedback = {
+            msg: isPhysicalWriteMode()
+              ? `Added ${p.name || 'item'} onsite`
+              : `Added ${p.name || 'item'} to pick list`,
+            kind: 'ok',
+          };
+          // Keep the query so the user can keep adding; re-paint drops added rows.
+          paintHome();
+          const again = $('kcHomeSearch');
+          if (again) {
+            again.focus();
+            const len = again.value.length;
+            again.setSelectionRange(len, len);
+          }
+        } catch (err) {
+          btn.disabled = false;
+          feedback = { msg: err.message || 'Could not add', kind: 'err' };
+          paintHome();
+        }
       };
     });
   }
@@ -1926,25 +1997,27 @@ export async function startKitCountApp(DB, opts = {}) {
 
   function paintScanShell({ title, hint, backLabel, backScreen }) {
     app.innerHTML = `
-      <header class="kc-top kc-top--row">
-        <button type="button" class="kc-back" id="kcBack">${escapeHtml(backLabel)}</button>
-        <div>
-          <div class="kc-brand">Measured · Kit</div>
-          <h1 class="kc-title kc-title--sm">${escapeHtml(title)}</h1>
+      <div class="kc-scan">
+        <header class="kc-top kc-top--row">
+          <button type="button" class="kc-back" id="kcBack">${escapeHtml(backLabel)}</button>
+          <div>
+            <div class="kc-brand">Measured · Kit</div>
+            <h1 class="kc-title kc-title--sm">${escapeHtml(title)}</h1>
+          </div>
+        </header>
+        <p class="kc-sub kc-pad">${escapeHtml(hint)}</p>
+        <div class="kc-stage" id="kcStage">
+          <video id="kcVideo" playsinline muted autoplay></video>
+          <canvas id="kcCanvas"></canvas>
+          <div class="kc-reticle" aria-hidden="true"></div>
         </div>
-      </header>
-      <p class="kc-sub kc-pad">${escapeHtml(hint)}</p>
-      <div class="kc-stage" id="kcStage">
-        <video id="kcVideo" playsinline muted autoplay></video>
-        <canvas id="kcCanvas"></canvas>
-        <div class="kc-reticle" aria-hidden="true"></div>
+        <div class="kc-feedback" id="kcFeedback"> </div>
+        <form class="kc-manual" id="kcManualForm">
+          <input id="kcManualInput" type="text" inputmode="text" autocomplete="off"
+            placeholder="Or type / paste barcode" aria-label="Barcode">
+          <button type="submit">Go</button>
+        </form>
       </div>
-      <div class="kc-feedback" id="kcFeedback"> </div>
-      <form class="kc-manual" id="kcManualForm">
-        <input id="kcManualInput" type="text" inputmode="text" autocomplete="off"
-          placeholder="Or type / paste barcode" aria-label="Barcode">
-        <button type="submit">Go</button>
-      </form>
     `;
     paintStatus();
     $('kcBack').onclick = () => {

@@ -1,7 +1,7 @@
 /**
  * V5 service worker — cache shell only; never cache Supabase.
  */
-const VERSION = 'v5-54-kit-add-wizard';
+const VERSION = 'v5-55-kit-search-add';
 const SHELL = `v5-shell-${VERSION}`;
 
 const SHELL_URLS = [
