@@ -2,15 +2,13 @@
  * Kit count UI — embedded in Measured /v5/ Kit tab (dark theme).
  */
 .kc-root {
+  /* Alias only differently named tokens — never --x: var(--x), which invalidates the var. */
   --bg: var(--background, #0f1115);
   --fg: var(--foreground, #f4f4f5);
   --muted: var(--muted-foreground, #a1a1aa);
-  --card: var(--card, #1a1d24);
   --card-2: var(--secondary, #22262f);
   --ok: var(--success, #22c55e);
   --err: var(--danger, #ef4444);
-  --border: var(--border, #2a2f3a);
-  --accent: var(--accent, #e8c47c);
   --safe-top: 0px;
   --safe-bottom: 0px;
   min-height: 100%;
@@ -289,9 +287,56 @@ html.kit-deep .kc-root .kc-complete-bar {
   color: var(--fg);
   font-weight: 500;
 }
-.kc-section--pick .kc-section-title,
-.kc-section--on-event .kc-section-title {
+.kc-event-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-2, var(--card));
+}
+.kc-event-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.kc-event-tab.is-active {
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.18);
+}
+.kc-event-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.kc-event-tab.is-active .kc-event-tab-count {
+  background: color-mix(in srgb, var(--accent, #e8c47c) 22%, transparent);
+}
+.kc-section--event-tab {
+  padding-top: 12px;
 }
 .kc-table-row--static {
   cursor: default;
@@ -577,9 +622,9 @@ html.kit-deep .kc-root .kc-complete-bar {
   min-width: 0;
   height: 52px;
   border-radius: 12px;
-  border: 1.5px solid color-mix(in srgb, var(--border) 45%, var(--fg));
-  background: var(--card);
-  color: var(--fg);
+  border: 1.5px solid color-mix(in srgb, var(--border, #2a2f3a) 40%, var(--fg, #f4f4f5));
+  background: var(--card, #1a1d24);
+  color: var(--fg, #f4f4f5);
   padding: 0 16px;
   font: inherit;
   font-size: 16px;
@@ -587,11 +632,11 @@ html.kit-deep .kc-root .kc-complete-bar {
   appearance: none;
 }
 .kc-search::placeholder {
-  color: var(--muted);
+  color: var(--muted, #a1a1aa);
 }
 .kc-search:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--accent, #e8c47c);
   box-shadow: 0 0 0 2px rgb(232 196 124 / 0.2);
 }
 .kc-search--block {
