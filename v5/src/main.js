@@ -17,6 +17,7 @@ import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
 import { loadHomeView } from './home.js';
 import { startKitCountApp } from './kit-count-app.js';
 import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
+import { showEventGate, hideEventGate } from './event-gate.js';
 
 const TABS = new Set(['home', 'counts', 'kit', 'deliveries']);
 
@@ -26,6 +27,9 @@ const state = {
   suppliers: [],
   caseSizes: [],
   tab: 'home',
+  /** @type {Array<{ id: string, name?: string, status?: string }>} */
+  events: [],
+  ready: false,
 };
 
 /** @type {null | { setPreferredEvent?: (id: string, name?: string) => void }} */
@@ -69,8 +73,8 @@ async function updateSyncBadge() {
       badge.hidden = false;
       badge.classList.toggle('failed', stats.failed > 0);
       badge.title = stats.failed
-        ? `${stats.failed} failed sync — tap mark to retry`
-        : `${stats.pending} pending sync — tap mark to sync`;
+        ? `${stats.failed} failed sync — tap to retry`
+        : `${stats.pending} pending sync — tap to sync`;
     } else {
       badge.hidden = true;
       badge.removeAttribute('title');
@@ -146,14 +150,22 @@ function switchTab(tab) {
   setUrlTab(tab);
 
   document.documentElement.classList.toggle('kit-tab', tab === 'kit');
-  if (tab !== 'kit') setKitDeep(false);
 
   document.querySelectorAll('.view').forEach((v) => {
-    v.classList.toggle('active', v.id === 'view-' + tab);
+    const on = v.id === 'view-' + tab;
+    v.classList.toggle('active', on);
+    v.hidden = !on;
+    v.toggleAttribute('inert', !on);
   });
   document.querySelectorAll('.navbtn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
+
+  // Leaving Kit clears deep chrome so Home/Counts never inherit kit-only UI.
+  if (tab !== 'kit') {
+    setKitDeep(false);
+    document.documentElement.classList.remove('kit-deep');
+  }
 
   onCountsTabVisible(tab === 'counts');
   updateEventPickerLabel();
@@ -180,11 +192,46 @@ function reloadTab() {
   }
 }
 
+function openEventGate() {
+  document.documentElement.classList.toggle('event-gate-ready', state.ready);
+  showEventGate({
+    events: state.events,
+    selectedId: state.eventId,
+    dismissible: state.ready && !!state.eventId,
+    onDismiss: () => {
+      document.documentElement.classList.remove('event-gate-ready');
+    },
+    onSelect: async (id) => {
+      await onEventChange(id);
+      hideEventGate();
+      document.documentElement.classList.remove('event-gate-ready');
+      if (!state.ready) {
+        state.ready = true;
+        document.documentElement.classList.add('app-ready');
+        switchTab(tabFromUrl());
+        // Measure after the float-in starts so content clears the bar.
+        requestAnimationFrame(() => {
+          syncChromeSizes();
+          window.setTimeout(syncChromeSizes, 560);
+        });
+      } else {
+        updateEventPickerLabel();
+        reloadTab();
+        syncChromeSizes();
+      }
+    },
+  });
+  syncChromeSizes();
+}
+
 async function onEventChange(id) {
   state.eventId = id;
   try {
     id ? localStorage.setItem('v5_event', id) : localStorage.removeItem('v5_event');
   } catch { /* ignore */ }
+
+  const pick = $('eventPick');
+  if (pick && pick.value !== id) pick.value = id;
 
   state.event = null;
   if (id) {
@@ -202,7 +249,6 @@ async function onEventChange(id) {
   }
   kitApi?.setPreferredEvent?.(state.eventId, state.event?.name || '');
   updateEventPickerLabel();
-  reloadTab();
 }
 
 async function boot() {
@@ -213,7 +259,6 @@ async function boot() {
     return;
   }
 
-  // Version stamp removed from chrome for a cleaner mobile shell
   initSheet();
   initSpreadsheetCells(document.body);
 
@@ -225,39 +270,53 @@ async function boot() {
   setupMeasuredPwaInstall();
 
   document.querySelectorAll('.navbtn').forEach((btn) => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    btn.addEventListener('click', () => {
+      if (!state.ready) {
+        openEventGate();
+        return;
+      }
+      switchTab(btn.dataset.tab);
+    });
   });
   $('reloadBtn')?.addEventListener('click', () => {
     flushAll().then(() => {
       toast('Synced');
-      reloadTab();
+      if (state.ready) reloadTab();
     });
+  });
+  $('eventPickerBtn')?.addEventListener('click', () => {
+    if (state.tab === 'kit') return;
+    openEventGate();
   });
 
   try {
     state.caseSizes = await loadCaseSizes();
-    const events = await loadEventsList();
+    state.events = await loadEventsList();
     const remembered = localStorage.getItem('v5_event') || localStorage.getItem('v2_event') || '';
     $('eventPick').innerHTML = '<option value="">Select an event…</option>' +
-      events.map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
+      state.events.map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
 
-    if (remembered && events.some((e) => e.id === remembered)) {
+    if (remembered && state.events.some((e) => e.id === remembered)) {
       $('eventPick').value = remembered;
-      await onEventChange(remembered);
+      // Prefill selection highlight on the gate; user still confirms by tapping.
+      state.eventId = remembered;
+      try {
+        state.event = await loadEventFull(remembered);
+      } catch {
+        state.event = null;
+        state.eventId = '';
+      }
     }
   } catch (err) {
     console.error('boot', err);
     toast(err.message || 'Failed to start', true);
   }
 
-  $('eventPick').addEventListener('change', (e) => onEventChange(e.target.value));
-
   await flushAll();
 
-  const initialTab = tabFromUrl();
-  switchTab(initialTab);
+  // Always open with the full-page event selector.
+  openEventGate();
 
-  syncChromeSizes();
   window.addEventListener('resize', syncChromeSizes);
 }
 

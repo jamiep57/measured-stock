@@ -1,10 +1,11 @@
 import { $, escapeHtml, rid, toast, nowLocalInput, fmtDateTime } from './lib/util.js';
 import { getDB, productFromEvent } from './db.js';
-import { entryMode } from './pack-metrics.js';
+import { entryMode, productStockPack } from './pack-metrics.js';
 import { formToStored, storedToForm, hasQuantity, parseQty } from './stock-entry.js';
-import { enqueueWrite, flushQueue } from './sync-queue.js';
+import { flushQueue } from './sync-queue.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountSupplierSearch } from './components/supplier-search.js';
+import { mountProductSearch } from './components/product-search.js';
 
 const DELIVERY_BUCKET = 'delivery-photos';
 
@@ -93,55 +94,64 @@ function renderDeliveryList() {
   });
 }
 
-function productOptions() {
-  return (ctx.event?.event_products || [])
-    .map((ep) => ({
-      id: ep.product_id,
-      name: ep.product?.name || '(unknown)',
-    }))
-    .filter((o) => o.name && o.name !== '(unknown)')
-    .sort((a, b) => a.name.localeCompare(b.name));
+function lineShowsDamaged(line) {
+  return Boolean(line.showDamaged || parseQty(line.damagedQty));
 }
 
-function lineHeaderHtml() {
-  return `<div class="line-head"><span>Product</span><span style="text-align:center">Qty</span><span style="text-align:center">Extra</span><span style="text-align:center">Dmg</span><span style="text-align:center">Inv cs</span><span style="text-align:center">Inv sgl</span><span></span></div>`;
+function qtyFieldsHtml(line) {
+  const product = productFromEvent(ctx.event, line.productId);
+  const mode = product
+    ? entryMode(product, ctx.caseSizes)
+    : { columnLabels: { primary: 'Cases', secondary: 'Singles' } };
+  const primary = mode.columnLabels.primary;
+  const secondary = mode.columnLabels.secondary;
+  const lid = escapeHtml(line.lineId);
+  const showDamaged = lineShowsDamaged(line);
+
+  return `
+    <div class="del-qty">
+      <div class="del-qty-row del-qty-row--2">
+        <div class="del-qty-field">
+          <label>${escapeHtml(primary)}</label>
+          <input type="text" inputmode="decimal" autocomplete="off" class="df-cases num-math" data-lid="${lid}"
+            value="${escapeHtml(line.cases)}" placeholder="0" aria-label="${escapeHtml(primary)}">
+        </div>
+        <div class="del-qty-field">
+          <label>${secondary ? escapeHtml(secondary) : '—'}</label>
+          <input type="text" inputmode="decimal" autocomplete="off" class="df-singles num-math" data-lid="${lid}"
+            value="${escapeHtml(line.singles)}" placeholder="0"
+            aria-label="${secondary ? escapeHtml(secondary) : 'Singles'}"
+            ${secondary ? '' : 'disabled'}>
+        </div>
+      </div>
+      ${showDamaged ? `
+      <div class="del-qty-field del-qty-field--dmg">
+        <label>Damaged</label>
+        <input type="text" inputmode="decimal" autocomplete="off" class="df-dmg num-math" data-lid="${lid}"
+          value="${escapeHtml(line.damagedQty)}" placeholder="0" aria-label="Damaged">
+      </div>` : ''}
+      <div class="del-qty-invoice">
+        <span class="del-qty-section">Invoice</span>
+        <div class="del-qty-row del-qty-row--2">
+          <div class="del-qty-field">
+            <label>Inv ${escapeHtml(primary)}</label>
+            <input type="text" inputmode="decimal" autocomplete="off" class="df-inv-cases num-math" data-lid="${lid}"
+              value="${escapeHtml(line.invoiceCases)}" placeholder="0" aria-label="Invoice ${escapeHtml(primary)}">
+          </div>
+          <div class="del-qty-field">
+            <label>Inv ${secondary ? escapeHtml(secondary) : '—'}</label>
+            <input type="text" inputmode="decimal" autocomplete="off" class="df-inv-singles num-math" data-lid="${lid}"
+              value="${escapeHtml(line.invoiceSingles)}" placeholder="0"
+              aria-label="Invoice ${secondary ? escapeHtml(secondary) : 'singles'}"
+              ${secondary ? '' : 'disabled'}>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
-function renderDeliveryLines() {
-  const wrap = $('dfLines');
-  if (!wrap) return;
-  const supplierId = $('dfSupplier')?.value || '';
-  const opts = productOptions();
-
-  wrap.innerHTML = delLines.map((line) => {
-    const product = productFromEvent(ctx.event, line.productId);
-    const mode = product ? entryMode(product, ctx.caseSizes) : { columnLabels: { primary: 'Cases', secondary: 'Singles' } };
-    const primaryLabel = mode.columnLabels.primary.slice(0, 4);
-    const secondaryLabel = mode.columnLabels.secondary ? mode.columnLabels.secondary.slice(0, 4) : '—';
-
-    return `
-      <div class="line-row" data-lid="${line.lineId}">
-        <select class="df-product" data-lid="${line.lineId}">
-          <option value="">— product —</option>
-          ${opts.map((o) => `<option value="${o.id}"${o.id === line.productId ? ' selected' : ''}>${escapeHtml(o.name)}</option>`).join('')}
-        </select>
-        <input type="text" inputmode="decimal" autocomplete="off" class="df-cases num-math" data-lid="${line.lineId}" value="${escapeHtml(line.cases)}" placeholder="${escapeHtml(primaryLabel)}" title="${escapeHtml(mode.columnLabels.primary)}">
-        <input type="text" inputmode="decimal" autocomplete="off" class="df-singles num-math" data-lid="${line.lineId}" value="${escapeHtml(line.singles)}" placeholder="${mode.columnLabels.secondary ? escapeHtml(secondaryLabel) : '—'}" ${mode.columnLabels.secondary ? '' : 'disabled'}>
-        <input type="text" inputmode="decimal" autocomplete="off" class="df-dmg num-math" data-lid="${line.lineId}" value="${escapeHtml(line.damagedQty)}" placeholder="0">
-        <input type="text" inputmode="decimal" autocomplete="off" class="df-inv-cases num-math" data-lid="${line.lineId}" value="${escapeHtml(line.invoiceCases)}" placeholder="0" title="Invoice cases">
-        <input type="text" inputmode="decimal" autocomplete="off" class="df-inv-singles num-math" data-lid="${line.lineId}" value="${escapeHtml(line.invoiceSingles)}" placeholder="0" title="Invoice singles">
-        <button type="button" class="btn btn-sm df-rm" data-lid="${line.lineId}">✕</button>
-      </div>`;
-  }).join('');
-
-  wrap.querySelectorAll('.df-product').forEach((sel) => {
-    sel.onchange = () => {
-      const line = delLines.find((l) => l.lineId === sel.dataset.lid);
-      if (line) line.productId = sel.value;
-      renderDeliveryLines();
-    };
-  });
-  wrap.querySelectorAll('.df-cases, .df-singles, .df-dmg, .df-inv-cases, .df-inv-singles').forEach((inp) => {
+function wireLineQtyInputs(root) {
+  root.querySelectorAll('.df-cases, .df-singles, .df-dmg, .df-inv-cases, .df-inv-singles').forEach((inp) => {
     inp.oninput = () => {
       const line = delLines.find((l) => l.lineId === inp.dataset.lid);
       if (!line) return;
@@ -152,19 +162,158 @@ function renderDeliveryLines() {
       else line.invoiceSingles = inp.value;
     };
   });
-  wrap.querySelectorAll('.df-rm').forEach((btn) => {
-    btn.onclick = () => {
-      delLines = delLines.filter((l) => l.lineId !== btn.dataset.lid);
-      if (!delLines.length) delLines.push(emptyLine());
-      renderDeliveryLines();
+}
+
+function renderDeliveryLines() {
+  const wrap = $('dfLines');
+  if (!wrap) return;
+
+  if (!delLines.length) {
+    wrap.innerHTML = `<p class="del-lines-empty">Search above to add products.</p>`;
+    return;
+  }
+
+  wrap.innerHTML = delLines.map((line) => {
+    const product = productFromEvent(ctx.event, line.productId);
+    const name = product?.name || 'Product';
+    const pack = productStockPack(product, ctx.caseSizes || []);
+    const packLabel = pack?.label || product?.case_size || '';
+    const showDamaged = lineShowsDamaged(line);
+    return `
+      <div class="del-line-card" data-lid="${line.lineId}">
+        <div class="del-line-card-head">
+          <div class="del-line-card-main">
+            <div class="del-line-card-name">${escapeHtml(name)}</div>
+            ${packLabel ? `<div class="del-line-card-pack">${escapeHtml(packLabel)}</div>` : ''}
+          </div>
+          <div class="del-line-menu">
+            <button type="button" class="icon-btn del-line-more" data-lid="${line.lineId}"
+              aria-label="More options" aria-haspopup="menu" aria-expanded="false">
+              <i class="ph ph-dots-three-vertical"></i>
+            </button>
+            <div class="del-line-menu-pop" role="menu" hidden>
+              ${showDamaged
+                ? `<button type="button" class="del-line-menu-item" role="menuitem" data-action="hide-dmg" data-lid="${line.lineId}">Hide damaged</button>`
+                : `<button type="button" class="del-line-menu-item" role="menuitem" data-action="show-dmg" data-lid="${line.lineId}">Add damaged</button>`}
+              <button type="button" class="del-line-menu-item del-line-menu-item--danger" role="menuitem" data-action="remove" data-lid="${line.lineId}">Remove product</button>
+            </div>
+          </div>
+        </div>
+        ${qtyFieldsHtml(line)}
+      </div>`;
+  }).join('');
+
+  wireLineQtyInputs(wrap);
+  wireLineMenus(wrap);
+}
+
+function closeAllLineMenus(exceptPop = null) {
+  document.querySelectorAll('.del-line-menu-pop').forEach((pop) => {
+    if (pop === exceptPop) return;
+    pop.hidden = true;
+    pop.closest('.del-line-menu')?.querySelector('.del-line-more')?.setAttribute('aria-expanded', 'false');
+  });
+}
+
+let lineMenuDocBound = false;
+
+function ensureLineMenuDocClose() {
+  if (lineMenuDocBound) return;
+  lineMenuDocBound = true;
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.del-line-menu')) return;
+    closeAllLineMenus();
+  });
+}
+
+function wireLineMenus(root) {
+  ensureLineMenuDocClose();
+  root.querySelectorAll('.del-line-more').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const pop = btn.parentElement?.querySelector('.del-line-menu-pop');
+      if (!pop) return;
+      const open = pop.hidden;
+      closeAllLineMenus(open ? pop : null);
+      pop.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+  });
+
+  root.querySelectorAll('.del-line-menu-item').forEach((item) => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      const line = delLines.find((l) => l.lineId === item.dataset.lid);
+      const action = item.dataset.action;
+      closeAllLineMenus();
+
+      if (action === 'remove') {
+        delLines = delLines.filter((l) => l.lineId !== item.dataset.lid);
+        renderDeliveryLines();
+        return;
+      }
+      if (!line) return;
+      if (action === 'show-dmg') {
+        line.showDamaged = true;
+        renderDeliveryLines();
+        requestAnimationFrame(() => {
+          $('dfLines')?.querySelector(`.df-dmg[data-lid="${line.lineId}"]`)?.focus();
+        });
+        return;
+      }
+      if (action === 'hide-dmg') {
+        line.showDamaged = false;
+        line.damagedQty = '';
+        renderDeliveryLines();
+      }
     };
   });
 }
 
-function emptyLine() {
-  return {
-    lineId: rid('l'), productId: '', cases: '', singles: '', damagedQty: '', invoiceCases: '', invoiceSingles: '',
-  };
+function addProductLine(productId) {
+  if (!productId) return null;
+  const existing = delLines.find((l) => l.productId === productId);
+  if (existing) return existing.lineId;
+  const lineId = rid('l');
+  delLines.push({
+    lineId,
+    productId,
+    cases: '',
+    singles: '',
+    damagedQty: '',
+    showDamaged: false,
+    invoiceCases: '',
+    invoiceSingles: '',
+  });
+  const err = $('dfErr');
+  if (err) err.textContent = '';
+  renderDeliveryLines();
+  return lineId;
+}
+
+function mountProductComposer() {
+  const el = $('dfProductSearch');
+  if (!el) return;
+
+  mountProductSearch(el, {
+    products: ctx.event?.event_products || [],
+    caseSizes: ctx.caseSizes || [],
+    value: '',
+    placeholder: 'Search product to add…',
+    dropdownFixed: true,
+    onSelect: ({ productId }) => {
+      if (!productId) return;
+      const lineId = addProductLine(productId);
+      mountProductComposer();
+      requestAnimationFrame(() => {
+        const input = el.querySelector('.product-search-input');
+        const list = el.querySelector('.product-search-list');
+        if (input) input.value = '';
+        if (list) list.hidden = true;
+        $('dfLines')?.querySelector(`.df-cases[data-lid="${lineId}"]`)?.focus();
+      });
+    },
+  });
 }
 
 function openDeliveryForm(editId) {
@@ -179,12 +328,14 @@ function openDeliveryForm(editId) {
     delLines = (d.lines || []).length
       ? d.lines.map((l) => {
         const form = storedToForm(l);
+        const damagedQty = l.damaged_qty ? String(l.damaged_qty) : '';
         return {
           lineId: rid('l'),
           productId: l.product_id,
           cases: form.cases,
           singles: form.singles,
-          damagedQty: l.damaged_qty ? String(l.damaged_qty) : '',
+          damagedQty,
+          showDamaged: Boolean(damagedQty),
           invoiceCases: l.invoice_qty != null || l.invoice_singles
             ? storedToForm({ qty: l.invoice_qty, singles: l.invoice_singles }).cases
             : '',
@@ -193,12 +344,12 @@ function openDeliveryForm(editId) {
             : '',
         };
       })
-      : [emptyLine()];
+      : [];
     delNote = d.delivery_note_url ? { url: d.delivery_note_url } : null;
     delPhotos = (d.photo_urls || []).map((u) => ({ id: rid('p'), url: u }));
     delDamages = (d.damages_photo_urls || []).map((u) => ({ id: rid('d'), url: u }));
   } else {
-    delLines = [emptyLine()];
+    delLines = [];
   }
 
   const suppliers = ctx.suppliers || [];
@@ -211,10 +362,10 @@ function openDeliveryForm(editId) {
         <div id="dfSupplierSearch"></div>
       </div>
       <div class="field"><label>Reference / invoice</label><input type="text" id="dfReference" placeholder="Optional"></div>
-      <div class="field"><label>Products</label>
-        ${lineHeaderHtml()}
-        <div id="dfLines"></div>
-        <button class="btn btn-sm" type="button" id="dfAddLine" style="margin-top:4px"><i class="ph ph-plus"></i> Add product</button>
+      <div class="field del-products">
+        <label>Products</label>
+        <div id="dfProductSearch" class="del-line-composer"></div>
+        <div id="dfLines" class="del-lines-committed"></div>
       </div>
       <div class="photo-group">
         <div class="photo-group-label">Delivery note</div>
@@ -228,8 +379,10 @@ function openDeliveryForm(editId) {
       </div>
       <div class="field"><label>Notes</label><textarea id="dfNotes" placeholder="Optional…"></textarea></div>`,
     footHtml: `
-      <button class="btn btn-block" type="button" id="dfCancel">Cancel</button>
-      <button class="btn btn-primary btn-block" type="button" id="dfSave">Save delivery</button>`,
+      <div class="sheet-foot-row">
+        <button class="btn" type="button" id="dfCancel">Cancel</button>
+        <button class="btn btn-primary" type="button" id="dfSave">Save delivery</button>
+      </div>`,
     onClose: () => { editingId = null; },
   });
 
@@ -251,15 +404,15 @@ function openDeliveryForm(editId) {
     placeholder: 'Search suppliers…',
     emptyLabel: '— Optional —',
     inputClass: 'supplier-search-input',
-    onSelect: () => renderDeliveryLines(),
+    dropdownFixed: true,
   });
 
   $('dfCancel').onclick = closeSheet;
   $('dfSave').onclick = saveDelivery;
-  $('dfAddLine').onclick = () => { delLines.push(emptyLine()); renderDeliveryLines(); };
   $('dfNoteFile').onchange = onNoteFile;
   $('dfPhotosFile').onchange = onPhotosFile;
 
+  mountProductComposer();
   renderDeliveryLines();
   renderPhotoPreviews();
 }

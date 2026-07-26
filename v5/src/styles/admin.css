@@ -9,6 +9,17 @@
 body { background: var(--background); }
 
 body:has(.admin-app) {
+  --background: #fafafa;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --primary: #18181b;
+  --secondary: #f4f4f5;
+  --muted-foreground: #71717a;
+  --border: #e4e4e7;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --warning: #b45309;
+  --accent: #b45309;
   --shell-radius: 12px;
   --shell-shadow:
     0 1px 2px rgb(0 0 0 / 0.04),
@@ -18,6 +29,7 @@ body:has(.admin-app) {
   --radius-lg: 0.625rem;
   --topbar-h: 36px;
   --primary-foreground: #fafafa;
+  color-scheme: light;
 }
 
 .admin-app {

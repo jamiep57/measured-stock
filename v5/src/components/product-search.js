@@ -137,6 +137,10 @@ export function mountProductSearch(container, options = {}) {
   function syncListPosition() {
     if (!dropdownFixed || list.hidden) return;
     const rect = input.getBoundingClientRect();
+    // Portal to body: sheets/drawers with overflow or transform clip absolute lists.
+    if (list.parentElement !== document.body) {
+      document.body.appendChild(list);
+    }
     list.style.position = 'fixed';
     list.style.left = `${rect.left}px`;
     list.style.width = `${Math.max(rect.width, 240)}px`;
@@ -152,10 +156,19 @@ export function mountProductSearch(container, options = {}) {
     list.style.top = '';
     list.style.right = '';
     list.style.zIndex = '';
+    if (list.parentElement !== root) {
+      root.appendChild(list);
+    }
   }
 
-  const scrollParent = dropdownFixed ? container.closest('.dist-grid-wrap') : null;
-  scrollParent?.addEventListener('scroll', syncListPosition, { passive: true });
+  const scrollParents = dropdownFixed
+    ? [container.closest('.dist-grid-wrap'), container.closest('.sheet-body')].filter(Boolean)
+    : [];
+  scrollParents.forEach((el) => {
+    el.addEventListener('scroll', () => {
+      if (!list.hidden) syncListPosition();
+    }, { passive: true });
+  });
   if (dropdownFixed) {
     window.addEventListener('resize', syncListPosition, { passive: true });
   }
@@ -359,11 +372,10 @@ export function mountProductSearch(container, options = {}) {
   });
 
   document.addEventListener('click', (e) => {
-    if (!root.contains(e.target)) {
-      list.hidden = true;
-      resetListPosition();
-      syncPackDisplay();
-    }
+    if (root.contains(e.target) || list.contains(e.target)) return;
+    list.hidden = true;
+    resetListPosition();
+    syncPackDisplay();
   });
 
   if (selectedPool) {

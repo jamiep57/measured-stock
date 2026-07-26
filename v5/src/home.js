@@ -28,9 +28,7 @@ export function loadHomeView(opts) {
     <div class="page-hero">
       <p class="page-kicker">Today</p>
       <h1 class="page-title">What are you doing?</h1>
-      ${hasEvent
-    ? ''
-    : `<p class="page-sub">Tap the event name above to choose where you’re working. Kit also supports warehouses.</p>`}
+      ${hasEvent ? '' : `<p class="page-sub">Choose an event to unlock stock counts and deliveries.</p>`}
     </div>
 
     <div class="action-list" role="list">

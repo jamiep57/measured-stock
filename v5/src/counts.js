@@ -29,6 +29,7 @@ export function initCounts(context) {
 
 function enterCountMode() {
   document.documentElement.classList.add('counting');
+  document.documentElement.classList.add('has-back');
   const back = $('cntBackTop');
   if (back) back.hidden = false;
   showCountSaveBar();
@@ -37,6 +38,7 @@ function enterCountMode() {
 
 function exitCountMode() {
   document.documentElement.classList.remove('counting');
+  document.documentElement.classList.remove('has-back');
   const back = $('cntBackTop');
   if (back) back.hidden = true;
   hideCountSaveBar();

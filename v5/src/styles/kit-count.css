@@ -14,8 +14,6 @@
   --safe-top: 0px;
   --safe-bottom: 0px;
   min-height: 100%;
-  display: flex;
-  flex-direction: column;
   color: var(--fg);
 }
 
@@ -565,3 +563,26 @@ html.kit-deep .kc-root .kc-complete-bar {
   margin-top: 4px;
 }
 .kc-sheet-actions .kc-btn { height: 48px; min-width: 96px; }
+
+@media (min-width: 768px) {
+  .kc-root .kc-feedback.is-ok,
+  .kc-feedback.is-ok { color: #166534; }
+  .kc-root .kc-feedback.is-err,
+  .kc-feedback.is-err,
+  .kc-root .kc-err,
+  .kc-root .kc-fatal,
+  .kc-err { color: #991b1b; }
+
+  .kc-root .kc-label-btn.is-queued,
+  .kc-label-btn.is-queued {
+    border-color: #86efac;
+    color: #166534;
+    background: #f0fdf4;
+  }
+
+  .kc-root .kc-content-row.is-container,
+  .kc-content-row.is-container {
+    border-color: #e7e5e4;
+    background: #fafaf9;
+  }
+}

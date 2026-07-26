@@ -53,11 +53,18 @@ export function syncChromeSizes() {
   const tb = document.querySelector('.topbar');
   const nav = document.querySelector('.bottomnav');
   const hideNav = document.documentElement.classList.contains('counting')
-    || document.documentElement.classList.contains('kit-deep');
-  if (tb) document.documentElement.style.setProperty('--header-h', tb.offsetHeight + 'px');
-  if (hideNav) {
+    || document.documentElement.classList.contains('kit-deep')
+    || !document.documentElement.classList.contains('app-ready');
+  if (tb && getComputedStyle(tb).display !== 'none' && getComputedStyle(tb).visibility !== 'hidden') {
+    document.documentElement.style.setProperty('--header-h', tb.offsetHeight + 'px');
+  } else if (document.documentElement.classList.contains('kit-deep')) {
+    document.documentElement.style.setProperty('--header-h', '0px');
+  }
+  if (hideNav || !nav) {
     document.documentElement.style.setProperty('--nav-h', '0px');
-  } else if (nav) {
-    document.documentElement.style.setProperty('--nav-h', nav.offsetHeight + 'px');
+  } else {
+    const rect = nav.getBoundingClientRect();
+    const space = Math.max(0, Math.ceil(window.innerHeight - rect.top));
+    document.documentElement.style.setProperty('--nav-h', `${space || nav.offsetHeight}px`);
   }
 }
