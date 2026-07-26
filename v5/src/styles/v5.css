@@ -219,6 +219,24 @@ html.event-gate:not(.event-gate-ready) .event-dd-backdrop {
   gap: 2px;
   -webkit-overflow-scrolling: touch;
 }
+.event-dd-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.event-dd-section + .event-dd-section {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.event-dd-section-label {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
 
 .event-dd-option {
   width: 100%;

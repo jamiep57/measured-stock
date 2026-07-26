@@ -135,6 +135,8 @@ function setUrlContainer(id, { embedded = false } = {}) {
  *   embedded?: boolean,
  *   preferredEventId?: string,
  *   preferredEventName?: string,
+ *   preferredWarehouseId?: string,
+ *   preferredWarehouseName?: string,
  *   onDeepChange?: (deep: boolean) => void,
  * }} [opts]
  */
@@ -145,6 +147,8 @@ export async function startKitCountApp(DB, opts = {}) {
   const onDeepChange = typeof opts.onDeepChange === 'function' ? opts.onDeepChange : () => {};
   let preferredEventId = String(opts.preferredEventId || '').trim();
   let preferredEventName = String(opts.preferredEventName || '').trim();
+  let preferredWarehouseId = String(opts.preferredWarehouseId || '').trim();
+  let preferredWarehouseName = String(opts.preferredWarehouseName || '').trim();
 
   if (embedded) app.classList.add('kc-root');
 
@@ -237,6 +241,14 @@ export async function startKitCountApp(DB, opts = {}) {
     return !!preferredEventId;
   }
 
+  function hasPreferredWarehouse() {
+    return !!preferredWarehouseId;
+  }
+
+  function hasPreferredLocation() {
+    return hasPreferredEvent() || hasPreferredWarehouse();
+  }
+
   function preferredEventDestination() {
     if (!preferredEventId) return null;
     const ev = events.find((e) => e.id === preferredEventId);
@@ -244,6 +256,16 @@ export async function startKitCountApp(DB, opts = {}) {
       type: DEST_EVENT,
       eventId: preferredEventId,
       eventName: preferredEventName || ev?.name || 'Event',
+    };
+  }
+
+  function preferredWarehouseDestination() {
+    if (!preferredWarehouseId) return null;
+    const wh = warehouses.find((w) => w.id === preferredWarehouseId);
+    return {
+      type: DEST_WAREHOUSE,
+      warehouseId: preferredWarehouseId,
+      warehouseName: preferredWarehouseName || wh?.name || 'Warehouse',
     };
   }
 
@@ -255,6 +277,22 @@ export async function startKitCountApp(DB, opts = {}) {
     storeDestination(destination);
     await enterContainerHome();
     return true;
+  }
+
+  /** Bind Kit to the main-app warehouse and open container home. */
+  async function enterPreferredWarehouseHome() {
+    const next = preferredWarehouseDestination();
+    if (!next) return false;
+    destination = next;
+    storeDestination(destination);
+    await enterContainerHome();
+    return true;
+  }
+
+  async function enterPreferredLocationHome() {
+    if (hasPreferredWarehouse()) return enterPreferredWarehouseHome();
+    if (hasPreferredEvent()) return enterPreferredEventHome();
+    return false;
   }
 
   function destTitle() {
@@ -818,11 +856,12 @@ export async function startKitCountApp(DB, opts = {}) {
   }
 
   function paintDest() {
-    // Main-app event is already selected — skip warehouse / event pick.
-    if (hasPreferredEvent()) {
-      enterPreferredEventHome().catch((err) => {
-        feedback = { msg: err.message || 'Could not open event', kind: 'err' };
+    // Main-app location is already selected — skip warehouse / event pick.
+    if (hasPreferredLocation()) {
+      enterPreferredLocationHome().catch((err) => {
+        feedback = { msg: err.message || 'Could not open location', kind: 'err' };
         preferredEventId = '';
+        preferredWarehouseId = '';
         paintDest();
       });
       return;
@@ -1031,7 +1070,8 @@ export async function startKitCountApp(DB, opts = {}) {
       });
     }
 
-    const eventLocked = hasPreferredEvent() && isEventDest();
+    const locationLocked = hasPreferredLocation()
+      && ((hasPreferredEvent() && isEventDest()) || (hasPreferredWarehouse() && isWarehouseDest()));
     const homeTitle = isWarehouseDest() ? 'Warehouse' : 'Kit';
     const homeSub = 'Scan, search, or create a box, then add what’s inside.';
     const heroHtml = `
@@ -1042,7 +1082,7 @@ export async function startKitCountApp(DB, opts = {}) {
       </div>`;
 
     app.innerHTML = `
-      ${eventLocked
+      ${locationLocked
     ? heroHtml
     : `
       <header class="kc-top kc-top--row">
@@ -2045,9 +2085,9 @@ export async function startKitCountApp(DB, opts = {}) {
   // Boot
   async function runHomeAction(action) {
     if (!destination) {
-      if (preferredEventId) {
+      if (hasPreferredLocation()) {
         try {
-          await enterPreferredEventHome();
+          await enterPreferredLocationHome();
         } catch {
           return false;
         }
@@ -2092,6 +2132,10 @@ export async function startKitCountApp(DB, opts = {}) {
       setPreferredEvent(id, name = '') {
         preferredEventId = String(id || '').trim();
         preferredEventName = String(name || '').trim();
+        if (preferredEventId) {
+          preferredWarehouseId = '';
+          preferredWarehouseName = '';
+        }
         if (!preferredEventId) return;
 
         const sameEvent = isEventDest() && destination.eventId === preferredEventId;
@@ -2107,6 +2151,28 @@ export async function startKitCountApp(DB, opts = {}) {
         if (!shallow && destination) return;
 
         enterPreferredEventHome().catch(() => {});
+      },
+      setPreferredWarehouse(id, name = '') {
+        preferredWarehouseId = String(id || '').trim();
+        preferredWarehouseName = String(name || '').trim();
+        if (preferredWarehouseId) {
+          preferredEventId = '';
+          preferredEventName = '';
+        }
+        if (!preferredWarehouseId) return;
+
+        const sameWh = isWarehouseDest() && destination.warehouseId === preferredWarehouseId;
+        if (sameWh) {
+          destination.warehouseName = preferredWarehouseName || destination.warehouseName || 'Warehouse';
+          storeDestination(destination);
+          if (screen === 'home') paint();
+          return;
+        }
+
+        const shallow = ['dest', 'pick-event', 'pick-warehouse', 'home'].includes(screen);
+        if (!shallow && destination) return;
+
+        enterPreferredWarehouseHome().catch(() => {});
       },
       runHomeAction,
     };
@@ -2149,10 +2215,10 @@ export async function startKitCountApp(DB, opts = {}) {
     } catch { /* fall through */ }
   }
 
-  // Main-app event wins — skip warehouse / choose-event entirely.
-  if (preferredEventId) {
+  // Main-app location wins — skip warehouse / choose-event entirely.
+  if (hasPreferredLocation()) {
     try {
-      await enterPreferredEventHome();
+      await enterPreferredLocationHome();
       return api();
     } catch { /* fall through */ }
   }

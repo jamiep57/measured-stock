@@ -14,30 +14,50 @@ import { initTransfers, loadTransfersView, startNewTransfer } from './transfers.
 import { initWastage, loadWastageView } from './wastage.js';
 import { loadDbScript } from './lib/load-db.js';
 import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
+import { loadWarehousesList } from './lib/transfer-form.js';
 import { startKitCountApp } from './kit-count-app.js';
 import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
 
 const TABS = new Set(['counts', 'kit', 'deliveries', 'transfers', 'wastage']);
 const DEFAULT_TAB = 'counts';
+const EVENT_STORE_KEY = 'v5_event';
+const WAREHOUSE_STORE_KEY = 'v5_warehouse';
 
 const state = {
   eventId: '',
   event: null,
+  warehouseId: '',
+  warehouse: null,
   suppliers: [],
   caseSizes: [],
   tab: DEFAULT_TAB,
   /** @type {Array<{ id: string, name?: string, status?: string }>} */
   events: [],
+  /** @type {Array<{ id: string, name?: string, address?: string }>} */
+  warehouses: [],
   ready: false,
 };
 
 /** @type {null | {
  *   setPreferredEvent?: (id: string, name?: string) => void,
+ *   setPreferredWarehouse?: (id: string, name?: string) => void,
  *   runHomeAction?: (action: string) => Promise<boolean> | boolean,
  * }} */
 let kitApi = null;
 let kitStarting = false;
+
+function hasLocation() {
+  return !!(state.eventId || state.warehouseId);
+}
+
+function selectedKind() {
+  return state.warehouseId ? 'warehouse' : 'event';
+}
+
+function selectedId() {
+  return state.warehouseId || state.eventId || '';
+}
 
 function getContext() {
   return {
@@ -145,10 +165,17 @@ function initComposeFab() {
 function updateEventPickerLabel() {
   const label = $('eventPickerLabel');
   const wrap = $('eventSelectWrap');
+  const btn = $('eventPickerBtn');
   if (!label || !wrap) return;
 
   wrap.classList.remove('is-static');
-  label.textContent = state.event?.name || 'Select event';
+  if (state.warehouseId) {
+    label.textContent = state.warehouse?.name || 'Warehouse';
+    if (btn) btn.setAttribute('aria-label', 'Change warehouse');
+    return;
+  }
+  label.textContent = state.event?.name || 'Select location';
+  if (btn) btn.setAttribute('aria-label', 'Change location');
 }
 
 async function flushAll() {
@@ -257,9 +284,18 @@ function initPullToRefresh() {
   }, { passive: true });
 }
 
+function syncKitPreferred() {
+  if (!kitApi) return;
+  if (state.warehouseId) {
+    kitApi.setPreferredWarehouse?.(state.warehouseId, state.warehouse?.name || '');
+    return;
+  }
+  kitApi.setPreferredEvent?.(state.eventId, state.event?.name || '');
+}
+
 async function ensureKit() {
   if (kitApi) {
-    kitApi.setPreferredEvent?.(state.eventId, state.event?.name || '');
+    syncKitPreferred();
     return kitApi;
   }
   if (kitStarting) return null;
@@ -273,8 +309,10 @@ async function ensureKit() {
     kitApi = await startKitCountApp(getDB(), {
       rootEl: root,
       embedded: true,
-      preferredEventId: state.eventId,
-      preferredEventName: state.event?.name || '',
+      preferredEventId: state.warehouseId ? '' : state.eventId,
+      preferredEventName: state.warehouseId ? '' : (state.event?.name || ''),
+      preferredWarehouseId: state.warehouseId,
+      preferredWarehouseName: state.warehouse?.name || '',
       onDeepChange: setKitDeep,
     }) || {};
   } catch (err) {
@@ -338,44 +376,88 @@ function reloadTab() {
   }
 }
 
+function afterLocationReady(preferTab) {
+  hideEventGate();
+  document.documentElement.classList.remove('event-gate-ready');
+  if (!state.ready) {
+    state.ready = true;
+    document.documentElement.classList.add('app-ready');
+    switchTab(preferTab || tabFromUrl());
+    syncComposeFab();
+    // Measure after the float-in starts so content clears the bar.
+    requestAnimationFrame(() => {
+      syncChromeSizes();
+      window.setTimeout(syncChromeSizes, 560);
+    });
+    return;
+  }
+  updateEventPickerLabel();
+  if (preferTab) switchTab(preferTab);
+  else reloadTab();
+  syncComposeFab();
+  syncChromeSizes();
+}
+
 function openEventGate() {
   document.documentElement.classList.toggle('event-gate-ready', state.ready);
   showEventGate({
     events: state.events,
-    selectedId: state.eventId,
-    dismissible: state.ready && !!state.eventId,
+    warehouses: state.warehouses,
+    selectedId: selectedId(),
+    selectedKind: selectedKind(),
+    dismissible: state.ready && hasLocation(),
     onDismiss: () => {
       document.documentElement.classList.remove('event-gate-ready');
     },
-    onSelect: async (id) => {
-      await onEventChange(id);
-      hideEventGate();
-      document.documentElement.classList.remove('event-gate-ready');
-      if (!state.ready) {
-        state.ready = true;
-        document.documentElement.classList.add('app-ready');
-        switchTab(tabFromUrl());
-        syncComposeFab();
-        // Measure after the float-in starts so content clears the bar.
-        requestAnimationFrame(() => {
-          syncChromeSizes();
-          window.setTimeout(syncChromeSizes, 560);
-        });
-      } else {
-        updateEventPickerLabel();
-        reloadTab();
-        syncComposeFab();
-        syncChromeSizes();
+    onSelect: async ({ kind, id }) => {
+      if (kind === 'warehouse') {
+        await onWarehouseChange(id);
+        afterLocationReady('kit');
+        return;
       }
+      await onEventChange(id);
+      afterLocationReady();
     },
   });
   syncChromeSizes();
 }
 
+function clearWarehouseSelection() {
+  state.warehouseId = '';
+  state.warehouse = null;
+  try {
+    localStorage.removeItem(WAREHOUSE_STORE_KEY);
+  } catch { /* ignore */ }
+}
+
+function clearEventSelection() {
+  state.eventId = '';
+  state.event = null;
+  try {
+    localStorage.removeItem(EVENT_STORE_KEY);
+  } catch { /* ignore */ }
+  const pick = $('eventPick');
+  if (pick) pick.value = '';
+}
+
+async function onWarehouseChange(id) {
+  clearEventSelection();
+  state.warehouseId = id || '';
+  state.warehouse = state.warehouses.find((w) => w.id === id) || null;
+  try {
+    id
+      ? localStorage.setItem(WAREHOUSE_STORE_KEY, id)
+      : localStorage.removeItem(WAREHOUSE_STORE_KEY);
+  } catch { /* ignore */ }
+  syncKitPreferred();
+  updateEventPickerLabel();
+}
+
 async function onEventChange(id) {
+  clearWarehouseSelection();
   state.eventId = id;
   try {
-    id ? localStorage.setItem('v5_event', id) : localStorage.removeItem('v5_event');
+    id ? localStorage.setItem(EVENT_STORE_KEY, id) : localStorage.removeItem(EVENT_STORE_KEY);
   } catch { /* ignore */ }
 
   const pick = $('eventPick');
@@ -395,7 +477,7 @@ async function onEventChange(id) {
       toast(err.message || 'Failed to load event', true);
     }
   }
-  kitApi?.setPreferredEvent?.(state.eventId, state.event?.name || '');
+  syncKitPreferred();
   updateEventPickerLabel();
 }
 
@@ -435,12 +517,24 @@ async function boot() {
 
   try {
     state.caseSizes = await loadCaseSizes();
-    state.events = await loadEventsList();
-    const remembered = localStorage.getItem('v5_event') || localStorage.getItem('v2_event') || '';
+    const [events, warehouses] = await Promise.all([
+      loadEventsList(),
+      loadWarehousesList(),
+    ]);
+    state.events = events;
+    state.warehouses = (warehouses || []).slice().sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || '')));
+
+    const rememberedWh = localStorage.getItem(WAREHOUSE_STORE_KEY) || '';
+    const remembered = localStorage.getItem(EVENT_STORE_KEY) || localStorage.getItem('v2_event') || '';
     $('eventPick').innerHTML = '<option value="">Select an event…</option>' +
       state.events.map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
 
-    if (remembered && state.events.some((e) => e.id === remembered)) {
+    if (rememberedWh && state.warehouses.some((w) => w.id === rememberedWh)) {
+      // Prefill warehouse highlight on the gate; user still confirms by tapping.
+      state.warehouseId = rememberedWh;
+      state.warehouse = state.warehouses.find((w) => w.id === rememberedWh) || null;
+    } else if (remembered && state.events.some((e) => e.id === remembered)) {
       $('eventPick').value = remembered;
       // Prefill selection highlight on the gate; user still confirms by tapping.
       state.eventId = remembered;

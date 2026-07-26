@@ -1,5 +1,4 @@
 import { escapeHtml } from '../lib/util.js';
-import { icon } from '../lib/icons.js';
 
 let backdropEl = null;
 let modalEl = null;
@@ -43,7 +42,7 @@ export function closeModal() {
 }
 
 /**
- * Centered modal above drawers and dropdowns.
+ * Centered modal above sheets and dropdowns.
  */
 export function openModal({ title, bodyHtml, footHtml, onClose }) {
   closeModal();
@@ -59,7 +58,7 @@ export function openModal({ title, bodyHtml, footHtml, onClose }) {
     <div class="admin-modal-head">
       <div class="admin-modal-title">${escapeHtml(title || '')}</div>
       <button type="button" class="icon-btn admin-modal-close" aria-label="Close">
-        ${icon('x', { size: 16 })}
+        <i class="ph ph-x" aria-hidden="true"></i>
       </button>
     </div>
     <div class="admin-modal-body">${bodyHtml || ''}</div>
@@ -67,6 +66,28 @@ export function openModal({ title, bodyHtml, footHtml, onClose }) {
 
   document.body.appendChild(backdropEl);
   document.body.appendChild(modalEl);
+
+  function placeInViewport() {
+    if (!modalEl) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    // Keep the dialog in the visible area above the iOS keyboard.
+    const centerY = vv.offsetTop + Math.min(vv.height * 0.42, Math.max(180, vv.height * 0.5));
+    modalEl.style.top = `${Math.round(centerY)}px`;
+    modalEl.style.maxHeight = `${Math.round(Math.min(vv.height - 24, 640))}px`;
+  }
+
+  placeInViewport();
+  const onVv = () => placeInViewport();
+  window.visualViewport?.addEventListener('resize', onVv);
+  window.visualViewport?.addEventListener('scroll', onVv);
+
+  const prevClose = closeHandler;
+  closeHandler = () => {
+    window.visualViewport?.removeEventListener('resize', onVv);
+    window.visualViewport?.removeEventListener('scroll', onVv);
+    prevClose?.();
+  };
 
   backdropEl.addEventListener('click', closeModal);
   modalEl.querySelector('.admin-modal-close')?.addEventListener('click', closeModal);
@@ -80,6 +101,7 @@ export function openModal({ title, bodyHtml, footHtml, onClose }) {
     requestAnimationFrame(() => {
       backdropEl?.classList.add('admin-modal-backdrop--visible');
       modalEl?.classList.add('admin-modal--visible');
+      placeInViewport();
     });
   });
 
