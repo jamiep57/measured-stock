@@ -21,7 +21,12 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; padding: 0; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
 body {
   font-family: 'Outfit', system-ui, sans-serif;
   color: var(--foreground);
@@ -48,7 +53,14 @@ input:focus, select:focus, textarea:focus {
 }
 option { background: var(--card); color: var(--foreground); }
 
-.app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.app {
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
 .topbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 40;
@@ -135,6 +147,9 @@ html.event-gate:not(.event-gate-ready) .main,
 html.event-gate:not(.event-gate-ready) .count-save-bar {
   visibility: hidden;
   pointer-events: none;
+}
+html.event-gate:not(.event-gate-ready) .bottomnav {
+  display: none !important;
 }
 
 .event-gate {
@@ -327,13 +342,16 @@ html.kit-deep .bottomnav { display: none; }
 }
 
 .main {
-  flex: 1; padding: calc(var(--header-h) + 12px) var(--gutter) calc(var(--nav-h) + var(--save-bar-h, 0px) + 12px);
+  flex: 1;
+  min-height: 0;
+  padding: calc(var(--header-h) + 12px) var(--gutter) calc(12px + var(--save-bar-h, 0px));
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 html.kit-tab .main {
   padding-left: 0;
   padding-right: 0;
-  padding-bottom: var(--nav-h);
+  padding-bottom: 0;
 }
 html.kit-deep .main {
   padding-bottom: var(--safe-bottom);
@@ -347,7 +365,7 @@ html.kit-deep .main {
 #view-kit.view.active {
   display: flex !important;
   flex-direction: column;
-  min-height: calc(100dvh - var(--header-h) - var(--nav-h) - var(--safe-bottom));
+  min-height: 100%;
 }
 
 .home-hero { margin-bottom: 18px; }
@@ -597,36 +615,24 @@ html.kit-deep .main {
 }
 
 .bottomnav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  flex-shrink: 0;
   z-index: 40;
   display: flex;
   gap: 2px;
-  background: rgb(26 29 36 / 0.96);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  width: 100%;
+  margin: 0;
+  background: var(--card);
   border: none;
   border-top: 1px solid var(--border);
-  border-radius: 18px 18px 0 0;
-  padding: 8px 6px calc(8px + var(--safe-bottom));
-  box-shadow: 0 -10px 32px rgb(0 0 0 / 0.4);
-  /* Never leave a transform on this node — iOS breaks position:fixed. */
+  border-radius: 0;
+  padding: 8px 6px;
+  /* old iOS then modern env() */
+  padding-bottom: 8px;
+  padding-bottom: calc(8px + constant(safe-area-inset-bottom));
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 28px rgb(0 0 0 / 0.35);
   transform: none;
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
-}
-html.app-ready .bottomnav {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  animation: nav-rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
-}
-@keyframes nav-rise-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 /* Global compose FAB — bottom right, above nav */

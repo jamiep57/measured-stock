@@ -387,12 +387,6 @@ async function boot() {
   openEventGate();
 
   window.addEventListener('resize', syncChromeSizes);
-
-  // Keep nav free of transforms so position:fixed stays viewport-pinned on iOS.
-  $('bottomNav')?.addEventListener('animationend', (e) => {
-    if (!String(e.animationName || '').includes('nav-')) return;
-    e.currentTarget.style.transform = 'none';
-  });
 }
 
 if ('serviceWorker' in navigator) {

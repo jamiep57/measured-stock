@@ -63,8 +63,8 @@ export function syncChromeSizes() {
   if (hideNav || !nav) {
     document.documentElement.style.setProperty('--nav-h', '0px');
   } else {
-    const rect = nav.getBoundingClientRect();
-    const space = Math.max(0, Math.ceil(window.innerHeight - rect.top));
-    document.documentElement.style.setProperty('--nav-h', `${space || nav.offsetHeight}px`);
+    // Prefer measured height (in-flow dock includes safe-area padding).
+    const h = Math.ceil(nav.getBoundingClientRect().height || nav.offsetHeight || 0);
+    document.documentElement.style.setProperty('--nav-h', `${h}px`);
   }
 }
