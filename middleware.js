@@ -5,9 +5,11 @@ function loginPage(error) {
   const msg =
     error === 'invalid'
       ? 'Incorrect PIN. Try again.'
+      : error === 'name'
+        ? 'Enter your name (up to 40 characters) so others can see who is editing.'
       : error === 'config'
         ? 'App is not configured yet. Contact your administrator.'
-        : 'Enter your 4-digit PIN to continue.';
+        : 'Enter your name and 4-digit PIN to continue.';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -43,20 +45,28 @@ function loginPage(error) {
     p { font-size: 0.875rem; color: #71717a; margin-bottom: 1.5rem; line-height: 1.5; }
     p.error { color: #dc2626; }
     label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; }
+    .field { margin-bottom: 1rem; }
     input {
       width: 100%;
       font: inherit;
-      font-size: 1.5rem;
-      letter-spacing: 0.35em;
-      text-align: center;
       padding: 0.75rem 1rem;
       border: 1px solid #e4e4e7;
       border-radius: 4px;
       outline: none;
     }
+    input[name="name"] {
+      font-size: 1rem;
+      letter-spacing: normal;
+      text-align: left;
+    }
+    input[name="pin"] {
+      font-size: 1.5rem;
+      letter-spacing: 0.35em;
+      text-align: center;
+    }
     input:focus { border-color: #18181b; box-shadow: 0 0 0 2px rgb(24 24 27 / 0.1); }
     button {
-      margin-top: 1rem;
+      margin-top: 0.25rem;
       width: 100%;
       font: inherit;
       font-weight: 500;
@@ -75,19 +85,33 @@ function loginPage(error) {
     <h1>Measured Stock</h1>
     <p class="${error ? 'error' : ''}">${msg}</p>
     <form method="POST" action="/api/unlock" autocomplete="off">
-      <label for="pin">PIN</label>
-      <input
-        id="pin"
-        name="pin"
-        type="password"
-        inputmode="numeric"
-        pattern="[0-9]{4}"
-        maxlength="4"
-        minlength="4"
-        required
-        autofocus
-        placeholder="••••"
-      />
+      <div class="field">
+        <label for="name">Your name</label>
+        <input
+          id="name"
+          name="name"
+          type="text"
+          maxlength="40"
+          required
+          autofocus
+          autocomplete="nickname"
+          placeholder="e.g. Charlie"
+        />
+      </div>
+      <div class="field">
+        <label for="pin">PIN</label>
+        <input
+          id="pin"
+          name="pin"
+          type="password"
+          inputmode="numeric"
+          pattern="[0-9]{4}"
+          maxlength="4"
+          minlength="4"
+          required
+          placeholder="••••"
+        />
+      </div>
       <button type="submit">Unlock</button>
     </form>
   </div>

@@ -14,6 +14,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.2",
     "@thermal-label/brother-ql-web": "^0.6.1",
     "@zxing/browser": "^0.2.1",
     "html-to-image": "^1.11.13",

@@ -12,7 +12,6 @@ import { productStockPack } from '../../pack-metrics.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { openModal, closeModal } from '../../components/modal.js';
 import { icon } from '../../lib/icons.js';
-import { clearFieldUndo } from '../../lib/field-undo.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
@@ -29,8 +28,21 @@ import {
   generatePalletStickerPDF,
   splitPalletQtys,
 } from '../../lib/pallet-sticker-pdf.js';
+import {
+  getClientId,
+  getDisplayName,
+  setDisplayName,
+} from '../../lib/session-identity.js';
+import { getRealtimeClient } from '../../lib/realtime.js';
+import {
+  cellFocusOwners,
+  formatClosingPresence,
+  mergeClosingRemoteRow,
+  shouldApplyRemoteClosingEdit,
+} from '../../lib/closing-live.js';
 
 const COL_COUNT = 13; // product + pack + 9 data cols + return + actions
+const LOCAL_ECHO_MS = 3000;
 
 async function adjustWarehouseStock(warehouseId, productId, delta) {
   const DB = getDB();
@@ -206,13 +218,26 @@ export function renderClosingShell() {
   return `
     <div class="cl-panel" id="closingPanel">
       <div class="wst-stats cl-stats" id="clStats" hidden></div>
+      <div class="cl-name-gate" id="clNameGate" hidden>
+        <p class="cl-name-gate-copy">Enter your name so others can see which cell you’re editing.</p>
+        <div class="cl-name-gate-row">
+          <input type="text" class="admin-input" id="clNameInput" maxlength="40"
+            autocomplete="nickname" placeholder="Your name" aria-label="Your name">
+          <button type="button" class="cl-name-gate-btn" id="clNameSave">Continue</button>
+        </div>
+      </div>
+      <div class="cl-live-bar" id="clLiveBar" hidden>
+        <span class="cl-live-dot" aria-hidden="true"></span>
+        <span class="cl-live-text" id="clLivePresence">Connecting…</span>
+      </div>
       <p class="cl-hint muted">
-        Edit closing and return counts, then hit <strong>Save changes</strong>.
+        Counts <strong>auto-save as you type</strong> and show up live for anyone else on Closing.
         Closing and return use each product’s stock unit
         (cases / singles, bottles, or kegs). <strong>Max returnable</strong> = invoice × supplier SOR %.
         Returns above that ask for confirmation. <strong>Carried over</strong> = close count − return amount.
         Use <strong>Return to supplier</strong> to print pallet stickers for the return qty.
         Cleared a number by mistake? Hit <strong>Undo</strong> (or ⌘Z / Ctrl+Z).
+        When someone else clicks a cell, you’ll see it highlighted with their name.
       </p>
       <div class="dist-grid-wrap cl-grid-wrap" id="clTableWrap">
         <table class="dist-grid cl-grid" id="clTable">
@@ -223,15 +248,6 @@ export function renderClosingShell() {
         </table>
         <div class="dist-empty cl-empty" id="clEmpty" hidden>
           Add products to this event before entering closing stock.
-        </div>
-      </div>
-      <div class="cl-save-bar" id="clSaveBar" hidden>
-        <span class="cl-save-bar-copy" id="clSaveBarMsg">Unsaved changes</span>
-        <div class="cl-save-bar-actions">
-          <button type="button" class="cl-save-bar-btn" id="clDiscardBtn">Discard</button>
-          <button type="button" class="cl-save-bar-btn cl-save-bar-btn--primary" id="clSaveBtn">
-            Save changes
-          </button>
         </div>
       </div>
     </div>`;
@@ -249,10 +265,14 @@ export function mountClosingPanel(route) {
     caseSizes: [],
     drafts: {},
     saveTimers: {},
-    saving: false,
     theadObserver: null,
     abort: false,
     overMaxPrompt: new Set(),
+    liveChannel: null,
+    recentLocalWrites: new Map(),
+    focusPid: null,
+    focusField: null,
+    peerCells: {},
   };
 
   function confirmOverSorReturn({ productName, returnAmount, maxReturnable, sorPct }) {
@@ -371,6 +391,7 @@ export function mountClosingPanel(route) {
       grouped[cat].forEach((r) => { html += renderRow(r); });
     });
     body.innerHTML = html;
+    syncPeerCellMarkers();
     requestAnimationFrame(layoutTableScroll);
   }
 
@@ -440,8 +461,8 @@ export function mountClosingPanel(route) {
       budget_override: cl.budget_override ?? null,
     });
     if (saved?.id) cl.id = saved.id;
+    ctx.recentLocalWrites.set(pid, Date.now());
     delete ctx.drafts[pid];
-    syncSaveBar();
 
     const row = buildClosingRow({
       ep,
@@ -489,35 +510,22 @@ export function mountClosingPanel(route) {
   }
 
   function dirtyCount() {
-    return Object.keys(ctx.drafts).length;
+    return Object.keys(ctx.drafts).length + Object.keys(ctx.saveTimers).length;
   }
 
-  function syncSaveBar() {
-    const bar = $('clSaveBar');
-    const msg = $('clSaveBarMsg');
-    const saveBtn = $('clSaveBtn');
-    const discardBtn = $('clDiscardBtn');
-    const n = dirtyCount();
-    const dirty = n > 0 || ctx.saving;
-    if (bar) bar.hidden = !dirty;
-    panel.classList.toggle('cl-panel--dirty', dirty);
-    if (msg) {
-      msg.textContent = ctx.saving
-        ? 'Saving…'
-        : (n === 1 ? '1 unsaved change' : `${n} unsaved changes`);
-    }
-    if (saveBtn) saveBtn.disabled = ctx.saving || n === 0;
-    if (discardBtn) discardBtn.disabled = ctx.saving || n === 0;
-  }
-
-  function markDirty(pid) {
+  /** Debounced autosave — live sync kicks in after the write lands. */
+  function scheduleSave(pid) {
     if (!pid) return;
+    clearTimeout(ctx.saveTimers[pid]);
     ctx.drafts[pid] = readDraft(pid);
     previewCarried(pid, ctx.drafts[pid]);
-    syncSaveBar();
+    ctx.saveTimers[pid] = setTimeout(() => {
+      delete ctx.saveTimers[pid];
+      persist(pid).catch((e) => toast(e.message || 'Save failed', true));
+    }, 450);
   }
 
-  /** Flush one product immediately (undo / action prep). */
+  /** Flush one product immediately (blur / undo / action prep). */
   function flushSave(pid, { reread = true } = {}) {
     if (!pid) return Promise.resolve();
     clearTimeout(ctx.saveTimers[pid]);
@@ -526,7 +534,6 @@ export function mountClosingPanel(route) {
       ctx.drafts[pid] = readDraft(pid);
     }
     previewCarried(pid, ctx.drafts[pid]);
-    syncSaveBar();
     return persist(pid).catch((e) => {
       toast(e.message || 'Save failed', true);
     });
@@ -544,33 +551,6 @@ export function mountClosingPanel(route) {
     for (const pid of pids) {
       await flushSave(pid, { reread: false });
     }
-  }
-
-  async function saveAllChanges() {
-    if (ctx.saving || !dirtyCount()) return;
-    ctx.saving = true;
-    syncSaveBar();
-    try {
-      await flushAllPending();
-      if (!dirtyCount()) toast('Closing stock saved');
-    } catch (e) {
-      toast(e.message || 'Save failed', true);
-    } finally {
-      ctx.saving = false;
-      syncSaveBar();
-    }
-  }
-
-  function discardChanges() {
-    if (ctx.saving || !dirtyCount()) return;
-    Object.values(ctx.saveTimers).forEach(clearTimeout);
-    ctx.saveTimers = {};
-    ctx.drafts = {};
-    clearFieldUndo();
-    renderTable();
-    applyProductFilter(getLastProductFilter());
-    syncSaveBar();
-    toast('Changes discarded');
   }
 
   function applyProductFilter({ query, productId } = {}) {
@@ -600,23 +580,17 @@ export function mountClosingPanel(route) {
   function onInput(e) {
     const input = e.target.closest('.cl-pill-input');
     if (!input) return;
-    markDirty(input.dataset.clPid);
+    scheduleSave(input.dataset.clPid);
   }
 
   function onBlur(e) {
     if (!e.target?.matches?.('.cl-pill-input')) return;
-    markDirty(e.target.dataset.clPid);
+    flushSave(e.target.dataset.clPid);
   }
 
   function onPageHide() {
-    // Best-effort flush — Save changes is the reliable path; browsers may cancel async work.
+    // Best-effort flush — browsers may cancel async work on hide.
     if (dirtyCount()) flushAllPending();
-  }
-
-  function onBeforeUnload(e) {
-    if (!dirtyCount()) return;
-    e.preventDefault();
-    e.returnValue = '';
   }
 
   function rowByPid(pid) {
@@ -637,6 +611,235 @@ export function mountClosingPanel(route) {
     if (returnBtn) returnBtn.disabled = !canReturn;
     if (xferBtn) xferBtn.disabled = !canTransfer;
     if (stickerBtn) stickerBtn.disabled = !canSticker;
+  }
+
+  function setNameGateVisible(show) {
+    const gate = $('clNameGate');
+    if (gate) gate.hidden = !show;
+    const liveBar = $('clLiveBar');
+    if (liveBar && show) liveBar.hidden = true;
+  }
+
+  function updatePresenceUi(peers) {
+    const liveBar = $('clLiveBar');
+    const textEl = $('clLivePresence');
+    if (!liveBar || !textEl) return;
+    liveBar.hidden = false;
+    const fmt = formatClosingPresence(peers, getClientId());
+    textEl.textContent = fmt.text;
+    ctx.peerCells = cellFocusOwners(peers, getClientId());
+    syncPeerCellMarkers();
+  }
+
+  function syncPeerCellMarkers() {
+    panel.querySelectorAll('.cl-cell--peer').forEach((cell) => {
+      cell.classList.remove('cl-cell--peer');
+      cell.style.removeProperty('--cl-peer-color');
+      cell.querySelector('.cl-peer-tag')?.remove();
+    });
+    Object.values(ctx.peerCells || {}).forEach((info) => {
+      if (!info?.productId || !info?.field || !info.name) return;
+      const input = document.getElementById(`cl-${info.field}-${info.productId}`);
+      const cell = input?.closest('.cl-cell') || input?.closest('td');
+      if (!cell) return;
+      cell.classList.add('cl-cell--peer');
+      cell.style.setProperty('--cl-peer-color', info.color || '#2563eb');
+      const tag = document.createElement('span');
+      tag.className = 'cl-peer-tag';
+      tag.textContent = info.name;
+      cell.appendChild(tag);
+    });
+  }
+
+  function applyRemoteRowToUi(pid, { flash = true } = {}) {
+    const cl = rowFor(ctx.closingRows, pid) || {};
+    const countForm = closingCountToForm(cl);
+    const returnForm = returnAmountToForm(cl.return_amount);
+    const casesEl = document.getElementById(`cl-cases-${pid}`);
+    const singlesEl = document.getElementById(`cl-singles-${pid}`);
+    const retCasesEl = document.getElementById(`cl-return-cases-${pid}`);
+    const retSinglesEl = document.getElementById(`cl-return-singles-${pid}`);
+    const active = document.activeElement;
+    if (casesEl && active !== casesEl) casesEl.value = countForm.cases;
+    if (singlesEl && active !== singlesEl) singlesEl.value = countForm.singles;
+    if (retCasesEl && active !== retCasesEl) retCasesEl.value = returnForm.cases;
+    if (retSinglesEl && active !== retSinglesEl) retSinglesEl.value = returnForm.singles;
+
+    const ep = ctx.event?.event_products?.find((x) => x.product_id === pid);
+    if (ep) {
+      const row = buildClosingRow({
+        ep,
+        closingRow: cl,
+        suppliers: ctx.suppliers,
+        caseSizes: ctx.caseSizes,
+      });
+      const carriedEl = document.getElementById(`cl-carried-${pid}`);
+      const maxEl = document.getElementById(`cl-max-${pid}`);
+      if (carriedEl) {
+        carriedEl.textContent = fmtQty(row.carriedOver);
+        carriedEl.title = row.carriedLabel;
+      }
+      if (maxEl) maxEl.textContent = fmtMax(row.maxReturnable);
+      syncRowActions(pid);
+    }
+
+    const stats = $('clStats');
+    if (stats) stats.innerHTML = renderStats(allRows());
+
+    if (flash) {
+      const tr = panel.querySelector(`.cl-row[data-cl-pid="${CSS.escape(pid)}"]`);
+      if (tr) {
+        tr.classList.add('cl-row--live');
+        window.setTimeout(() => tr.classList.remove('cl-row--live'), 900);
+      }
+    }
+    syncPeerCellMarkers();
+  }
+
+  function handleRemoteClosingChange(payload) {
+    if (ctx.abort) return;
+    const remote = payload?.new || payload?.old;
+    if (!remote?.product_id) return;
+    if (payload.eventType === 'DELETE') {
+      ctx.closingRows = (ctx.closingRows || []).filter((r) => r.product_id !== remote.product_id);
+      if (!ctx.drafts[remote.product_id]) applyRemoteRowToUi(remote.product_id);
+      return;
+    }
+    const decision = shouldApplyRemoteClosingEdit({
+      productId: remote.product_id,
+      dirtyPids: ctx.drafts,
+      recentLocalWrites: ctx.recentLocalWrites,
+      focusedPid: ctx.focusPid,
+      localEchoMs: LOCAL_ECHO_MS,
+    });
+    const merged = mergeClosingRemoteRow(ctx.closingRows, remote);
+    ctx.closingRows = merged.rows;
+    if (!decision.apply) return;
+    if (merged.created && !document.getElementById(`cl-cases-${remote.product_id}`)) {
+      renderTable();
+      applyProductFilter(getLastProductFilter());
+      return;
+    }
+    applyRemoteRowToUi(remote.product_id);
+  }
+
+  async function trackPresence(patch = {}) {
+    const channel = ctx.liveChannel;
+    if (!channel) return;
+    const name = getDisplayName();
+    if (!name) return;
+    try {
+      await channel.track({
+        name,
+        clientId: getClientId(),
+        focusPid: ctx.focusPid,
+        focusField: ctx.focusField,
+        at: Date.now(),
+        ...patch,
+      });
+    } catch { /* ignore presence blips */ }
+  }
+
+  async function stopLive() {
+    const channel = ctx.liveChannel;
+    ctx.liveChannel = null;
+    if (!channel) return;
+    try {
+      await channel.unsubscribe();
+    } catch { /* ignore */ }
+    try {
+      getRealtimeClient()?.removeChannel(channel);
+    } catch { /* ignore */ }
+  }
+
+  async function startLive() {
+    if (ctx.abort || ctx.liveChannel) return;
+    const name = getDisplayName();
+    setNameGateVisible(!name);
+    if (!name) return;
+
+    const rt = getRealtimeClient();
+    const liveBar = $('clLiveBar');
+    const textEl = $('clLivePresence');
+    if (!rt) {
+      if (liveBar) liveBar.hidden = true;
+      return;
+    }
+    if (liveBar) liveBar.hidden = false;
+    if (textEl) textEl.textContent = 'Connecting…';
+
+    const channel = rt.channel(`closing:${ctx.eventId}`, {
+      config: { presence: { key: getClientId() } },
+    });
+    ctx.liveChannel = channel;
+
+    channel.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'closing_stock',
+        filter: `event_id=eq.${ctx.eventId}`,
+      },
+      (payload) => handleRemoteClosingChange(payload),
+    );
+
+    const refreshPeers = () => {
+      const state = channel.presenceState() || {};
+      const peers = Object.values(state).flat();
+      updatePresenceUi(peers);
+    };
+
+    channel.on('presence', { event: 'sync' }, refreshPeers);
+    channel.on('presence', { event: 'join' }, refreshPeers);
+    channel.on('presence', { event: 'leave' }, refreshPeers);
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await trackPresence();
+        if (textEl && textEl.textContent === 'Connecting…') {
+          textEl.textContent = 'Just you here';
+        }
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (textEl) textEl.textContent = 'Live sync unavailable';
+      }
+    });
+  }
+
+  function saveDisplayNameFromGate() {
+    const input = $('clNameInput');
+    const name = setDisplayName(input?.value || '');
+    if (!name) {
+      toast('Enter your name (up to 40 characters)', true);
+      input?.focus();
+      return;
+    }
+    setNameGateVisible(false);
+    startLive();
+  }
+
+  function onFocusIn(e) {
+    const input = e.target?.closest?.('.cl-pill-input');
+    if (!input) return;
+    ctx.focusPid = input.dataset.clPid || null;
+    ctx.focusField = input.dataset.clField || null;
+    trackPresence();
+  }
+
+  function onFocusOut(e) {
+    const input = e.target?.closest?.('.cl-pill-input');
+    if (!input) return;
+    window.setTimeout(() => {
+      const active = document.activeElement?.closest?.('.cl-pill-input');
+      if (active) {
+        ctx.focusPid = active.dataset.clPid || null;
+        ctx.focusField = active.dataset.clField || null;
+      } else {
+        ctx.focusPid = null;
+        ctx.focusField = null;
+      }
+      trackPresence();
+    }, 0);
   }
 
   async function openTransferToWarehouseSheet(pid) {
@@ -961,12 +1164,8 @@ export function mountClosingPanel(route) {
   };
 
   function onClick(e) {
-    if (e.target.closest('#clSaveBtn')) {
-      saveAllChanges();
-      return;
-    }
-    if (e.target.closest('#clDiscardBtn')) {
-      discardChanges();
+    if (e.target.closest('#clNameSave')) {
+      saveDisplayNameFromGate();
       return;
     }
     const btn = e.target.closest('[data-cl-action]');
@@ -986,15 +1185,25 @@ export function mountClosingPanel(route) {
     }
   }
 
+  function onKeyDown(e) {
+    if (e.key !== 'Enter') return;
+    if (e.target?.id === 'clNameInput') {
+      e.preventDefault();
+      saveDisplayNameFromGate();
+    }
+  }
+
   panel.addEventListener('input', onInput);
   panel.addEventListener('change', onInput);
   panel.addEventListener('blur', onBlur, true);
+  panel.addEventListener('focusin', onFocusIn);
+  panel.addEventListener('focusout', onFocusOut);
+  panel.addEventListener('keydown', onKeyDown);
   panel.addEventListener('click', onClick);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   window.addEventListener('resize', onResize);
   window.addEventListener('pagehide', onPageHide);
-  window.addEventListener('beforeunload', onBeforeUnload);
 
   const wrap = $('clTableWrap');
   const thead = $('clGridHead');
@@ -1019,6 +1228,7 @@ export function mountClosingPanel(route) {
       ctx.closingRows = closing || [];
       renderTable();
       applyProductFilter(getLastProductFilter());
+      startLive();
     } catch (err) {
       const body = $('clBody');
       if (body) {
@@ -1031,15 +1241,18 @@ export function mountClosingPanel(route) {
   return () => {
     ctx.abort = true;
     flushAllPending();
+    stopLive();
     ctx.theadObserver?.disconnect();
     panel.removeEventListener('input', onInput);
     panel.removeEventListener('change', onInput);
     panel.removeEventListener('blur', onBlur, true);
+    panel.removeEventListener('focusin', onFocusIn);
+    panel.removeEventListener('focusout', onFocusOut);
+    panel.removeEventListener('keydown', onKeyDown);
     panel.removeEventListener('click', onClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     window.removeEventListener('resize', onResize);
     window.removeEventListener('pagehide', onPageHide);
-    window.removeEventListener('beforeunload', onBeforeUnload);
   };
 }

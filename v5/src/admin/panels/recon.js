@@ -79,28 +79,38 @@ function rcnTh(col, label, extraClass = '') {
   </th>`;
 }
 
+function productMetaLine(r) {
+  const bits = [];
+  if (r.p?.case_size) bits.push(r.p.case_size);
+  if (r.supplierName && r.supplierName !== '—') bits.push(r.supplierName);
+  const price = formatReconMoney(r.rowPrice);
+  if (price && price !== '—') bits.push(price);
+  return bits.join(' · ');
+}
+
 function renderRow(r) {
   const noteHint = r.reconNote
     ? `<span class="recon-note-hint" title="${escapeHtml(r.reconNote)}">${escapeHtml(r.reconNote)}</span>`
     : '';
-  const statusClass = r.reconStatus ? ` recon-row-status-${r.reconStatus}` : '';
   const invVal = r.hasInvoice ? String(r.invoiced ?? '') : '';
   const closingCasesVal = r.hasClosing ? String(r.closingCases ?? 0) : '';
   const closingSinglesVal = r.hasClosing ? String(r.closingSingles ?? 0) : '';
   const varCls = varianceClass(r.consumption, r.plu, r.variance);
   const varSign = r.variance > 0 ? '+' : '';
   const varPct = (r.consumption !== 0 || r.plu !== 0) ? ` (${r.variancePct}%)` : '';
+  const meta = productMetaLine(r);
 
   return `
-    <tr class="recon-row${statusClass}${r.reconHidden ? ' recon-row-hidden' : ''}${r.investigate ? ' row-investigate' : ''}"
-      data-rcn-pid="${escapeHtml(r.pid)}" data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}">
+    <tr class="recon-row${r.reconHidden ? ' recon-row-hidden' : ''}${r.investigate ? ' row-investigate' : ''}"
+      data-rcn-pid="${escapeHtml(r.pid)}" data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
+      data-rcn-status="${escapeHtml(r.reconStatus || '')}">
       <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
         <div class="rcn-item">
           <div class="rcn-item-top">
             <span class="rcn-item-name" title="${escapeHtml(r.p.name || '')}">${escapeHtml(r.p.name || 'Product')}</span>
             <button type="button" class="recon-more-btn" data-rcn-edit="${escapeHtml(r.pid)}" title="Edit details" aria-label="Edit">⋯</button>
           </div>
-          ${r.p.case_size ? `<span class="rcn-item-pack">${escapeHtml(r.p.case_size)}</span>` : ''}
+          ${meta ? `<span class="rcn-item-meta">${escapeHtml(meta)}${r.multiOfferWarn ? ' <span class="recon-offer-warn" title="Multiple supplier offers with different pack or price">⚠</span>' : ''}</span>` : ''}
           ${noteHint}
         </div>
       </td>

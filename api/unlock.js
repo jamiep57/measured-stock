@@ -1,4 +1,9 @@
-import { createAuthToken, COOKIE_NAME } from '../lib/cookie.js';
+import {
+  createAuthToken,
+  COOKIE_NAME,
+  DISPLAY_NAME_COOKIE,
+  normalizeDisplayName,
+} from '../lib/cookie.js';
 import { timingSafeEqual } from 'crypto';
 
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -48,6 +53,13 @@ export default async function handler(req, res) {
     return;
   }
 
+  const displayName = normalizeDisplayName(body.name);
+  if (!displayName) {
+    res.writeHead(302, { Location: '/?error=name' });
+    res.end();
+    return;
+  }
+
   const submitted = String(body.pin || '').trim();
   if (!/^\d{4}$/.test(submitted)) {
     res.writeHead(302, { Location: '/?error=invalid' });
@@ -55,7 +67,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Admin PIN is checked first so it always wins if the two ever collide.
   const matches = (pin) => {
     if (!pin) return false;
     const a = Buffer.from(submitted);
@@ -78,11 +89,11 @@ export default async function handler(req, res) {
   const secure =
     process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
   const secureFlag = secure ? ' Secure;' : '';
-  res.setHeader(
-    'Set-Cookie',
-    `${COOKIE_NAME}=${token}; Path=/; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=${MAX_AGE}`
-  );
-  // Staff land on V5 mobile; admins on the full dashboard (still v2 until cutover).
+  const nameCookie = `${DISPLAY_NAME_COOKIE}=${encodeURIComponent(displayName)}; Path=/;${secureFlag} SameSite=Lax; Max-Age=${MAX_AGE}`;
+  res.setHeader('Set-Cookie', [
+    `${COOKIE_NAME}=${token}; Path=/; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=${MAX_AGE}`,
+    nameCookie,
+  ]);
   res.writeHead(302, { Location: role === 'staff' ? '/v5/' : '/' });
   res.end();
 }
