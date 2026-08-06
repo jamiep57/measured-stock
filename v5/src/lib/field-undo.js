@@ -2,6 +2,8 @@
  * Global undo for quantity / number cells (num-math and kit qty).
  * Captures the value when you start editing; after a change, Undo restores it
  * and re-fires input/change so the active panel's save handlers run.
+ *
+ * Toolbar control: any `.field-undo-btn` (e.g. #topbarUndoBtn next to search).
  */
 
 import { toast } from './util.js';
@@ -14,39 +16,20 @@ const focusState = new WeakMap();
 /** @type {Array<{ el: HTMLInputElement, id: string, before: string, cleared: boolean }>} */
 let undoStack = [];
 
-/** @type {HTMLButtonElement | null} */
-let fabEl = null;
-
 /** @type {(el: Element | null | undefined) => boolean} */
 let isTarget = () => false;
 
-function ensureFab() {
-  if (fabEl?.isConnected) return fabEl;
-  let el = document.getElementById('fieldUndoFab');
-  if (!el) {
-    el = document.createElement('button');
-    el.type = 'button';
-    el.id = 'fieldUndoFab';
-    el.className = 'field-undo-fab';
-    el.hidden = true;
-    el.setAttribute('aria-label', 'Undo last number change');
-    el.innerHTML = '<span class="field-undo-fab-icon" aria-hidden="true">↶</span><span>Undo</span>';
-    document.body.appendChild(el);
-    el.addEventListener('click', (e) => {
-      e.preventDefault();
-      undoLastField();
-    });
-  }
-  fabEl = /** @type {HTMLButtonElement} */ (el);
-  return fabEl;
+function undoButtons() {
+  return [...document.querySelectorAll('.field-undo-btn')];
 }
 
-function syncFab() {
-  const fab = ensureFab();
+function syncUndoButtons() {
   const has = undoStack.length > 0;
-  fab.hidden = !has;
-  fab.disabled = !has;
-  fab.classList.toggle('is-visible', has);
+  undoButtons().forEach((btn) => {
+    btn.hidden = !has;
+    btn.disabled = !has;
+    btn.setAttribute('aria-disabled', has ? 'false' : 'true');
+  });
 }
 
 function resolveInput(entry) {
@@ -69,7 +52,7 @@ function pushEntry(input, before) {
     cleared,
   });
   if (undoStack.length > MAX_STACK) undoStack.shift();
-  syncFab();
+  syncUndoButtons();
 }
 
 function offerToast(entry) {
@@ -86,7 +69,7 @@ function offerToast(entry) {
  */
 export function undoLastField() {
   const entry = undoStack.pop();
-  syncFab();
+  syncUndoButtons();
   if (!entry) return false;
   const el = resolveInput(entry);
   if (!el) {
@@ -105,7 +88,12 @@ export function undoLastField() {
 /** Drop stacked undos (e.g. after Discard rebuilds a grid). */
 export function clearFieldUndo() {
   undoStack = [];
-  syncFab();
+  syncUndoButtons();
+}
+
+/** Keep toolbar buttons in sync after route remounts inject new markup. */
+export function refreshFieldUndoButtons() {
+  syncUndoButtons();
 }
 
 /**
@@ -115,8 +103,7 @@ export function clearFieldUndo() {
  */
 export function initFieldUndo(root = document, opts = {}) {
   if (typeof opts.isTarget === 'function') isTarget = opts.isTarget;
-  ensureFab();
-  syncFab();
+  syncUndoButtons();
 
   const onFocusIn = (e) => {
     const input = e.target;
@@ -158,15 +145,24 @@ export function initFieldUndo(root = document, opts = {}) {
     undoLastField();
   };
 
+  const onClick = (e) => {
+    const btn = e.target.closest?.('.field-undo-btn');
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    undoLastField();
+  };
+
   root.addEventListener('focusin', onFocusIn);
   root.addEventListener('input', onInput);
   root.addEventListener('focusout', onFocusOut);
   root.addEventListener('keydown', onKeyDown);
+  root.addEventListener('click', onClick);
 
   return () => {
     root.removeEventListener('focusin', onFocusIn);
     root.removeEventListener('input', onInput);
     root.removeEventListener('focusout', onFocusOut);
     root.removeEventListener('keydown', onKeyDown);
+    root.removeEventListener('click', onClick);
   };
 }
