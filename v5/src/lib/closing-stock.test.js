@@ -7,6 +7,7 @@ import {
   returnAmountToForm,
   closingCountToForm,
   closingPatchFromDraft,
+  exceedsMaxReturnable,
   buildClosingRow,
 } from './closing-stock.js';
 
@@ -143,6 +144,47 @@ describe('closingPatchFromDraft', () => {
       carried_over: 1,
       capped: [],
     });
+  });
+
+  it('allows return above max returnable when explicitly allowed', () => {
+    expect(closingPatchFromDraft(product, {
+      closingCases: 12,
+      closingSingles: 0,
+      returnCases: 9,
+      returnSingles: 0,
+    }, [], { maxReturnable: 5, allowOverMaxReturnable: true })).toEqual({
+      closing_cases: 12,
+      closing_singles: 0,
+      close_count: 12,
+      return_amount: 9,
+      carried_over: 3,
+      capped: [],
+    });
+  });
+
+  it('still hard-caps to closing count when over-max is allowed', () => {
+    expect(closingPatchFromDraft(product, {
+      closingCases: 2,
+      closingSingles: 0,
+      returnCases: 9,
+      returnSingles: 0,
+    }, [], { maxReturnable: 5, allowOverMaxReturnable: true })).toEqual({
+      closing_cases: 2,
+      closing_singles: 0,
+      close_count: 2,
+      return_amount: 2,
+      carried_over: 0,
+      capped: ['closing count'],
+    });
+  });
+});
+
+describe('exceedsMaxReturnable', () => {
+  it('is true only for a positive max that is exceeded', () => {
+    expect(exceedsMaxReturnable(6, 5)).toBe(true);
+    expect(exceedsMaxReturnable(5, 5)).toBe(false);
+    expect(exceedsMaxReturnable(6, 0)).toBe(false);
+    expect(exceedsMaxReturnable(6, null)).toBe(false);
   });
 });
 
