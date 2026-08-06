@@ -445,6 +445,7 @@ export function initTopbarToolbar() {
       } else {
         stripsEl.innerHTML = '';
       }
+      initIcons($('topbarUndoBtn'));
     },
   };
 }

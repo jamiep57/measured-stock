@@ -47,7 +47,6 @@
                 <a class="nav-link" href="/v5/admin/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" href="/v5/admin/warehouses" data-route="warehouses"><i data-lucide="warehouse"></i> Warehouses <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" href="/v5/admin/bugs" data-route="bugs"><i data-lucide="bug"></i> Bugs <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" href="/v5/admin/changelog" data-route="changelog"><i data-lucide="scroll-text"></i> What’s new <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>
           </div>
@@ -112,6 +111,11 @@
                   <div class="tfp-dropdown" id="topbarTableFilterPanel" hidden></div>
                 </div>
               </div>
+              <button type="button" class="topbar-tool topbar-tool--label field-undo-btn" id="topbarUndoBtn"
+                hidden disabled title="Undo last number change" aria-label="Undo last number change">
+                <i data-lucide="undo-2" aria-hidden="true"></i>
+                <span>Undo</span>
+              </button>
               <div class="topbar-search" id="topbarSearch"></div>
             </div>
             <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings" data-route="settings"
