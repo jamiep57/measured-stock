@@ -13,15 +13,51 @@ export function rid(prefix = 'x') {
 }
 
 let toastTimer;
-export function toast(msg, isErr = false) {
+let toastActionHandler = null;
+
+/**
+ * @param {string} msg
+ * @param {boolean} [isErr]
+ * @param {{ action?: { label: string, onClick: () => void }, duration?: number }} [opts]
+ */
+export function toast(msg, isErr = false, opts = {}) {
   const el = $('toast');
   if (!el) return;
-  el.textContent = msg;
-  el.className = 'toast show' + (isErr ? ' err' : '');
   clearTimeout(toastTimer);
+  toastActionHandler = null;
+  el.onclick = null;
+
+  const action = opts?.action;
+  const duration = Number(opts?.duration) > 0
+    ? Number(opts.duration)
+    : (action ? 7000 : 2600);
+
+  if (action?.label && typeof action.onClick === 'function') {
+    el.innerHTML = `<span class="toast-msg">${escapeHtml(msg)}</span>`
+      + `<button type="button" class="toast-action">${escapeHtml(action.label)}</button>`;
+    el.className = 'toast show toast--action' + (isErr ? ' err' : '');
+    el.style.pointerEvents = 'auto';
+    toastActionHandler = action.onClick;
+    el.querySelector('.toast-action')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const fn = toastActionHandler;
+      toastActionHandler = null;
+      el.className = 'toast' + (isErr ? ' err' : '');
+      el.style.pointerEvents = '';
+      try { fn?.(); } catch { /* ignore */ }
+    });
+  } else {
+    el.textContent = msg;
+    el.className = 'toast show' + (isErr ? ' err' : '');
+    el.style.pointerEvents = '';
+  }
+
   toastTimer = setTimeout(() => {
     el.className = 'toast' + (isErr ? ' err' : '');
-  }, 2600);
+    el.style.pointerEvents = '';
+    toastActionHandler = null;
+  }, duration);
 }
 
 export function nowLocalInput() {
@@ -99,7 +135,13 @@ export function syncSafeAreaTop() {
     top = Math.max(top, 59);
   }
 
-  document.documentElement.style.setProperty('--kc-safe-top', `${Math.round(top)}px`);
+  // Only publish a positive inset. Setting 0px would block CSS env() fallbacks
+  // via var(--kc-safe-top, env(...)) because a defined 0 still counts as set.
+  if (top > 0) {
+    document.documentElement.style.setProperty('--kc-safe-top', `${Math.round(top)}px`);
+  } else {
+    document.documentElement.style.removeProperty('--kc-safe-top');
+  }
   return top;
 }
 

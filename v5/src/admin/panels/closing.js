@@ -11,7 +11,9 @@ import { parseQty } from '../../stock-entry.js';
 import { productStockPack } from '../../pack-metrics.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { icon } from '../../lib/icons.js';
+import { clearFieldUndo } from '../../lib/field-undo.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
+import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
   buildClosingRow,
   closingCountToForm,
@@ -19,13 +21,14 @@ import {
   computeClosingRows,
   returnAmountToForm,
 } from '../../lib/closing-stock.js';
+import { printClosingCountSheet } from '../../lib/count-sheets-print.js';
 import { closingRowFor, roundN } from '../../lib/recon.js';
 import {
   generatePalletStickerPDF,
   splitPalletQtys,
 } from '../../lib/pallet-sticker-pdf.js';
 
-const COL_COUNT = 12; // product + pack + 9 data cols + actions
+const COL_COUNT = 13; // product + pack + 9 data cols + return + actions
 
 async function adjustWarehouseStock(warehouseId, productId, delta) {
   const DB = getDB();
@@ -102,7 +105,8 @@ function renderRow(r) {
     }
     : { cases: '', singles: '' };
   const canTransfer = (Number(r.carriedOver) || 0) > 0;
-  const canSticker = (Number(r.returnAmount) || 0) > 0 || canTransfer;
+  const canReturn = (Number(r.returnAmount) || 0) > 0;
+  const canSticker = canReturn || canTransfer;
 
   return `
     <tr class="dist-prod-row cl-row" data-cl-pid="${escapeHtml(r.pid)}"
@@ -118,6 +122,15 @@ function renderRow(r) {
       <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-cases', returnForm.cases, 'Return cases')}</td>
       <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-singles', returnForm.singles, 'Return singles')}</td>
       <td class="cl-prod-num cl-carried" id="cl-carried-${escapeHtml(r.pid)}" title="${escapeHtml(r.carriedLabel)}">${escapeHtml(fmtQty(r.carriedOver))}</td>
+      <td class="cl-return-cell">
+        <button type="button" class="cl-return-btn" data-cl-action="return"
+          data-cl-pid="${escapeHtml(r.pid)}"
+          title="Return to ${escapeHtml(r.supplierName || 'supplier')} and print pallet stickers"
+          ${canReturn ? '' : 'disabled'}>
+          ${icon('corner-up-left', { size: 14 })}
+          <span>Return to supplier</span>
+        </button>
+      </td>
       <td class="cl-actions-cell">
         <div class="cl-row-actions">
           <button type="button" class="cl-row-btn" data-cl-action="transfer"
@@ -182,6 +195,7 @@ function renderGridHead() {
     ${th('Return C', 'cl-col-edit')}
     ${th('Return S', 'cl-col-edit')}
     ${th('Carried', 'cl-col-num')}
+    ${th('Return', 'cl-col-return')}
     ${th('Actions', 'cl-col-actions')}
   </tr>`;
 }
@@ -191,9 +205,12 @@ export function renderClosingShell() {
     <div class="cl-panel" id="closingPanel">
       <div class="wst-stats cl-stats" id="clStats" hidden></div>
       <p class="cl-hint muted">
-        Counts auto-save as you type. Closing and return use each product’s stock unit
+        Edit closing and return counts, then hit <strong>Save changes</strong>.
+        Closing and return use each product’s stock unit
         (cases / singles, bottles, or kegs). <strong>Max returnable</strong> = invoice × supplier SOR %.
         <strong>Carried over</strong> = close count − return amount.
+        Use <strong>Return to supplier</strong> to print pallet stickers for the return qty.
+        Cleared a number by mistake? Hit <strong>Undo</strong> (or ⌘Z / Ctrl+Z).
       </p>
       <div class="dist-grid-wrap cl-grid-wrap" id="clTableWrap">
         <table class="dist-grid cl-grid" id="clTable">
@@ -204,6 +221,15 @@ export function renderClosingShell() {
         </table>
         <div class="dist-empty cl-empty" id="clEmpty" hidden>
           Add products to this event before entering closing stock.
+        </div>
+      </div>
+      <div class="cl-save-bar" id="clSaveBar" hidden>
+        <span class="cl-save-bar-copy" id="clSaveBarMsg">Unsaved changes</span>
+        <div class="cl-save-bar-actions">
+          <button type="button" class="cl-save-bar-btn" id="clDiscardBtn">Discard</button>
+          <button type="button" class="cl-save-bar-btn cl-save-bar-btn--primary" id="clSaveBtn">
+            Save changes
+          </button>
         </div>
       </div>
     </div>`;
@@ -221,6 +247,7 @@ export function mountClosingPanel(route) {
     caseSizes: [],
     drafts: {},
     saveTimers: {},
+    saving: false,
     theadObserver: null,
     abort: false,
   };
@@ -349,6 +376,7 @@ export function mountClosingPanel(route) {
     });
     if (saved?.id) cl.id = saved.id;
     delete ctx.drafts[pid];
+    syncSaveBar();
 
     const row = buildClosingRow({
       ep,
@@ -395,17 +423,36 @@ export function mountClosingPanel(route) {
     syncRowActions(pid);
   }
 
-  function scheduleSave(pid) {
-    clearTimeout(ctx.saveTimers[pid]);
-    ctx.drafts[pid] = readDraft(pid);
-    previewCarried(pid, ctx.drafts[pid]);
-    ctx.saveTimers[pid] = setTimeout(() => {
-      delete ctx.saveTimers[pid];
-      persist(pid).catch((e) => toast(e.message || 'Save failed', true));
-    }, 400);
+  function dirtyCount() {
+    return Object.keys(ctx.drafts).length;
   }
 
-  /** Flush one product immediately (blur / leave). */
+  function syncSaveBar() {
+    const bar = $('clSaveBar');
+    const msg = $('clSaveBarMsg');
+    const saveBtn = $('clSaveBtn');
+    const discardBtn = $('clDiscardBtn');
+    const n = dirtyCount();
+    const dirty = n > 0 || ctx.saving;
+    if (bar) bar.hidden = !dirty;
+    panel.classList.toggle('cl-panel--dirty', dirty);
+    if (msg) {
+      msg.textContent = ctx.saving
+        ? 'Saving…'
+        : (n === 1 ? '1 unsaved change' : `${n} unsaved changes`);
+    }
+    if (saveBtn) saveBtn.disabled = ctx.saving || n === 0;
+    if (discardBtn) discardBtn.disabled = ctx.saving || n === 0;
+  }
+
+  function markDirty(pid) {
+    if (!pid) return;
+    ctx.drafts[pid] = readDraft(pid);
+    previewCarried(pid, ctx.drafts[pid]);
+    syncSaveBar();
+  }
+
+  /** Flush one product immediately (undo / action prep). */
   function flushSave(pid, { reread = true } = {}) {
     if (!pid) return Promise.resolve();
     clearTimeout(ctx.saveTimers[pid]);
@@ -414,12 +461,13 @@ export function mountClosingPanel(route) {
       ctx.drafts[pid] = readDraft(pid);
     }
     previewCarried(pid, ctx.drafts[pid]);
+    syncSaveBar();
     return persist(pid).catch((e) => {
       toast(e.message || 'Save failed', true);
     });
   }
 
-  /** Persist every in-flight draft so navigation / refresh does not drop counts. */
+  /** Persist every in-flight draft so navigation / actions do not drop counts. */
   function flushAllPending() {
     const pids = new Set([
       ...Object.keys(ctx.saveTimers),
@@ -430,6 +478,33 @@ export function mountClosingPanel(route) {
     // Do not re-read inputs — on unmount the grid may already be gone;
     // drafts were captured on each keystroke.
     return Promise.all([...pids].map((pid) => flushSave(pid, { reread: false })));
+  }
+
+  async function saveAllChanges() {
+    if (ctx.saving || !dirtyCount()) return;
+    ctx.saving = true;
+    syncSaveBar();
+    try {
+      await flushAllPending();
+      if (!dirtyCount()) toast('Closing stock saved');
+    } catch (e) {
+      toast(e.message || 'Save failed', true);
+    } finally {
+      ctx.saving = false;
+      syncSaveBar();
+    }
+  }
+
+  function discardChanges() {
+    if (ctx.saving || !dirtyCount()) return;
+    Object.values(ctx.saveTimers).forEach(clearTimeout);
+    ctx.saveTimers = {};
+    ctx.drafts = {};
+    clearFieldUndo();
+    renderTable();
+    applyProductFilter(getLastProductFilter());
+    syncSaveBar();
+    toast('Changes discarded');
   }
 
   function applyProductFilter({ query, productId } = {}) {
@@ -459,16 +534,23 @@ export function mountClosingPanel(route) {
   function onInput(e) {
     const input = e.target.closest('.cl-pill-input');
     if (!input) return;
-    scheduleSave(input.dataset.clPid);
+    markDirty(input.dataset.clPid);
   }
 
   function onBlur(e) {
     if (!e.target?.matches?.('.cl-pill-input')) return;
-    flushSave(e.target.dataset.clPid);
+    markDirty(e.target.dataset.clPid);
   }
 
   function onPageHide() {
-    flushAllPending();
+    // Best-effort flush — Save changes is the reliable path; browsers may cancel async work.
+    if (dirtyCount()) flushAllPending();
+  }
+
+  function onBeforeUnload(e) {
+    if (!dirtyCount()) return;
+    e.preventDefault();
+    e.returnValue = '';
   }
 
   function rowByPid(pid) {
@@ -479,11 +561,14 @@ export function mountClosingPanel(route) {
     const row = rowByPid(pid);
     if (!row) return;
     const canTransfer = (Number(row.carriedOver) || 0) > 0;
-    const canSticker = (Number(row.returnAmount) || 0) > 0 || canTransfer;
+    const canReturn = (Number(row.returnAmount) || 0) > 0;
+    const canSticker = canReturn || canTransfer;
     const tr = panel.querySelector(`.cl-row[data-cl-pid="${CSS.escape(pid)}"]`);
     if (!tr) return;
+    const returnBtn = tr.querySelector('[data-cl-action="return"]');
     const xferBtn = tr.querySelector('[data-cl-action="transfer"]');
     const stickerBtn = tr.querySelector('[data-cl-action="sticker"]');
+    if (returnBtn) returnBtn.disabled = !canReturn;
     if (xferBtn) xferBtn.disabled = !canTransfer;
     if (stickerBtn) stickerBtn.disabled = !canSticker;
   }
@@ -655,7 +740,7 @@ export function mountClosingPanel(route) {
       <div class="cl-pallet-chips">${chips}</div>`;
   }
 
-  async function openPalletStickerSheet(pid) {
+  async function openPalletStickerSheet(pid, { forceMode = null } = {}) {
     await flushAllPending();
     const row = rowByPid(pid);
     if (!row) {
@@ -664,12 +749,18 @@ export function mountClosingPanel(route) {
     }
     const returnQty = Number(row.returnAmount) || 0;
     const carriedQty = Number(row.carriedOver) || 0;
+    if (forceMode === 'return' && returnQty <= 0) {
+      toast('Enter a return amount for this product first.', true);
+      return;
+    }
     if (returnQty <= 0 && carriedQty <= 0) {
       toast('Enter a return amount or carried-over stock first.', true);
       return;
     }
 
-    const mode = returnQty > 0 ? 'return' : 'warehouse';
+    const mode = forceMode === 'return' || (forceMode !== 'warehouse' && returnQty > 0)
+      ? 'return'
+      : 'warehouse';
     const defaultQty = mode === 'return' ? returnQty : carriedQty;
     let warehouses = [];
     if (mode === 'warehouse') {
@@ -780,11 +871,46 @@ export function mountClosingPanel(route) {
   const onProductFilter = (e) => applyProductFilter(e.detail || getLastProductFilter());
   const onResize = () => layoutTableScroll();
 
+  function handlePrintClosingSheet() {
+    if (!ctx.event) {
+      toast('Closing stock is still loading', true);
+      return;
+    }
+    const result = printClosingCountSheet({
+      event: ctx.event,
+      caseSizes: ctx.caseSizes,
+    });
+    if (result.error) {
+      toast(result.error, true);
+      return;
+    }
+    toast(`Opened closing count sheet (${result.productCount} item${result.productCount === 1 ? '' : 's'})`);
+  }
+
+  const onToolbarAction = (e) => {
+    if (e.detail?.action === 'print-closing-count-sheet') {
+      e.detail.handled = true;
+      handlePrintClosingSheet();
+    }
+  };
+
   function onClick(e) {
+    if (e.target.closest('#clSaveBtn')) {
+      saveAllChanges();
+      return;
+    }
+    if (e.target.closest('#clDiscardBtn')) {
+      discardChanges();
+      return;
+    }
     const btn = e.target.closest('[data-cl-action]');
     if (!btn || btn.disabled) return;
     const pid = btn.dataset.clPid;
     if (!pid) return;
+    if (btn.dataset.clAction === 'return') {
+      openPalletStickerSheet(pid, { forceMode: 'return' });
+      return;
+    }
     if (btn.dataset.clAction === 'transfer') {
       openTransferToWarehouseSheet(pid);
       return;
@@ -798,9 +924,11 @@ export function mountClosingPanel(route) {
   panel.addEventListener('change', onInput);
   panel.addEventListener('blur', onBlur, true);
   panel.addEventListener('click', onClick);
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   window.addEventListener('resize', onResize);
   window.addEventListener('pagehide', onPageHide);
+  window.addEventListener('beforeunload', onBeforeUnload);
 
   const wrap = $('clTableWrap');
   const thead = $('clGridHead');
@@ -842,8 +970,10 @@ export function mountClosingPanel(route) {
     panel.removeEventListener('change', onInput);
     panel.removeEventListener('blur', onBlur, true);
     panel.removeEventListener('click', onClick);
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     window.removeEventListener('resize', onResize);
     window.removeEventListener('pagehide', onPageHide);
+    window.removeEventListener('beforeunload', onBeforeUnload);
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCountSheetsHtml } from './count-sheets-print.js';
+import { buildClosingCountSheetHtml, buildCountSheetsHtml } from './count-sheets-print.js';
 
 const event = {
   name: 'Summer Fest',
@@ -52,5 +52,28 @@ describe('buildCountSheetsHtml', () => {
       barProducts: [],
     });
     expect(result.error).toMatch(/No products/);
+  });
+});
+
+describe('buildClosingCountSheetHtml', () => {
+  it('builds one whole-event closing sheet with all event products', () => {
+    const result = buildClosingCountSheetHtml({ event, caseSizes: [] });
+    expect(result.error).toBeUndefined();
+    expect(result.productCount).toBe(3);
+    expect(result.html).toContain('Closing stock count');
+    expect(result.html).toContain('Summer Fest');
+    expect(result.html).toContain('Lager');
+    expect(result.html).toContain('Gin');
+    expect(result.html).toContain('Cider');
+    expect(result.html).toContain('Closing stock · 3 items');
+    expect(result.html).not.toContain('Main Bar');
+    expect(result.html).not.toContain('Stock count sheet');
+  });
+
+  it('errors when the event has no products', () => {
+    const result = buildClosingCountSheetHtml({
+      event: { name: 'Empty', event_products: [] },
+    });
+    expect(result.error).toMatch(/Add products/);
   });
 });

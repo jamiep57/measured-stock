@@ -50,7 +50,12 @@ html.kit-deep .kc-root > .kc-top {
   position: sticky;
   top: 0;
   z-index: 30;
-  padding-top: calc(10px + var(--kc-safe-top, env(safe-area-inset-top, 0px)));
+  padding-top: calc(
+    10px + max(
+      var(--kc-safe-top, 0px),
+      env(safe-area-inset-top, 0px)
+    )
+  );
   padding-left: 16px;
   padding-right: 16px;
   padding-bottom: 8px;
@@ -82,8 +87,35 @@ html.kit-deep .kc-root > .kc-form {
   padding-left: 16px;
   padding-right: 16px;
 }
+/*
+ * Scan has no .kc-chrome wrapper. Own the notch the same way sticky chrome
+ * does — full padding shorthand so the later .kc-scan .kc-top rule cannot
+ * reset padding-top, and max() so a JS --kc-safe-top of 0px cannot block env().
+ */
 html.kit-deep .kc-scan .kc-top {
-  padding-top: calc(8px + var(--kc-safe-top, env(safe-area-inset-top, 0px)));
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: calc(
+      8px + max(
+        var(--kc-safe-top, 0px),
+        env(safe-area-inset-top, 0px)
+      )
+    )
+    16px 8px;
+  background: var(--background, var(--bg, #0f1115));
+}
+/* black-translucent PWA: WebKit sometimes reports inset 0 — keep a floor */
+@media (display-mode: standalone) {
+  html.kit-deep .kc-scan .kc-top {
+    padding-top: calc(
+      8px + max(
+        59px,
+        var(--kc-safe-top, 0px),
+        env(safe-area-inset-top, 0px)
+      )
+    );
+  }
 }
 html.kit-deep .kc-root .kc-complete-bar {
   padding-bottom: calc(12px + constant(safe-area-inset-bottom));
@@ -1152,6 +1184,137 @@ html.kit-deep .kc-root .kc-complete-bar {
   margin-top: 4px;
 }
 .kc-sheet-actions .kc-btn { height: 48px; min-width: 96px; }
+.kc-sheet-actions--split {
+  justify-content: space-between;
+}
+.kc-sheet-actions--split .kc-btn--primary {
+  flex: 1;
+}
+
+.kc-home-menu {
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.kc-home-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+}
+.kc-home-more:active {
+  background: var(--secondary, #22262f);
+}
+.kc-home-more i {
+  font-size: 22px;
+  line-height: 1;
+}
+.kc-home-menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+}
+.kc-home-menu-item {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.kc-home-menu-item:active,
+.kc-home-menu-item:hover {
+  background: var(--secondary, #22262f);
+}
+
+.kc-xfer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(46vh, 360px);
+  overflow: auto;
+}
+.kc-wizard-card.is-selected {
+  border-color: color-mix(in srgb, var(--accent, #e8c47c) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent, #e8c47c) 10%, var(--card));
+}
+.kc-xfer-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(46vh, 360px);
+  overflow: auto;
+}
+.kc-xfer-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card-2, var(--secondary, #22262f));
+}
+.kc-xfer-line-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kc-xfer-line-main strong {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--fg);
+}
+.kc-xfer-line-main em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+.kc-xfer-qty {
+  width: 72px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.kc-xfer-err {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #ef4444 45%, var(--border));
+  background: color-mix(in srgb, #ef4444 12%, var(--card));
+  color: #fecaca;
+  font-size: 13px;
+  font-weight: 600;
+}
 
 @media (min-width: 768px) {
   .kc-root .kc-feedback.is-ok,

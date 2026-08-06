@@ -1,5 +1,5 @@
 /**
- * Printable paper count sheets — one page per bar, products from that bar's distribution menu.
+ * Printable paper count sheets — per-bar (Counts) or whole-event closing stock.
  */
 
 import { escapeHtml, isBoneYard } from './util.js';
@@ -29,7 +29,7 @@ function blankCell() {
   return '<td class="qty"><span class="box"></span></td>';
 }
 
-function renderBarSheet(bar, eps, caseSizes, meta) {
+function productRowsHtml(eps, caseSizes) {
   const grouped = groupByCategory(eps);
   const cats = Object.keys(grouped).sort();
   let rows = '';
@@ -46,7 +46,10 @@ function renderBarSheet(bar, eps, caseSizes, meta) {
       </tr>`;
     });
   });
+  return rows;
+}
 
+function renderBarSheet(bar, eps, caseSizes, meta) {
   return `
     <section class="sheet">
       <header>
@@ -67,13 +70,71 @@ function renderBarSheet(bar, eps, caseSizes, meta) {
             <th class="qty">Singles</th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>${productRowsHtml(eps, caseSizes)}</tbody>
       </table>
       <footer>
         <span>Products on ${escapeHtml(bar.name)} distribution · ${eps.length} item${eps.length === 1 ? '' : 's'}</span>
         <span>Checked _______________</span>
       </footer>
     </section>`;
+}
+
+function renderClosingSheet(eps, caseSizes, meta) {
+  return `
+    <section class="sheet">
+      <header>
+        <div class="brand">Closing stock count</div>
+        <h1>${escapeHtml(meta.eventName)}</h1>
+        <div class="meta">
+          <span><strong>Date</strong> _______________</span>
+          <span><strong>Counted by</strong> _______________</span>
+        </div>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th class="name">Product</th>
+            <th class="pack">Pack</th>
+            <th class="qty">Cases</th>
+            <th class="qty">Singles</th>
+          </tr>
+        </thead>
+        <tbody>${productRowsHtml(eps, caseSizes)}</tbody>
+      </table>
+      <footer>
+        <span>Closing stock · ${eps.length} item${eps.length === 1 ? '' : 's'}</span>
+        <span>Checked _______________</span>
+      </footer>
+    </section>`;
+}
+
+function wrapPrintHtml(title, sheetsHtml) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <style>${printStyles()}</style>
+</head>
+<body>
+  ${sheetsHtml}
+  <script>
+    window.addEventListener('load', function () {
+      window.focus();
+      window.print();
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function openPrintWindow(html, blockedMsg) {
+  const win = window.open('', '_blank');
+  if (!win) return { error: blockedMsg };
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  return null;
 }
 
 function printStyles() {
@@ -205,23 +266,8 @@ export function buildCountSheetsHtml({ event, barProducts, caseSizes } = {}) {
     return { error: 'No products are listed on any location in Distribution yet.' };
   }
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Count sheets — ${escapeHtml(event?.name || 'Event')}</title>
-  <style>${printStyles()}</style>
-</head>
-<body>
-  ${sheets.join('\n')}
-  <script>
-    window.addEventListener('load', function () {
-      window.focus();
-      window.print();
-    });
-  </script>
-</body>
-</html>`;
+  const eventName = event?.name || 'Event';
+  const html = wrapPrintHtml(`Count sheets — ${eventName}`, sheets.join('\n'));
 
   return { html, barCount: sheets.length, productCount };
 }
@@ -231,12 +277,41 @@ export function printCountSheets(opts) {
   const result = buildCountSheetsHtml(opts);
   if (result.error) return result;
 
-  const win = window.open('', '_blank');
-  if (!win) {
-    return { error: 'Pop-up blocked — allow pop-ups to print count sheets.' };
+  const blocked = openPrintWindow(
+    result.html,
+    'Pop-up blocked — allow pop-ups to print count sheets.',
+  );
+  if (blocked) return blocked;
+  return result;
+}
+
+/**
+ * Build printable HTML for one whole-event closing stock count sheet.
+ * Products come from `event.event_products` (same source as Closing stock).
+ * @returns {{ html: string, productCount: number } | { error: string }}
+ */
+export function buildClosingCountSheetHtml({ event, caseSizes } = {}) {
+  const eps = (event?.event_products || []).filter((ep) => ep.product?.name);
+  if (!eps.length) {
+    return { error: 'Add products to this event before printing a closing count sheet.' };
   }
-  win.document.open();
-  win.document.write(result.html);
-  win.document.close();
+
+  const eventName = event?.name || 'Event';
+  const sheet = renderClosingSheet(eps, caseSizes || [], { eventName });
+  const html = wrapPrintHtml(`Closing count — ${eventName}`, sheet);
+
+  return { html, productCount: eps.length };
+}
+
+/** Open a print window with one blank closing stock count sheet for the event. */
+export function printClosingCountSheet(opts) {
+  const result = buildClosingCountSheetHtml(opts);
+  if (result.error) return result;
+
+  const blocked = openPrintWindow(
+    result.html,
+    'Pop-up blocked — allow pop-ups to print the closing count sheet.',
+  );
+  if (blocked) return blocked;
   return result;
 }

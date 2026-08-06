@@ -6,6 +6,7 @@
  */
 
 import { evalQtyExpression } from '../stock-entry.js';
+import { initFieldUndo } from './field-undo.js';
 
 /** Inputs that support basic arithmetic on blur / Enter. */
 export const SPREADSHEET_INPUT_SELECTOR = [
@@ -28,6 +29,10 @@ export const SPREADSHEET_INPUT_SELECTOR = [
   '.df-dmg',
   '.df-inv-cases',
   '.df-inv-singles',
+  '.xf-cases',
+  '.xf-singles',
+  '.wf-cases',
+  '.wf-singles',
   '.qty-primary',
   '.qty-secondary',
   '.reports-markup-input',
@@ -35,6 +40,9 @@ export const SPREADSHEET_INPUT_SELECTOR = [
   '.lib-offer-price',
   '.mod-ing-qty',
   '.fraction-input',
+  '.kit-pack-inp',
+  '.kc-qty',
+  '.kc-xfer-qty',
 ].join(',');
 
 /**
@@ -220,9 +228,11 @@ export function initSpreadsheetCells(root = document) {
 
   root.addEventListener('keydown', onKeyDown);
   root.addEventListener('blur', onBlur, true);
+  const stopFieldUndo = initFieldUndo(root, { isTarget: isSpreadsheetInput });
 
   return () => {
     root.removeEventListener('keydown', onKeyDown);
     root.removeEventListener('blur', onBlur, true);
+    stopFieldUndo();
   };
 }

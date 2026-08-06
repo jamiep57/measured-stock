@@ -10,7 +10,7 @@ import {
   getDB, loadEventFull, loadSuppliers, loadCaseSizes, loadCategories, productFromEvent,
 } from '../../db.js';
 import { formToStored, storedToForm, hasQuantity, totalUnitsForProduct, parseQty } from '../../stock-entry.js';
-import { round1 } from '../../lib/opening-stock.js';
+import { round1, countedInFromDeliveries, damagedFromDeliveries } from '../../lib/opening-stock.js';
 import { productStockPack } from '../../pack-metrics.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch } from '../../components/product-search.js';
@@ -464,6 +464,34 @@ export function mountDeliveriesPanel(route) {
     if (Object.keys(patch).length) await DB.deliveries.update(deliveryId, patch);
   }
 
+  /** Persist summed delivery-line qty onto event_products (source of truth). */
+  async function syncDeliveredFromDeliveries() {
+    if (!event) return;
+    const countedIn = countedInFromDeliveries(deliveries, event.event_products, caseSizes);
+    const damagedMap = damagedFromDeliveries(deliveries);
+    const DB = getDB();
+    const updates = (event.event_products || []).map((ep) => {
+      const counted = round1(countedIn[ep.product_id] || 0);
+      const damaged = round1(damagedMap[ep.product_id] || 0);
+      const curDelivered = ep.delivered_qty != null ? round1(ep.delivered_qty) : null;
+      const curDamaged = ep.damaged_qty != null ? round1(ep.damaged_qty) : null;
+      const patch = {};
+      if (curDelivered !== counted) {
+        ep.delivered_qty = counted;
+        patch.delivered_qty = counted;
+      }
+      if (curDamaged !== damaged) {
+        ep.damaged_qty = damaged;
+        patch.damaged_qty = damaged;
+      }
+      if (!Object.keys(patch).length) return null;
+      return DB.eventProducts.setForEvent(route.eventId, ep.product_id, patch)
+        .catch((e) => console.warn('syncDeliveredFromDeliveries', e));
+    }).filter(Boolean);
+
+    if (updates.length) await Promise.allSettled(updates);
+  }
+
   async function syncInvoiceFromDeliveries() {
     if (!event) return;
     const map = {};
@@ -546,6 +574,7 @@ export function mountDeliveriesPanel(route) {
       uploadPhotosAsync(deliveryId).catch((err) => console.warn('Photo upload', err));
 
       await refreshList();
+      await syncDeliveredFromDeliveries();
       await syncInvoiceFromDeliveries();
       closeSheet();
       toast(editingId ? 'Delivery updated' : 'Delivery saved');
@@ -707,6 +736,7 @@ export function mountDeliveriesPanel(route) {
       await DB.deliveries.clearLines(id);
       await DB.deliveries.remove(id);
       deliveries = deliveries.filter((d) => d.id !== id);
+      await syncDeliveredFromDeliveries();
       await syncInvoiceFromDeliveries();
       paintList();
       toast('Delivery deleted');

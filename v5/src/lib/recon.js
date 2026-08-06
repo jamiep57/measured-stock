@@ -8,7 +8,11 @@ import { productStockPack, findOfferForSupplier } from '../pack-metrics.js';
 import { productStockUnit, eventProductStockKey, recipeProductByName, pluStockKeyForRecipeIngredient, recipeQtyToStockUnits, normProductName } from './recipe-stock.js';
 import { findRecipe } from './square-recipes.js';
 import { parseQty, storedToForm, totalUnitsForProduct } from '../stock-entry.js';
-import { round1 } from './opening-stock.js';
+import {
+  round1,
+  countedInFromDeliveries,
+  epDeliveredQty,
+} from './opening-stock.js';
 
 export function roundN(n, dp = 2) {
   const f = 10 ** dp;
@@ -28,7 +32,6 @@ export function formatReconQty(n) {
 }
 
 export const RECON_COLS = [
-  { id: 'status', label: 'Status' },
   { id: 'item', label: 'Item' },
   { id: 'abv', label: 'ABV' },
   { id: 'case_price', label: 'Price' },
@@ -251,7 +254,7 @@ export function supplierReturnCases(supplierReturns, pid, event, caseSizes) {
 }
 
 /** PLU consumption in stock units (cases / kegs / bottle-equivalent cases). */
-export function computePluByProductId(eps, tillRows, recipes, products, caseSizes) {
+export function computePluByProductId(eps, tillRows, recipes, products, caseSizes, countedIn = null) {
   const byName = {};
   const byPool = {};
 
@@ -292,7 +295,8 @@ export function computePluByProductId(eps, tillRows, recipes, products, caseSize
     const weights = poolEps.map((ep) => {
       const p = ep.product;
       const spu = Number(p.pool_servings_per_unit) || 0;
-      const opening = Number(ep.delivered_qty ?? ep.qty_ordered ?? 0) - Number(ep.damaged_qty || 0);
+      const delivered = epDeliveredQty(ep, countedIn);
+      const opening = delivered - Number(ep.damaged_qty || 0);
       const pack = productStockPack(p, caseSizes);
       const bpc = pack.unitsPerCase || 1;
       const w = opening * bpc * spu;
@@ -346,12 +350,13 @@ export function buildReconRow(ctx) {
     transferMap = {},
     supplierReturns = [],
     event,
+    countedIn = null,
   } = ctx;
 
   const pid = ep.product_id;
   const p = ep.product || {};
   const ups = reconUnitsPerCase(p, caseSizes);
-  const delivered = ep.delivered_qty != null ? Number(ep.delivered_qty) || 0 : 0;
+  const delivered = epDeliveredQty(ep, countedIn);
 
   let invoiced;
   if (draft?.invoiceSet != null) {
@@ -468,6 +473,7 @@ export function computeReconRows(state) {
     wastageBatches,
     transfers,
     supplierReturns,
+    deliveries,
     showHidden,
     drafts = {},
   } = state;
@@ -476,7 +482,10 @@ export function computeReconRows(state) {
     .filter((ep) => ep.product?.name)
     .filter((ep) => (showHidden ? ep.recon_hidden : !ep.recon_hidden));
 
-  const pluByPid = computePluByProductId(eps, tillRows, recipes, products, caseSizes);
+  const countedIn = deliveries
+    ? countedInFromDeliveries(deliveries, event?.event_products, caseSizes)
+    : null;
+  const pluByPid = computePluByProductId(eps, tillRows, recipes, products, caseSizes, countedIn);
   const wastageMap = wastageByProduct(wastageBatches, event, caseSizes);
   const transferMap = transferOutByProduct(transfers, event?.id);
 
@@ -491,6 +500,7 @@ export function computeReconRows(state) {
     transferMap,
     supplierReturns,
     event,
+    countedIn,
   }));
 }
 
