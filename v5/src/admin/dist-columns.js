@@ -6,8 +6,8 @@ export function colVisible(ctx, key) {
 }
 
 export function stickyColCount(ctx) {
+  // Pack is folded into the product cell meta — not a separate sticky column.
   let n = 1;
-  if (colVisible(ctx, 'pack')) n += 1;
   if (colVisible(ctx, 'opening')) n += 1;
   if (colVisible(ctx, 'lta')) n += 1;
   return n;
@@ -29,23 +29,15 @@ export function totalColCount(ctx) {
 export function applyStickyColumnOffsets(grid, panelEl, ctx) {
   if (!grid) return;
   const rs = getComputedStyle(panelEl);
-  const productW = rs.getPropertyValue('--dist-product-w').trim() || '200px';
-  const packW = rs.getPropertyValue('--dist-pack-w').trim() || '68px';
-  const openingW = rs.getPropertyValue('--dist-opening-w').trim() || '56px';
-
-  grid.style.setProperty('--col-pack-left', productW);
+  const productW = rs.getPropertyValue('--dist-product-w').trim() || '240px';
+  const openingW = rs.getPropertyValue('--dist-opening-w').trim() || '64px';
 
   let openingLeft = productW;
-  if (colVisible(ctx, 'pack')) openingLeft = `calc(${productW} + ${packW})`;
   grid.style.setProperty('--col-opening-left', openingLeft);
 
   let ltaLeft = openingLeft;
   if (colVisible(ctx, 'opening')) {
-    ltaLeft = colVisible(ctx, 'pack')
-      ? `calc(${productW} + ${packW} + ${openingW})`
-      : `calc(${productW} + ${openingW})`;
-  } else if (colVisible(ctx, 'pack')) {
-    ltaLeft = `calc(${productW} + ${packW})`;
+    ltaLeft = `calc(${productW} + ${openingW})`;
   }
   grid.style.setProperty('--col-lta-left', ltaLeft);
 
@@ -53,8 +45,6 @@ export function applyStickyColumnOffsets(grid, panelEl, ctx) {
     ? ltaLeft
     : colVisible(ctx, 'opening')
       ? openingLeft
-      : colVisible(ctx, 'pack')
-        ? `calc(${productW} + ${packW})`
-        : productW;
+      : productW;
   grid.closest('.dist-grid-wrap')?.style.setProperty('--dist-scroll-hint-left', scrollHintLeft);
 }

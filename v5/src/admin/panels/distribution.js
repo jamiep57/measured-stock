@@ -66,10 +66,11 @@ function renderBarCell(bar, ep, ctx) {
   const serves = barServesProduct(ctx.barProducts, barId, pid);
   const d = distRowFor(ctx.distRows, barId, pid);
   const qty = d ? Number(d.qty_allocated) || 0 : 0;
+  const filled = qty > 0;
 
   if (!serves) {
     return `
-      <td class="dist-cell dist-cell--off" data-col="bar:${escapeHtml(barId)}" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
+      <td class="dist-cell dist-cell--off dist-group-start" data-col="bar:${escapeHtml(barId)}" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
         <button type="button" class="dist-cell-add" title="Add to ${barName} menu" aria-label="Add to ${barName} menu">
           ${icon('plus', { size: 14, strokeWidth: 2.5 })}
         </button>
@@ -77,12 +78,13 @@ function renderBarCell(bar, ep, ctx) {
   }
 
   return `
-    <td class="dist-cell dist-cell--on" data-col="bar:${escapeHtml(barId)}" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
+    <td class="dist-cell dist-cell--on dist-group-start${filled ? ' dist-cell--filled' : ''}"
+      data-col="bar:${escapeHtml(barId)}" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
       <div class="dist-cell-body">
         <div class="dist-pill lta-badge lta-ok">
           <input type="text" inputmode="decimal" autocomplete="off"
             class="dist-pill-input num-math"
-            value="${qty ? qty : ''}" placeholder="-"
+            value="${qty ? qty : ''}" placeholder="—"
             aria-label="Cases allocated to ${barName}">
         </div>
         <button type="button" class="dist-cell-remove" title="Remove from ${barName} menu" aria-label="Remove from ${barName} menu">
@@ -125,6 +127,14 @@ function sortProducts(eps, ctx) {
   return items;
 }
 
+function distTh(label, extraClass = '', title = '', col = '') {
+  const tip = title || label;
+  const colAttr = col ? ` data-col="${escapeHtml(col)}"` : '';
+  return `<th class="dist-th ${extraClass}"${colAttr} title="${escapeHtml(tip)}">
+    <div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(label)}</span></div>
+  </th>`;
+}
+
 function renderProductRow(ep, ctx) {
   const pid = ep.product_id;
   const opening = ctx.opening[pid] ?? epOpeningStock(ep);
@@ -132,23 +142,29 @@ function renderProductRow(ep, ctx) {
   const lta = leftToAllocate(opening, allocated);
   const bone = goodsInStock(opening, allocated);
   const boneNeg = bone < 0 ? ' dist-bone--neg' : '';
+  const packLabel = ep.product.case_size || '';
+  const showPack = colVisible(ctx, 'pack');
 
   let html = `<tr class="dist-prod-row" data-pid="${escapeHtml(pid)}">
-    <th class="dist-sticky dist-prod-name" data-col="product" scope="row">${escapeHtml(ep.product.name)}</th>`;
+    <th class="dist-sticky dist-col-item" data-col="product" scope="row">
+      <div class="dist-item">
+        <div class="dist-item-top">
+          <span class="dist-item-name" title="${escapeHtml(ep.product.name)}">${escapeHtml(ep.product.name)}</span>
+        </div>
+        ${showPack && packLabel ? `<span class="dist-item-meta">${escapeHtml(packLabel)}</span>` : ''}
+      </div>
+    </th>`;
 
-  if (colVisible(ctx, 'pack')) {
-    html += `<td class="dist-sticky dist-prod-pack muted" data-col="pack">${escapeHtml(ep.product.case_size || '—')}</td>`;
-  }
   if (colVisible(ctx, 'opening')) {
-    html += `<td class="dist-sticky dist-prod-opening" data-col="opening">${opening}</td>`;
+    html += `<td class="dist-sticky dist-num dist-prod-opening" data-col="opening">${opening}</td>`;
   }
   if (colVisible(ctx, 'lta')) {
-    html += `<td class="dist-sticky dist-prod-lta" data-col="lta">
-      <span class="lta-badge ${ltaClass(lta)}" data-lta="${escapeHtml(pid)}">${lta}</span>
+    html += `<td class="dist-sticky dist-num dist-prod-lta" data-col="lta">
+      <span class="dist-lta ${ltaClass(lta)}" data-lta="${escapeHtml(pid)}">${lta}</span>
     </td>`;
   }
   if (colVisible(ctx, 'bone-yard')) {
-    html += `<td class="dist-cell dist-cell--bone-yard${boneNeg}" data-col="bone-yard" title="Goods in — undistributed stock">
+    html += `<td class="dist-num dist-cell--bone-yard dist-group-start${boneNeg}" data-col="bone-yard" title="Goods in — undistributed stock">
       <span class="dist-bone-yard-value" data-bone="${escapeHtml(pid)}">${bone}</span>
     </td>`;
   }
@@ -160,43 +176,21 @@ function renderProductRow(ep, ctx) {
 }
 
 function renderGridHead(ctx) {
-  let html = `<tr>
-    <th class="dist-sticky dist-col-header dist-col-product" data-col="product">
-      <div class="dist-bar-head dist-bar-head--left">
-        <span class="dist-bar-name">Product</span>
-      </div>
-    </th>`;
+  let html = `<tr class="dist-head-row">
+    ${distTh('Product', 'dist-sticky dist-col-item dist-th--item', 'Product', 'product')}`;
 
-  if (colVisible(ctx, 'pack')) {
-    html += `<th class="dist-sticky dist-col-header dist-col-pack" data-col="pack">
-      <div class="dist-bar-head"><span class="dist-bar-name">Pack</span></div>
-    </th>`;
-  }
   if (colVisible(ctx, 'opening')) {
-    html += `<th class="dist-sticky dist-col-header dist-col-opening" data-col="opening">
-      <div class="dist-bar-head"><span class="dist-bar-name">Opening</span></div>
-    </th>`;
+    html += distTh('Opening', 'dist-sticky dist-num', 'Opening stock', 'opening');
   }
   if (colVisible(ctx, 'lta')) {
-    html += `<th class="dist-sticky dist-col-header dist-col-lta" data-col="lta">
-      <div class="dist-bar-head"><span class="dist-bar-name">Left to allocate</span></div>
-    </th>`;
+    html += distTh('Left', 'dist-sticky dist-num dist-th--emphasis', 'Left to allocate', 'lta');
   }
   if (colVisible(ctx, 'bone-yard')) {
-    html += `<th class="dist-bar-header dist-col-bone" data-col="bone-yard">
-      <div class="dist-bar-head">
-        <span class="dist-bar-name">Bone Yard</span>
-        <span class="dist-bar-tag">Goods in</span>
-      </div>
-    </th>`;
+    html += distTh('Bone Yard', 'dist-num dist-group-start', 'Goods in — undistributed stock', 'bone-yard');
   }
   ctx.bars.forEach((b) => {
     if (!colVisible(ctx, `bar:${b.id}`)) return;
-    html += `<th class="dist-bar-header" data-col="bar:${escapeHtml(b.id)}">
-      <div class="dist-bar-head">
-        <span class="dist-bar-name">${escapeHtml(b.name)}</span>
-      </div>
-    </th>`;
+    html += distTh(b.name, 'dist-bar-header dist-group-start', b.name, `bar:${b.id}`);
   });
 
   return `${html}</tr>`;
@@ -279,7 +273,7 @@ export function mountDistributionPanel(route, state) {
 
     document.querySelectorAll(`[data-lta="${productId}"]`).forEach((el) => {
       el.textContent = lta;
-      el.className = 'lta-badge ' + ltaClass(lta);
+      el.className = 'dist-lta ' + ltaClass(lta);
     });
     document.querySelectorAll(`[data-bone="${productId}"]`).forEach((el) => {
       el.textContent = bone;
@@ -342,7 +336,7 @@ export function mountDistributionPanel(route, state) {
     }
 
     panel.innerHTML = `
-      <div class="dist-grid-wrap">
+      <div class="dist-grid-wrap dist-table-wrap">
         <table class="dist-grid" id="distGrid">
           <thead id="distGridHead">${renderGridHead(ctx)}</thead>
           <tbody id="distGridBody">${renderGridBody(ctx)}</tbody>
@@ -503,6 +497,7 @@ export function mountDistributionPanel(route, state) {
     }
 
     refreshLtaForProduct(productId);
+    inputEl?.closest('.dist-cell')?.classList.toggle('dist-cell--filled', qty > 0);
 
     const key = productId + barId;
     clearTimeout(ctx.saveTimers[key]);

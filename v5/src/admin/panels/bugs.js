@@ -319,13 +319,13 @@ export function syncBugFabVisibility() {
 }
 
 /**
- * Wire the sidebar-footer report button (markup lives in admin.html).
+ * Wire the sidebar bug report button (markup lives in admin.html).
  * Available on every admin page except Bugs / while the bug drawer is open.
  */
 export function mountBugReportFab() {
   let wrap = $('bugReportFab');
   if (!wrap) {
-    const footer = document.querySelector('.sidebar-footer');
+    const sidebar = $('adminSidebar') || document.querySelector('.admin-sidebar');
     wrap = document.createElement('div');
     wrap.className = 'bug-fab';
     wrap.id = 'bugReportFab';
@@ -334,7 +334,7 @@ export function mountBugReportFab() {
         title="Report a bug or idea" aria-label="Report a bug or idea">
         ${icon('bug', { size: 22, strokeWidth: 2 })}
       </button>`;
-    (footer || document.body).appendChild(wrap);
+    (sidebar || document.body).appendChild(wrap);
   }
 
   const btn = $('bugReportFabBtn');

@@ -166,7 +166,7 @@ function ensureReportsNavLink() {
   const summary = nav.querySelector('[data-route="summary"]');
   if (summary) {
     summary.dataset.route = 'reports';
-    summary.innerHTML = '<i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span>';
+    summary.innerHTML = '<i data-lucide="pie-chart"></i> Reports';
     return;
   }
 
@@ -174,7 +174,7 @@ function ensureReportsNavLink() {
   link.className = 'nav-link';
   link.dataset.route = 'reports';
   link.dataset.event = '';
-  link.innerHTML = '<i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span>';
+  link.innerHTML = '<i data-lucide="pie-chart"></i> Reports';
   nav.insertBefore(link, nav.firstChild);
 }
 

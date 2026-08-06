@@ -277,16 +277,10 @@ body:has(.admin-app) {
 }
 
 .sidebar-footer {
-  /* Reserved slot for the bug report FAB */
+  /* Spacer so nav items stay clear of the overlaid bug FAB */
   flex-shrink: 0;
   margin-top: auto;
   min-height: 76px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 8px 6px 6px;
-  box-sizing: border-box;
-  overflow: visible;
 }
 
 .nav-link {
@@ -313,26 +307,6 @@ body:has(.admin-app) {
   font-weight: 600;
 }
 .nav-link.active .lucide-icon { color: var(--foreground); }
-
-.nav-status-dot {
-  margin-left: auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
-  flex-shrink: 0;
-}
-.nav-status-dot--warn {
-  background: #f59e0b;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
-}
-.nav-link.active .nav-status-dot {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
-}
-.nav-link.active .nav-status-dot--warn {
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
-}
 
 .sidebar-nav-tools {
   margin-top: 7px;
@@ -1554,18 +1528,19 @@ body.admin-drawer-open {
 
 /* Distribution panel — product × bar grid */
 .dist-panel {
-  --dist-product-w: 200px;
+  --dist-product-w: 240px;
   --dist-pack-w: 68px;
-  --dist-opening-w: 56px;
-  --dist-lta-w: 92px;
-  --dist-bar-w: 76px;
-  --dist-thead-h: 44px;
+  --dist-opening-w: 64px;
+  --dist-lta-w: 72px;
+  --dist-bar-w: 72px;
+  --dist-thead-h: 36px;
+  --dist-group-border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   gap: 8px;
-  padding-bottom: 24px;
+  padding-bottom: 0;
 }
 .dist-loading { color: var(--muted-foreground); padding: 24px 0; }
 
@@ -2003,6 +1978,382 @@ body.admin-drawer-open {
 .lta-ok { background: #dcfce7; color: #166534; }
 .lta-neutral { background: var(--secondary); color: var(--muted-foreground); }
 .lta-over { background: #fee2e2; color: #991b1b; }
+
+/* Distribution — recon-style look (scoped; counts keeps its own cnt-* chrome) */
+#distPanel {
+  --dist-scroll-hint-left: var(--dist-product-w);
+}
+#distPanel .dist-table-wrap {
+  flex: 1;
+  min-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.03);
+}
+#distPanel .dist-table-wrap::after {
+  left: var(--dist-scroll-hint-left);
+}
+#distPanel .dist-grid {
+  font-size: 12px;
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+/* Soft recon-style headers */
+#distPanel .dist-th {
+  padding: 10px 6px !important;
+  vertical-align: middle;
+  background: color-mix(in srgb, var(--secondary) 70%, var(--card)) !important;
+  border-bottom: 1px solid var(--border);
+}
+#distPanel .dist-th .dist-bar-head {
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+#distPanel .dist-th .dist-bar-name {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  color: var(--muted-foreground);
+  word-break: normal;
+  hyphens: none;
+}
+#distPanel .dist-th--item {
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+  text-align: left;
+}
+#distPanel .dist-th--item .dist-bar-head {
+  align-items: flex-start;
+}
+#distPanel .dist-th--emphasis .dist-bar-name {
+  font-weight: 600;
+}
+
+/* Sticky identity + meta columns */
+#distPanel .dist-col-item {
+  left: 0;
+  width: var(--dist-product-w);
+  min-width: var(--dist-product-w);
+  max-width: var(--dist-product-w);
+  padding: 12px 14px !important;
+  text-align: left;
+  vertical-align: middle;
+  box-shadow: none;
+}
+#distPanel .dist-grid tr:not(:has([data-col="opening"])):not(:has([data-col="lta"])) .dist-col-item {
+  box-shadow: 6px 0 10px -6px rgb(0 0 0 / 0.06);
+}
+#distPanel thead .dist-col-item {
+  background: color-mix(in srgb, var(--secondary) 70%, var(--card));
+}
+#distPanel .dist-num {
+  width: var(--dist-opening-w);
+  min-width: var(--dist-opening-w);
+  max-width: var(--dist-opening-w);
+  padding: 12px 6px !important;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+#distPanel .dist-prod-opening,
+#distPanel thead [data-col="opening"] {
+  left: var(--col-opening-left, var(--dist-product-w));
+  width: var(--dist-opening-w);
+  min-width: var(--dist-opening-w);
+  max-width: var(--dist-opening-w);
+  box-shadow: none;
+}
+#distPanel .dist-grid tr:not(:has([data-col="lta"])) .dist-prod-opening,
+#distPanel .dist-grid tr:not(:has([data-col="lta"])) th[data-col="opening"] {
+  box-shadow: 6px 0 10px -6px rgb(0 0 0 / 0.06);
+}
+#distPanel .dist-prod-lta,
+#distPanel thead [data-col="lta"] {
+  left: var(--col-lta-left, calc(var(--dist-product-w) + var(--dist-opening-w)));
+  width: var(--dist-lta-w);
+  min-width: var(--dist-lta-w);
+  max-width: var(--dist-lta-w);
+  box-shadow: 6px 0 10px -6px rgb(0 0 0 / 0.06);
+}
+#distPanel thead .dist-sticky {
+  background: color-mix(in srgb, var(--secondary) 70%, var(--card));
+}
+
+#distPanel .dist-group-start {
+  border-left: var(--dist-group-border) !important;
+}
+#distPanel thead .dist-group-start {
+  border-left-color: color-mix(in srgb, var(--foreground) 18%, var(--border)) !important;
+}
+
+/* Product cell */
+#distPanel .dist-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+#distPanel .dist-item-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+#distPanel .dist-item-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+#distPanel .dist-item-meta {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-align: left;
+}
+
+/* Category rows */
+#distPanel .dist-cat-row td {
+  border-bottom: 1px solid var(--border);
+}
+#distPanel .dist-cat-row td.dist-cat-pinned {
+  top: var(--dist-thead-h);
+  left: 0;
+  z-index: 4;
+  width: var(--dist-product-w);
+  min-width: var(--dist-product-w);
+  max-width: var(--dist-product-w);
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  background: var(--card);
+  border-right: none;
+  box-shadow: none;
+}
+#distPanel .dist-cat-row td.dist-cat-scroll {
+  top: var(--dist-thead-h);
+  background: var(--card);
+  border-right: none;
+}
+#distPanel .dist-cat-row .dist-bar-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Rows */
+#distPanel .dist-prod-row td,
+#distPanel .dist-prod-row th {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  transition: background 0.1s ease;
+  font-weight: inherit;
+}
+#distPanel .dist-prod-row:hover td,
+#distPanel .dist-prod-row:hover th {
+  background: var(--secondary);
+}
+#distPanel .dist-prod-row:hover .dist-sticky {
+  background: var(--secondary);
+}
+#distPanel .dist-prod-row:hover .dist-cell--on {
+  background: var(--secondary);
+}
+
+/* Bar headers + cells */
+#distPanel .dist-bar-header {
+  width: var(--dist-bar-w);
+  min-width: var(--dist-bar-w);
+  max-width: var(--dist-bar-w);
+  overflow: hidden;
+}
+#distPanel .dist-cell {
+  width: var(--dist-bar-w);
+  min-width: var(--dist-bar-w);
+  max-width: var(--dist-bar-w);
+  height: auto;
+  min-height: 44px;
+  padding: 6px 4px !important;
+  position: relative;
+  text-align: center;
+  vertical-align: middle;
+}
+#distPanel .dist-cell--on {
+  background: var(--card);
+  overflow: visible;
+}
+#distPanel .dist-cell--off {
+  background: color-mix(in srgb, var(--secondary) 40%, var(--card));
+  vertical-align: middle;
+  padding: 0 !important;
+}
+#distPanel .dist-cell--off:hover {
+  background: color-mix(in srgb, var(--secondary) 70%, var(--card));
+}
+#distPanel .dist-cell-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 32px;
+}
+#distPanel .dist-pill.lta-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5em;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 999px;
+  cursor: text;
+  background: #dcfce7;
+  color: #166534;
+}
+#distPanel .dist-cell--on:focus-within .dist-pill.lta-badge {
+  box-shadow: inset 0 0 0 1.5px #166534;
+}
+#distPanel .dist-cell--filled .dist-pill.lta-badge {
+  background: #bbf7d0;
+  font-weight: 700;
+}
+#distPanel .dist-pill-input {
+  flex: 0 1 auto;
+  display: block;
+  box-sizing: border-box;
+  width: 2.5ch;
+  min-width: 1.5ch;
+  max-width: 4.5ch;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  appearance: none;
+  box-shadow: none;
+}
+#distPanel .dist-pill-input::placeholder {
+  color: inherit;
+  opacity: 0.55;
+  font-weight: 600;
+}
+#distPanel .dist-pill-input:focus {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+#distPanel .dist-cell-remove {
+  top: 50%;
+  right: 0;
+  transform: translate(100%, -50%);
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+#distPanel .dist-cell--on:hover .dist-cell-remove,
+#distPanel .dist-cell--on:focus-within .dist-cell-remove {
+  transform: translate(0, -50%);
+  opacity: 1;
+}
+#distPanel .dist-cell-remove .lucide-icon {
+  width: 10px;
+  height: 10px;
+}
+#distPanel .dist-cell--off .dist-cell-add {
+  margin: 0 auto;
+}
+#distPanel .dist-cell--bone-yard {
+  width: var(--dist-bar-w);
+  min-width: var(--dist-bar-w);
+  max-width: var(--dist-bar-w);
+  background: color-mix(in srgb, var(--secondary) 35%, var(--card));
+  font-weight: 600;
+  padding: 12px 6px !important;
+  vertical-align: middle;
+}
+#distPanel .dist-lta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 13px;
+}
+#distPanel .dist-lta.lta-ok {
+  background: none;
+  color: var(--success);
+  padding: 0;
+}
+#distPanel .dist-lta.lta-neutral {
+  background: none;
+  color: var(--muted-foreground);
+  padding: 0;
+}
+#distPanel .dist-lta.lta-over {
+  background: none;
+  color: var(--danger);
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  #distPanel {
+    --dist-product-w: 180px;
+    --dist-bar-w: 64px;
+    --dist-opening-w: 56px;
+    --dist-lta-w: 64px;
+  }
+  #distPanel .dist-item-name {
+    font-size: 13px;
+  }
+  #distPanel .dist-pill.lta-badge {
+    height: 26px;
+  }
+  #distPanel .dist-pill-input {
+    font-size: 11px;
+  }
+}
 
 /* Deliveries, wastage, transfers — full-width list panels */
 .del-panel,
@@ -5870,10 +6221,12 @@ td.rcn-num:not(:has(*)) {
   }
 }
 
-/* Bug report FAB — lives in the sidebar footer */
+/* Bug report FAB — overlaid on the bottom-left of the sidebar */
 .bug-fab {
-  position: relative;
-  z-index: 2;
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 4;
   pointer-events: none;
 }
 .bug-fab[hidden] {

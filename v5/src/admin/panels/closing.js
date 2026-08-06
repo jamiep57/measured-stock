@@ -1123,7 +1123,7 @@ export function mountClosingPanel(route) {
       return;
     }
     if (!warehouses.length) {
-      toast('Add a warehouse in Catalog → Warehouses first.', true);
+      toast('Add a warehouse in Home → Warehouses first.', true);
       return;
     }
 
