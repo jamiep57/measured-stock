@@ -208,7 +208,8 @@ export function renderClosingShell() {
         </button>
       </div>
       <p class="cl-hint muted">
-        Counts auto-save as you type. Closing and return use each product’s stock unit
+        Edit closing and return counts, then hit <strong>Save changes</strong>.
+        Closing and return use each product’s stock unit
         (cases / singles, bottles, or kegs). <strong>Max returnable</strong> = invoice × supplier SOR %.
         <strong>Carried over</strong> = close count − return amount.
         Use <strong>Return to supplier</strong> to print pallet stickers for the return qty.
@@ -223,6 +224,15 @@ export function renderClosingShell() {
         </table>
         <div class="dist-empty cl-empty" id="clEmpty" hidden>
           Add products to this event before entering closing stock.
+        </div>
+      </div>
+      <div class="cl-save-bar" id="clSaveBar" hidden>
+        <span class="cl-save-bar-copy" id="clSaveBarMsg">Unsaved changes</span>
+        <div class="cl-save-bar-actions">
+          <button type="button" class="cl-save-bar-btn" id="clDiscardBtn">Discard</button>
+          <button type="button" class="cl-save-bar-btn cl-save-bar-btn--primary" id="clSaveBtn">
+            Save changes
+          </button>
         </div>
       </div>
     </div>`;
@@ -240,6 +250,7 @@ export function mountClosingPanel(route) {
     caseSizes: [],
     drafts: {},
     saveTimers: {},
+    saving: false,
     theadObserver: null,
     abort: false,
     /** @type {Record<string, { cases: string, singles: string, returnCases: string, returnSingles: string }>} */
@@ -294,6 +305,28 @@ export function mountClosingPanel(route) {
     const has = ctx.undoStack.length > 0;
     btn.hidden = !has;
     btn.disabled = !has;
+  }
+
+  function dirtyCount() {
+    return Object.keys(ctx.drafts).length;
+  }
+
+  function syncSaveBar() {
+    const bar = $('clSaveBar');
+    const msg = $('clSaveBarMsg');
+    const saveBtn = $('clSaveBtn');
+    const discardBtn = $('clDiscardBtn');
+    const n = dirtyCount();
+    const dirty = n > 0 || ctx.saving;
+    if (bar) bar.hidden = !dirty;
+    panel.classList.toggle('cl-panel--dirty', dirty);
+    if (msg) {
+      msg.textContent = ctx.saving
+        ? 'Saving…'
+        : (n === 1 ? '1 unsaved change' : `${n} unsaved changes`);
+    }
+    if (saveBtn) saveBtn.disabled = ctx.saving || n === 0;
+    if (discardBtn) discardBtn.disabled = ctx.saving || n === 0;
   }
 
   /** Capture pre-edit values once per focus session (first keystroke that changes a cell). */
@@ -459,6 +492,7 @@ export function mountClosingPanel(route) {
     });
     if (saved?.id) cl.id = saved.id;
     delete ctx.drafts[pid];
+    syncSaveBar();
 
     const row = buildClosingRow({
       ep,
@@ -505,17 +539,14 @@ export function mountClosingPanel(route) {
     syncRowActions(pid);
   }
 
-  function scheduleSave(pid) {
-    clearTimeout(ctx.saveTimers[pid]);
+  function markDirty(pid) {
+    if (!pid) return;
     ctx.drafts[pid] = readDraft(pid);
     previewCarried(pid, ctx.drafts[pid]);
-    ctx.saveTimers[pid] = setTimeout(() => {
-      delete ctx.saveTimers[pid];
-      persist(pid).catch((e) => toast(e.message || 'Save failed', true));
-    }, 400);
+    syncSaveBar();
   }
 
-  /** Flush one product immediately (blur / leave). */
+  /** Flush one product immediately (undo / action prep). */
   function flushSave(pid, { reread = true } = {}) {
     if (!pid) return Promise.resolve();
     clearTimeout(ctx.saveTimers[pid]);
@@ -524,12 +555,13 @@ export function mountClosingPanel(route) {
       ctx.drafts[pid] = readDraft(pid);
     }
     previewCarried(pid, ctx.drafts[pid]);
+    syncSaveBar();
     return persist(pid).catch((e) => {
       toast(e.message || 'Save failed', true);
     });
   }
 
-  /** Persist every in-flight draft so navigation / refresh does not drop counts. */
+  /** Persist every in-flight draft so navigation / actions do not drop counts. */
   function flushAllPending() {
     const pids = new Set([
       ...Object.keys(ctx.saveTimers),
@@ -540,6 +572,36 @@ export function mountClosingPanel(route) {
     // Do not re-read inputs — on unmount the grid may already be gone;
     // drafts were captured on each keystroke.
     return Promise.all([...pids].map((pid) => flushSave(pid, { reread: false })));
+  }
+
+  async function saveAllChanges() {
+    if (ctx.saving || !dirtyCount()) return;
+    ctx.saving = true;
+    syncSaveBar();
+    try {
+      await flushAllPending();
+      if (!dirtyCount()) toast('Closing stock saved');
+    } catch (e) {
+      toast(e.message || 'Save failed', true);
+    } finally {
+      ctx.saving = false;
+      syncSaveBar();
+    }
+  }
+
+  function discardChanges() {
+    if (ctx.saving || !dirtyCount()) return;
+    Object.values(ctx.saveTimers).forEach(clearTimeout);
+    ctx.saveTimers = {};
+    ctx.drafts = {};
+    ctx.focusRaw = {};
+    ctx.undoCaptured = {};
+    ctx.undoStack = [];
+    syncUndoBtn();
+    renderTable();
+    applyProductFilter(getLastProductFilter());
+    syncSaveBar();
+    toast('Changes discarded');
   }
 
   function applyProductFilter({ query, productId } = {}) {
@@ -571,7 +633,7 @@ export function mountClosingPanel(route) {
     if (!input) return;
     const pid = input.dataset.clPid;
     captureUndoIfNeeded(pid);
-    scheduleSave(pid);
+    markDirty(pid);
   }
 
   function onFocus(e) {
@@ -593,7 +655,7 @@ export function mountClosingPanel(route) {
     const stayingOnRow = next?.classList?.contains('cl-pill-input')
       && next.dataset?.clPid === pid;
     if (stayingOnRow) {
-      flushSave(pid);
+      markDirty(pid);
       return;
     }
     // Offer toast after leaving the row so it does not fight mid-typing.
@@ -603,11 +665,18 @@ export function mountClosingPanel(route) {
     }
     delete ctx.focusRaw[pid];
     delete ctx.undoCaptured[pid];
-    flushSave(pid);
+    markDirty(pid);
   }
 
   function onPageHide() {
-    flushAllPending();
+    // Best-effort flush — Save changes is the reliable path; browsers may cancel async work.
+    if (dirtyCount()) flushAllPending();
+  }
+
+  function onBeforeUnload(e) {
+    if (!dirtyCount()) return;
+    e.preventDefault();
+    e.returnValue = '';
   }
 
   function rowByPid(pid) {
@@ -929,6 +998,14 @@ export function mountClosingPanel(route) {
   const onResize = () => layoutTableScroll();
 
   function onClick(e) {
+    if (e.target.closest('#clSaveBtn')) {
+      saveAllChanges();
+      return;
+    }
+    if (e.target.closest('#clDiscardBtn')) {
+      discardChanges();
+      return;
+    }
     const undoBtn = e.target.closest('#clUndoBtn');
     if (undoBtn) {
       undoLast();
@@ -959,6 +1036,7 @@ export function mountClosingPanel(route) {
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   window.addEventListener('resize', onResize);
   window.addEventListener('pagehide', onPageHide);
+  window.addEventListener('beforeunload', onBeforeUnload);
 
   const wrap = $('clTableWrap');
   const thead = $('clGridHead');
@@ -1004,5 +1082,6 @@ export function mountClosingPanel(route) {
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     window.removeEventListener('resize', onResize);
     window.removeEventListener('pagehide', onPageHide);
+    window.removeEventListener('beforeunload', onBeforeUnload);
   };
 }

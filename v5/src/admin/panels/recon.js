@@ -78,8 +78,9 @@ function renderMarkerCell(pid, status) {
 }
 
 function renderInlineInput(pid, fieldId, value) {
+  const shown = value != null && value !== '' ? String(value) : '';
   return `<input type="text" class="recon-cell-input num-math" id="${fieldId}"
-    data-rcn-pid="${escapeHtml(pid)}" value="${value ? escapeHtml(String(value)) : ''}"
+    data-rcn-pid="${escapeHtml(pid)}" value="${shown ? escapeHtml(shown) : ''}"
     autocomplete="off" inputmode="decimal" placeholder="—">`;
 }
 
@@ -259,6 +260,7 @@ export function mountReconPanel(route) {
     wastageBatches: [],
     transfers: [],
     supplierReturns: [],
+    deliveries: [],
     statusFilter: '',
     categoryFilter: '',
     showHidden: false,
@@ -281,6 +283,7 @@ export function mountReconPanel(route) {
       wastageBatches: ctx.wastageBatches,
       transfers: ctx.transfers,
       supplierReturns: ctx.supplierReturns,
+      deliveries: ctx.deliveries,
       showHidden: ctx.showHidden,
       drafts: ctx.drafts,
     });
@@ -830,7 +833,7 @@ export function mountReconPanel(route) {
 
   async function load() {
     const DB = getDB();
-    const [event, caseSizes, products, suppliers, closing, tillImport, recipes, wastage, transfers, supplierReturns] =
+    const [event, caseSizes, products, suppliers, closing, tillImport, recipes, wastage, transfers, supplierReturns, deliveries] =
       await Promise.all([
         loadEventFull(ctx.eventId),
         loadCaseSizes(),
@@ -842,6 +845,7 @@ export function mountReconPanel(route) {
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
         DB.transfers.forEvent(ctx.eventId).catch(() => []),
         DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
+        DB.deliveries.forEvent(ctx.eventId).catch(() => []),
       ]);
     if (ctx.abort) return;
     ctx.event = event;
@@ -854,6 +858,7 @@ export function mountReconPanel(route) {
     ctx.wastageBatches = wastage || [];
     ctx.transfers = transfers || [];
     ctx.supplierReturns = supplierReturns || [];
+    ctx.deliveries = deliveries || [];
     refreshCatFilter();
     initColMenu();
     renderTable();

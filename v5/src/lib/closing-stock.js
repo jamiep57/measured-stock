@@ -105,8 +105,7 @@ export function buildClosingRow({
   const closingCases = draft?.closingCases != null ? Number(draft.closingCases) : counts.closingCases;
   const closingSingles = draft?.closingSingles != null ? Number(draft.closingSingles) : counts.closingSingles;
   const closeCount = closeCountTotal(p, closingCases, closingSingles, caseSizes);
-  const hasClosing = hasClosingCount(cl)
-    || !!(draft && (draft.closingCases != null || draft.closingSingles != null));
+  const hasClosing = hasClosingCount(cl);
 
   const returnCases = draft?.returnCases != null
     ? Number(draft.returnCases)
