@@ -41,6 +41,30 @@ describe('buildReconRow', () => {
     expect(row.multiOfferWarn).toBe(false);
   });
 
+  it('prefers summed delivery lines over stale delivered_qty', () => {
+    const ep = {
+      product_id: 'p1',
+      product,
+      delivered_qty: 6,
+      qty_ordered: 6,
+      damaged_qty: 0,
+    };
+    const row = buildReconRow({
+      ep,
+      closingRow: { closing_cases: 12, closing_singles: 0 },
+      pluByPid: { p1: 11.97 },
+      suppliers: [{ id: 's1', name: 'Acme' }],
+      caseSizes: [],
+      wastageMap: {},
+      transferMap: {},
+      supplierReturns: [],
+      event: { id: 'e1', event_products: [ep] },
+      countedIn: { p1: 24 },
+    });
+    expect(row.delivered).toBe(24);
+    expect(row.consumption).toBe(12);
+  });
+
   it('warns when multiple supplier offers differ', () => {
     const multi = {
       ...product,

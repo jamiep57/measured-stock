@@ -50,6 +50,10 @@ import {
   eventPackLines,
   eventPhysicalLines,
 } from './lib/kit-count-dest.js';
+import {
+  transferKitToWarehouse,
+  transferKitToEvent,
+} from './lib/kit-movements.js';
 
 function $(id) {
   return document.getElementById(id);
@@ -206,6 +210,13 @@ export async function startKitCountApp(DB, opts = {}) {
   let showCategorySheet = false;
   /** Add options bottom drawer on home. */
   let showAddWizard = false;
+  /** Event home ⋯ menu. */
+  let showHomeMenu = false;
+  /** Transfer kit sheet (event → warehouse / other event). */
+  let showTransferSheet = false;
+  let transferSaving = false;
+  /** @type {{ step: string, destKind: string, warehouseId: string, eventId: string, qtys: Record<string, string>, err: string } | null} */
+  let transferDraft = null;
   let newCategoryName = '';
   let searchQuery = '';
   /** Search query on the pick-existing-container wizard step. */
@@ -375,6 +386,10 @@ export async function startKitCountApp(DB, opts = {}) {
     showCreateSheet = false;
     showCategorySheet = false;
     showAddWizard = false;
+    showHomeMenu = false;
+    showTransferSheet = false;
+    transferDraft = null;
+    transferSaving = false;
     writeMode = '';
     screen = 'home';
     stopCamera();
@@ -1398,6 +1413,28 @@ export async function startKitCountApp(DB, opts = {}) {
         <h1 class="page-title">${escapeHtml(homeTitle)}</h1>
         <p class="page-sub">${escapeHtml(homeSub)}</p>
       </div>`;
+    const moreMenuHtml = isEventDest() ? `
+      <div class="kc-home-menu">
+        <button type="button" class="kc-home-more" id="kcHomeMore"
+          aria-label="More options" aria-haspopup="menu"
+          aria-expanded="${showHomeMenu ? 'true' : 'false'}">
+          <i class="ph ph-dots-three-vertical" aria-hidden="true"></i>
+        </button>
+        ${showHomeMenu ? `
+          <div class="kc-home-menu-pop" role="menu" id="kcHomeMenuPop">
+            <button type="button" class="kc-home-menu-item" role="menuitem" id="kcTransferKit">
+              Transfer kit
+            </button>
+          </div>` : ''}
+      </div>` : '';
+    const homeChromeHtml = (isEventDest() || !locationLocked) ? `
+      <header class="kc-top kc-top--row">
+        ${!locationLocked
+    ? '<button type="button" class="kc-back" id="kcChangeDest">Change</button>'
+    : ''}
+        <div class="kc-top-grow">${heroHtml}</div>
+        ${moreMenuHtml}
+      </header>` : heroHtml;
 
     const pickEmpty = '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span><span class="kc-empty-title">No pick list yet</span><span class="kc-empty-copy">Add Need qty in admin, or scan / create containers here to start packing.</span></p>';
     const onEventEmpty = '<p class="kc-empty kc-empty--panel"><span class="kc-empty-icon" aria-hidden="true"><i class="ph ph-package"></i></span><span class="kc-empty-title">Nothing onsite yet</span><span class="kc-empty-copy">Shows kit sent from warehouse or hired in. Packing updates Need progress on the pick list.</span></p>';
@@ -1424,13 +1461,7 @@ export async function startKitCountApp(DB, opts = {}) {
       </div>` : '';
 
     app.innerHTML = `
-      ${locationLocked
-    ? heroHtml
-    : `
-      <header class="kc-top kc-top--row">
-        <button type="button" class="kc-back" id="kcChangeDest">Change</button>
-        <div class="kc-top-grow">${heroHtml}</div>
-      </header>`}
+      ${homeChromeHtml}
       ${feedback.msg ? `<div class="kc-feedback${feedback.kind ? ` is-${feedback.kind}` : ''}" id="kcFeedback">${escapeHtml(feedback.msg)}</div>` : ''}
       <div class="kc-actions kc-actions--home">
         <input class="kc-search kc-search--block" id="kcHomeSearch" type="search"
@@ -1495,6 +1526,7 @@ export async function startKitCountApp(DB, opts = {}) {
           </div>
         </section>` : ''}
       ${showAddWizard ? addWizardSheetHtml() : ''}
+      ${showTransferSheet ? transferSheetHtml() : ''}
     `;
 
     $('kcChangeDest')?.addEventListener('click', () => {
@@ -1585,6 +1617,347 @@ export async function startKitCountApp(DB, opts = {}) {
     });
 
     if (showAddWizard) wireAddWizardSheet();
+    if (showTransferSheet) wireTransferSheet();
+
+    $('kcHomeMore')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showHomeMenu = !showHomeMenu;
+      paintHome();
+    });
+    $('kcTransferKit')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openTransferSheet();
+    });
+    if (showHomeMenu) {
+      const onDoc = (e) => {
+        if (e.target.closest?.('#kcHomeMore, #kcHomeMenuPop')) return;
+        showHomeMenu = false;
+        document.removeEventListener('click', onDoc, true);
+        paintHome();
+      };
+      queueMicrotask(() => document.addEventListener('click', onDoc, true));
+    }
+  }
+
+  function defaultTransferWarehouseId() {
+    if (preferredWarehouseId && warehouses.some((w) => w.id === preferredWarehouseId)) {
+      return preferredWarehouseId;
+    }
+    return warehouses[0]?.id || '';
+  }
+
+  function ownedTransferRows() {
+    return onEventRows()
+      .filter((r) => (Number(r.owned) || 0) > 0)
+      .map((r) => ({
+        product: r.product,
+        max: Number(r.owned) || 0,
+      }));
+  }
+
+  function blankTransferDraft() {
+    return {
+      step: 'dest',
+      destKind: '',
+      warehouseId: defaultTransferWarehouseId(),
+      eventId: '',
+      qtys: {},
+      err: '',
+    };
+  }
+
+  function openTransferSheet() {
+    showHomeMenu = false;
+    showAddWizard = false;
+    feedback = { msg: '', kind: '' };
+    transferDraft = blankTransferDraft();
+    showTransferSheet = true;
+    if (screen !== 'home') screen = 'home';
+    paint();
+  }
+
+  function closeTransferSheet() {
+    showTransferSheet = false;
+    transferDraft = null;
+    transferSaving = false;
+    paintHome();
+  }
+
+  function transferSheetHtml() {
+    const draft = transferDraft || blankTransferDraft();
+    const step = draft.step || 'dest';
+    const owned = ownedTransferRows();
+    const otherEvents = events.filter((ev) => ev.id && ev.id !== destination?.eventId);
+
+    let title = 'Transfer kit';
+    let hint = 'Move owned kit off this event.';
+    let body = '';
+
+    if (step === 'dest') {
+      title = 'Transfer kit';
+      hint = 'Send owned onsite kit to a warehouse or another event.';
+      body = `
+        <div class="kc-wizard" role="list">
+          <button type="button" class="kc-wizard-card" id="kcXferToWarehouse" role="listitem">
+            <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-warehouse"></i></span>
+            <span class="kc-wizard-copy">
+              <strong>To a warehouse</strong>
+              <em>Check owned kit back into stock</em>
+            </span>
+            <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="kc-wizard-card" id="kcXferToEvent" role="listitem">
+            <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-arrows-left-right"></i></span>
+            <span class="kc-wizard-copy">
+              <strong>To another event</strong>
+              <em>Move owned kit via a warehouse</em>
+            </span>
+            <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+          </button>
+        </div>`;
+    } else if (step === 'target') {
+      if (draft.destKind === 'warehouse') {
+        title = 'Choose warehouse';
+        hint = 'Kit will leave this event and land in the warehouse.';
+        body = warehouses.length
+          ? `<div class="kc-xfer-list" role="list">
+              ${warehouses.map((wh) => `
+                <button type="button" class="kc-wizard-card${wh.id === draft.warehouseId ? ' is-selected' : ''}"
+                  role="listitem" data-xfer-wh="${escapeHtml(wh.id)}">
+                  <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-warehouse"></i></span>
+                  <span class="kc-wizard-copy">
+                    <strong>${escapeHtml(wh.name || 'Warehouse')}</strong>
+                    ${wh.address ? `<em>${escapeHtml(wh.address)}</em>` : '<em>Warehouse</em>'}
+                  </span>
+                  <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+                </button>`).join('')}
+            </div>`
+          : '<p class="kc-empty">No warehouses found.</p>';
+      } else {
+        title = 'Choose event';
+        hint = 'Pick where the kit should go. You’ll choose quantities next.';
+        const whOpts = warehouses.map((wh) =>
+          `<option value="${escapeHtml(wh.id)}"${wh.id === draft.warehouseId ? ' selected' : ''}>${escapeHtml(wh.name || 'Warehouse')}</option>`).join('');
+        body = `
+          <label class="kc-field">
+            Via warehouse
+            <select id="kcXferViaWh"${warehouses.length ? '' : ' disabled'}>
+              <option value="">— select —</option>
+              ${whOpts}
+            </select>
+          </label>
+          ${otherEvents.length
+    ? `<div class="kc-xfer-list" role="list">
+                ${otherEvents.map((ev) => `
+                  <button type="button" class="kc-wizard-card${ev.id === draft.eventId ? ' is-selected' : ''}"
+                    role="listitem" data-xfer-ev="${escapeHtml(ev.id)}">
+                    <span class="kc-wizard-icon" aria-hidden="true"><i class="ph-bold ph-calendar-blank"></i></span>
+                    <span class="kc-wizard-copy">
+                      <strong>${escapeHtml(ev.name || 'Event')}</strong>
+                      <em>${escapeHtml(ev.status || 'Event')}</em>
+                    </span>
+                    <i class="ph ph-caret-right kc-wizard-caret" aria-hidden="true"></i>
+                  </button>`).join('')}
+              </div>`
+    : '<p class="kc-empty">No other events found.</p>'}`;
+      }
+    } else {
+      const destLabel = draft.destKind === 'warehouse'
+        ? (warehouses.find((w) => w.id === draft.warehouseId)?.name || 'Warehouse')
+        : (events.find((e) => e.id === draft.eventId)?.name || 'Event');
+      title = 'How much to transfer';
+      hint = `From this event → ${destLabel}. Only owned onsite kit can move.`;
+      body = owned.length
+        ? `<div class="kc-xfer-lines">
+            ${owned.map(({ product: p, max }) => {
+    const qty = draft.qtys[p.id] ?? '';
+    return `
+              <label class="kc-xfer-line">
+                <span class="kc-xfer-line-main">
+                  <strong>${escapeHtml(p.name || 'Item')}</strong>
+                  <em>Owned ${max}</em>
+                </span>
+                <input class="kc-xfer-qty num-math" type="text" inputmode="decimal"
+                  data-xfer-qty="${escapeHtml(p.id)}" value="${escapeHtml(qty)}"
+                  placeholder="0" aria-label="Qty for ${escapeHtml(p.name || 'item')}">
+              </label>`;
+  }).join('')}
+          </div>`
+        : '<p class="kc-empty">No owned kit onsite to transfer. Hire-in kit stays on the event until returned.</p>';
+    }
+
+    const showBack = step !== 'dest';
+    const showCommit = step === 'lines';
+
+    return `
+      <div class="kc-sheet kc-sheet--add" id="kcXferSheet" role="dialog" aria-modal="true" aria-labelledby="kcXferSheetTitle">
+        <button type="button" class="kc-sheet-backdrop" id="kcXferSheetDismiss" aria-label="Close"></button>
+        <div class="kc-sheet-card kc-sheet-card--drawer">
+          <div class="kc-sheet-handle" aria-hidden="true"></div>
+          <h2 class="kc-sheet-title" id="kcXferSheetTitle">${escapeHtml(title)}</h2>
+          <p class="kc-sheet-hint">${escapeHtml(hint)}</p>
+          ${draft.err ? `<p class="kc-xfer-err" id="kcXferErr">${escapeHtml(draft.err)}</p>` : ''}
+          ${body}
+          <div class="kc-sheet-actions${showBack || showCommit ? ' kc-sheet-actions--split' : ''}">
+            ${showBack
+    ? '<button type="button" class="kc-btn" id="kcXferBack">Back</button>'
+    : '<button type="button" class="kc-btn kc-btn--block" id="kcXferCancel">Cancel</button>'}
+            ${showCommit
+    ? `<button type="button" class="kc-btn kc-btn--primary" id="kcXferCommit"${transferSaving || !owned.length ? ' disabled' : ''}>
+                ${transferSaving ? 'Transferring…' : 'Transfer'}
+              </button>`
+    : (showBack ? '<button type="button" class="kc-btn" id="kcXferCancel">Cancel</button>' : '')}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function wireTransferSheet() {
+    const draft = transferDraft;
+    if (!draft) return;
+
+    const setStep = (step, patch = {}) => {
+      transferDraft = { ...draft, ...patch, step, err: '' };
+      paintHome();
+    };
+
+    $('kcXferSheetDismiss')?.addEventListener('click', closeTransferSheet);
+    $('kcXferCancel')?.addEventListener('click', closeTransferSheet);
+    $('kcXferBack')?.addEventListener('click', () => {
+      if (draft.step === 'lines') setStep('target');
+      else if (draft.step === 'target') setStep('dest', { destKind: '', eventId: '' });
+    });
+
+    $('kcXferToWarehouse')?.addEventListener('click', () => {
+      setStep('target', {
+        destKind: 'warehouse',
+        warehouseId: draft.warehouseId || defaultTransferWarehouseId(),
+        eventId: '',
+      });
+    });
+    $('kcXferToEvent')?.addEventListener('click', () => {
+      setStep('target', {
+        destKind: 'event',
+        warehouseId: draft.warehouseId || defaultTransferWarehouseId(),
+      });
+    });
+
+    $('kcXferViaWh')?.addEventListener('change', (e) => {
+      draft.warehouseId = e.target.value || '';
+    });
+
+    app.querySelectorAll('[data-xfer-wh]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const warehouseId = btn.getAttribute('data-xfer-wh') || '';
+        const qtys = {};
+        for (const row of ownedTransferRows()) qtys[row.product.id] = '';
+        setStep('lines', { warehouseId, destKind: 'warehouse', qtys });
+      });
+    });
+
+    app.querySelectorAll('[data-xfer-ev]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const via = $('kcXferViaWh')?.value || draft.warehouseId || '';
+        if (!via) {
+          transferDraft = { ...draft, err: 'Select a via warehouse first.' };
+          paintHome();
+          return;
+        }
+        const eventId = btn.getAttribute('data-xfer-ev') || '';
+        const qtys = {};
+        for (const row of ownedTransferRows()) qtys[row.product.id] = '';
+        setStep('lines', {
+          destKind: 'event',
+          warehouseId: via,
+          eventId,
+          qtys,
+        });
+      });
+    });
+
+    app.querySelectorAll('[data-xfer-qty]').forEach((inp) => {
+      inp.addEventListener('input', () => {
+        const id = inp.getAttribute('data-xfer-qty');
+        if (!id || !transferDraft) return;
+        transferDraft.qtys[id] = inp.value || '';
+      });
+    });
+
+    $('kcXferCommit')?.addEventListener('click', () => {
+      commitTransfer().catch(() => {});
+    });
+  }
+
+  async function commitTransfer() {
+    const draft = transferDraft;
+    if (!draft || transferSaving || !isEventDest()) return;
+
+    const ownedMax = new Map(ownedTransferRows().map((r) => [r.product.id, r.max]));
+    const lines = [];
+    for (const [productId, raw] of Object.entries(draft.qtys || {})) {
+      const qty = Math.round((Number(String(raw).replace(/,/g, '')) || 0) * 10) / 10;
+      if (!productId || qty <= 0) continue;
+      const max = ownedMax.get(productId) || 0;
+      if (qty > max + 1e-9) {
+        const name = products.find((p) => p.id === productId)?.name || 'Item';
+        transferDraft = { ...draft, err: `${name}: only ${max} owned onsite.` };
+        paintHome();
+        return;
+      }
+      lines.push({ product_id: productId, qty });
+    }
+    if (!lines.length) {
+      transferDraft = { ...draft, err: 'Enter a quantity for at least one item.' };
+      paintHome();
+      return;
+    }
+
+    transferSaving = true;
+    transferDraft = { ...draft, err: '' };
+    paintHome();
+
+    try {
+      if (draft.destKind === 'warehouse') {
+        if (!draft.warehouseId) throw new Error('Select a warehouse');
+        await transferKitToWarehouse(DB, {
+          eventId: destination.eventId,
+          warehouseId: draft.warehouseId,
+          lines,
+          items: eventItems,
+          balances: eventBalances,
+        });
+      } else if (draft.destKind === 'event') {
+        if (!draft.eventId) throw new Error('Select an event');
+        if (!draft.warehouseId) throw new Error('Select a via warehouse');
+        const destData = await loadEventKit(draft.eventId);
+        await transferKitToEvent(DB, {
+          fromEventId: destination.eventId,
+          toEventId: draft.eventId,
+          warehouseId: draft.warehouseId,
+          lines,
+          fromItems: eventItems,
+          fromBalances: eventBalances,
+          toItems: destData.items || [],
+        });
+      } else {
+        throw new Error('Pick a destination');
+      }
+
+      showTransferSheet = false;
+      transferDraft = null;
+      transferSaving = false;
+      homeEventTab = 'on-event';
+      writeMode = 'on-event';
+      feedback = { msg: 'Kit transferred', kind: 'ok' };
+      await enterContainerHome();
+    } catch (err) {
+      transferSaving = false;
+      transferDraft = {
+        ...(transferDraft || draft),
+        err: err.message || 'Transfer failed',
+      };
+      paintHome();
+    }
   }
 
   function openAddWizard() {
@@ -1850,7 +2223,7 @@ export async function startKitCountApp(DB, opts = {}) {
                 </button>
                 <div class="kc-stepper">
                   <button type="button" class="kc-step" data-delta="-1" aria-label="Decrease">−</button>
-                  <input type="text" inputmode="decimal" class="kc-qty" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
+                  <input type="text" inputmode="decimal" class="kc-qty num-math" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
                   <button type="button" class="kc-step" data-delta="1" aria-label="Increase">+</button>
                 </div>
                 <button type="button" class="kc-remove" data-remove title="Remove">×</button>
@@ -2306,7 +2679,7 @@ export async function startKitCountApp(DB, opts = {}) {
                 </button>
                 <div class="kc-stepper">
                   <button type="button" class="kc-step" data-delta="-1" aria-label="Decrease">−</button>
-                  <input type="text" inputmode="decimal" class="kc-qty" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
+                  <input type="text" inputmode="decimal" class="kc-qty num-math" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
                   <button type="button" class="kc-step" data-delta="1" aria-label="Increase">+</button>
                 </div>
                 <button type="button" class="kc-remove" data-remove title="Remove">×</button>

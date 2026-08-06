@@ -769,11 +769,12 @@ html.kit-deep .main:has(.kc-scan) #view-kit.view.active {
   padding: 6px 2px 4px;
 }
 
-/* Global compose FAB — radial speed dial, bottom right above nav */
+/* Global compose FAB — vertical speed dial, bottom right above nav */
 .compose-fab {
   --fab-size: 56px;
   --fab-action: 48px;
-  --fab-radius: 120px;
+  --fab-stack-gap: 12px;
+  --fab-stack-step: calc(var(--fab-action) + var(--fab-stack-gap));
   position: fixed;
   left: auto;
   right: 16px;
@@ -902,32 +903,31 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
 }
 .compose-fab.is-open .compose-fab-item-label { opacity: 1; }
 
-/* Quarter-circle arc: up → up-left → left-up → left */
+/* Vertical stack above the FAB (Kit closest → Delivery farthest) */
 .compose-fab.is-open .compose-fab-item:nth-child(1) {
   opacity: 1;
-  transform: translate(0, calc(-1 * var(--fab-radius))) scale(1);
+  transform: translate(0, calc(-5 * var(--fab-stack-step))) scale(1);
   transition-delay: 0.02s;
 }
 .compose-fab.is-open .compose-fab-item:nth-child(2) {
   opacity: 1;
-  transform: translate(
-    calc(-0.5 * var(--fab-radius)),
-    calc(-0.866 * var(--fab-radius))
-  ) scale(1);
+  transform: translate(0, calc(-4 * var(--fab-stack-step))) scale(1);
   transition-delay: 0.05s;
 }
 .compose-fab.is-open .compose-fab-item:nth-child(3) {
   opacity: 1;
-  transform: translate(
-    calc(-0.866 * var(--fab-radius)),
-    calc(-0.5 * var(--fab-radius))
-  ) scale(1);
+  transform: translate(0, calc(-3 * var(--fab-stack-step))) scale(1);
   transition-delay: 0.08s;
 }
 .compose-fab.is-open .compose-fab-item:nth-child(4) {
   opacity: 1;
-  transform: translate(calc(-1 * var(--fab-radius)), 0) scale(1);
+  transform: translate(0, calc(-2 * var(--fab-stack-step))) scale(1);
   transition-delay: 0.11s;
+}
+.compose-fab.is-open .compose-fab-item:nth-child(5) {
+  opacity: 1;
+  transform: translate(0, calc(-1 * var(--fab-stack-step))) scale(1);
+  transition-delay: 0.14s;
 }
 
 
@@ -1520,6 +1520,69 @@ body.app-drawer-open { overflow: hidden; }
 }
 .toast.show { transform: translateY(0); opacity: 1; }
 .toast.err { background: #3f1515; border-color: var(--danger); color: #fecaca; }
+.toast--action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.toast-msg {
+  flex: 1;
+  min-width: 0;
+}
+.toast-action {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 12px;
+  padding: 4px 2px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Global number-field undo — sits above the toast / nav */
+.field-undo-fab {
+  position: fixed;
+  right: var(--gutter, 16px);
+  bottom: calc(var(--nav-h, 64px) + var(--save-bar-h, 0px) + 64px);
+  z-index: 201;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card, var(--secondary));
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.field-undo-fab.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.field-undo-fab[hidden] {
+  display: none !important;
+}
+.field-undo-fab-icon {
+  font-size: 16px;
+  line-height: 1;
+}
 
 .photo-group { margin-bottom: 14px; }
 .photo-group-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
