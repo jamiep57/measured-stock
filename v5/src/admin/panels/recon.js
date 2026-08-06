@@ -66,17 +66,6 @@ function readInlineDraft(pid, closingRows) {
   };
 }
 
-function renderMarkerCell(pid, status) {
-  const s = status || '';
-  const dots = ['red', 'yellow', 'green', 'blue'].map((c) =>
-    `<button type="button" class="recon-marker recon-marker-${c}${s === c ? ' active' : ''}"
-      title="${escapeHtml(STATUS_TITLES[c])}" aria-label="${c}"
-      data-rcn-status="${c}" data-pid="${escapeHtml(pid)}"></button>`).join('');
-  return `<td class="rcn-sticky rcn-col-status recon-marker-cell" data-rcn-col="status">
-    <span class="recon-markers">${dots}</span>
-  </td>`;
-}
-
 function renderInlineInput(pid, fieldId, value) {
   const shown = value != null && value !== '' ? String(value) : '';
   return `<input type="text" class="recon-cell-input num-math" id="${fieldId}"
@@ -85,9 +74,8 @@ function renderInlineInput(pid, fieldId, value) {
 }
 
 function rcnTh(col, label, extraClass = '') {
-  const align = col === 'item' ? ' dist-bar-head--left' : '';
   return `<th class="rcn-th dist-col-header ${extraClass}" data-rcn-col="${col}">
-    <div class="dist-bar-head${align}"><span class="dist-bar-name">${label}</span></div>
+    <div class="dist-bar-head"><span class="dist-bar-name">${label}</span></div>
   </th>`;
 }
 
@@ -106,7 +94,6 @@ function renderRow(r) {
   return `
     <tr class="recon-row${statusClass}${r.reconHidden ? ' recon-row-hidden' : ''}${r.investigate ? ' row-investigate' : ''}"
       data-rcn-pid="${escapeHtml(r.pid)}" data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}">
-      ${renderMarkerCell(r.pid, r.reconStatus)}
       <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
         <div class="rcn-item">
           <div class="rcn-item-top">
@@ -151,7 +138,6 @@ function renderTotalRow(totals) {
     ${RECON_COLS.map((c) => {
       let val = '';
       let cls = 'rcn-num';
-      if (c.id === 'status') cls = 'rcn-col-status rcn-sticky';
       if (c.id === 'item') { cls = 'rcn-col-item rcn-sticky'; val = 'Total'; }
       else if (c.id === 'variance') {
         cls += ' rcn-group-start';
@@ -181,7 +167,7 @@ function applyColVisibility(root, colVis) {
 export function renderReconShell() {
   return `
     <div class="rcn-panel" id="rcnPanel">
-      <p class="rcn-hint muted">Edit <strong>Invoiced</strong> and <strong>Closing</strong> inline. Click price, returns, or <strong>⋯</strong> for details. PLU comes from Square item sales.</p>
+      <p class="rcn-hint muted">Edit <strong>Invoiced</strong> and <strong>Closing</strong> inline, then hit <strong>Save changes</strong>. Click price, returns, or <strong>⋯</strong> for status and details. PLU comes from Square item sales.</p>
       <div class="rcn-stats" id="rcnStats"></div>
       <div class="rcn-toolbar" id="rcnFilterRow">
         <div class="rcn-seg" role="tablist" aria-label="Status filter">
@@ -215,7 +201,6 @@ export function renderReconShell() {
         <table class="dist-grid rcn-grid" id="rcnTable">
           <thead>
             <tr class="rcn-head-row">
-              ${rcnTh('status', 'Status', 'rcn-sticky rcn-col-status')}
               ${rcnTh('item', 'Product', 'rcn-sticky rcn-col-item')}
               ${rcnTh('abv', 'ABV', 'rcn-meta')}
               ${rcnTh('case_price', 'Price', 'rcn-num--money')}
@@ -240,6 +225,15 @@ export function renderReconShell() {
           </thead>
           <tbody id="rcnBody"><tr><td colspan="${RECON_COLS.length}" class="dist-empty muted">Loading…</td></tr></tbody>
         </table>
+      </div>
+      <div class="rcn-save-bar" id="rcnSaveBar" hidden>
+        <span class="rcn-save-bar-copy" id="rcnSaveBarMsg">Unsaved changes</span>
+        <div class="rcn-save-bar-actions">
+          <button type="button" class="rcn-save-bar-btn" id="rcnDiscardBtn">Discard</button>
+          <button type="button" class="rcn-save-bar-btn rcn-save-bar-btn--primary" id="rcnSaveBtn">
+            Save changes
+          </button>
+        </div>
       </div>
     </div>`;
 }
@@ -266,10 +260,32 @@ export function mountReconPanel(route) {
     showHidden: false,
     colVis: loadReconColVisibility(),
     drafts: {},
-    saveTimers: {},
+    saving: false,
     abort: false,
     drawerPid: null,
   };
+
+  function dirtyCount() {
+    return Object.keys(ctx.drafts).length;
+  }
+
+  function syncSaveBar() {
+    const bar = $('rcnSaveBar');
+    const msg = $('rcnSaveBarMsg');
+    const saveBtn = $('rcnSaveBtn');
+    const discardBtn = $('rcnDiscardBtn');
+    const n = dirtyCount();
+    const dirty = n > 0 || ctx.saving;
+    if (bar) bar.hidden = !dirty;
+    panel.classList.toggle('rcn-panel--dirty', dirty);
+    if (msg) {
+      msg.textContent = ctx.saving
+        ? 'Saving…'
+        : (n === 1 ? '1 unsaved change' : `${n} unsaved changes`);
+    }
+    if (saveBtn) saveBtn.disabled = ctx.saving || n === 0;
+    if (discardBtn) discardBtn.disabled = ctx.saving || n === 0;
+  }
 
   function allRows() {
     return computeReconRows({
@@ -510,47 +526,55 @@ export function mountReconPanel(route) {
       budget_override: cl.budget_override ?? null,
     });
     delete ctx.drafts[pid];
+    syncSaveBar();
   }
 
-  function scheduleSave(pid) {
-    clearTimeout(ctx.saveTimers[pid]);
+  function markDirty(pid) {
+    if (!pid) return;
     ctx.drafts[pid] = readInlineDraft(pid, ctx.closingRows);
     refreshRowDerived(pid);
     refreshStatsAndTotalRow();
-    ctx.saveTimers[pid] = setTimeout(() => {
-      delete ctx.saveTimers[pid];
-      persistInline(pid)
-        .then(() => {
-          refreshRowDerived(pid);
-          refreshStatsAndTotalRow();
-        })
-        .catch((e) => toast(e.message || 'Save failed', true));
-    }, 400);
+    syncSaveBar();
   }
 
-  async function setStatus(pid, status) {
-    const cl = closingRowFor(ctx.closingRows, pid) || {};
-    const next = cl.recon_status === status ? null : status;
-    const DB = getDB();
-    let row = cl;
-    if (!row.product_id) {
-      row = { event_id: ctx.eventId, product_id: pid };
-      ctx.closingRows.push(row);
+  async function flushPid(pid, { reread = true } = {}) {
+    if (!pid) return;
+    if (reread || !ctx.drafts[pid]) {
+      ctx.drafts[pid] = readInlineDraft(pid, ctx.closingRows);
     }
-    row.recon_status = next;
+    await persistInline(pid);
+    refreshRowDerived(pid);
+    refreshStatsAndTotalRow();
+  }
+
+  async function flushAllPending() {
+    const pids = Object.keys(ctx.drafts);
+    // Do not re-read inputs on unmount — drafts were captured on each keystroke.
+    await Promise.all(pids.map((pid) => flushPid(pid, { reread: false })));
+  }
+
+  async function saveAllChanges() {
+    if (ctx.saving || !dirtyCount()) return;
+    ctx.saving = true;
+    syncSaveBar();
     try {
-      const saved = await DB.closing.setForEvent(ctx.eventId, pid, {
-        recon_status: next,
-        closing_cases: row.closing_cases ?? 0,
-        closing_singles: row.closing_singles ?? 0,
-        close_count: row.close_count ?? 0,
-        return_amount: row.return_amount ?? 0,
-      });
-      if (saved) Object.assign(row, saved);
-      renderTable();
+      await flushAllPending();
+      if (!dirtyCount()) toast('Recon saved');
     } catch (e) {
-      toast(e.message || 'Failed to update status', true);
+      toast(e.message || 'Save failed', true);
+    } finally {
+      ctx.saving = false;
+      syncSaveBar();
     }
+  }
+
+  function discardChanges() {
+    if (ctx.saving || !dirtyCount()) return;
+    ctx.drafts = {};
+    renderTable();
+    applyProductFilter(getLastProductFilter());
+    syncSaveBar();
+    toast('Changes discarded');
   }
 
   function openDrawer(pid) {
@@ -559,12 +583,23 @@ export function mountReconPanel(route) {
     ctx.drawerPid = pid;
     const cl = closingRowFor(ctx.closingRows, pid) || {};
     const p = ep.product;
+    const curStatus = cl.recon_status || '';
 
     openSheet({
       title: `Edit recon — ${p?.name || 'Product'}`,
       bodyHtml: `
         <div class="rcn-drawer">
           <p class="muted">${escapeHtml(p?.case_size || '')} · ${escapeHtml(ep.product?.category?.name || '')}</p>
+          <div class="admin-field">
+            <label class="admin-label" for="rcnDrawerStatus">Status</label>
+            <select class="admin-input" id="rcnDrawerStatus">
+              <option value=""${!curStatus ? ' selected' : ''}>Unmarked</option>
+              <option value="red"${curStatus === 'red' ? ' selected' : ''}>${STATUS_TITLES.red}</option>
+              <option value="yellow"${curStatus === 'yellow' ? ' selected' : ''}>${STATUS_TITLES.yellow}</option>
+              <option value="green"${curStatus === 'green' ? ' selected' : ''}>${STATUS_TITLES.green}</option>
+              <option value="blue"${curStatus === 'blue' ? ' selected' : ''}>${STATUS_TITLES.blue}</option>
+            </select>
+          </div>
           <div class="admin-field">
             <label class="admin-label" for="rcnDrawerCasePrice">Case price override (£)</label>
             <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerCasePrice"
@@ -599,7 +634,7 @@ export function mountReconPanel(route) {
             <input type="checkbox" id="rcnDrawerHidden"${ep.recon_hidden ? ' checked' : ''}>
             Exclude from recon
           </label>
-          <p class="rcn-drawer-note muted">Supplier returns are edited on Closing. This drawer is for prices, notes, and budget.</p>
+          <p class="rcn-drawer-note muted">Supplier returns are edited on Closing. This drawer is for status, prices, notes, and budget.</p>
         </div>`,
       footHtml: `
         <button type="button" class="btn btn-outline" id="rcnDrawerCancel">Cancel</button>
@@ -611,6 +646,7 @@ export function mountReconPanel(route) {
     $('rcnDrawerSave').onclick = async () => {
       try {
         const DB = getDB();
+        const status = $('rcnDrawerStatus').value || null;
         const casePrice = $('rcnDrawerCasePrice').value.trim();
         const unitPrice = $('rcnDrawerUnitPrice').value.trim();
         const note = $('rcnDrawerNote').value.trim();
@@ -632,12 +668,14 @@ export function mountReconPanel(route) {
           row = { event_id: ctx.eventId, product_id: pid };
           ctx.closingRows.push(row);
         }
+        row.recon_status = status;
         row.recon_note = note || null;
         row.budget_method = budgetMethod;
         row.budget_override = budgetMethod === 'manual' && budgetManual !== ''
           ? parseQty(budgetManual) : null;
 
         await DB.closing.setForEvent(ctx.eventId, pid, {
+          recon_status: row.recon_status,
           recon_note: row.recon_note,
           budget_method: row.budget_method,
           budget_override: row.budget_override,
@@ -692,6 +730,14 @@ export function mountReconPanel(route) {
 
   async function markReconciled() {
     if (!ctx.event) return;
+    if (dirtyCount()) {
+      try {
+        await flushAllPending();
+      } catch (e) {
+        toast(e.message || 'Save failed', true);
+        return;
+      }
+    }
     if (!confirm(`Mark "${ctx.event.name || 'this event'}" as financially reconciled?`)) return;
     try {
       const DB = getDB();
@@ -724,10 +770,12 @@ export function mountReconPanel(route) {
   }
 
   panel.addEventListener('click', (e) => {
-    const statusBtn = e.target.closest('[data-rcn-status]');
-    if (statusBtn) {
-      e.stopPropagation();
-      setStatus(statusBtn.dataset.pid, statusBtn.dataset.rcnStatus);
+    if (e.target.closest('#rcnSaveBtn')) {
+      saveAllChanges();
+      return;
+    }
+    if (e.target.closest('#rcnDiscardBtn')) {
+      discardChanges();
       return;
     }
     const editBtn = e.target.closest('[data-rcn-edit]');
@@ -786,24 +834,18 @@ export function mountReconPanel(route) {
 
   panel.addEventListener('input', (e) => {
     if (e.target.matches('.recon-cell-input')) {
-      scheduleSave(e.target.dataset.rcnPid);
+      markDirty(e.target.dataset.rcnPid);
     }
   });
 
-  panel.addEventListener('blur', (e) => {
-    if (e.target.matches('.recon-cell-input')) {
-      const pid = e.target.dataset.rcnPid;
-      clearTimeout(ctx.saveTimers[pid]);
-      delete ctx.saveTimers[pid];
-      ctx.drafts[pid] = readInlineDraft(pid, ctx.closingRows);
-      persistInline(pid)
-        .then(() => {
-          refreshRowDerived(pid);
-          refreshStatsAndTotalRow();
-        })
-        .catch((err) => toast(err.message || 'Save failed', true));
-    }
-  }, true);
+  const onPageHide = () => {
+    if (dirtyCount()) flushAllPending();
+  };
+  const onBeforeUnload = (e) => {
+    if (!dirtyCount()) return;
+    e.preventDefault();
+    e.returnValue = '';
+  };
 
   const onDocClick = (e) => {
     const picker = $('rcnColPicker');
@@ -824,6 +866,8 @@ export function mountReconPanel(route) {
 
   const onResize = () => layoutTableScroll();
   window.addEventListener('resize', onResize);
+  window.addEventListener('pagehide', onPageHide);
+  window.addEventListener('beforeunload', onBeforeUnload);
   $('rcnTableWrap')?.addEventListener('scroll', syncScrollHint, { passive: true });
 
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
@@ -871,8 +915,10 @@ export function mountReconPanel(route) {
 
   return () => {
     ctx.abort = true;
-    Object.values(ctx.saveTimers).forEach(clearTimeout);
+    if (dirtyCount()) flushAllPending();
     window.removeEventListener('resize', onResize);
+    window.removeEventListener('pagehide', onPageHide);
+    window.removeEventListener('beforeunload', onBeforeUnload);
     document.removeEventListener('click', onDocClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);

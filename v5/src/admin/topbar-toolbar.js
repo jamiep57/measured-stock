@@ -85,6 +85,20 @@ export const PANEL_TOOLBAR = {
       ],
     },
   ],
+  closing: [
+    {
+      id: 'print',
+      label: 'Print',
+      items: [
+        {
+          id: 'print-closing-count-sheet',
+          icon: 'printer',
+          label: 'Print closing sheet',
+          title: 'Print a blank closing stock count sheet for the whole event',
+        },
+      ],
+    },
+  ],
   recon: [
     {
       id: 'actions',

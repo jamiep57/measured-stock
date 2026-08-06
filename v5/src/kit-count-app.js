@@ -1777,7 +1777,7 @@ export async function startKitCountApp(DB, opts = {}) {
                   <strong>${escapeHtml(p.name || 'Item')}</strong>
                   <em>Owned ${max}</em>
                 </span>
-                <input class="kc-xfer-qty" type="text" inputmode="decimal"
+                <input class="kc-xfer-qty num-math" type="text" inputmode="decimal"
                   data-xfer-qty="${escapeHtml(p.id)}" value="${escapeHtml(qty)}"
                   placeholder="0" aria-label="Qty for ${escapeHtml(p.name || 'item')}">
               </label>`;
@@ -2223,7 +2223,7 @@ export async function startKitCountApp(DB, opts = {}) {
                 </button>
                 <div class="kc-stepper">
                   <button type="button" class="kc-step" data-delta="-1" aria-label="Decrease">−</button>
-                  <input type="text" inputmode="decimal" class="kc-qty" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
+                  <input type="text" inputmode="decimal" class="kc-qty num-math" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
                   <button type="button" class="kc-step" data-delta="1" aria-label="Increase">+</button>
                 </div>
                 <button type="button" class="kc-remove" data-remove title="Remove">×</button>
@@ -2679,7 +2679,7 @@ export async function startKitCountApp(DB, opts = {}) {
                 </button>
                 <div class="kc-stepper">
                   <button type="button" class="kc-step" data-delta="-1" aria-label="Decrease">−</button>
-                  <input type="text" inputmode="decimal" class="kc-qty" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
+                  <input type="text" inputmode="decimal" class="kc-qty num-math" value="${escapeHtml(String(c.qty))}" aria-label="Qty">
                   <button type="button" class="kc-step" data-delta="1" aria-label="Increase">+</button>
                 </div>
                 <button type="button" class="kc-remove" data-remove title="Remove">×</button>

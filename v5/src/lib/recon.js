@@ -32,7 +32,6 @@ export function formatReconQty(n) {
 }
 
 export const RECON_COLS = [
-  { id: 'status', label: 'Status' },
   { id: 'item', label: 'Item' },
   { id: 'abv', label: 'ABV' },
   { id: 'case_price', label: 'Price' },

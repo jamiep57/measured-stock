@@ -1546,6 +1546,44 @@ body.app-drawer-open { overflow: hidden; }
   text-underline-offset: 2px;
 }
 
+/* Global number-field undo — sits above the toast / nav */
+.field-undo-fab {
+  position: fixed;
+  right: var(--gutter, 16px);
+  bottom: calc(var(--nav-h, 64px) + var(--save-bar-h, 0px) + 64px);
+  z-index: 201;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card, var(--secondary));
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.field-undo-fab.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.field-undo-fab[hidden] {
+  display: none !important;
+}
+.field-undo-fab-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .photo-group { margin-bottom: 14px; }
 .photo-group-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
