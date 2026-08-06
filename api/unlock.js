@@ -94,6 +94,7 @@ export default async function handler(req, res) {
     `${COOKIE_NAME}=${token}; Path=/; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=${MAX_AGE}`,
     nameCookie,
   ]);
-  res.writeHead(302, { Location: role === 'staff' ? '/v5/' : '/' });
+  // Staff land on V5 mobile; admins on V5 admin (not legacy V2).
+  res.writeHead(302, { Location: role === 'staff' ? '/v5/' : '/v5/admin' });
   res.end();
 }

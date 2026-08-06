@@ -454,6 +454,13 @@ body:has(.admin-app) {
   color: var(--foreground);
   background: var(--secondary);
 }
+.topbar-logout {
+  margin-left: 2px;
+}
+.topbar-logout:hover {
+  color: var(--danger, #dc2626);
+  background: color-mix(in srgb, var(--danger, #dc2626) 10%, transparent);
+}
 
 .topbar-toolbar-strips {
   display: flex;
