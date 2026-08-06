@@ -6,6 +6,7 @@ import {
   cellFocusOwners,
   cellFocusKey,
   peerColor,
+  flattenPresenceState,
 } from './closing-live.js';
 import { normalizeDisplayName } from './session-identity.js';
 
@@ -68,6 +69,20 @@ describe('cellFocusOwners', () => {
     expect(map['p1::cases'].name).toBe('Alice');
     expect(map['p1::cases'].color).toBe(peerColor('a'));
     expect(map['p2::return-cases'].name).toBe('Bob');
+  });
+});
+
+describe('flattenPresenceState', () => {
+  it('fills clientId from the presence key when missing', () => {
+    const peers = flattenPresenceState({
+      abc: [{ name: 'Alice', focusPid: 'p1', focusField: 'cases' }],
+    });
+    expect(peers).toEqual([{
+      name: 'Alice',
+      focusPid: 'p1',
+      focusField: 'cases',
+      clientId: 'abc',
+    }]);
   });
 });
 

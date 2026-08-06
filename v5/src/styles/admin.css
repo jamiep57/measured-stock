@@ -277,10 +277,16 @@ body:has(.admin-app) {
 }
 
 .sidebar-footer {
-  /* Empty spacer so the floating bug button sits over clear sidebar space */
+  /* Reserved slot for the bug report FAB */
   flex-shrink: 0;
   margin-top: auto;
   min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 6px 6px;
+  box-sizing: border-box;
+  overflow: visible;
 }
 
 .nav-link {
@@ -431,6 +437,12 @@ body:has(.admin-app) {
   min-width: 0;
   max-width: min(100%, 920px);
 }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .topbar-settings {
   width: 28px;
   height: 28px;
@@ -455,11 +467,33 @@ body:has(.admin-app) {
   background: var(--secondary);
 }
 .topbar-logout {
-  margin-left: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.topbar-logout .lucide-icon,
+.topbar-logout [data-lucide] {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 .topbar-logout:hover {
   color: var(--danger, #dc2626);
-  background: color-mix(in srgb, var(--danger, #dc2626) 10%, transparent);
+  border-color: color-mix(in srgb, var(--danger, #dc2626) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger, #dc2626) 8%, var(--card));
 }
 
 .topbar-toolbar-strips {
@@ -4871,9 +4905,14 @@ body.admin-drawer-open {
   text-align: left;
 }
 
-/* Category + total rows */
+/* Category + total rows — pinned label stays put on horizontal scroll */
 .rcn-panel .dist-cat-row td.dist-cat-pinned {
   top: var(--rcn-thead-h);
+  left: 0;
+  z-index: 4;
+  width: var(--rcn-item-w);
+  min-width: var(--rcn-item-w);
+  max-width: var(--rcn-item-w);
   padding: 10px 14px 6px;
   font-size: 11px;
   font-weight: 700;
@@ -4882,6 +4921,11 @@ body.admin-drawer-open {
   color: var(--muted-foreground);
   background: var(--card);
   border-bottom: none;
+  box-shadow: 6px 0 10px -6px rgb(0 0 0 / 0.06);
+}
+.rcn-panel .dist-cat-row td.dist-cat-scroll {
+  top: var(--rcn-thead-h);
+  background: var(--card);
 }
 .recon-total-row td {
   position: sticky;
@@ -5119,18 +5163,14 @@ td.rcn-num:not(:has(*)) {
   }
 }
 
-/* Floating bug report FAB — chat-style launcher */
+/* Bug report FAB — lives in the sidebar footer */
 .bug-fab {
-  position: fixed;
-  /* Sit in the empty sidebar footer spacer, clear of nav items */
-  left: calc(var(--sidebar-gap) + 18px);
-  bottom: calc(var(--sidebar-gap) + 18px);
-  /* Above right drawer; below left bug drawer (230) */
-  z-index: 220;
+  position: relative;
+  z-index: 2;
   pointer-events: none;
 }
 .bug-fab[hidden] {
-  display: none;
+  display: none !important;
 }
 .bug-fab-btn {
   pointer-events: auto;
@@ -5142,8 +5182,8 @@ td.rcn-num:not(:has(*)) {
   border: 0;
   border-radius: 50%;
   cursor: pointer;
-  color: var(--primary-foreground);
-  background: var(--primary);
+  color: var(--primary-foreground, #fafafa);
+  background: var(--primary, #18181b);
   box-shadow:
     0 2px 4px rgb(0 0 0 / 0.08),
     0 10px 28px rgb(0 0 0 / 0.16);

@@ -36,8 +36,10 @@ import {
 import { getRealtimeClient } from '../../lib/realtime.js';
 import {
   cellFocusOwners,
+  flattenPresenceState,
   formatClosingPresence,
   mergeClosingRemoteRow,
+  peerColor,
   shouldApplyRemoteClosingEdit,
 } from '../../lib/closing-live.js';
 
@@ -273,6 +275,10 @@ export function mountClosingPanel(route) {
     focusPid: null,
     focusField: null,
     peerCells: {},
+    presencePeers: [],
+    focusBroadcast: {},
+    presenceTimer: null,
+    liveReady: false,
   };
 
   function confirmOverSorReturn({ productName, returnAmount, maxReturnable, sorPct }) {
@@ -620,15 +626,30 @@ export function mountClosingPanel(route) {
     if (liveBar && show) liveBar.hidden = true;
   }
 
+  function rebuildPeerCells() {
+    const fromPresence = cellFocusOwners(ctx.presencePeers, getClientId());
+    /** @type {Record<string, object>} */
+    const merged = { ...fromPresence };
+    const selfId = getClientId();
+    Object.values(ctx.focusBroadcast || {}).forEach((info) => {
+      if (!info || info.clientId === selfId) return;
+      if (!info.productId || !info.field || !info.name) return;
+      const key = `${info.productId}::${info.field}`;
+      merged[key] = info;
+    });
+    ctx.peerCells = merged;
+    syncPeerCellMarkers();
+  }
+
   function updatePresenceUi(peers) {
     const liveBar = $('clLiveBar');
     const textEl = $('clLivePresence');
     if (!liveBar || !textEl) return;
     liveBar.hidden = false;
-    const fmt = formatClosingPresence(peers, getClientId());
+    ctx.presencePeers = peers || [];
+    const fmt = formatClosingPresence(ctx.presencePeers, getClientId());
     textEl.textContent = fmt.text;
-    ctx.peerCells = cellFocusOwners(peers, getClientId());
-    syncPeerCellMarkers();
+    rebuildPeerCells();
   }
 
   function syncPeerCellMarkers() {
@@ -723,9 +744,34 @@ export function mountClosingPanel(route) {
     applyRemoteRowToUi(remote.product_id);
   }
 
+  function focusPayload() {
+    const name = getDisplayName();
+    const clientId = getClientId();
+    return {
+      name: name || 'Someone',
+      clientId,
+      productId: ctx.focusPid,
+      field: ctx.focusField,
+      color: peerColor(clientId),
+      at: Date.now(),
+    };
+  }
+
+  async function broadcastFocus() {
+    const channel = ctx.liveChannel;
+    if (!channel || !ctx.liveReady) return;
+    try {
+      await channel.send({
+        type: 'broadcast',
+        event: 'cell-focus',
+        payload: focusPayload(),
+      });
+    } catch { /* ignore */ }
+  }
+
   async function trackPresence(patch = {}) {
     const channel = ctx.liveChannel;
-    if (!channel) return;
+    if (!channel || !ctx.liveReady) return;
     const name = getDisplayName();
     if (!name) return;
     try {
@@ -740,7 +786,30 @@ export function mountClosingPanel(route) {
     } catch { /* ignore presence blips */ }
   }
 
+  function handleFocusBroadcast(payload) {
+    if (ctx.abort || !payload) return;
+    const clientId = payload.clientId;
+    if (!clientId || clientId === getClientId()) return;
+    if (!payload.productId || !payload.field) {
+      delete ctx.focusBroadcast[clientId];
+    } else {
+      ctx.focusBroadcast[clientId] = {
+        name: (payload.name || '').trim() || 'Someone',
+        clientId,
+        productId: payload.productId,
+        field: payload.field,
+        color: payload.color || peerColor(clientId),
+      };
+    }
+    rebuildPeerCells();
+  }
+
   async function stopLive() {
+    ctx.liveReady = false;
+    if (ctx.presenceTimer) {
+      clearInterval(ctx.presenceTimer);
+      ctx.presenceTimer = null;
+    }
     const channel = ctx.liveChannel;
     ctx.liveChannel = null;
     if (!channel) return;
@@ -768,8 +837,12 @@ export function mountClosingPanel(route) {
     if (liveBar) liveBar.hidden = false;
     if (textEl) textEl.textContent = 'Connecting…';
 
+    const selfId = getClientId();
     const channel = rt.channel(`closing:${ctx.eventId}`, {
-      config: { presence: { key: getClientId() } },
+      config: {
+        broadcast: { self: false },
+        presence: { key: selfId },
+      },
     });
     ctx.liveChannel = channel;
 
@@ -784,9 +857,12 @@ export function mountClosingPanel(route) {
       (payload) => handleRemoteClosingChange(payload),
     );
 
+    channel.on('broadcast', { event: 'cell-focus' }, ({ payload }) => {
+      handleFocusBroadcast(payload);
+    });
+
     const refreshPeers = () => {
-      const state = channel.presenceState() || {};
-      const peers = Object.values(state).flat();
+      const peers = flattenPresenceState(channel.presenceState() || {});
       updatePresenceUi(peers);
     };
 
@@ -796,11 +872,19 @@ export function mountClosingPanel(route) {
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        ctx.liveReady = true;
         await trackPresence();
-        if (textEl && textEl.textContent === 'Connecting…') {
+        await broadcastFocus();
+        refreshPeers();
+        if (ctx.presenceTimer) clearInterval(ctx.presenceTimer);
+        ctx.presenceTimer = setInterval(() => {
+          trackPresence();
+        }, 4000);
+        if (textEl && (textEl.textContent === 'Connecting…' || !textEl.textContent)) {
           textEl.textContent = 'Just you here';
         }
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        ctx.liveReady = false;
         if (textEl) textEl.textContent = 'Live sync unavailable';
       }
     });
@@ -824,6 +908,7 @@ export function mountClosingPanel(route) {
     ctx.focusPid = input.dataset.clPid || null;
     ctx.focusField = input.dataset.clField || null;
     trackPresence();
+    broadcastFocus();
   }
 
   function onFocusOut(e) {
@@ -839,6 +924,7 @@ export function mountClosingPanel(route) {
         ctx.focusField = null;
       }
       trackPresence();
+      broadcastFocus();
     }, 0);
   }
 

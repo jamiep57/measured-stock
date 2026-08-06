@@ -70,6 +70,26 @@ export function shouldApplyRemoteClosingEdit({
 }
 
 /**
+ * Flatten Supabase presenceState() into peer metas.
+ * Uses the presence key as clientId when the payload omits it.
+ * @param {Record<string, object[]>} state
+ */
+export function flattenPresenceState(state) {
+  const peers = [];
+  for (const [key, metas] of Object.entries(state || {})) {
+    for (const meta of metas || []) {
+      if (!meta || typeof meta !== 'object') continue;
+      peers.push({
+        ...meta,
+        clientId: meta.clientId || key,
+        name: (meta.name || '').trim(),
+      });
+    }
+  }
+  return peers;
+}
+
+/**
  * Format presence peers for the Closing live bar (excludes self).
  */
 export function formatClosingPresence(peers, selfClientId) {

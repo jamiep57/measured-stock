@@ -90,7 +90,14 @@
           </div>
         </div>
 
-        <footer class="sidebar-footer" aria-hidden="true"></footer>
+        <footer class="sidebar-footer">
+          <div class="bug-fab" id="bugReportFab">
+            <button type="button" class="bug-fab-btn" id="bugReportFabBtn"
+              title="Report a bug or idea" aria-label="Report a bug or idea">
+              <i data-lucide="bug" aria-hidden="true"></i>
+            </button>
+          </div>
+        </footer>
       </div>
     </aside>
 
@@ -118,14 +125,16 @@
               </button>
               <div class="topbar-search" id="topbarSearch"></div>
             </div>
-            <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings" data-route="settings"
-              title="Workspace settings" aria-label="Workspace settings">
-              <i data-lucide="settings" aria-hidden="true"></i>
-            </a>
-            <a class="topbar-settings topbar-logout" id="topbarLogout" href="/api/logout"
-              title="Sign out" aria-label="Sign out">
-              <i data-lucide="log-out" aria-hidden="true"></i>
-            </a>
+            <div class="topbar-actions">
+              <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings" data-route="settings"
+                title="Workspace settings" aria-label="Workspace settings">
+                <i data-lucide="settings" aria-hidden="true"></i>
+              </a>
+              <a class="topbar-logout" id="topbarLogout" href="/api/logout" title="Sign out">
+                <i data-lucide="log-out" aria-hidden="true"></i>
+                <span>Log out</span>
+              </a>
+            </div>
           </div>
         </header>
         <main class="admin-content" id="adminContent"></main>
