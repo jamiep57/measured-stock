@@ -482,6 +482,23 @@ body:has(.admin-app) {
   max-width: 320px;
 }
 
+.topbar-tools > .field-undo-btn {
+  flex-shrink: 0;
+  height: var(--topbar-h);
+  padding: 0 10px;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
+}
+.topbar-tools > .field-undo-btn[hidden] {
+  display: none !important;
+}
+.topbar-tools > .field-undo-btn:hover:not(:disabled) {
+  background: var(--secondary);
+}
+
 .topbar-tool-wrap {
   position: relative;
 }
@@ -872,11 +889,6 @@ body:has(.admin-app) {
 .admin-not-found .admin-drawer-btn {
   display: inline-flex;
   text-decoration: none;
-}
-
-body:has(.admin-app) .field-undo-fab {
-  bottom: 24px;
-  right: 24px;
 }
 
 /* Admin drawer — floating panel matching sidebar shell */
