@@ -31,7 +31,7 @@ export function getRealtimeClient() {
       detectSessionInUrl: false,
     },
     realtime: {
-      params: { eventsPerSecond: 20 },
+      params: { eventsPerSecond: 40 },
     },
   });
   clientKey = key;

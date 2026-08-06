@@ -20,6 +20,8 @@ import {
   closingPatchFromDraft,
   computeClosingRows,
   exceedsMaxReturnable,
+  filterClosingRows,
+  groupClosingByCategory,
   returnAmountToForm,
 } from '../../lib/closing-stock.js';
 import { printClosingCountSheet } from '../../lib/count-sheets-print.js';
@@ -44,7 +46,10 @@ import {
 } from '../../lib/closing-live.js';
 
 const COL_COUNT = 13; // product + pack + 9 data cols + return + actions
-const LOCAL_ECHO_MS = 3000;
+const LOCAL_ECHO_MS = 1500;
+const AUTOSAVE_MS = 180;
+const VALUE_BROADCAST_MS = 40;
+const PRESENCE_HEARTBEAT_MS = 2500;
 
 async function adjustWarehouseStock(warehouseId, productId, delta) {
   const DB = getDB();
@@ -66,18 +71,6 @@ function fmtQty(n) {
 
 function rowFor(closingRows, pid) {
   return closingRowFor(closingRows, pid);
-}
-
-function groupByCategory(rows) {
-  const grouped = {};
-  rows.forEach((r) => {
-    const cat = r.category || 'Uncategorised';
-    (grouped[cat] = grouped[cat] || []).push(r);
-  });
-  Object.values(grouped).forEach((list) => {
-    list.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
-  });
-  return grouped;
 }
 
 function fmtSor(sor) {
@@ -233,7 +226,7 @@ export function renderClosingShell() {
         <span class="cl-live-text" id="clLivePresence">Connecting…</span>
       </div>
       <p class="cl-hint muted">
-        Counts <strong>auto-save as you type</strong> and show up live for anyone else on Closing.
+        Counts <strong>auto-save as you type</strong> and update live for anyone else on Closing.
         Closing and return use each product’s stock unit
         (cases / singles, bottles, or kegs). <strong>Max returnable</strong> = invoice × supplier SOR %.
         Returns above that ask for confirmation. <strong>Carried over</strong> = close count − return amount.
@@ -241,6 +234,7 @@ export function renderClosingShell() {
         Cleared a number by mistake? Hit <strong>Undo</strong> (or ⌘Z / Ctrl+Z).
         When someone else clicks a cell, you’ll see it highlighted with their name.
       </p>
+      <div class="sales-toolbar cl-toolbar" id="clToolbar" hidden></div>
       <div class="dist-grid-wrap cl-grid-wrap" id="clTableWrap">
         <table class="dist-grid cl-grid" id="clTable">
           <thead id="clGridHead">${renderGridHead()}</thead>
@@ -278,7 +272,13 @@ export function mountClosingPanel(route) {
     presencePeers: [],
     focusBroadcast: {},
     presenceTimer: null,
+    valueBroadcastTimer: null,
     liveReady: false,
+    statusFilter: '',
+    categoryFilter: '',
+    supplierFilter: '',
+    sortKey: 'name',
+    searchQuery: getLastProductFilter().query || '',
   };
 
   function confirmOverSorReturn({ productName, returnAmount, maxReturnable, sorPct }) {
@@ -346,6 +346,124 @@ export function mountClosingPanel(route) {
     });
   }
 
+  function visibleRows() {
+    return filterClosingRows(allRows(), {
+      statusFilter: ctx.statusFilter,
+      categoryFilter: ctx.categoryFilter,
+      supplierFilter: ctx.supplierFilter,
+    });
+  }
+
+  function categoryOptions(rows) {
+    return [...new Set((rows || []).map((r) => r.category || 'Uncategorised'))]
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function supplierOptions(rows) {
+    const byId = new Map();
+    let hasNone = false;
+    (rows || []).forEach((r) => {
+      if (!r.supplierId && !r.supplierName) {
+        hasNone = true;
+        return;
+      }
+      const key = r.supplierId || r.supplierName;
+      if (!byId.has(key)) {
+        byId.set(key, r.supplierName || 'Supplier');
+      }
+    });
+    const list = [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (hasNone) list.push({ id: '__none__', name: 'No supplier' });
+    return list;
+  }
+
+  function paintToolbar(sourceRows) {
+    const toolbar = $('clToolbar');
+    if (!toolbar) return;
+    if (!sourceRows.length) {
+      toolbar.hidden = true;
+      toolbar.innerHTML = '';
+      return;
+    }
+    toolbar.hidden = false;
+
+    const cats = categoryOptions(sourceRows);
+    if (ctx.categoryFilter && !cats.includes(ctx.categoryFilter)) {
+      ctx.categoryFilter = '';
+    }
+    const suppliers = supplierOptions(sourceRows);
+    if (
+      ctx.supplierFilter
+      && !suppliers.some((s) => s.id === ctx.supplierFilter)
+    ) {
+      ctx.supplierFilter = '';
+    }
+
+    const status = ctx.statusFilter || '';
+    const sort = ctx.sortKey || 'name';
+    const seg = (value, label) => {
+      const on = status === value;
+      return `<button type="button" class="projections-filter-btn${on ? ' is-active' : ''}"
+        data-cl-filter="${escapeHtml(value)}" role="tab" aria-selected="${on}">${label}</button>`;
+    };
+
+    toolbar.innerHTML = `
+      <div class="projections-filter" role="tablist" aria-label="Closing status">
+        ${seg('', 'All')}
+        ${seg('uncounted', 'Uncounted')}
+        ${seg('counted', 'Counted')}
+        ${seg('returning', 'Returning')}
+        ${seg('carried', 'Carried over')}
+        ${seg('over_sor', 'Over SOR')}
+      </div>
+      <select class="admin-select sales-toolbar-select" id="clCatFilter" aria-label="Category">
+        <option value="">All categories</option>
+        ${cats.map((g) => `<option value="${escapeHtml(g)}"${g === ctx.categoryFilter ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('')}
+      </select>
+      <select class="admin-select sales-toolbar-select" id="clSupplierFilter" aria-label="Supplier">
+        <option value="">All suppliers</option>
+        ${suppliers.map((s) => `<option value="${escapeHtml(s.id)}"${s.id === ctx.supplierFilter ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
+      </select>
+      <select class="admin-select sales-toolbar-select" id="clSort" aria-label="Sort by">
+        <option value="name"${sort === 'name' ? ' selected' : ''}>Name A–Z</option>
+        <option value="invoice"${sort === 'invoice' ? ' selected' : ''}>Invoice ↓</option>
+        <option value="closing"${sort === 'closing' ? ' selected' : ''}>Closing ↓</option>
+        <option value="return"${sort === 'return' ? ' selected' : ''}>Return ↓</option>
+        <option value="carried"${sort === 'carried' ? ' selected' : ''}>Carried ↓</option>
+        <option value="sor"${sort === 'sor' ? ' selected' : ''}>SOR % ↓</option>
+      </select>`;
+
+    toolbar.querySelectorAll('[data-cl-filter]').forEach((btn) => {
+      btn.onclick = () => {
+        ctx.statusFilter = btn.dataset.clFilter || '';
+        renderTable();
+      };
+    });
+    const catSel = toolbar.querySelector('#clCatFilter');
+    if (catSel) {
+      catSel.onchange = () => {
+        ctx.categoryFilter = catSel.value || '';
+        renderTable();
+      };
+    }
+    const supSel = toolbar.querySelector('#clSupplierFilter');
+    if (supSel) {
+      supSel.onchange = () => {
+        ctx.supplierFilter = supSel.value || '';
+        renderTable();
+      };
+    }
+    const sortSel = toolbar.querySelector('#clSort');
+    if (sortSel) {
+      sortSel.onchange = () => {
+        ctx.sortKey = sortSel.value || 'name';
+        renderTable();
+      };
+    }
+  }
+
   function syncGridLayout() {
     const wrap = $('clTableWrap');
     if (!wrap) return;
@@ -371,23 +489,39 @@ export function mountClosingPanel(route) {
     const stats = $('clStats');
     if (!body) return;
 
-    const rows = allRows();
+    const sourceRows = allRows();
+    paintToolbar(sourceRows);
+    const rows = filterClosingRows(sourceRows, {
+      statusFilter: ctx.statusFilter,
+      categoryFilter: ctx.categoryFilter,
+      supplierFilter: ctx.supplierFilter,
+    });
     if (stats) {
-      stats.hidden = !rows.length;
-      stats.innerHTML = rows.length ? renderStats(rows) : '';
+      stats.hidden = !sourceRows.length;
+      stats.innerHTML = sourceRows.length ? renderStats(rows) : '';
     }
 
-    if (!rows.length) {
+    if (!sourceRows.length) {
       body.innerHTML = '';
       if (table) table.hidden = true;
-      if (empty) empty.hidden = false;
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = 'Add products to this event before entering closing stock.';
+      }
       return;
     }
 
     if (table) table.hidden = false;
     if (empty) empty.hidden = true;
 
-    const grouped = groupByCategory(rows);
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="${COL_COUNT}" class="dist-empty">No products match your filter.</td></tr>`;
+      applyProductFilter({ query: ctx.searchQuery, productId: null });
+      requestAnimationFrame(layoutTableScroll);
+      return;
+    }
+
+    const grouped = groupClosingByCategory(rows, ctx.sortKey);
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
       html += `<tr class="dist-cat-row">
@@ -398,6 +532,7 @@ export function mountClosingPanel(route) {
     });
     body.innerHTML = html;
     syncPeerCellMarkers();
+    applyProductFilter({ query: ctx.searchQuery, productId: getLastProductFilter().productId });
     requestAnimationFrame(layoutTableScroll);
   }
 
@@ -491,7 +626,7 @@ export function mountClosingPanel(route) {
     }
     if (maxEl) maxEl.textContent = fmtMax(row.maxReturnable);
     const stats = $('clStats');
-    if (stats) stats.innerHTML = renderStats(allRows());
+    if (stats) stats.innerHTML = renderStats(visibleRows());
     syncRowActions(pid);
   }
 
@@ -519,16 +654,17 @@ export function mountClosingPanel(route) {
     return Object.keys(ctx.drafts).length + Object.keys(ctx.saveTimers).length;
   }
 
-  /** Debounced autosave — live sync kicks in after the write lands. */
+  /** Debounced autosave — draft values also broadcast live while typing. */
   function scheduleSave(pid) {
     if (!pid) return;
     clearTimeout(ctx.saveTimers[pid]);
     ctx.drafts[pid] = readDraft(pid);
     previewCarried(pid, ctx.drafts[pid]);
+    scheduleValueBroadcast();
     ctx.saveTimers[pid] = setTimeout(() => {
       delete ctx.saveTimers[pid];
       persist(pid).catch((e) => toast(e.message || 'Save failed', true));
-    }, 450);
+    }, AUTOSAVE_MS);
   }
 
   /** Flush one product immediately (blur / undo / action prep). */
@@ -561,6 +697,7 @@ export function mountClosingPanel(route) {
 
   function applyProductFilter({ query, productId } = {}) {
     const q = (query || '').trim().toLowerCase();
+    ctx.searchQuery = q;
     panel.querySelectorAll('.cl-row[data-cl-pid]').forEach((tr) => {
       if (productId) {
         tr.hidden = tr.dataset.clPid !== productId;
@@ -705,7 +842,7 @@ export function mountClosingPanel(route) {
     }
 
     const stats = $('clStats');
-    if (stats) stats.innerHTML = renderStats(allRows());
+    if (stats) stats.innerHTML = renderStats(visibleRows());
 
     if (flash) {
       const tr = panel.querySelector(`.cl-row[data-cl-pid="${CSS.escape(pid)}"]`);
@@ -744,29 +881,47 @@ export function mountClosingPanel(route) {
     applyRemoteRowToUi(remote.product_id);
   }
 
-  function focusPayload() {
+  function focusPayload(extra = {}) {
     const name = getDisplayName();
     const clientId = getClientId();
+    const field = ctx.focusField;
+    const productId = ctx.focusPid;
+    let value;
+    if (productId && field) {
+      const el = document.getElementById(`cl-${field}-${productId}`);
+      if (el) value = el.value;
+    }
     return {
       name: name || 'Someone',
       clientId,
-      productId: ctx.focusPid,
-      field: ctx.focusField,
+      productId,
+      field,
+      value,
       color: peerColor(clientId),
       at: Date.now(),
+      ...extra,
     };
   }
 
-  async function broadcastFocus() {
+  async function broadcastFocus(extra = {}) {
     const channel = ctx.liveChannel;
     if (!channel || !ctx.liveReady) return;
     try {
       await channel.send({
         type: 'broadcast',
         event: 'cell-focus',
-        payload: focusPayload(),
+        payload: focusPayload(extra),
       });
     } catch { /* ignore */ }
+  }
+
+  function scheduleValueBroadcast() {
+    if (!ctx.liveReady || !ctx.focusPid || !ctx.focusField) return;
+    clearTimeout(ctx.valueBroadcastTimer);
+    ctx.valueBroadcastTimer = setTimeout(() => {
+      ctx.valueBroadcastTimer = null;
+      broadcastFocus({ live: true });
+    }, VALUE_BROADCAST_MS);
   }
 
   async function trackPresence(patch = {}) {
@@ -786,6 +941,21 @@ export function mountClosingPanel(route) {
     } catch { /* ignore presence blips */ }
   }
 
+  function applyRemoteDraftValue(payload) {
+    if (!payload?.productId || !payload?.field) return;
+    if (payload.value == null) return;
+    if (ctx.drafts[payload.productId]) return;
+    if (ctx.focusPid === payload.productId) return;
+    const el = document.getElementById(`cl-${payload.field}-${payload.productId}`);
+    if (!el || document.activeElement === el) return;
+    if (el.value === String(payload.value)) return;
+    el.value = String(payload.value);
+    // Keep carried preview in sync without marking local drafts dirty.
+    const draft = readDraft(payload.productId);
+    previewCarried(payload.productId, draft);
+    delete ctx.drafts[payload.productId];
+  }
+
   function handleFocusBroadcast(payload) {
     if (ctx.abort || !payload) return;
     const clientId = payload.clientId;
@@ -800,6 +970,7 @@ export function mountClosingPanel(route) {
         field: payload.field,
         color: payload.color || peerColor(clientId),
       };
+      applyRemoteDraftValue(payload);
     }
     rebuildPeerCells();
   }
@@ -809,6 +980,10 @@ export function mountClosingPanel(route) {
     if (ctx.presenceTimer) {
       clearInterval(ctx.presenceTimer);
       ctx.presenceTimer = null;
+    }
+    if (ctx.valueBroadcastTimer) {
+      clearTimeout(ctx.valueBroadcastTimer);
+      ctx.valueBroadcastTimer = null;
     }
     const channel = ctx.liveChannel;
     ctx.liveChannel = null;
@@ -879,7 +1054,7 @@ export function mountClosingPanel(route) {
         if (ctx.presenceTimer) clearInterval(ctx.presenceTimer);
         ctx.presenceTimer = setInterval(() => {
           trackPresence();
-        }, 4000);
+        }, PRESENCE_HEARTBEAT_MS);
         if (textEl && (textEl.textContent === 'Connecting…' || !textEl.textContent)) {
           textEl.textContent = 'Just you here';
         }
