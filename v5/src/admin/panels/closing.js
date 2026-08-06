@@ -71,9 +71,10 @@ function fmtMax(n) {
 }
 
 function renderInput(pid, field, value, aria) {
+  const shown = value != null && value !== '' ? String(value) : '';
   return `<input type="text" class="cl-pill-input num-math" id="cl-${field}-${escapeHtml(pid)}"
     data-cl-pid="${escapeHtml(pid)}" data-cl-field="${field}"
-    value="${value ? escapeHtml(String(value)) : ''}"
+    value="${shown ? escapeHtml(shown) : ''}"
     autocomplete="off" inputmode="decimal" placeholder="-"
     aria-label="${escapeHtml(aria)}">`;
 }
@@ -87,10 +88,12 @@ function th(label, extraClass = '', left = false) {
 }
 
 function renderRow(r) {
-  const countForm = {
-    cases: r.closingCases ? String(r.closingCases) : '',
-    singles: r.closingSingles ? String(r.closingSingles) : '',
-  };
+  const countForm = r.hasClosing
+    ? {
+      cases: String(r.closingCases ?? 0),
+      singles: String(r.closingSingles ?? 0),
+    }
+    : { cases: '', singles: '' };
   const returnForm = (r.returnCases || r.returnSingles)
     ? {
       cases: r.returnCases ? String(r.returnCases) : '',
@@ -146,7 +149,7 @@ function renderRow(r) {
 }
 
 function renderStats(rows) {
-  const counted = rows.filter((r) => r.closeCount > 0 || r.closingCases > 0 || r.closingSingles > 0).length;
+  const counted = rows.filter((r) => r.hasClosing).length;
   const returning = rows.filter((r) => r.returnAmount > 0).length;
   const carried = rows.reduce((s, r) => s + (Number(r.carriedOver) || 0), 0);
   return `
@@ -241,7 +244,9 @@ export function mountClosingPanel(route) {
     abort: false,
     /** @type {Record<string, { cases: string, singles: string, returnCases: string, returnSingles: string }>} */
     focusRaw: {},
-    /** @type {Array<{ pid: string, raw: { cases: string, singles: string, returnCases: string, returnSingles: string } }>} */
+    /** @type {Record<string, boolean>} */
+    undoCaptured: {},
+    /** @type {Array<{ pid: string, raw: { cases: string, singles: string, returnCases: string, returnSingles: string }, cleared: boolean }>} */
     undoStack: [],
   };
 
@@ -291,18 +296,26 @@ export function mountClosingPanel(route) {
     btn.disabled = !has;
   }
 
-  function pushUndo(pid, rawBefore) {
-    if (!pid || !rawBefore) return;
+  /** Capture pre-edit values once per focus session (first keystroke that changes a cell). */
+  function captureUndoIfNeeded(pid) {
+    if (!pid || ctx.undoCaptured[pid]) return;
+    const before = ctx.focusRaw[pid];
+    if (!before) return;
     const rawNow = readRawFields(pid);
-    if (rawEqual(rawBefore, rawNow)) return;
-    ctx.undoStack.push({ pid, raw: { ...rawBefore } });
-    if (ctx.undoStack.length > 30) ctx.undoStack.shift();
-    syncUndoBtn();
-    const clearedField = Object.keys(rawBefore).some((k) => (
-      String(rawBefore[k] || '').trim() !== ''
+    if (rawEqual(before, rawNow)) return;
+    const cleared = Object.keys(before).some((k) => (
+      String(before[k] || '').trim() !== ''
       && String(rawNow[k] || '').trim() === ''
     ));
-    toast(clearedField ? 'Number cleared' : 'Count updated', false, {
+    ctx.undoStack.push({ pid, raw: { ...before }, cleared });
+    if (ctx.undoStack.length > 30) ctx.undoStack.shift();
+    ctx.undoCaptured[pid] = true;
+    syncUndoBtn();
+  }
+
+  function offerUndoToast(entry) {
+    if (!entry) return;
+    toast(entry.cleared ? 'Number cleared' : 'Count updated', false, {
       action: { label: 'Undo', onClick: () => { undoLast(); } },
       duration: 7000,
     });
@@ -314,6 +327,7 @@ export function mountClosingPanel(route) {
     if (!entry) return;
     const { pid, raw } = entry;
     delete ctx.focusRaw[pid];
+    delete ctx.undoCaptured[pid];
     applyRawFields(pid, raw);
     ctx.drafts[pid] = draftFromRaw(raw);
     previewCarried(pid, ctx.drafts[pid]);
@@ -555,27 +569,40 @@ export function mountClosingPanel(route) {
   function onInput(e) {
     const input = e.target.closest('.cl-pill-input');
     if (!input) return;
-    scheduleSave(input.dataset.clPid);
+    const pid = input.dataset.clPid;
+    captureUndoIfNeeded(pid);
+    scheduleSave(pid);
   }
 
   function onFocus(e) {
     const input = e.target.closest?.('.cl-pill-input');
     if (!input) return;
     const pid = input.dataset.clPid;
-    if (!pid || ctx.focusRaw[pid]) return;
-    // Snapshot the whole product row when editing starts so Undo restores
-    // every field on that line (not only the cell that changed).
-    ctx.focusRaw[pid] = readRawFields(pid);
+    if (!pid) return;
+    // Snapshot once per product-row edit session (survives tabbing Close C → Close S).
+    if (!ctx.focusRaw[pid]) {
+      ctx.focusRaw[pid] = readRawFields(pid);
+      ctx.undoCaptured[pid] = false;
+    }
   }
 
   function onBlur(e) {
     if (!e.target?.matches?.('.cl-pill-input')) return;
     const pid = e.target.dataset.clPid;
-    const before = ctx.focusRaw[pid];
-    if (before) {
-      pushUndo(pid, before);
-      delete ctx.focusRaw[pid];
+    const next = e.relatedTarget;
+    const stayingOnRow = next?.classList?.contains('cl-pill-input')
+      && next.dataset?.clPid === pid;
+    if (stayingOnRow) {
+      flushSave(pid);
+      return;
     }
+    // Offer toast after leaving the row so it does not fight mid-typing.
+    if (ctx.undoCaptured[pid]) {
+      const entry = [...ctx.undoStack].reverse().find((u) => u.pid === pid);
+      offerUndoToast(entry);
+    }
+    delete ctx.focusRaw[pid];
+    delete ctx.undoCaptured[pid];
     flushSave(pid);
   }
 

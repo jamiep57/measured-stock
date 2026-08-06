@@ -50,15 +50,19 @@ export function returnAmountToForm(returnAmount) {
   return { cases: String(n), singles: '' };
 }
 
+export function hasClosingCount(cl) {
+  return !!(cl && (
+    cl.closing_cases != null || cl.closing_singles != null || cl.close_count != null
+  ));
+}
+
 export function closingCountToForm(cl) {
   const { closingCases, closingSingles } = resolveClosingCounts(cl, null);
-  const has = cl && (
-    cl.closing_cases != null || cl.closing_singles != null || cl.close_count != null
-  );
-  if (!has) return { cases: '', singles: '' };
+  if (!hasClosingCount(cl)) return { cases: '', singles: '' };
+  // Keep explicit zeros visible — blank means not counted, "0" means counted as none.
   return {
-    cases: closingCases ? String(closingCases) : '',
-    singles: closingSingles ? String(closingSingles) : '',
+    cases: String(closingCases ?? 0),
+    singles: String(closingSingles ?? 0),
   };
 }
 
@@ -101,6 +105,8 @@ export function buildClosingRow({
   const closingCases = draft?.closingCases != null ? Number(draft.closingCases) : counts.closingCases;
   const closingSingles = draft?.closingSingles != null ? Number(draft.closingSingles) : counts.closingSingles;
   const closeCount = closeCountTotal(p, closingCases, closingSingles, caseSizes);
+  const hasClosing = hasClosingCount(cl)
+    || !!(draft && (draft.closingCases != null || draft.closingSingles != null));
 
   const returnCases = draft?.returnCases != null
     ? Number(draft.returnCases)
@@ -126,6 +132,7 @@ export function buildClosingRow({
     sor,
     invoiceQty: invQty,
     invoiceLabel: formatQtyLabel(p, invQty, 0, caseSizes),
+    hasClosing,
     closingCases,
     closingSingles,
     closeCount,
