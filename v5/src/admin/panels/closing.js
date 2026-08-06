@@ -71,9 +71,11 @@ function fmtMax(n) {
 }
 
 function renderInput(pid, field, value, aria) {
+  // Keep "0" visible — only blank/null/undefined mean “not entered”.
+  const shown = value != null && value !== '' ? String(value) : '';
   return `<input type="text" class="cl-pill-input num-math" id="cl-${field}-${escapeHtml(pid)}"
     data-cl-pid="${escapeHtml(pid)}" data-cl-field="${field}"
-    value="${value ? escapeHtml(String(value)) : ''}"
+    value="${shown !== '' ? escapeHtml(shown) : ''}"
     autocomplete="off" inputmode="decimal" placeholder="-"
     aria-label="${escapeHtml(aria)}">`;
 }
@@ -87,14 +89,16 @@ function th(label, extraClass = '', left = false) {
 }
 
 function renderRow(r) {
-  const countForm = {
-    cases: r.closingCases ? String(r.closingCases) : '',
-    singles: r.closingSingles ? String(r.closingSingles) : '',
-  };
-  const returnForm = (r.returnCases || r.returnSingles)
+  const countForm = r.hasClosing
     ? {
-      cases: r.returnCases ? String(r.returnCases) : '',
-      singles: r.returnSingles ? String(r.returnSingles) : '',
+      cases: String(r.closingCases ?? 0),
+      singles: String(r.closingSingles ?? 0),
+    }
+    : { cases: '', singles: '' };
+  const returnForm = (Number(r.returnCases) > 0 || Number(r.returnSingles) > 0)
+    ? {
+      cases: Number(r.returnCases) > 0 ? String(r.returnCases) : '',
+      singles: Number(r.returnSingles) > 0 ? String(r.returnSingles) : '',
     }
     : { cases: '', singles: '' };
   const canTransfer = (Number(r.carriedOver) || 0) > 0;
@@ -136,7 +140,7 @@ function renderRow(r) {
 }
 
 function renderStats(rows) {
-  const counted = rows.filter((r) => r.closeCount > 0 || r.closingCases > 0 || r.closingSingles > 0).length;
+  const counted = rows.filter((r) => r.hasClosing).length;
   const returning = rows.filter((r) => r.returnAmount > 0).length;
   const carried = rows.reduce((s, r) => s + (Number(r.carriedOver) || 0), 0);
   return `

@@ -80,7 +80,15 @@ describe('closingCountToForm', () => {
 
   it('falls back to close_count', () => {
     expect(closingCountToForm({ close_count: 8 }))
-      .toEqual({ cases: '8', singles: '' });
+      .toEqual({ cases: '8', singles: '0' });
+  });
+
+  it('keeps explicit zeros distinct from blank', () => {
+    expect(closingCountToForm({})).toEqual({ cases: '', singles: '' });
+    expect(closingCountToForm({ closing_cases: 0, closing_singles: 0 }))
+      .toEqual({ cases: '0', singles: '0' });
+    expect(closingCountToForm({ closing_cases: 0, closing_singles: 2 }))
+      .toEqual({ cases: '0', singles: '2' });
   });
 });
 
@@ -128,9 +136,45 @@ describe('buildClosingRow', () => {
     });
     expect(row.sor).toBe(10);
     expect(row.maxReturnable).toBe(10);
+    expect(row.hasClosing).toBe(true);
     expect(row.closeCount).toBe(20);
     expect(row.returnAmount).toBe(5);
     expect(row.carriedOver).toBe(15);
     expect(row.supplierName).toBe('Acme');
+  });
+
+  it('treats missing closing row as blank, not zero', () => {
+    const blank = buildClosingRow({
+      ep: { product_id: 'p1', product, invoice_qty: 10 },
+      closingRow: {},
+      suppliers: [{ id: 's1', name: 'Acme', default_sor_pct: 10 }],
+      caseSizes: [],
+    });
+    expect(blank.hasClosing).toBe(false);
+    expect(blank.closingCases).toBe(0);
+    expect(blank.closeCount).toBe(0);
+
+    const zero = buildClosingRow({
+      ep: { product_id: 'p1', product, invoice_qty: 10 },
+      closingRow: { closing_cases: 0, closing_singles: 0, close_count: 0 },
+      suppliers: [{ id: 's1', name: 'Acme', default_sor_pct: 10 }],
+      caseSizes: [],
+    });
+    expect(zero.hasClosing).toBe(true);
+    expect(zero.closingCases).toBe(0);
+    expect(zero.closeCount).toBe(0);
+  });
+
+  it('treats draft zeros as counted before the row is saved', () => {
+    const drafted = buildClosingRow({
+      ep: { product_id: 'p1', product, invoice_qty: 10 },
+      closingRow: {},
+      suppliers: [{ id: 's1', name: 'Acme', default_sor_pct: 10 }],
+      caseSizes: [],
+      draft: { closingCases: 0, closingSingles: 0 },
+    });
+    expect(drafted.hasClosing).toBe(true);
+    expect(drafted.closingCases).toBe(0);
+    expect(drafted.closeCount).toBe(0);
   });
 });
