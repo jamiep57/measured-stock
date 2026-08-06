@@ -184,4 +184,17 @@ describe('buildClosingRow', () => {
     expect(zero.closingCases).toBe(0);
     expect(zero.closeCount).toBe(0);
   });
+
+  it('treats draft zeros as counted before the row is saved', () => {
+    const drafted = buildClosingRow({
+      ep: { product_id: 'p1', product, invoice_qty: 10 },
+      closingRow: {},
+      suppliers: [{ id: 's1', name: 'Acme', default_sor_pct: 10 }],
+      caseSizes: [],
+      draft: { closingCases: 0, closingSingles: 0 },
+    });
+    expect(drafted.hasClosing).toBe(true);
+    expect(drafted.closingCases).toBe(0);
+    expect(drafted.closeCount).toBe(0);
+  });
 });

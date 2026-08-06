@@ -74,10 +74,11 @@ function fmtMax(n) {
 }
 
 function renderInput(pid, field, value, aria) {
+  // Keep "0" visible — only blank/null/undefined mean “not entered”.
   const shown = value != null && value !== '' ? String(value) : '';
   return `<input type="text" class="cl-pill-input num-math" id="cl-${field}-${escapeHtml(pid)}"
     data-cl-pid="${escapeHtml(pid)}" data-cl-field="${field}"
-    value="${shown ? escapeHtml(shown) : ''}"
+    value="${shown !== '' ? escapeHtml(shown) : ''}"
     autocomplete="off" inputmode="decimal" placeholder="-"
     aria-label="${escapeHtml(aria)}">`;
 }
@@ -97,10 +98,10 @@ function renderRow(r) {
       singles: String(r.closingSingles ?? 0),
     }
     : { cases: '', singles: '' };
-  const returnForm = (r.returnCases || r.returnSingles)
+  const returnForm = (Number(r.returnCases) > 0 || Number(r.returnSingles) > 0)
     ? {
-      cases: r.returnCases ? String(r.returnCases) : '',
-      singles: r.returnSingles ? String(r.returnSingles) : '',
+      cases: Number(r.returnCases) > 0 ? String(r.returnCases) : '',
+      singles: Number(r.returnSingles) > 0 ? String(r.returnSingles) : '',
     }
     : { cases: '', singles: '' };
   const canTransfer = (Number(r.carriedOver) || 0) > 0;
