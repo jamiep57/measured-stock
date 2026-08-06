@@ -16,6 +16,7 @@ import {
 } from '../../lib/recipient-transfer-report.js';
 import { generateRecipientInvoicePDF } from '../../lib/recipient-invoice-pdf.js';
 import { icon, initIcons } from '../../lib/icons.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
 
@@ -80,7 +81,7 @@ function savePricing(eventId, pricing) {
 export function renderReportsShell() {
   return `
     <div class="admin-page reports-page" id="reportsPanel">
-      <div class="mod-loading muted">Loading reports…</div>
+      ${loadingWidget('Loading reports…')}
     </div>`;
 }
 

@@ -13,6 +13,7 @@ import {
   renderQuickActions,
 } from '../../lib/dashboard-insights.js';
 import { icon, initIcons } from '../../lib/icons.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 
 
 function renderDashboard(ctx) {
@@ -44,7 +45,7 @@ function renderDashboard(ctx) {
 export function renderDashboardShell() {
   return `
     <div class="dash-panel" id="dashPanel">
-      <div class="mod-loading muted">Loading dashboard…</div>
+      ${loadingWidget('Loading dashboard…')}
     </div>`;
 }
 

@@ -30,12 +30,13 @@ function isOptionChecked(section, values, value) {
 function renderOption(section, opt, values) {
   const inputType = section.type === 'radio' ? 'radio' : 'checkbox';
   const checked = isOptionChecked(section, values, opt.value) ? ' checked' : '';
+  const disabled = opt.disabled ? ' disabled' : '';
   const meta = opt.meta
     ? `<span class="tfp-option-meta">${escapeHtml(opt.meta)}</span>`
     : '';
 
-  return `<label class="tfp-option tfp-option--${inputType}">
-    <input type="${inputType}" name="tfp-${escapeHtml(section.id)}" value="${escapeHtml(opt.value)}"${checked}>
+  return `<label class="tfp-option tfp-option--${inputType}${opt.disabled ? ' is-disabled' : ''}">
+    <input type="${inputType}" name="tfp-${escapeHtml(section.id)}" value="${escapeHtml(opt.value)}"${checked}${disabled}>
     <span class="tfp-option-control" aria-hidden="true"></span>
     <span class="tfp-option-label">${escapeHtml(opt.label)}</span>
     ${meta}

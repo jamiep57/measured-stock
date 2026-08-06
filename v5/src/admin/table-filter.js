@@ -7,6 +7,11 @@ import {
   mountCombinedTableFilterPanel,
   tableFilterIsActive,
 } from '../components/table-filter-panel.js';
+import {
+  RECON_COLS,
+  loadReconColVisibility,
+  saveReconColVisibility,
+} from '../lib/recon.js';
 
 export const ADMIN_TABLE_FILTER = 'admin-table-filter';
 export const ADMIN_DIST_CONTROLS = ADMIN_TABLE_FILTER;
@@ -30,7 +35,10 @@ let activeConfig = null;
 let topbarApi = null;
 let activeTab = 'filter';
 let distState = { ...DEFAULT_DIST, hiddenColumns: [] };
+let reconColVis = loadReconColVisibility();
+let reconState = { categories: [], showHidden: false };
 let categories = [];
+let reconCategoryOptions = [];
 let bars = [];
 
 function fixedColumnKeys() {
@@ -87,12 +95,67 @@ export function getDistControls() {
   };
 }
 
+export function getReconColVisibility() {
+  return { ...reconColVis };
+}
+
+export function getReconControls() {
+  return {
+    colVis: getReconColVisibility(),
+    categories: [...reconState.categories],
+    showHidden: reconState.showHidden,
+  };
+}
+
+function visibleReconColumns() {
+  return RECON_COLS.filter((c) => reconColVis[c.id] !== false).map((c) => c.id);
+}
+
+function reconFilterPanelValues() {
+  return {
+    categories: [...reconState.categories],
+    showHidden: reconState.showHidden ? 'hidden' : 'active',
+  };
+}
+
+function reconFilterPanelDefaults() {
+  return {
+    categories: [],
+    showHidden: 'active',
+  };
+}
+
+function reconColumnsPanelValues() {
+  return { visibleColumns: visibleReconColumns() };
+}
+
+function reconColumnsPanelDefaults() {
+  return { visibleColumns: RECON_COLS.map((c) => c.id) };
+}
+
+function setReconColumnVisibility(visibleKeys) {
+  const next = {};
+  RECON_COLS.forEach((c) => {
+    next[c.id] = visibleKeys.includes(c.id);
+  });
+  // Keep at least Product visible
+  if (next.item === false) next.item = true;
+  reconColVis = next;
+  saveReconColVisibility(reconColVis);
+}
+
+function resetReconState() {
+  reconState = { categories: [], showHidden: false };
+  reconColVis = loadReconColVisibility();
+}
+
 function emitFilter() {
+  const id = activeConfig?.id || null;
+  let values = null;
+  if (id === 'distribution') values = getDistControls();
+  else if (id === 'recon') values = getReconControls();
   document.dispatchEvent(new CustomEvent(ADMIN_TABLE_FILTER, {
-    detail: {
-      panel: activeConfig?.id || null,
-      values: activeConfig?.id === 'distribution' ? getDistControls() : null,
-    },
+    detail: { panel: id, values },
   }));
 }
 
@@ -161,6 +224,17 @@ function extractCategories(products) {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
+function extractReconCategories(products) {
+  const map = new Map();
+  (products || []).forEach((item) => {
+    const cat = item.product?.category || item.category;
+    if (cat?.id) map.set(cat.id, cat.name || 'Uncategorised');
+  });
+  return [...map.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function resetDistState() {
   distState = { ...DEFAULT_DIST, hiddenColumns: [] };
 }
@@ -182,7 +256,53 @@ function applyFilterChange(sectionId, value) {
   else if (sectionId === 'visibleFixedColumns') setFixedColumnVisibility(value);
 }
 
+function buildReconFilterSections() {
+  const sections = [];
+
+  if (reconCategoryOptions.length) {
+    sections.push({
+      id: 'categories',
+      label: 'Category',
+      type: 'checkbox',
+      showCount: true,
+      scroll: true,
+      options: reconCategoryOptions.map((c) => ({ value: c.id, label: c.name })),
+    });
+  }
+
+  sections.push({
+    id: 'showHidden',
+    label: 'Products',
+    type: 'radio',
+    options: [
+      { value: 'active', label: 'Included in recon' },
+      { value: 'hidden', label: 'Excluded from recon' },
+    ],
+  });
+
+  return sections;
+}
+
+function buildReconActiveItems() {
+  const items = [];
+  reconState.categories.forEach((id) => {
+    const cat = reconCategoryOptions.find((c) => c.id === id);
+    items.push({ id: `categories:${id}`, label: cat?.name || id });
+  });
+  if (reconState.showHidden) {
+    items.push({ id: 'showHidden', label: 'Excluded from recon' });
+  }
+  RECON_COLS.forEach((c) => {
+    if (reconColVis[c.id] === false) {
+      items.push({ id: `visibleColumns:${c.id}`, label: c.label });
+    }
+  });
+  return items;
+}
+
 function buildActiveItems() {
+  if (activeConfig?.id === 'recon') return buildReconActiveItems();
+
   const items = [];
 
   distState.categories.forEach((cat) => {
@@ -212,12 +332,37 @@ function buildActiveItems() {
 }
 
 function syncPanelValues() {
+  if (activeConfig?.id === 'recon') {
+    panelApi?.updateTab('filter', reconFilterPanelValues());
+    panelApi?.updateTab('columns', reconColumnsPanelValues());
+    return;
+  }
   panelApi?.updateTab('filter', filterPanelValues());
   panelApi?.updateTab('sort', sortPanelValues());
   if (bars.length) panelApi?.updateTab('bars', barsPanelValues());
 }
 
 function removeActiveItem(id) {
+  if (activeConfig?.id === 'recon') {
+    if (id.startsWith('categories:')) {
+      const catId = id.slice('categories:'.length);
+      reconState.categories = reconState.categories.filter((c) => c !== catId);
+    } else if (id === 'showHidden') {
+      reconState.showHidden = false;
+    } else if (id.startsWith('visibleColumns:')) {
+      const key = id.slice('visibleColumns:'.length);
+      reconColVis = { ...reconColVis, [key]: true };
+      saveReconColVisibility(reconColVis);
+    } else {
+      return;
+    }
+    syncPanelValues();
+    updateTopbarButton();
+    panelApi?.repaint();
+    emitFilter();
+    return;
+  }
+
   if (id === 'sort') {
     distState.sort = DEFAULT_DIST.sort;
   } else if (id.startsWith('categories:')) {
@@ -239,7 +384,65 @@ function removeActiveItem(id) {
   emitFilter();
 }
 
+function buildReconTabs() {
+  const tabs = [{
+    id: 'filter',
+    label: 'Filter',
+    icon: 'funnel',
+    sections: buildReconFilterSections(),
+    values: reconFilterPanelValues(),
+    onChange(sectionId, value) {
+      if (sectionId === 'categories') reconState.categories = value;
+      else if (sectionId === 'showHidden') reconState.showHidden = value === 'hidden';
+      updateTopbarButton();
+      panelApi.updateTab('filter', reconFilterPanelValues());
+      emitFilter();
+    },
+    onReset() {
+      reconState.categories = [];
+      reconState.showHidden = false;
+      panelApi.repaint();
+      updateTopbarButton();
+      emitFilter();
+    },
+  }, {
+    id: 'columns',
+    label: 'Columns',
+    icon: 'columns',
+    sections: [{
+      id: 'visibleColumns',
+      label: 'Visible columns',
+      type: 'checkbox',
+      showCount: true,
+      hideCountWhenFull: true,
+      scroll: true,
+      options: RECON_COLS.map((c) => ({
+        value: c.id,
+        label: c.label,
+        disabled: c.id === 'item',
+      })),
+    }],
+    values: reconColumnsPanelValues(),
+    onChange(_sectionId, value) {
+      setReconColumnVisibility(value);
+      updateTopbarButton();
+      panelApi.updateTab('columns', reconColumnsPanelValues());
+      emitFilter();
+    },
+    onReset() {
+      setReconColumnVisibility(RECON_COLS.map((c) => c.id));
+      panelApi.repaint();
+      updateTopbarButton();
+      emitFilter();
+    },
+  }];
+
+  return tabs;
+}
+
 function buildTabs() {
+  if (activeConfig?.id === 'recon') return buildReconTabs();
+
   const tabs = [{
     id: 'filter',
     label: 'Filter',
@@ -305,6 +508,23 @@ function buildTabs() {
 }
 
 function isPanelActive() {
+  if (activeConfig?.id === 'recon') {
+    const filterActive = tableFilterIsActive(
+      reconFilterPanelValues(),
+      reconFilterPanelDefaults(),
+      buildReconFilterSections(),
+    );
+    const columnsActive = tableFilterIsActive(
+      reconColumnsPanelValues(),
+      reconColumnsPanelDefaults(),
+      [{
+        id: 'visibleColumns',
+        type: 'checkbox',
+        options: RECON_COLS.map((c) => ({ value: c.id })),
+      }],
+    );
+    return Boolean(filterActive || columnsActive);
+  }
   const filterActive = tableFilterIsActive(
     filterPanelValues(),
     filterPanelDefaults(),
@@ -324,7 +544,12 @@ function updateTopbarButton() {
 }
 
 function remountPanel(container) {
-  if (!activeTab || (activeTab === 'bars' && !bars.length)) activeTab = 'filter';
+  if (activeConfig?.id === 'recon') {
+    const allowed = new Set(buildReconTabs().map((t) => t.id));
+    if (!activeTab || !allowed.has(activeTab)) activeTab = defaultTabForPanel();
+  } else if (!activeTab || (activeTab === 'bars' && !bars.length) || activeTab === 'columns') {
+    activeTab = 'filter';
+  }
 
   panelApi = mountCombinedTableFilterPanel(container, {
     tabs: buildTabs(),
@@ -361,11 +586,15 @@ function clickIsInsideTopbarFilter(e, btn, dropdown) {
     )));
 }
 
+function defaultTabForPanel() {
+  return 'filter';
+}
+
 function focusFilterTab() {
   const dropdown = $('topbarTableFilterPanel');
   if (!dropdown || dropdown.hidden) return;
-  activeTab = 'filter';
-  panelApi?.setActiveTab('filter');
+  activeTab = defaultTabForPanel();
+  panelApi?.setActiveTab(activeTab);
 }
 
 function onFilterButtonClick(e) {
@@ -373,11 +602,11 @@ function onFilterButtonClick(e) {
   const dropdown = $('topbarTableFilterPanel');
   if (!dropdown) return;
   if (dropdown.hidden) {
-    activeTab = 'filter';
+    activeTab = defaultTabForPanel();
     openPanel();
     return;
   }
-  // Panel open — always show Filter tab; never close (outside click closes).
+  // Panel open — always show primary tab; never close (outside click closes).
   focusFilterTab();
 }
 
@@ -398,9 +627,15 @@ export function initTableFilterTopbar() {
 
   topbarApi = {
     syncRoute(route, context = {}) {
-      const nextKey = route.view === 'event' && route.panel === 'distribution'
-        ? `dist:${route.eventId}`
-        : '';
+      let nextKey = '';
+      let panelId = null;
+      if (route.view === 'event' && route.panel === 'distribution') {
+        nextKey = `dist:${route.eventId}`;
+        panelId = 'distribution';
+      } else if (route.view === 'event' && route.panel === 'recon') {
+        nextKey = `recon:${route.eventId}`;
+        panelId = 'recon';
+      }
       const show = Boolean(nextKey);
 
       if (!show) {
@@ -410,16 +645,26 @@ export function initTableFilterTopbar() {
         return;
       }
 
-      activeConfig = { id: 'distribution' };
+      activeConfig = { id: panelId };
 
-      if (nextKey !== routeKey) {
+      const routeChanged = nextKey !== routeKey;
+      if (routeChanged) {
         routeKey = nextKey;
-        resetDistState();
-        activeTab = 'filter';
+        if (panelId === 'distribution') resetDistState();
+        if (panelId === 'recon') resetReconState();
       }
 
-      categories = extractCategories(context.products);
+      if (panelId === 'recon') {
+        reconCategoryOptions = extractReconCategories(context.products);
+        reconState.categories = reconState.categories.filter((id) =>
+          reconCategoryOptions.some((c) => c.id === id));
+        categories = [];
+      } else {
+        categories = extractCategories(context.products);
+        reconCategoryOptions = [];
+      }
       bars = context.bars || [];
+      if (routeChanged) activeTab = defaultTabForPanel();
       updateTopbarButton();
       emitFilter();
 
@@ -427,8 +672,9 @@ export function initTableFilterTopbar() {
     },
 
     reset() {
-      resetDistState();
-      activeTab = 'filter';
+      if (activeConfig?.id === 'recon') resetReconState();
+      else resetDistState();
+      activeTab = defaultTabForPanel();
       updateTopbarButton();
       emitFilter();
     },

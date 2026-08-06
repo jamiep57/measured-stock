@@ -1,5 +1,6 @@
 import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 import { getDB, loadEventFull } from '../../db.js';
 import {
   barServesProduct,
@@ -243,7 +244,7 @@ function filterProducts(ctx) {
 export function renderDistributionShell() {
   return `
     <div class="dist-panel" id="distPanel">
-      <div class="dist-loading">Loading distribution…</div>
+      ${loadingWidget('Loading distribution…')}
     </div>`;
 }
 

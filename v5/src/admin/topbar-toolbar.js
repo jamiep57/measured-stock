@@ -94,7 +94,7 @@ export const PANEL_TOOLBAR = {
           id: 'print-closing-count-sheet',
           icon: 'printer',
           label: 'Print closing sheet',
-          title: 'Print a blank closing stock count sheet for the whole event',
+          title: 'Print blank closing stock count sheets — all locations, whole event, or one bar',
         },
       ],
     },
@@ -431,7 +431,8 @@ export function initTopbarToolbar() {
         ? eventStrips
         : (globalStrips !== undefined && globalStrips !== null ? globalStrips : null);
       const strips = Array.isArray(configured) ? configured : null;
-      const showFilter = route.view === 'event' && route.panel === 'distribution';
+      const showFilter = route.view === 'event'
+        && (route.panel === 'distribution' || route.panel === 'recon');
       const showStrips = !!(strips && strips.length);
       const showToolbar = showStrips || showFilter || configured !== null;
 

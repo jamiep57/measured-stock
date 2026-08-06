@@ -131,6 +131,8 @@ async function boot() {
   initSheet();
   initBugSheet();
   initIcons();
+  // Mount early so the report button survives later boot failures.
+  mountBugReportFab();
   initSpreadsheetCells(document.body);
   wireNav();
   initSidebar((opts = {}) => {
@@ -148,7 +150,6 @@ async function boot() {
   }
 
   syncBugOpenDot();
-  mountBugReportFab();
 
   document.addEventListener(ADMIN_EVENTS_CHANGED, async (e) => {
     try {

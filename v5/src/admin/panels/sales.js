@@ -12,6 +12,7 @@ import { parseFractionQty, displayFractionQty, formatQtyAsFraction } from '../..
 import { mountProductSearch } from '../../components/product-search.js';
 import { groupProductsByPool, poolSummary } from '../../lib/volume-pools.js';
 import { icon } from '../../lib/icons.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 import { readModifierFile } from '../../lib/modifier-import.js';
 import { readTillFile } from '../../lib/till-import.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
@@ -268,7 +269,7 @@ function filterModRows(ctx) {
 export function renderSalesShell() {
   return `
     <div class="sales-panel" id="salesPanel">
-      <div class="mod-loading muted">Loading sales…</div>
+      ${loadingWidget('Loading sales…')}
     </div>`;
 }
 

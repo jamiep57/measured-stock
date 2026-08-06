@@ -318,28 +318,37 @@ export function syncBugFabVisibility() {
   wrap.hidden = !!$('bugsPanel') || isBugSheetOpen();
 }
 
-/** Floating report button — available on every admin page except Bugs. */
+/**
+ * Wire the sidebar-footer report button (markup lives in admin.html).
+ * Available on every admin page except Bugs / while the bug drawer is open.
+ */
 export function mountBugReportFab() {
-  if ($('bugReportFab')) {
+  let wrap = $('bugReportFab');
+  if (!wrap) {
+    const footer = document.querySelector('.sidebar-footer');
+    wrap = document.createElement('div');
+    wrap.className = 'bug-fab';
+    wrap.id = 'bugReportFab';
+    wrap.innerHTML = `
+      <button type="button" class="bug-fab-btn" id="bugReportFabBtn"
+        title="Report a bug or idea" aria-label="Report a bug or idea">
+        ${icon('bug', { size: 22, strokeWidth: 2 })}
+      </button>`;
+    (footer || document.body).appendChild(wrap);
+  }
+
+  const btn = $('bugReportFabBtn');
+  if (!btn || btn.dataset.bugFabWired === '1') {
     syncBugFabVisibility();
     return () => {};
   }
-
-  const wrap = document.createElement('div');
-  wrap.className = 'bug-fab';
-  wrap.id = 'bugReportFab';
-  wrap.innerHTML = `
-    <button type="button" class="bug-fab-btn" id="bugReportFabBtn"
-      title="Report a bug or idea" aria-label="Report a bug or idea">
-      ${icon('bug', { size: 22, strokeWidth: 2 })}
-    </button>`;
-  document.body.appendChild(wrap);
+  btn.dataset.bugFabWired = '1';
 
   const onClick = () => openBugReportForm();
   const onMut = () => requestAnimationFrame(syncBugFabVisibility);
   const onSheetToggle = () => syncBugFabVisibility();
 
-  $('bugReportFabBtn').addEventListener('click', onClick);
+  btn.addEventListener('click', onClick);
   document.addEventListener('bug-sheet-toggle', onSheetToggle);
 
   const content = $('adminContent');
@@ -352,10 +361,10 @@ export function mountBugReportFab() {
   syncBugFabVisibility();
 
   return () => {
-    $('bugReportFabBtn')?.removeEventListener('click', onClick);
+    btn.removeEventListener('click', onClick);
     document.removeEventListener('bug-sheet-toggle', onSheetToggle);
     mo?.disconnect();
-    wrap.remove();
+    delete btn.dataset.bugFabWired;
   };
 }
 

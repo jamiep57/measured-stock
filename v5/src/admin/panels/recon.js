@@ -3,7 +3,7 @@
  */
 
 import {
-  $, escapeHtml, toast, formatMoney,
+  $, escapeHtml, toast,
 } from '../../lib/util.js';
 import { initIcons } from '../../lib/icons.js';
 import {
@@ -11,12 +11,13 @@ import {
 } from '../../db.js';
 import { parseQty, storedToForm, totalUnitsForProduct } from '../../stock-entry.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { loadingTableRow } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { ADMIN_TABLE_FILTER } from '../table-filter.js';
 import {
   RECON_COLS,
   loadReconColVisibility,
-  saveReconColVisibility,
   computeReconRows,
   filterReconRows,
   reconTotals,
@@ -27,6 +28,7 @@ import {
   reconClosingTotal,
   closingRowFor,
   roundN,
+  consumptionPlusLooseCharge,
 } from '../../lib/recon.js';
 
 const STATUS_TITLES = {
@@ -73,19 +75,70 @@ function renderInlineInput(pid, fieldId, value) {
     autocomplete="off" inputmode="decimal" placeholder="—">`;
 }
 
-function rcnTh(col, label, extraClass = '') {
-  return `<th class="rcn-th dist-col-header ${extraClass}" data-rcn-col="${col}">
-    <div class="dist-bar-head"><span class="dist-bar-name">${label}</span></div>
+function rcnTh(col, label, extraClass = '', title = '') {
+  const tip = title || label;
+  return `<th class="rcn-th dist-col-header ${extraClass}" data-rcn-col="${col}" title="${escapeHtml(tip)}">
+    <div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(label)}</span></div>
   </th>`;
 }
 
 function productMetaLine(r) {
   const bits = [];
   if (r.p?.case_size) bits.push(r.p.case_size);
-  if (r.supplierName && r.supplierName !== '—') bits.push(r.supplierName);
-  const price = formatReconMoney(r.rowPrice);
-  if (price && price !== '—') bits.push(price);
+  if (r.multiSupplierDelivery) {
+    const names = (r.deliverySources || []).map((s) => s.supplierName).filter(Boolean);
+    if (names.length) bits.push(names.join(' + '));
+  } else {
+    if (r.supplierName && r.supplierName !== '—') bits.push(r.supplierName);
+    const price = formatReconMoney(r.rowPrice);
+    if (price && price !== '—') bits.push(price);
+  }
   return bits.join(' · ');
+}
+
+function deliveryWarnIcon(title) {
+  return ` <span class="recon-offer-warn" title="${escapeHtml(title)}">⚠</span>`;
+}
+
+function parentSupplierLabel(r) {
+  if (!r.multiSupplierDelivery) return r.supplierName || '—';
+  const names = (r.deliverySources || []).map((s) => s.supplierName).filter(Boolean);
+  if (names.length === 2) return names.join(' + ');
+  if (names.length > 2) return `Multiple (${names.length})`;
+  return 'Multiple';
+}
+
+function renderSubRows(r) {
+  if (!r.multiSupplierDelivery) return '';
+  return (r.deliverySources || []).map((s) => `
+    <tr class="recon-sub-row${r.reconHidden ? ' recon-row-hidden' : ''}"
+      data-rcn-pid="${escapeHtml(r.pid)}"
+      data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
+      data-rcn-status="${escapeHtml(r.reconStatus || '')}">
+      <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
+        <div class="rcn-item rcn-item--sub">
+          <span class="rcn-sub-label" title="${escapeHtml(s.supplierName)}">↳ ${escapeHtml(s.supplierName)}</span>
+        </div>
+      </td>
+      <td class="rcn-num rcn-num--money" data-rcn-col="case_price">${formatReconMoney(s.unitPrice)}</td>
+      <td class="rcn-col-supplier" data-rcn-col="supplier" title="${escapeHtml(s.supplierName)}">${escapeHtml(s.supplierName)}</td>
+      <td class="rcn-num rcn-meta" data-rcn-col="units_per_case"></td>
+      <td class="rcn-num rcn-group-start" data-rcn-col="delivered">${formatReconQty(s.qty)}</td>
+      <td class="rcn-num" data-rcn-col="invoiced"></td>
+      <td class="rcn-num" data-rcn-col="closing_cases"></td>
+      <td class="rcn-num" data-rcn-col="closing_units"></td>
+      <td class="rcn-num rcn-group-start" data-rcn-col="returned_to_supplier">${formatReconQty(s.returned)}</td>
+      <td class="rcn-num" data-rcn-col="transferred"></td>
+      <td class="rcn-num" data-rcn-col="wastage"></td>
+      <td class="rcn-num rcn-group-start" data-rcn-col="consumption"></td>
+      <td class="rcn-num" data-rcn-col="plu"></td>
+      <td class="rcn-num" data-rcn-col="variance"></td>
+      <td class="rcn-num rcn-num--money rcn-group-start" data-rcn-col="consumption_charge"></td>
+      <td class="rcn-num rcn-num--money" data-rcn-col="consumption_loose"></td>
+      <td class="rcn-num rcn-num--money" data-rcn-col="plu_charge"></td>
+      <td class="rcn-num rcn-num--money" data-rcn-col="invoice_charge">${formatReconMoney(s.cost)}</td>
+      <td class="rcn-num rcn-num--money rcn-budget" data-rcn-col="budget_cost"></td>
+    </tr>`).join('');
 }
 
 function renderRow(r) {
@@ -99,24 +152,37 @@ function renderRow(r) {
   const varSign = r.variance > 0 ? '+' : '';
   const varPct = (r.consumption !== 0 || r.plu !== 0) ? ` (${r.variancePct}%)` : '';
   const meta = productMetaLine(r);
+  const eventWarn = r.multiSupplierPriceWarn
+    ? deliveryWarnIcon('Delivered by multiple suppliers at different prices on this event')
+    : (r.multiOfferWarn
+      ? deliveryWarnIcon('Multiple supplier offers with different pack or price')
+      : '');
+  const supplierLabel = parentSupplierLabel(r);
+  const supplierTitle = r.multiSupplierPriceWarn
+    ? `${supplierLabel} — multiple suppliers at different prices`
+    : (r.multiOfferWarn ? `${supplierLabel} — multiple supplier offers differ` : supplierLabel);
+  const statusTitle = STATUS_TITLES[r.reconStatus] || '';
+  const statusDot = r.reconStatus
+    ? `<span class="rcn-item-status-dot rcn-seg-dot rcn-seg-dot--${escapeHtml(r.reconStatus)}" title="${escapeHtml(statusTitle)}" aria-label="${escapeHtml(statusTitle)}"></span>`
+    : '';
 
   return `
-    <tr class="recon-row${r.reconHidden ? ' recon-row-hidden' : ''}${r.investigate ? ' row-investigate' : ''}"
+    <tr class="recon-row${r.reconHidden ? ' recon-row-hidden' : ''}${r.investigate ? ' row-investigate' : ''}${r.multiSupplierDelivery ? ' recon-row--has-subs' : ''}"
       data-rcn-pid="${escapeHtml(r.pid)}" data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
       data-rcn-status="${escapeHtml(r.reconStatus || '')}">
       <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
         <div class="rcn-item">
           <div class="rcn-item-top">
+            ${statusDot}
             <span class="rcn-item-name" title="${escapeHtml(r.p.name || '')}">${escapeHtml(r.p.name || 'Product')}</span>
             <button type="button" class="recon-more-btn" data-rcn-edit="${escapeHtml(r.pid)}" title="Edit details" aria-label="Edit">⋯</button>
           </div>
-          ${meta ? `<span class="rcn-item-meta">${escapeHtml(meta)}${r.multiOfferWarn ? ' <span class="recon-offer-warn" title="Multiple supplier offers with different pack or price">⚠</span>' : ''}</span>` : ''}
+          ${meta ? `<span class="rcn-item-meta">${escapeHtml(meta)}${eventWarn}</span>` : ''}
           ${noteHint}
         </div>
       </td>
-      <td class="rcn-num rcn-meta" data-rcn-col="abv">${escapeHtml(r.p.abv != null && r.p.abv !== '' ? `${Number(r.p.abv).toFixed(1)}%` : '—')}</td>
       <td class="rcn-num rcn-num--money recon-drawer-cell" data-rcn-col="case_price" data-rcn-edit="${escapeHtml(r.pid)}" title="Edit price">${formatReconMoney(r.rowPrice)}</td>
-      <td class="rcn-col-supplier" data-rcn-col="supplier" title="${escapeHtml(r.supplierName)}${r.multiOfferWarn ? ' — multiple supplier offers differ' : ''}">${escapeHtml(r.supplierName)}${r.multiOfferWarn ? ' <span class="recon-offer-warn" title="Multiple supplier offers with different pack or price">⚠</span>' : ''}</td>
+      <td class="rcn-col-supplier" data-rcn-col="supplier" title="${escapeHtml(supplierTitle)}">${escapeHtml(supplierLabel)}${eventWarn}</td>
       <td class="rcn-num rcn-meta" data-rcn-col="units_per_case">${r.ups || '—'}</td>
       <td class="rcn-num rcn-group-start" data-rcn-col="delivered">${formatReconQty(r.delivered)}</td>
       <td class="rcn-cell--edit" data-rcn-col="invoiced">${renderInlineInput(r.pid, `rcn-inv-${r.pid}`, invVal)}</td>
@@ -133,33 +199,38 @@ function renderRow(r) {
       <td class="rcn-num rcn-num--money" data-rcn-col="plu_charge">${formatReconMoney(r.pluCharge)}</td>
       <td class="rcn-num rcn-num--money" data-rcn-col="invoice_charge">${formatReconMoney(r.invoiceCharge)}</td>
       <td class="rcn-num rcn-num--money rcn-budget" data-rcn-col="budget_cost">${formatReconMoney(r.budgetCost)}</td>
-    </tr>`;
+    </tr>${renderSubRows(r)}`;
 }
 
 function renderTotalRow(totals) {
-  const { totBudget, totConsLoose, totInvoice, totPlu, totVariance, totConsumption, totPluCases, totWastage } = totals;
+  const {
+    totBudget, totCons, totConsLoose, totInvoice, totPlu,
+    totVariance, totConsumption, totPluCases,
+  } = totals;
   const varCls = varianceClass(totConsumption, totPluCases, totVariance);
   const varSign = totVariance > 0 ? '+' : '';
   const denom = Math.max(Math.abs(totConsumption), Math.abs(totPluCases), 0.01);
   const varPct = (totConsumption !== 0 || totPluCases !== 0)
     ? ` (${roundN((totVariance / denom) * 100, 1)}%)` : '';
 
+  const shown = {
+    item: 'Total',
+    variance: `<span class="${varCls}">${varSign}${formatReconQty(totVariance)}${varPct}</span>`,
+    consumption_charge: formatReconMoney(totCons),
+    consumption_loose: formatReconMoney(totConsLoose),
+    plu_charge: formatReconMoney(totPlu),
+    invoice_charge: formatReconMoney(totInvoice),
+    budget_cost: formatReconMoney(totBudget),
+  };
+
   return `<tr class="recon-total-row">
     ${RECON_COLS.map((c) => {
-      let val = '';
       let cls = 'rcn-num';
-      if (c.id === 'item') { cls = 'rcn-col-item rcn-sticky'; val = 'Total'; }
-      else if (c.id === 'variance') {
-        cls += ' rcn-group-start';
-        val = `<span class="${varCls}">${varSign}${formatReconQty(totVariance)}${varPct}</span>`;
-      } else if (c.id === 'wastage') val = totWastage ? formatReconQty(totWastage) : '';
-      else if (c.id === 'consumption_loose') { cls += ' rcn-num--money rcn-emphasis'; val = formatReconMoney(totConsLoose); }
-      else if (c.id === 'plu_charge') { cls += ' rcn-num--money'; val = formatReconMoney(totPlu); }
-      else if (c.id === 'invoice_charge') { cls += ' rcn-num--money'; val = formatReconMoney(totInvoice); }
-      else if (c.id === 'budget_cost') { cls += ' rcn-num--money rcn-budget'; val = formatReconMoney(totBudget); }
-      else if (c.id === 'delivered' || c.id === 'returned_to_supplier' || c.id === 'consumption' || c.id === 'consumption_charge') {
-        cls += ' rcn-group-start';
-      }
+      if (c.id === 'item') cls = 'rcn-col-item rcn-sticky';
+      else if (c.id === 'consumption_charge' || c.id === 'consumption_loose') cls += ' rcn-num--money rcn-emphasis';
+      else if (c.id === 'plu_charge' || c.id === 'invoice_charge') cls += ' rcn-num--money';
+      else if (c.id === 'budget_cost') cls += ' rcn-num--money rcn-budget';
+      const val = shown[c.id] ?? '';
       return `<td class="${cls}" data-rcn-col="${c.id}">${val}</td>`;
     }).join('')}
   </tr>`;
@@ -177,8 +248,6 @@ function applyColVisibility(root, colVis) {
 export function renderReconShell() {
   return `
     <div class="rcn-panel" id="rcnPanel">
-      <p class="rcn-hint muted">Edit <strong>Invoiced</strong> and <strong>Closing</strong> inline, then hit <strong>Save changes</strong>. Click price, returns, or <strong>⋯</strong> for status and details. PLU comes from Square item sales.</p>
-      <div class="rcn-stats" id="rcnStats"></div>
       <div class="rcn-toolbar" id="rcnFilterRow">
         <div class="rcn-seg" role="tablist" aria-label="Status filter">
           <button type="button" class="rcn-seg-btn is-active" data-rcn-filter="" role="tab" aria-selected="true">All</button>
@@ -196,44 +265,33 @@ export function renderReconShell() {
           </button>
           <button type="button" class="rcn-seg-btn" data-rcn-filter="none" role="tab" aria-selected="false">Unmarked</button>
         </div>
-        <select id="rcnCatFilter" class="admin-input rcn-cat-select" aria-label="Category">
-          <option value="">All categories</option>
-        </select>
-        <button type="button" class="rcn-tool-btn" id="rcnHiddenToggle" title="Show products excluded from recon" aria-pressed="false">Hidden</button>
-        <div class="rcn-col-picker" id="rcnColPicker">
-          <button type="button" class="rcn-tool-btn" id="rcnColBtn" aria-expanded="false" aria-controls="rcnColMenu" title="Choose columns">
-            <i data-lucide="columns"></i> Columns
-          </button>
-          <div class="rcn-col-menu" id="rcnColMenu" hidden></div>
-        </div>
       </div>
       <div class="dist-grid-wrap rcn-table-wrap" id="rcnTableWrap">
         <table class="dist-grid rcn-grid" id="rcnTable">
           <thead>
             <tr class="rcn-head-row">
               ${rcnTh('item', 'Product', 'rcn-sticky rcn-col-item')}
-              ${rcnTh('abv', 'ABV', 'rcn-meta')}
               ${rcnTh('case_price', 'Price', 'rcn-num--money')}
               ${rcnTh('supplier', 'Supplier', 'rcn-col-supplier')}
-              ${rcnTh('units_per_case', 'Units / case', 'rcn-meta')}
-              ${rcnTh('delivered', 'Delivered', 'rcn-group-start')}
-              ${rcnTh('invoiced', 'Invoiced', 'rcn-th--edit')}
-              ${rcnTh('closing_cases', 'Close C', 'rcn-th--edit')}
-              ${rcnTh('closing_units', 'Close S', 'rcn-th--edit')}
+              ${rcnTh('units_per_case', 'Units', 'rcn-meta', 'Units per case')}
+              ${rcnTh('delivered', 'Deliv.', 'rcn-group-start', 'Delivered')}
+              ${rcnTh('invoiced', 'Inv.', 'rcn-th--edit', 'Invoiced')}
+              ${rcnTh('closing_cases', 'Close C', 'rcn-th--edit', 'Closing cases')}
+              ${rcnTh('closing_units', 'Close S', 'rcn-th--edit', 'Closing singles')}
               ${rcnTh('returned_to_supplier', 'Returns', 'rcn-group-start')}
-              ${rcnTh('transferred', 'Xfer', '')}
+              ${rcnTh('transferred', 'Xfer', '', 'Transferred')}
               ${rcnTh('wastage', 'Waste', '')}
-              ${rcnTh('consumption', 'Consumption', 'rcn-group-start rcn-emphasis')}
+              ${rcnTh('consumption', 'Cons', 'rcn-group-start rcn-emphasis', 'Consumption')}
               ${rcnTh('plu', 'PLU', 'rcn-emphasis')}
-              ${rcnTh('variance', 'Variance', '')}
-              ${rcnTh('consumption_charge', 'Cons £', 'rcn-group-start rcn-num--money')}
-              ${rcnTh('consumption_loose', 'Cons + loose', 'rcn-num--money rcn-emphasis')}
+              ${rcnTh('variance', 'Var', '', 'Variance')}
+              ${rcnTh('consumption_charge', 'Cons £', 'rcn-group-start rcn-num--money', 'Consumption charge')}
+              ${rcnTh('consumption_loose', 'Loose £', 'rcn-num--money rcn-emphasis', 'Closing singles ÷ units per case × price')}
               ${rcnTh('plu_charge', 'PLU £', 'rcn-num--money')}
-              ${rcnTh('invoice_charge', 'Invoice £', 'rcn-num--money')}
+              ${rcnTh('invoice_charge', 'Inv £', 'rcn-num--money', 'Invoice charge')}
               ${rcnTh('budget_cost', 'Budget', 'rcn-num--money rcn-budget')}
             </tr>
           </thead>
-          <tbody id="rcnBody"><tr><td colspan="${RECON_COLS.length}" class="dist-empty muted">Loading…</td></tr></tbody>
+          <tbody id="rcnBody">${loadingTableRow(RECON_COLS.length, 'Loading recon…')}</tbody>
         </table>
       </div>
       <div class="rcn-save-bar" id="rcnSaveBar" hidden>
@@ -266,7 +324,7 @@ export function mountReconPanel(route) {
     supplierReturns: [],
     deliveries: [],
     statusFilter: '',
-    categoryFilter: '',
+    categoryFilter: [],
     showHidden: false,
     colVis: loadReconColVisibility(),
     drafts: {},
@@ -318,80 +376,18 @@ export function mountReconPanel(route) {
   function visibleRows() {
     return filterReconRows(allRows(), {
       statusFilter: ctx.statusFilter,
-      categoryFilter: ctx.categoryFilter,
+      categories: ctx.categoryFilter,
     });
   }
 
-  function refreshCatFilter() {
-    const sel = $('rcnCatFilter');
-    if (!sel) return;
-    const cats = new Map();
-    (ctx.event?.event_products || []).forEach((ep) => {
-      const c = ep.product?.category;
-      if (c?.id) cats.set(c.id, c.name);
-    });
-    const cur = ctx.categoryFilter;
-    sel.innerHTML = '<option value="">All categories</option>'
-      + [...cats.entries()].sort((a, b) => a[1].localeCompare(b[1]))
-        .map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('');
-    if ([...cats.keys()].includes(cur)) sel.value = cur;
-    else { sel.value = ''; ctx.categoryFilter = ''; }
-  }
-
-  function initColMenu() {
-    const menu = $('rcnColMenu');
-    if (!menu || menu.dataset.ready) return;
-    menu.innerHTML = `
-      <div class="rcn-col-menu-head">
-        <span>Visible columns</span>
-        <button type="button" id="rcnColReset">Show all</button>
-      </div>
-      ${RECON_COLS.map((c) => `
-        <label class="rcn-col-option">
-          <input type="checkbox" data-rcn-col-toggle="${c.id}"${ctx.colVis[c.id] !== false ? ' checked' : ''}>
-          ${escapeHtml(c.label)}
-        </label>`).join('')}`;
-    menu.dataset.ready = '1';
-  }
-
-  function renderStats(rows) {
-    const el = $('rcnStats');
-    if (!el) return;
-    const totals = reconTotals(rows);
-    const sc = totals.statusCounts;
-    el.innerHTML = `
-      <div class="wst-stat rcn-stat--budget">
-        <span class="wst-stat-label">Budget cost</span>
-        <span class="wst-stat-value">${formatMoney(totals.totBudget)}</span>
-        <span class="wst-stat-sub muted">Total to bill</span>
-      </div>
-      <div class="wst-stat">
-        <span class="wst-stat-label">Action</span>
-        <span class="wst-stat-value rcn-stat-value--red">${sc.red}</span>
-      </div>
-      <div class="wst-stat">
-        <span class="wst-stat-label">Review</span>
-        <span class="wst-stat-value rcn-stat-value--yellow">${sc.yellow}</span>
-      </div>
-      <div class="wst-stat">
-        <span class="wst-stat-label">Done</span>
-        <span class="wst-stat-value rcn-stat-value--green">${sc.green}</span>
-      </div>
-      <div class="wst-stat">
-        <span class="wst-stat-label">None returned</span>
-        <span class="wst-stat-value rcn-stat-value--blue">${sc.blue}</span>
-      </div>
-      <div class="wst-stat">
-        <span class="wst-stat-label">Unmarked</span>
-        <span class="wst-stat-value">${sc.none}</span>
-      </div>`;
+  function hasCategoryFilter() {
+    return Array.isArray(ctx.categoryFilter) && ctx.categoryFilter.length > 0;
   }
 
   function renderTable() {
     const body = $('rcnBody');
     if (!body) return;
-    const totalSource = (ctx.statusFilter || ctx.categoryFilter) ? visibleRows() : allRows().filter((r) => !r.reconHidden);
-    renderStats(totalSource);
+    const totalSource = (ctx.statusFilter || hasCategoryFilter()) ? visibleRows() : allRows().filter((r) => !r.reconHidden);
 
     const rows = visibleRows();
     const all = allRows();
@@ -413,7 +409,10 @@ export function mountReconPanel(route) {
     const grouped = groupByCategory(rows);
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += `<tr class="dist-cat-row"><td colspan="${RECON_COLS.length}" class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td></tr>`;
+      html += `<tr class="dist-cat-row">
+        <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
+        <td colspan="${RECON_COLS.length - 1}" class="dist-cat-scroll"></td>
+      </tr>`;
       grouped[cat].forEach((r) => { html += renderRow(r); });
     });
     html += renderTotalRow(reconTotals(totalSource));
@@ -438,14 +437,13 @@ export function mountReconPanel(route) {
   }
 
   function totalSourceRows() {
-    return (ctx.statusFilter || ctx.categoryFilter)
+    return (ctx.statusFilter || hasCategoryFilter())
       ? visibleRows()
       : allRows().filter((r) => !r.reconHidden);
   }
 
   function refreshStatsAndTotalRow() {
     const totalSource = totalSourceRows();
-    renderStats(totalSource);
     const body = $('rcnBody');
     if (!body) return;
     const existing = body.querySelector('.recon-total-row');
@@ -591,66 +589,284 @@ export function mountReconPanel(route) {
     const ep = ctx.event?.event_products?.find((x) => x.product_id === pid);
     if (!ep) return;
     ctx.drawerPid = pid;
-    const cl = closingRowFor(ctx.closingRows, pid) || {};
+
+    const hadClosingRow = !!closingRowFor(ctx.closingRows, pid);
+    let row = closingRowFor(ctx.closingRows, pid);
+    if (!row) {
+      row = { event_id: ctx.eventId, product_id: pid };
+      ctx.closingRows.push(row);
+    }
+
     const p = ep.product;
-    const curStatus = cl.recon_status || '';
+    const curStatus = row.recon_status || '';
+    const catName = (ep.product?.category?.name || '').toLowerCase();
+    const unitPricePh = /spirit|wine/.test(catName) ? '£/bottle' : 'Optional £/unit';
+    const metaBits = [p?.case_size, ep.product?.category?.name].filter(Boolean);
+    const prev = {
+      budget_method: row.budget_method ?? null,
+      budget_override: row.budget_override ?? null,
+      order_price_override: ep.order_price_override ?? null,
+      order_unit_price_override: ep.order_unit_price_override ?? null,
+    };
+    let committed = false;
 
     openSheet({
       title: `Edit recon — ${p?.name || 'Product'}`,
       bodyHtml: `
-        <div class="rcn-drawer">
-          <p class="muted">${escapeHtml(p?.case_size || '')} · ${escapeHtml(ep.product?.category?.name || '')}</p>
-          <div class="admin-field">
-            <label class="admin-label" for="rcnDrawerStatus">Status</label>
-            <select class="admin-input" id="rcnDrawerStatus">
-              <option value=""${!curStatus ? ' selected' : ''}>Unmarked</option>
-              <option value="red"${curStatus === 'red' ? ' selected' : ''}>${STATUS_TITLES.red}</option>
-              <option value="yellow"${curStatus === 'yellow' ? ' selected' : ''}>${STATUS_TITLES.yellow}</option>
-              <option value="green"${curStatus === 'green' ? ' selected' : ''}>${STATUS_TITLES.green}</option>
-              <option value="blue"${curStatus === 'blue' ? ' selected' : ''}>${STATUS_TITLES.blue}</option>
-            </select>
+        <div class="admin-drawer-form rcn-drawer">
+          ${metaBits.length ? `<p class="rcn-drawer-meta muted">${escapeHtml(metaBits.join(' · '))}</p>` : ''}
+
+          <div class="rcn-drawer-section">
+            <div class="admin-field">
+              <label class="admin-label" for="rcnDrawerStatus">Status</label>
+              <div class="rcn-drawer-status-wrap">
+                <span class="rcn-drawer-status-dot rcn-seg-dot${curStatus ? ` rcn-seg-dot--${escapeHtml(curStatus)}` : ''}" id="rcnDrawerStatusDot" aria-hidden="true"></span>
+                <select class="admin-input" id="rcnDrawerStatus">
+                  <option value=""${!curStatus ? ' selected' : ''}>Unmarked</option>
+                  <option value="red"${curStatus === 'red' ? ' selected' : ''}>${STATUS_TITLES.red}</option>
+                  <option value="yellow"${curStatus === 'yellow' ? ' selected' : ''}>${STATUS_TITLES.yellow}</option>
+                  <option value="green"${curStatus === 'green' ? ' selected' : ''}>${STATUS_TITLES.green}</option>
+                  <option value="blue"${curStatus === 'blue' ? ' selected' : ''}>${STATUS_TITLES.blue}</option>
+                </select>
+              </div>
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="rcnDrawerNote">Note</label>
+              <textarea class="admin-textarea rcn-drawer-note-input" id="rcnDrawerNote" rows="2" placeholder="Investigate, allowance, etc.">${escapeHtml(row.recon_note || '')}</textarea>
+            </div>
           </div>
-          <div class="admin-field">
-            <label class="admin-label" for="rcnDrawerCasePrice">Case price override (£)</label>
-            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerCasePrice"
-              value="${ep.order_price_override != null ? escapeHtml(String(ep.order_price_override)) : ''}" placeholder="Default from supplier offer">
+
+          <div class="rcn-drawer-section">
+            <div class="rcn-drawer-section-label">Prices</div>
+            <div class="admin-field-grid">
+              <div class="admin-field">
+                <label class="admin-label" for="rcnDrawerCasePrice">Case override (£)</label>
+                <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerCasePrice"
+                  value="${ep.order_price_override != null ? escapeHtml(String(ep.order_price_override)) : ''}" placeholder="From offer">
+              </div>
+              <div class="admin-field">
+                <label class="admin-label" for="rcnDrawerUnitPrice">Unit override (£)</label>
+                <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerUnitPrice"
+                  value="${ep.order_unit_price_override != null ? escapeHtml(String(ep.order_unit_price_override)) : ''}" placeholder="${escapeHtml(unitPricePh)}">
+              </div>
+            </div>
           </div>
-          <div class="admin-field">
-            <label class="admin-label" for="rcnDrawerUnitPrice">Unit price override (£)</label>
-            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerUnitPrice"
-              value="${ep.order_unit_price_override != null ? escapeHtml(String(ep.order_unit_price_override)) : ''}" placeholder="Spirits — £/bottle">
+
+          <div class="rcn-drawer-section">
+            <div class="rcn-drawer-section-label">Budget</div>
+            <div class="admin-field">
+              <label class="admin-label" for="rcnDrawerBudget">Method</label>
+              <select class="admin-input" id="rcnDrawerBudget">
+                <option value="auto"${(row.budget_method || 'auto') === 'auto' ? ' selected' : ''}>Auto</option>
+                <option value="consumption"${row.budget_method === 'consumption' ? ' selected' : ''}>Consumption charge</option>
+                <option value="consumption_loose"${row.budget_method === 'consumption_loose' ? ' selected' : ''}>Consumption + loose</option>
+                <option value="plu"${row.budget_method === 'plu' ? ' selected' : ''}>PLU charge</option>
+                <option value="invoice"${row.budget_method === 'invoice' ? ' selected' : ''}>Invoice charge</option>
+                <option value="manual"${row.budget_method === 'manual' ? ' selected' : ''}>Manual</option>
+              </select>
+            </div>
+            <div class="admin-field" id="rcnDrawerBudgetManualField"${(row.budget_method || 'auto') === 'manual' ? '' : ' hidden'}>
+              <label class="admin-label" for="rcnDrawerBudgetManual">Manual budget (£)</label>
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerBudgetManual"
+                value="${row.budget_override != null ? escapeHtml(String(row.budget_override)) : ''}"
+                placeholder="Enter amount"
+                ${(row.budget_method || 'auto') === 'manual' ? '' : ' disabled'}>
+            </div>
+            <div class="rcn-drawer-budget-preview" id="rcnDrawerBudgetPreviewBox">
+              <div class="rcn-ledger" id="rcnDrawerBudgetTable" aria-label="Budget breakdown"></div>
+            </div>
           </div>
-          <div class="admin-field">
-            <label class="admin-label" for="rcnDrawerNote">Note</label>
-            <textarea class="admin-input" id="rcnDrawerNote" rows="2" placeholder="Investigate, allowance, etc.">${escapeHtml(cl.recon_note || '')}</textarea>
-          </div>
-          <div class="admin-field">
-            <label class="admin-label" for="rcnDrawerBudget">Budget method</label>
-            <select class="admin-input" id="rcnDrawerBudget">
-              <option value="auto"${(cl.budget_method || 'auto') === 'auto' ? ' selected' : ''}>Auto</option>
-              <option value="consumption"${cl.budget_method === 'consumption' ? ' selected' : ''}>Consumption charge</option>
-              <option value="consumption_loose"${cl.budget_method === 'consumption_loose' ? ' selected' : ''}>Consumption + loose</option>
-              <option value="plu"${cl.budget_method === 'plu' ? ' selected' : ''}>PLU charge</option>
-              <option value="invoice"${cl.budget_method === 'invoice' ? ' selected' : ''}>Invoice charge</option>
-              <option value="manual"${cl.budget_method === 'manual' ? ' selected' : ''}>Manual</option>
-            </select>
-          </div>
-          <div class="admin-field">
-            <label class="admin-label" for="rcnDrawerBudgetManual">Manual budget (£)</label>
-            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerBudgetManual"
-              value="${cl.budget_override != null ? escapeHtml(String(cl.budget_override)) : ''}">
-          </div>
-          <label class="admin-check">
-            <input type="checkbox" id="rcnDrawerHidden"${ep.recon_hidden ? ' checked' : ''}>
-            Exclude from recon
-          </label>
-          <p class="rcn-drawer-note muted">Supplier returns are edited on Closing. This drawer is for status, prices, notes, and budget.</p>
         </div>`,
       footHtml: `
-        <button type="button" class="btn btn-outline" id="rcnDrawerCancel">Cancel</button>
-        <button type="button" class="btn btn-primary" id="rcnDrawerSave">Save</button>`,
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          <label class="rcn-drawer-check rcn-drawer-check--foot">
+            <input type="checkbox" id="rcnDrawerHidden"${ep.recon_hidden ? ' checked' : ''}>
+            <span>Exclude from recon</span>
+          </label>
+          <div class="admin-drawer-foot-actions">
+            <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="rcnDrawerCancel">Cancel</button>
+            <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="rcnDrawerSave">Save</button>
+          </div>
+        </div>`,
       variant: 'admin-full',
+      onClose: () => {
+        if (!committed) {
+          if (!hadClosingRow) {
+            const idx = ctx.closingRows.indexOf(row);
+            if (idx >= 0) ctx.closingRows.splice(idx, 1);
+          } else {
+            row.budget_method = prev.budget_method;
+            row.budget_override = prev.budget_override;
+          }
+          ep.order_price_override = prev.order_price_override;
+          ep.order_unit_price_override = prev.order_unit_price_override;
+          refreshRowDerived(pid);
+          refreshStatsAndTotalRow();
+        }
+        ctx.drawerPid = null;
+      },
     });
+
+    function syncStatusDot() {
+      const dot = $('rcnDrawerStatusDot');
+      const status = $('rcnDrawerStatus')?.value || '';
+      if (!dot) return;
+      dot.className = `rcn-drawer-status-dot rcn-seg-dot${status ? ` rcn-seg-dot--${status}` : ''}`;
+    }
+
+    function fmtLedgerQty(n) {
+      const v = Number(n) || 0;
+      return Number.isInteger(v) ? String(v) : String(roundN(v, 2));
+    }
+
+    function ledgerLine(op, label, value, { money = false, total = false, sub = false, rule = false } = {}) {
+      const cls = [
+        'rcn-ledger-row',
+        total ? 'is-total' : '',
+        sub ? 'is-sub' : '',
+        rule ? 'has-rule' : '',
+      ].filter(Boolean).join(' ');
+      const shown = money ? formatReconMoney(value) : fmtLedgerQty(value);
+      return `<div class="${cls}">
+        <span class="rcn-ledger-op">${escapeHtml(op || '')}</span>
+        <span class="rcn-ledger-label">${escapeHtml(label)}</span>
+        <span class="rcn-ledger-val">${escapeHtml(shown)}</span>
+      </div>`;
+    }
+
+    function consumptionStockLines(r) {
+      const already = Number(ep.already_in_stock) || 0;
+      const closingStock = roundN(
+        (Number(r.delivered) || 0)
+        + already
+        - (Number(r.transferred) || 0)
+        - (Number(r.wastage) || 0)
+        - (Number(r.consumption) || 0),
+        2,
+      );
+      let html = ledgerLine('', 'Delivered', r.delivered);
+      if (already) html += ledgerLine('+', 'Already on hand', already);
+      html += ledgerLine('−', 'Closing', closingStock);
+      html += ledgerLine('−', 'Transferred', r.transferred);
+      html += ledgerLine('−', 'Wastage', r.wastage);
+      html += ledgerLine('=', 'Consumption', r.consumption, { sub: true, rule: true });
+      html += ledgerLine('×', 'Price', r.rowPrice, { money: true });
+      html += ledgerLine('=', 'Consumption £', r.consumptionCharge, { money: true, sub: true, rule: true });
+      return html;
+    }
+
+    function syncBudgetPreview() {
+      const method = $('rcnDrawerBudget')?.value || 'auto';
+      const manualRaw = $('rcnDrawerBudgetManual')?.value.trim() ?? '';
+      const manualEl = $('rcnDrawerBudgetManual');
+      const manualField = $('rcnDrawerBudgetManualField');
+      const isManual = method === 'manual';
+      if (manualEl) manualEl.disabled = !isManual;
+      if (manualField) manualField.hidden = !isManual;
+
+      const casePrice = $('rcnDrawerCasePrice')?.value.trim() ?? '';
+      const unitPrice = $('rcnDrawerUnitPrice')?.value.trim() ?? '';
+      ep.order_price_override = casePrice === '' ? null : parseQty(casePrice);
+      ep.order_unit_price_override = unitPrice === '' ? null : parseQty(unitPrice);
+
+      row.budget_method = method;
+      row.budget_override = isManual && manualRaw !== ''
+        ? parseQty(manualRaw) : null;
+
+      const r = allRows().find((x) => x.pid === pid);
+      const list = $('rcnDrawerBudgetTable');
+      if (list && r) {
+        const looseCases = r.ups > 0 ? roundN((Number(r.closingSingles) || 0) / r.ups, 4) : 0;
+        const consPlusLoose = consumptionPlusLooseCharge(r);
+        const activeKey = isManual ? 'manual'
+          : method === 'auto'
+            ? (r.invoiced > 0 ? 'consumption_loose'
+              : (consPlusLoose >= (r.pluCharge || 0) ? 'consumption_loose' : 'plu'))
+            : method;
+        const autoNote = method === 'auto'
+          ? (activeKey === 'consumption_loose'
+            ? (r.invoiced > 0
+              ? 'Auto → Cons + loose (invoice qty set)'
+              : 'Auto → Cons + loose (higher than PLU)')
+            : 'Auto → PLU (higher than Cons + loose)')
+          : '';
+
+        let body = '';
+        if (activeKey === 'consumption' || activeKey === 'consumption_loose') {
+          body += consumptionStockLines(r);
+          if (activeKey === 'consumption_loose') {
+            const looseLabel = Number(r.closingSingles) || 0
+              ? `Loose (${fmtLedgerQty(r.closingSingles)} singles ÷ ${fmtLedgerQty(r.ups)} = ${fmtLedgerQty(looseCases)} cs)`
+              : 'Loose';
+            body += ledgerLine('+', looseLabel, r.consumptionLooseCharge, { money: true });
+          }
+          body += ledgerLine('=', 'Budget', activeKey === 'consumption_loose' ? consPlusLoose : r.consumptionCharge, {
+            money: true,
+            total: true,
+            rule: true,
+          });
+        } else if (activeKey === 'plu') {
+          body += ledgerLine('', 'PLU units', r.plu);
+          body += ledgerLine('×', 'Price', r.rowPrice, { money: true });
+          body += ledgerLine('=', 'Budget', r.pluCharge, { money: true, total: true, rule: true });
+        } else if (activeKey === 'invoice') {
+          body += ledgerLine('', 'Invoiced', r.invoiced);
+          body += ledgerLine('×', 'Case price', r.casePrice, { money: true });
+          body += ledgerLine('=', 'Budget', r.invoiceCharge, { money: true, total: true, rule: true });
+        } else {
+          body += ledgerLine('=', 'Manual budget', r.budgetCost, { money: true, total: true });
+        }
+
+        const alts = [
+          { key: 'consumption', label: 'Consumption', val: r.consumptionCharge },
+          { key: 'consumption_loose', label: 'Cons + loose', val: consPlusLoose },
+          { key: 'plu', label: 'PLU', val: r.pluCharge },
+          { key: 'invoice', label: 'Invoice', val: r.invoiceCharge },
+        ].filter((a) => a.key !== activeKey);
+
+        list.innerHTML = (autoNote
+          ? `<div class="rcn-ledger-note">${escapeHtml(autoNote)}</div>`
+          : '')
+          + body
+          + (alts.length && !isManual
+            ? `<div class="rcn-ledger-alts">
+                <div class="rcn-ledger-alts-label">Other methods</div>
+                ${alts.map((a) => `<button type="button" class="rcn-ledger-alt" data-rcn-budget="${escapeHtml(a.key)}">
+                  <span>${escapeHtml(a.label)}</span>
+                  <span>${formatReconMoney(a.val)}</span>
+                </button>`).join('')}
+              </div>`
+            : '');
+      }
+
+      const priceTd = panel.querySelector(
+        `.recon-row[data-rcn-pid="${CSS.escape(pid)}"] [data-rcn-col="case_price"]`,
+      );
+      if (priceTd) priceTd.textContent = formatReconMoney(r?.rowPrice);
+      refreshRowDerived(pid);
+      refreshStatsAndTotalRow();
+    }
+
+    const budgetList = $('rcnDrawerBudgetTable');
+    if (budgetList) {
+      budgetList.onclick = (e) => {
+        const btn = e.target.closest('[data-rcn-budget]');
+        if (!btn) return;
+        const key = btn.getAttribute('data-rcn-budget');
+        const sel = $('rcnDrawerBudget');
+        if (!sel || !key) return;
+        sel.value = key;
+        syncBudgetPreview();
+      };
+    }
+    $('rcnDrawerStatus').onchange = syncStatusDot;
+    $('rcnDrawerBudget').onchange = syncBudgetPreview;
+    $('rcnDrawerBudget').oninput = syncBudgetPreview;
+    $('rcnDrawerBudgetManual').oninput = syncBudgetPreview;
+    $('rcnDrawerCasePrice').oninput = syncBudgetPreview;
+    $('rcnDrawerUnitPrice').oninput = syncBudgetPreview;
+    syncStatusDot();
+    syncBudgetPreview();
 
     $('rcnDrawerCancel').onclick = closeSheet;
     $('rcnDrawerSave').onclick = async () => {
@@ -673,24 +889,26 @@ export function mountReconPanel(route) {
         ep.order_unit_price_override = unitPrice === '' ? null : parseQty(unitPrice);
         ep.recon_hidden = hidden;
 
-        let row = closingRowFor(ctx.closingRows, pid);
-        if (!row) {
-          row = { event_id: ctx.eventId, product_id: pid };
-          ctx.closingRows.push(row);
-        }
         row.recon_status = status;
         row.recon_note = note || null;
         row.budget_method = budgetMethod;
         row.budget_override = budgetMethod === 'manual' && budgetManual !== ''
           ? parseQty(budgetManual) : null;
 
-        await DB.closing.setForEvent(ctx.eventId, pid, {
+        const saved = await DB.closing.setForEvent(ctx.eventId, pid, {
+          closing_cases: row.closing_cases ?? 0,
+          closing_singles: row.closing_singles ?? 0,
+          close_count: row.close_count ?? 0,
+          return_amount: row.return_amount ?? 0,
+          carried_over: row.carried_over ?? 0,
           recon_status: row.recon_status,
           recon_note: row.recon_note,
           budget_method: row.budget_method,
           budget_override: row.budget_override,
         });
+        if (saved) Object.assign(row, saved);
 
+        committed = true;
         closeSheet();
         renderTable();
         toast('Recon line saved');
@@ -706,7 +924,7 @@ export function mountReconPanel(route) {
       'Status', 'Item', 'Case Size', 'ABV', 'Price', 'Supplier', 'Units per case',
       'Delivered', 'Invoiced', 'Closing (Cases)', 'Closing (Singles)',
       'Returned to supplier', 'Transferred', 'Wastage', 'Consumption', 'PLU', 'Variance', 'Variance %',
-      'Consumption Charge', 'Consumption + Loose', 'PLU Charge', 'Invoice Charge', 'Budget Cost', 'Notes',
+      'Consumption Charge', 'Loose Charge', 'PLU Charge', 'Invoice Charge', 'Budget Cost', 'Notes',
     ];
     const esc = (v) => {
       const s = String(v ?? '');
@@ -761,7 +979,7 @@ export function mountReconPanel(route) {
 
   function applyProductFilter({ query, productId } = {}) {
     const q = (query || '').trim().toLowerCase();
-    panel.querySelectorAll('.recon-row[data-rcn-pid]').forEach((tr) => {
+    const setHidden = (tr) => {
       if (productId) {
         tr.hidden = tr.dataset.rcnPid !== productId;
         return;
@@ -772,7 +990,8 @@ export function mountReconPanel(route) {
       }
       const name = tr.dataset.productName || '';
       tr.hidden = !name.includes(q);
-    });
+    };
+    panel.querySelectorAll('.recon-row[data-rcn-pid], .recon-sub-row[data-rcn-pid]').forEach(setHidden);
     panel.querySelectorAll('.dist-cat-row').forEach((tr) => {
       const next = tr.nextElementSibling;
       tr.hidden = next?.classList.contains('recon-row') && next.hidden;
@@ -804,42 +1023,6 @@ export function mountReconPanel(route) {
       renderTable();
       return;
     }
-    if (e.target.closest('#rcnHiddenToggle')) {
-      ctx.showHidden = !ctx.showHidden;
-      const btn = $('rcnHiddenToggle');
-      btn.classList.toggle('is-active', ctx.showHidden);
-      btn.setAttribute('aria-pressed', ctx.showHidden ? 'true' : 'false');
-      renderTable();
-      return;
-    }
-    if (e.target.closest('#rcnColBtn')) {
-      const menu = $('rcnColMenu');
-      const open = menu.hasAttribute('hidden');
-      menu.toggleAttribute('hidden', !open);
-      $('rcnColBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
-      return;
-    }
-    if (e.target.closest('#rcnColReset')) {
-      ctx.colVis = Object.fromEntries(RECON_COLS.map((c) => [c.id, true]));
-      saveReconColVisibility(ctx.colVis);
-      const menu = $('rcnColMenu');
-      if (menu) delete menu.dataset.ready;
-      initColMenu();
-      renderTable();
-    }
-  });
-
-  panel.addEventListener('change', (e) => {
-    const toggle = e.target.closest('[data-rcn-col-toggle]');
-    if (toggle) {
-      ctx.colVis[toggle.dataset.rcnColToggle] = toggle.checked;
-      saveReconColVisibility(ctx.colVis);
-      applyColVisibility(panel, ctx.colVis);
-    }
-    if (e.target.id === 'rcnCatFilter') {
-      ctx.categoryFilter = e.target.value;
-      renderTable();
-    }
   });
 
   panel.addEventListener('input', (e) => {
@@ -857,15 +1040,6 @@ export function mountReconPanel(route) {
     e.returnValue = '';
   };
 
-  const onDocClick = (e) => {
-    const picker = $('rcnColPicker');
-    if (picker && !picker.contains(e.target)) {
-      $('rcnColMenu')?.setAttribute('hidden', '');
-      $('rcnColBtn')?.setAttribute('aria-expanded', 'false');
-    }
-  };
-  document.addEventListener('click', onDocClick);
-
   const onToolbar = (e) => {
     const action = e.detail?.action;
     if (action === 'export-recon') exportCsv();
@@ -873,6 +1047,32 @@ export function mountReconPanel(route) {
   };
 
   const onProductFilter = (e) => applyProductFilter(e.detail || getLastProductFilter());
+
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'recon') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    let needsRender = false;
+    if (values.colVis) {
+      ctx.colVis = { ...values.colVis };
+      applyColVisibility(panel, ctx.colVis);
+    }
+    if (Array.isArray(values.categories)) {
+      const next = values.categories;
+      const prev = ctx.categoryFilter || [];
+      const changed = next.length !== prev.length
+        || next.some((id) => !prev.includes(id));
+      if (changed) {
+        ctx.categoryFilter = [...next];
+        needsRender = true;
+      }
+    }
+    if (typeof values.showHidden === 'boolean' && values.showHidden !== ctx.showHidden) {
+      ctx.showHidden = values.showHidden;
+      needsRender = true;
+    }
+    if (needsRender) renderTable();
+  };
 
   const onResize = () => layoutTableScroll();
   window.addEventListener('resize', onResize);
@@ -882,6 +1082,7 @@ export function mountReconPanel(route) {
 
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   initIcons(panel);
 
@@ -913,8 +1114,6 @@ export function mountReconPanel(route) {
     ctx.transfers = transfers || [];
     ctx.supplierReturns = supplierReturns || [];
     ctx.deliveries = deliveries || [];
-    refreshCatFilter();
-    initColMenu();
     renderTable();
     applyProductFilter(getLastProductFilter());
   }
@@ -929,8 +1128,8 @@ export function mountReconPanel(route) {
     window.removeEventListener('resize', onResize);
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onBeforeUnload);
-    document.removeEventListener('click', onDocClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

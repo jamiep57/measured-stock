@@ -9,6 +9,9 @@ import {
   closingPatchFromDraft,
   exceedsMaxReturnable,
   buildClosingRow,
+  filterClosingRows,
+  sortClosingList,
+  groupClosingByCategory,
 } from './closing-stock.js';
 
 const product = {
@@ -238,5 +241,52 @@ describe('buildClosingRow', () => {
     expect(drafted.hasClosing).toBe(true);
     expect(drafted.closingCases).toBe(0);
     expect(drafted.closeCount).toBe(0);
+  });
+});
+
+describe('filterClosingRows / sortClosingList', () => {
+  const rows = [
+    {
+      pid: 'a', p: { name: 'Alpha' }, category: 'Beer', supplierId: 's1', supplierName: 'Acme',
+      hasClosing: false, invoiceQty: 10, closeCount: 0, returnAmount: 0, carriedOver: 0, sor: 10, maxReturnable: 1,
+    },
+    {
+      pid: 'b', p: { name: 'Bravo' }, category: 'Spirits', supplierId: 's2', supplierName: 'Beta Co',
+      hasClosing: true, invoiceQty: 50, closeCount: 20, returnAmount: 8, carriedOver: 12, sor: 20, maxReturnable: 10,
+    },
+    {
+      pid: 'c', p: { name: 'Charlie' }, category: 'Beer', supplierId: 's1', supplierName: 'Acme',
+      hasClosing: true, invoiceQty: 30, closeCount: 5, returnAmount: 0, carriedOver: 5, sor: 5, maxReturnable: 1.5,
+    },
+  ];
+
+  it('filters by status', () => {
+    expect(filterClosingRows(rows, { statusFilter: 'uncounted' }).map((r) => r.pid)).toEqual(['a']);
+    expect(filterClosingRows(rows, { statusFilter: 'counted' }).map((r) => r.pid)).toEqual(['b', 'c']);
+    expect(filterClosingRows(rows, { statusFilter: 'returning' }).map((r) => r.pid)).toEqual(['b']);
+    expect(filterClosingRows(rows, { statusFilter: 'carried' }).map((r) => r.pid)).toEqual(['b', 'c']);
+    expect(filterClosingRows(rows, { statusFilter: 'over_sor' }).map((r) => r.pid)).toEqual([]);
+  });
+
+  it('filters over SOR returns', () => {
+    const over = [{ ...rows[1], returnAmount: 12, maxReturnable: 10 }];
+    expect(filterClosingRows(over, { statusFilter: 'over_sor' })).toHaveLength(1);
+  });
+
+  it('filters by category and supplier', () => {
+    expect(filterClosingRows(rows, { categoryFilter: 'Beer' }).map((r) => r.pid)).toEqual(['a', 'c']);
+    expect(filterClosingRows(rows, { supplierFilter: 's2' }).map((r) => r.pid)).toEqual(['b']);
+  });
+
+  it('sorts by numeric keys then name', () => {
+    expect(sortClosingList(rows, 'invoice').map((r) => r.pid)).toEqual(['b', 'c', 'a']);
+    expect(sortClosingList(rows, 'return').map((r) => r.pid)).toEqual(['b', 'a', 'c']);
+    expect(sortClosingList(rows, 'name').map((r) => r.pid)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('groups and sorts within categories', () => {
+    const grouped = groupClosingByCategory(rows, 'closing');
+    expect(Object.keys(grouped).sort()).toEqual(['Beer', 'Spirits']);
+    expect(grouped.Beer.map((r) => r.pid)).toEqual(['c', 'a']);
   });
 });

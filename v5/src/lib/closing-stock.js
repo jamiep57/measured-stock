@@ -162,6 +162,74 @@ export function computeClosingRows({
   }));
 }
 
+/** Status / category / supplier filters for the Closing grid. */
+export function filterClosingRows(rows, {
+  statusFilter = '',
+  categoryFilter = '',
+  supplierFilter = '',
+} = {}) {
+  return (rows || []).filter((r) => {
+    if (categoryFilter && (r.category || 'Uncategorised') !== categoryFilter) return false;
+    if (supplierFilter) {
+      const sid = r.supplierId || '';
+      const sname = r.supplierName || '';
+      if (supplierFilter === '__none__') {
+        if (sid || sname) return false;
+      } else if (sid !== supplierFilter && sname !== supplierFilter) {
+        return false;
+      }
+    }
+    const status = statusFilter || '';
+    if (status === 'uncounted') return !r.hasClosing;
+    if (status === 'counted') return !!r.hasClosing;
+    if (status === 'returning') return (Number(r.returnAmount) || 0) > 0;
+    if (status === 'carried') return (Number(r.carriedOver) || 0) > 0;
+    if (status === 'over_sor') {
+      return exceedsMaxReturnable(r.returnAmount, r.maxReturnable);
+    }
+    return true;
+  });
+}
+
+function nameCmp(a, b) {
+  return (a?.p?.name || '').localeCompare(b?.p?.name || '');
+}
+
+/** Sort within a category group. Default is name A–Z. */
+export function sortClosingList(list, sortKey = 'name') {
+  const key = sortKey || 'name';
+  return (list || []).slice().sort((a, b) => {
+    if (key === 'invoice') {
+      return (Number(b.invoiceQty) || 0) - (Number(a.invoiceQty) || 0) || nameCmp(a, b);
+    }
+    if (key === 'closing') {
+      return (Number(b.closeCount) || 0) - (Number(a.closeCount) || 0) || nameCmp(a, b);
+    }
+    if (key === 'return') {
+      return (Number(b.returnAmount) || 0) - (Number(a.returnAmount) || 0) || nameCmp(a, b);
+    }
+    if (key === 'carried') {
+      return (Number(b.carriedOver) || 0) - (Number(a.carriedOver) || 0) || nameCmp(a, b);
+    }
+    if (key === 'sor') {
+      return (Number(b.sor) || 0) - (Number(a.sor) || 0) || nameCmp(a, b);
+    }
+    return nameCmp(a, b);
+  });
+}
+
+export function groupClosingByCategory(rows, sortKey = 'name') {
+  const grouped = {};
+  (rows || []).forEach((r) => {
+    const cat = r.category || 'Uncategorised';
+    (grouped[cat] = grouped[cat] || []).push(r);
+  });
+  Object.keys(grouped).forEach((cat) => {
+    grouped[cat] = sortClosingList(grouped[cat], sortKey);
+  });
+  return grouped;
+}
+
 /** True when return amount is above a positive max-returnable (SOR) limit. */
 export function exceedsMaxReturnable(returnAmount, maxRet) {
   const max = maxRet != null ? Number(maxRet) : null;

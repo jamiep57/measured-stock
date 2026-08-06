@@ -11,6 +11,7 @@ import {
 import { contentsByContainer } from '../../lib/kit-stock.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { openModal, closeModal } from '../../components/modal.js';
+import { loadingTableRow } from '../../components/loading-widget.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import {
   buildKitImageQuery, searchKitImages, downloadKitImageFile, findKitImageCandidate,
@@ -160,7 +161,7 @@ function renderShell() {
             </tr>
           </thead>
           <tbody id="kitLibBody">
-            <tr><td colspan="7" class="lib-loading muted">Loading kit…</td></tr>
+            ${loadingTableRow(7, 'Loading kit…')}
           </tbody>
         </table>
         <div class="lib-empty" id="kitLibEmpty" hidden>No kit items match.</div>

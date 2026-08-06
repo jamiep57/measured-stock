@@ -12,6 +12,7 @@ import {
 import { countEntryMode, productStockPack } from '../../pack-metrics.js';
 import { printCountSheets } from '../../lib/count-sheets-print.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 
@@ -241,7 +242,7 @@ function renderSessionBar(ctx) {
 export function renderCountsShell() {
   return `
     <div class="dist-panel cnt-panel" id="cntPanel">
-      <div class="dist-loading">Loading counts…</div>
+      ${loadingWidget('Loading counts…')}
     </div>`;
 }
 

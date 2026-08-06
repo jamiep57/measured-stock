@@ -118,6 +118,13 @@
 .tfp-option:hover {
   background: var(--secondary);
 }
+.tfp-option.is-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.tfp-option.is-disabled:hover {
+  background: transparent;
+}
 
 .tfp-option input {
   position: absolute;

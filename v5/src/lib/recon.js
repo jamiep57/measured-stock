@@ -13,6 +13,7 @@ import {
   countedInFromDeliveries,
   epDeliveredQty,
 } from './opening-stock.js';
+import { costDeliveryLine } from './supplier-delivery-cost.js';
 
 export function roundN(n, dp = 2) {
   const f = 10 ** dp;
@@ -33,7 +34,6 @@ export function formatReconQty(n) {
 
 export const RECON_COLS = [
   { id: 'item', label: 'Item' },
-  { id: 'abv', label: 'ABV' },
   { id: 'case_price', label: 'Price' },
   { id: 'supplier', label: 'Supplier' },
   { id: 'units_per_case', label: 'Units per case' },
@@ -48,7 +48,7 @@ export const RECON_COLS = [
   { id: 'plu', label: 'PLU' },
   { id: 'variance', label: 'Variance' },
   { id: 'consumption_charge', label: 'Consumption charge' },
-  { id: 'consumption_loose', label: 'Consumption + loose' },
+  { id: 'consumption_loose', label: 'Loose charge' },
   { id: 'plu_charge', label: 'PLU charge' },
   { id: 'invoice_charge', label: 'Invoice charge' },
   { id: 'budget_cost', label: 'Budget cost' },
@@ -318,15 +318,21 @@ export function computePluByProductId(eps, tillRows, recipes, products, caseSize
   return pluByPid;
 }
 
+/** Cons £ + Loose £ — used by the consumption_loose / auto budget methods. */
+export function consumptionPlusLooseCharge(row) {
+  return (Number(row?.consumptionCharge) || 0) + (Number(row?.consumptionLooseCharge) || 0);
+}
+
 export function reconBudgetCost(row, cl) {
   const method = cl?.budget_method || 'auto';
-  if (method === 'manual' && cl?.budget_override != null) return Number(cl.budget_override) || 0;
-  if (method === 'consumption_loose') return row.consumptionLooseCharge;
+  if (method === 'manual') return Number(cl?.budget_override) || 0;
+  if (method === 'consumption_loose') return consumptionPlusLooseCharge(row);
   if (method === 'consumption') return row.consumptionCharge;
   if (method === 'plu') return row.pluCharge;
   if (method === 'invoice') return row.invoiceCharge;
-  if (row.invoiced > 0) return row.consumptionLooseCharge;
-  return Math.max(row.consumptionLooseCharge || 0, row.pluCharge || 0);
+  const consPlusLoose = consumptionPlusLooseCharge(row);
+  if (row.invoiced > 0) return consPlusLoose;
+  return Math.max(consPlusLoose, row.pluCharge || 0);
 }
 
 export function varianceClass(consumption, plu, variance) {
@@ -336,6 +342,103 @@ export function varianceClass(consumption, plu, variance) {
   if (absPct < 8) return 'recon-var-good';
   if (absPct < 15) return 'recon-var-warn';
   return 'recon-var-bad';
+}
+
+/**
+ * Aggregate this event's delivery lines (and supplier returns) for a product
+ * by supplier. Prices come from each delivery's supplier offer (or event
+ * override), same as the supplier delivery cost report.
+ *
+ * When returns exist only as closing_stock.return_amount (no
+ * supplier_return_lines), fallbackReturned is attributed to the product's
+ * preferred supplier — same heuristic as v2 recon.
+ */
+export function deliverySourcesForProduct({
+  productId,
+  deliveries = [],
+  supplierReturns = [],
+  fallbackReturned = 0,
+  event,
+  suppliers = [],
+  caseSizes = [],
+} = {}) {
+  if (!productId) return [];
+  const bySupplier = new Map();
+  const product = event?.event_products?.find((ep) => ep.product_id === productId)?.product;
+
+  const ensure = (sid, nameHint) => {
+    const key = sid || '__none__';
+    if (!bySupplier.has(key)) {
+      const fromList = sid ? supplierName(suppliers, sid) : null;
+      bySupplier.set(key, {
+        supplierId: sid,
+        supplierName: nameHint
+          || (fromList && fromList !== '—' ? fromList : null)
+          || (sid ? 'Unknown supplier' : 'No supplier'),
+        qty: 0,
+        returned: 0,
+        cost: 0,
+        unitPrice: null,
+        priceBasis: 'case',
+        missingPrice: true,
+      });
+    }
+    return bySupplier.get(key);
+  };
+
+  for (const d of deliveries || []) {
+    const sid = d.supplier_id || null;
+    for (const line of d.lines || []) {
+      if (line?.product_id !== productId) continue;
+      const priced = costDeliveryLine({
+        line,
+        supplierId: sid,
+        event,
+        caseSizes,
+        qtyMode: 'received',
+      });
+      if (!(priced.qty > 0)) continue;
+
+      const fromDelivery = d.supplier?.name;
+      const agg = ensure(sid, fromDelivery || null);
+      agg.qty = round1(agg.qty + priced.qty);
+      agg.cost = roundN(agg.cost + priced.cost, 2);
+      if (priced.unitPrice != null) {
+        agg.unitPrice = priced.unitPrice;
+        agg.priceBasis = priced.priceBasis;
+        agg.missingPrice = false;
+      }
+    }
+  }
+
+  for (const r of supplierReturns || []) {
+    if (r?.product_id !== productId) continue;
+    const form = storedToForm(r);
+    const qty = roundN(
+      totalUnitsForProduct(form.cases, form.singles, product, caseSizes),
+      2,
+    );
+    if (!(qty > 0)) continue;
+    const sid = r.supplier_id || null;
+    const agg = ensure(sid, null);
+    agg.returned = roundN(agg.returned + qty, 2);
+  }
+
+  const attributedReturns = [...bySupplier.values()].reduce((s, x) => s + (x.returned || 0), 0);
+  const fallback = Number(fallbackReturned) || 0;
+  if (!(attributedReturns > 0) && fallback > 0) {
+    const sid = preferredSupplierId(product);
+    // Prefer a named delivery supplier on this event when preferred is missing.
+    const namedDelivery = [...bySupplier.values()].find((s) => s.supplierId && s.qty > 0);
+    const targetId = sid || namedDelivery?.supplierId || null;
+    ensure(targetId, null).returned = roundN(fallback, 2);
+  }
+
+  return [...bySupplier.values()]
+    .filter((s) => s.qty > 0 || s.returned > 0)
+    .sort((a, b) => b.qty - a.qty
+      || b.returned - a.returned
+      || a.supplierName.localeCompare(b.supplierName));
 }
 
 export function buildReconRow(ctx) {
@@ -351,6 +454,7 @@ export function buildReconRow(ctx) {
     supplierReturns = [],
     event,
     countedIn = null,
+    deliveries = null,
   } = ctx;
 
   const pid = ep.product_id;
@@ -367,9 +471,10 @@ export function buildReconRow(ctx) {
 
   const { closingCases, closingSingles } = resolveClosingCounts(cl, draft);
   const preEventOnHand = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
+  const fromReturnLines = supplierReturnCases(supplierReturns, pid, event, caseSizes);
   const supplierReturnsQty = draft?.returnSet != null
     ? roundN(Number(draft.returnStored) || 0, 2)
-    : (supplierReturnCases(supplierReturns, pid, event, caseSizes)
+    : (fromReturnLines
       || (cl.return_amount != null ? roundN(Number(cl.return_amount) || 0, 2) : 0));
 
   const closingTotal = reconClosingTotal(p, closingCases, closingSingles, caseSizes);
@@ -383,7 +488,10 @@ export function buildReconRow(ctx) {
   const unitPrice = reconUnitPrice(ep, draft, caseSizes);
   const rowPrice = reconRowPrice(ep, draft, caseSizes);
   const consumptionCharge = consumption * rowPrice;
-  const consumptionLooseCharge = consumption * rowPrice;
+  // Loose £ = closing singles ÷ units per case × price (case-equivalent value of leftover singles).
+  const consumptionLooseCharge = ups > 0
+    ? roundN((Number(closingSingles) || 0) / ups * rowPrice, 2)
+    : 0;
   // PLU is already in stock units — charge at the same unit price as consumption.
   const pluCharge = plu * rowPrice;
   const invoiceCharge = invoiced * casePrice;
@@ -401,6 +509,24 @@ export function buildReconRow(ctx) {
     offers.map((o) => String(o.case_price ?? o.unit_price ?? '')),
   );
   const multiOfferWarn = offers.length > 1 && (offerPacks.size > 1 || offerPrices.size > 1);
+
+  const deliverySources = deliverySourcesForProduct({
+    productId: pid,
+    deliveries: deliveries || [],
+    supplierReturns,
+    // Only when there are no per-supplier return lines — closing total alone.
+    fallbackReturned: fromReturnLines > 0 ? 0 : supplierReturnsQty,
+    event,
+    suppliers,
+    caseSizes,
+  });
+  const multiSupplierDelivery = deliverySources.length > 1;
+  const sourcePrices = new Set(
+    deliverySources
+      .map((s) => (s.unitPrice == null ? null : String(s.unitPrice)))
+      .filter((v) => v != null),
+  );
+  const multiSupplierPriceWarn = multiSupplierDelivery && sourcePrices.size > 1;
 
   const charges = {
     ep, pid, p, ups, delivered, invoiced, closingCases, closingSingles,
@@ -448,6 +574,9 @@ export function buildReconRow(ctx) {
     hasClosing,
     hasInvoice,
     multiOfferWarn,
+    deliverySources,
+    multiSupplierDelivery,
+    multiSupplierPriceWarn,
   };
 }
 
@@ -501,19 +630,23 @@ export function computeReconRows(state) {
     supplierReturns,
     event,
     countedIn,
+    deliveries,
   }));
 }
 
-export function filterReconRows(rows, { statusFilter = '', categoryFilter = '' } = {}) {
+export function filterReconRows(rows, { statusFilter = '', categoryFilter = '', categories = null } = {}) {
+  const catIds = Array.isArray(categories)
+    ? categories
+    : (categoryFilter ? [categoryFilter] : []);
   return rows.filter((r) => {
     if (statusFilter) {
       const s = r.reconStatus || '';
       if (statusFilter === 'none') { if (s) return false; }
       else if (s !== statusFilter) return false;
     }
-    if (categoryFilter) {
+    if (catIds.length) {
       const cid = r.p?.category?.id;
-      if (cid !== categoryFilter) return false;
+      if (!catIds.includes(cid)) return false;
     }
     return true;
   });
@@ -521,6 +654,7 @@ export function filterReconRows(rows, { statusFilter = '', categoryFilter = '' }
 
 export function reconTotals(rows) {
   let totBudget = 0;
+  let totCons = 0;
   let totConsLoose = 0;
   let totInvoice = 0;
   let totPlu = 0;
@@ -532,6 +666,7 @@ export function reconTotals(rows) {
 
   rows.forEach((r) => {
     totBudget += r.budgetCost || 0;
+    totCons += r.consumptionCharge || 0;
     totConsLoose += r.consumptionLooseCharge || 0;
     totInvoice += r.invoiceCharge || 0;
     totPlu += r.pluCharge || 0;
@@ -545,7 +680,7 @@ export function reconTotals(rows) {
   });
 
   return {
-    totBudget, totConsLoose, totInvoice, totPlu,
+    totBudget, totCons, totConsLoose, totInvoice, totPlu,
     totConsumption, totPluCases, totVariance, totWastage,
     statusCounts,
   };

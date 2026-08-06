@@ -8,6 +8,7 @@ import {
   getDB, loadLibraryProducts, loadCategories, loadSuppliers, loadCaseSizes,
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
+import { loadingTableRow } from '../../components/loading-widget.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
@@ -103,7 +104,7 @@ function renderShell() {
             </tr>
           </thead>
           <tbody id="libBody">
-            <tr><td colspan="9" class="lib-loading muted">Loading products…</td></tr>
+            ${loadingTableRow(9, 'Loading products…')}
           </tbody>
         </table>
         <div class="lib-empty" id="libEmpty" hidden>No products match.</div>

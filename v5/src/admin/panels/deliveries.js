@@ -91,6 +91,34 @@ function renderShell() {
     </div>`;
 }
 
+function photoThumbHtml(label, url) {
+  if (!url) return '';
+  return `<button type="button" class="del-card-photo" data-lightbox="${escapeHtml(url)}"
+    title="${escapeHtml(label)}" aria-label="View ${escapeHtml(label)}">
+    <img src="${escapeHtml(url)}" alt="${escapeHtml(label)}">
+  </button>`;
+}
+
+function renderCardExtras(d) {
+  const notes = d.notes
+    ? `<p class="del-card-notes">${escapeHtml(d.notes)}</p>`
+    : '';
+  const noteThumb = d.delivery_note_url
+    ? `<span class="del-card-photo-label">Note</span>${photoThumbHtml('Delivery note', d.delivery_note_url)}`
+    : '';
+  const photoThumbs = (d.photo_urls || []).length
+    ? `<span class="del-card-photo-label">Photos</span>${(d.photo_urls || []).map((u) => photoThumbHtml('Photo', u)).join('')}`
+    : '';
+  const dmgThumbs = (d.damages_photo_urls || []).length
+    ? `<span class="del-card-photo-label">Damages</span>${(d.damages_photo_urls || []).map((u) => photoThumbHtml('Damage', u)).join('')}`
+    : '';
+  const photosBlock = (noteThumb || photoThumbs || dmgThumbs)
+    ? `<div class="del-card-photos">${noteThumb}${photoThumbs}${dmgThumbs}</div>`
+    : '';
+  if (!notes && !photosBlock) return '';
+  return `<div class="del-card-extra">${notes}${photosBlock}</div>`;
+}
+
 function renderList(deliveries, event, caseSizes) {
   if (!deliveries.length) {
     return '<div class="del-empty">No deliveries yet. Log the first delivery to record stock in.</div>';
@@ -101,11 +129,15 @@ function renderList(deliveries, event, caseSizes) {
     const lineCount = (d.lines || []).length;
     const lineList = renderLineList(d.lines, event, caseSizes);
     const ids = productIds(d).join(',');
+    const extras = renderCardExtras(d);
 
     return `
       <article class="del-card" data-delivery-id="${escapeHtml(d.id)}"
         data-product-ids="${escapeHtml(ids)}"
-        data-product-names="${escapeHtml(productNamesHaystack(d.lines, event))}">
+        data-product-names="${escapeHtml(productNamesHaystack(d.lines, event))}"
+        data-supplier-name="${escapeHtml((sup || '').toLowerCase())}"
+        data-reference="${escapeHtml((d.reference || '').toLowerCase())}"
+        data-notes="${escapeHtml((d.notes || '').toLowerCase())}">
         <div class="del-card-main del-card-main--stacked">
           <div class="del-card-head">
             <div class="del-card-body">
@@ -128,6 +160,7 @@ function renderList(deliveries, event, caseSizes) {
             </div>
           </div>
           ${lineList}
+          ${extras}
         </div>
       </article>`;
   }).join('');
@@ -198,27 +231,54 @@ export function mountDeliveriesPanel(route) {
     const q = (query || '').trim().toLowerCase();
     const filtering = Boolean(productId || q);
     listEl.querySelectorAll('.del-card').forEach((card) => {
+      const supplier = card.dataset.supplierName || '';
+      const reference = card.dataset.reference || '';
+      const notes = card.dataset.notes || '';
+      const cardMetaMatch = !productId && q
+        && (supplier.includes(q) || reference.includes(q) || notes.includes(q));
+
       const lines = card.querySelectorAll('.del-card-line');
-      let anyVisible = false;
+      let anyLineVisible = false;
       lines.forEach((line) => {
         const pid = line.dataset.pid || '';
         const name = line.dataset.productName || '';
         const match = productId
           ? pid === productId
-          : (!q || name.includes(q));
+          : (!q || name.includes(q) || cardMetaMatch);
         line.hidden = filtering && !match;
-        if (match) anyVisible = true;
+        if (match) anyLineVisible = true;
       });
       if (!lines.length) {
         const ids = (card.dataset.productIds || '').split(',').filter(Boolean);
         const names = card.dataset.productNames || '';
         card.hidden = productId
           ? !ids.includes(productId)
-          : filtering && !names.includes(q);
+          : filtering && !names.includes(q) && !cardMetaMatch;
         return;
       }
-      card.hidden = filtering && !anyVisible;
+      card.hidden = filtering && !anyLineVisible;
     });
+  }
+
+  function closeLightbox() {
+    document.getElementById('delLightbox')?.remove();
+  }
+
+  function openLightbox(url) {
+    if (!url) return;
+    closeLightbox();
+    const overlay = document.createElement('div');
+    overlay.id = 'delLightbox';
+    overlay.className = 'del-lightbox';
+    overlay.innerHTML = `
+      <div class="del-lightbox-frame">
+        <button type="button" class="del-lightbox-close" aria-label="Close">${icon('x', { size: 18 })}</button>
+        <img src="${escapeHtml(url)}" alt="Delivery photo">
+      </div>`;
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay || e.target.closest('.del-lightbox-close')) closeLightbox();
+    });
+    document.body.appendChild(overlay);
   }
 
   function wireLineQtyInputs(root) {
@@ -752,6 +812,13 @@ export function mountDeliveriesPanel(route) {
     listEl.querySelectorAll('[data-del]').forEach((btn) => {
       btn.onclick = () => deleteDelivery(btn.dataset.del);
     });
+    listEl.querySelectorAll('[data-lightbox]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openLightbox(btn.dataset.lightbox);
+      };
+    });
   }
 
   function paintList() {
@@ -798,5 +865,6 @@ export function mountDeliveriesPanel(route) {
   return () => {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    closeLightbox();
   };
 }

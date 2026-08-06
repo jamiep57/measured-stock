@@ -3,7 +3,7 @@
  * Grid layout mirrors Distribution / Products (dist-grid).
  */
 
-import { $, escapeHtml, toast, nowLocalInput } from '../../lib/util.js';
+import { $, escapeHtml, toast, nowLocalInput, isBoneYard } from '../../lib/util.js';
 import {
   getDB, loadEventFull, loadCaseSizes, loadSuppliers,
 } from '../../db.js';
@@ -12,6 +12,7 @@ import { productStockPack } from '../../pack-metrics.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { openModal, closeModal } from '../../components/modal.js';
 import { icon } from '../../lib/icons.js';
+import { loadingTableRow } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
@@ -239,7 +240,7 @@ export function renderClosingShell() {
         <table class="dist-grid cl-grid" id="clTable">
           <thead id="clGridHead">${renderGridHead()}</thead>
           <tbody id="clBody">
-            <tr><td colspan="${COL_COUNT}" class="dist-empty muted">Loading closing stock…</td></tr>
+            ${loadingTableRow(COL_COUNT, 'Loading closing stock…')}
           </tbody>
         </table>
         <div class="dist-empty cl-empty" id="clEmpty" hidden>
@@ -1401,20 +1402,118 @@ export function mountClosingPanel(route) {
   const onProductFilter = (e) => applyProductFilter(e.detail || getLastProductFilter());
   const onResize = () => layoutTableScroll();
 
-  function handlePrintClosingSheet() {
-    if (!ctx.event) {
-      toast('Closing stock is still loading', true);
-      return;
-    }
+  function servingBarsForPrint() {
+    return (ctx.event?.bars || [])
+      .filter((b) => !isBoneYard(b))
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
+  function runPrintClosingSheet({ scope, barId }) {
     const result = printClosingCountSheet({
       event: ctx.event,
       caseSizes: ctx.caseSizes,
+      barProducts: ctx.event?.bar_products || [],
+      scope,
+      barId,
     });
     if (result.error) {
       toast(result.error, true);
       return;
     }
+    if (scope === 'all' || (scope === 'bar' && result.barCount > 0)) {
+      const n = result.barCount || 1;
+      toast(`Opened ${n} closing count sheet${n === 1 ? '' : 's'} (${result.productCount} item${result.productCount === 1 ? '' : 's'})`);
+      return;
+    }
     toast(`Opened closing count sheet (${result.productCount} item${result.productCount === 1 ? '' : 's'})`);
+  }
+
+  function openPrintClosingSheetDialog() {
+    if (!ctx.event) {
+      toast('Closing stock is still loading', true);
+      return;
+    }
+    const bars = servingBarsForPrint();
+    const barOptions = bars.length
+      ? bars.map((b, i) => (
+        `<option value="${escapeHtml(b.id)}"${i === 0 ? ' selected' : ''}>${escapeHtml(b.name)}</option>`
+      )).join('')
+      : '<option value="">No bars yet</option>';
+
+    openSheet({
+      title: 'Print closing sheet',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <p class="wst-form-hint muted" style="margin:0 0 4px">
+            Choose what to print — all locations, the whole event, or a single bar.
+          </p>
+          <div class="admin-field">
+            <span class="admin-label">Location</span>
+            <div class="cl-print-scope" role="radiogroup" aria-label="Print location">
+              <label class="cl-print-scope-option">
+                <input type="radio" name="clPrintScope" value="all" checked>
+                <span>
+                  <strong>All locations</strong>
+                  <span class="muted">One sheet per bar</span>
+                </span>
+              </label>
+              <label class="cl-print-scope-option">
+                <input type="radio" name="clPrintScope" value="event">
+                <span>
+                  <strong>Whole event</strong>
+                  <span class="muted">One sheet for the full catalogue</span>
+                </span>
+              </label>
+              <label class="cl-print-scope-option">
+                <input type="radio" name="clPrintScope" value="bar"${bars.length ? '' : ' disabled'}>
+                <span>
+                  <strong>One bar</strong>
+                  <span class="muted">A single location</span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="admin-field" id="clPrintBarField" hidden>
+            <label class="admin-label" for="clPrintBar">Bar</label>
+            <select class="admin-select" id="clPrintBar"${bars.length ? '' : ' disabled'}>
+              ${barOptions}
+            </select>
+          </div>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="clPrintCancel">Cancel</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="clPrintGo">Print</button>
+        </div>`,
+    });
+
+    const syncBarField = () => {
+      const scope = document.querySelector('input[name="clPrintScope"]:checked')?.value;
+      const field = $('clPrintBarField');
+      if (field) field.hidden = scope !== 'bar';
+    };
+    document.querySelectorAll('input[name="clPrintScope"]').forEach((el) => {
+      el.addEventListener('change', syncBarField);
+    });
+    syncBarField();
+
+    $('clPrintCancel')?.addEventListener('click', () => closeSheet());
+    $('clPrintGo')?.addEventListener('click', () => {
+      const scope = document.querySelector('input[name="clPrintScope"]:checked')?.value || 'event';
+      const barId = $('clPrintBar')?.value || '';
+      if (scope === 'bar' && !barId) {
+        toast('Choose a bar to print', true);
+        return;
+      }
+      closeSheet();
+      runPrintClosingSheet({ scope, barId: scope === 'bar' ? barId : undefined });
+    });
+  }
+
+  function handlePrintClosingSheet() {
+    openPrintClosingSheetDialog();
   }
 
   const onToolbarAction = (e) => {

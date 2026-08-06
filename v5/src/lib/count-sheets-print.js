@@ -80,12 +80,20 @@ function renderBarSheet(bar, eps, caseSizes, meta) {
 }
 
 function renderClosingSheet(eps, caseSizes, meta) {
+  const title = meta.locationName || meta.eventName;
+  const eventMeta = meta.locationName
+    ? `<span><strong>Event</strong> ${escapeHtml(meta.eventName)}</span>`
+    : '';
+  const footLabel = meta.locationName
+    ? `Closing stock · ${escapeHtml(meta.locationName)} · ${eps.length} item${eps.length === 1 ? '' : 's'}`
+    : `Closing stock · ${eps.length} item${eps.length === 1 ? '' : 's'}`;
   return `
     <section class="sheet">
       <header>
         <div class="brand">Closing stock count</div>
-        <h1>${escapeHtml(meta.eventName)}</h1>
+        <h1>${escapeHtml(title)}</h1>
         <div class="meta">
+          ${eventMeta}
           <span><strong>Date</strong> _______________</span>
           <span><strong>Counted by</strong> _______________</span>
         </div>
@@ -102,7 +110,7 @@ function renderClosingSheet(eps, caseSizes, meta) {
         <tbody>${productRowsHtml(eps, caseSizes)}</tbody>
       </table>
       <footer>
-        <span>Closing stock · ${eps.length} item${eps.length === 1 ? '' : 's'}</span>
+        <span>${footLabel}</span>
         <span>Checked _______________</span>
       </footer>
     </section>`;
@@ -286,24 +294,77 @@ export function printCountSheets(opts) {
 }
 
 /**
- * Build printable HTML for one whole-event closing stock count sheet.
- * Products come from `event.event_products` (same source as Closing stock).
- * @returns {{ html: string, productCount: number } | { error: string }}
+ * Build printable HTML for closing stock count sheet(s).
+ * @param {'event'|'all'|'bar'} [opts.scope]
+ *   - `event` — one whole-event sheet (all event products)
+ *   - `all` — one sheet per serving bar (products from each bar’s distribution menu)
+ *   - `bar` — one sheet for `opts.barId`
+ * @returns {{ html: string, productCount: number, barCount?: number } | { error: string }}
  */
-export function buildClosingCountSheetHtml({ event, caseSizes } = {}) {
-  const eps = (event?.event_products || []).filter((ep) => ep.product?.name);
-  if (!eps.length) {
-    return { error: 'Add products to this event before printing a closing count sheet.' };
+export function buildClosingCountSheetHtml({
+  event,
+  caseSizes,
+  barProducts,
+  scope = 'event',
+  barId,
+} = {}) {
+  const eventName = event?.name || 'Event';
+  const sizes = caseSizes || [];
+  const mode = scope === 'all' || scope === 'bar' ? scope : 'event';
+
+  if (mode === 'event') {
+    const eps = (event?.event_products || []).filter((ep) => ep.product?.name);
+    if (!eps.length) {
+      return { error: 'Add products to this event before printing a closing count sheet.' };
+    }
+    const sheet = renderClosingSheet(eps, sizes, { eventName });
+    const html = wrapPrintHtml(`Closing count — ${eventName}`, sheet);
+    return { html, productCount: eps.length, barCount: 0 };
   }
 
-  const eventName = event?.name || 'Event';
-  const sheet = renderClosingSheet(eps, caseSizes || [], { eventName });
-  const html = wrapPrintHtml(`Closing count — ${eventName}`, sheet);
+  const bars = servingBars(event?.bars);
+  if (!bars.length) {
+    return { error: 'Add bars in Event Setup before printing location closing sheets.' };
+  }
 
-  return { html, productCount: eps.length };
+  const targetBars = mode === 'bar'
+    ? bars.filter((b) => b.id === barId)
+    : bars;
+
+  if (mode === 'bar' && !targetBars.length) {
+    return { error: 'Choose a location to print.' };
+  }
+
+  const sheets = [];
+  let productCount = 0;
+
+  targetBars.forEach((bar) => {
+    const eps = filterEventProductsForBar(event?.event_products, barProducts, bar.id);
+    if (!eps.length) return;
+    productCount += eps.length;
+    sheets.push(renderClosingSheet(eps, sizes, {
+      eventName,
+      locationName: bar.name,
+    }));
+  });
+
+  if (!sheets.length) {
+    return {
+      error: mode === 'bar'
+        ? 'No products are listed on this location in Distribution yet.'
+        : 'No products are listed on any location in Distribution yet.',
+    };
+  }
+
+  const title = mode === 'bar'
+    ? `Closing count — ${targetBars[0].name}`
+    : `Closing count — ${eventName}`;
+  const html = wrapPrintHtml(title, sheets.join('\n'));
+
+  return { html, productCount, barCount: sheets.length };
 }
 
-/** Open a print window with one blank closing stock count sheet for the event. */
+/** Open a print window with blank closing stock count sheet(s). */
 export function printClosingCountSheet(opts) {
   const result = buildClosingCountSheetHtml(opts);
   if (result.error) return result;

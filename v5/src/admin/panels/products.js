@@ -15,6 +15,7 @@ import {
 } from '../../lib/opening-stock.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { loadingTableRow } from '../../components/loading-widget.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
@@ -119,7 +120,7 @@ function renderShell() {
             </tr>
           </thead>
           <tbody id="epBody">
-            <tr><td colspan="6" class="dist-empty muted">Loading…</td></tr>
+            ${loadingTableRow(6, 'Loading products…')}
           </tbody>
         </table>
         <div class="dist-empty ep-empty" id="epEmpty" hidden>No products on this event yet. Use <strong>Add product</strong> in the toolbar.</div>

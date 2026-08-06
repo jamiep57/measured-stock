@@ -7,11 +7,12 @@ import { getDB, loadEventFull, loadLibraryProducts, loadCaseSizes } from '../../
 import { computeStockProjection } from '../../lib/stock-projection.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import { initIcons } from '../../lib/icons.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 
 export function renderProjectionsShell() {
   return `
     <div class="admin-page projections-page" id="projectionsPanel">
-      <div class="mod-loading muted">Loading stock projections…</div>
+      ${loadingWidget('Loading stock projections…')}
     </div>`;
 }
 

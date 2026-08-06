@@ -70,10 +70,59 @@ describe('buildClosingCountSheetHtml', () => {
     expect(result.html).not.toContain('Stock count sheet');
   });
 
+  it('builds one sheet per serving bar when scope is all', () => {
+    const result = buildClosingCountSheetHtml({
+      event,
+      barProducts,
+      caseSizes: [],
+      scope: 'all',
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.barCount).toBe(2);
+    expect(result.html).toContain('Closing stock count');
+    expect(result.html).toContain('Main Bar');
+    expect(result.html).toContain('VIP');
+    expect(result.html).not.toContain('Bone Yard');
+    expect(result.html).toContain('Lager');
+    expect(result.html).toContain('Cider');
+    expect(result.html).toContain('Closing stock · Main Bar · 2 items');
+  });
+
+  it('builds one sheet for a single bar when scope is bar', () => {
+    const result = buildClosingCountSheetHtml({
+      event,
+      barProducts,
+      caseSizes: [],
+      scope: 'bar',
+      barId: 'bar-b',
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.barCount).toBe(1);
+    expect(result.productCount).toBe(1);
+    expect(result.html).toContain('VIP');
+    expect(result.html).toContain('Cider');
+    expect(result.html).not.toContain('Lager');
+    expect(result.html).not.toContain('Main Bar');
+  });
+
   it('errors when the event has no products', () => {
     const result = buildClosingCountSheetHtml({
       event: { name: 'Empty', event_products: [] },
     });
     expect(result.error).toMatch(/Add products/);
+  });
+
+  it('errors when a bar menu has no matching event products', () => {
+    const result = buildClosingCountSheetHtml({
+      event: {
+        name: 'Empty menus',
+        bars: [{ id: 'bar-a', name: 'Main Bar' }],
+        event_products: event.event_products,
+      },
+      barProducts: [{ bar_id: 'bar-a', product_id: 'missing' }],
+      scope: 'bar',
+      barId: 'bar-a',
+    });
+    expect(result.error).toMatch(/No products/);
   });
 });
