@@ -10,6 +10,7 @@ import {
 import { parseQty } from '../../stock-entry.js';
 import { productStockPack } from '../../pack-metrics.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { openModal, closeModal } from '../../components/modal.js';
 import { icon } from '../../lib/icons.js';
 import { clearFieldUndo } from '../../lib/field-undo.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
@@ -19,6 +20,7 @@ import {
   closingCountToForm,
   closingPatchFromDraft,
   computeClosingRows,
+  exceedsMaxReturnable,
   returnAmountToForm,
 } from '../../lib/closing-stock.js';
 import { printClosingCountSheet } from '../../lib/count-sheets-print.js';
@@ -208,7 +210,7 @@ export function renderClosingShell() {
         Edit closing and return counts, then hit <strong>Save changes</strong>.
         Closing and return use each product’s stock unit
         (cases / singles, bottles, or kegs). <strong>Max returnable</strong> = invoice × supplier SOR %.
-        <strong>Carried over</strong> = close count − return amount.
+        Returns above that ask for confirmation. <strong>Carried over</strong> = close count − return amount.
         Use <strong>Return to supplier</strong> to print pallet stickers for the return qty.
         Cleared a number by mistake? Hit <strong>Undo</strong> (or ⌘Z / Ctrl+Z).
       </p>
@@ -250,7 +252,45 @@ export function mountClosingPanel(route) {
     saving: false,
     theadObserver: null,
     abort: false,
+    overMaxPrompt: new Set(),
   };
+
+  function confirmOverSorReturn({ productName, returnAmount, maxReturnable, sorPct }) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        closeModal();
+        resolve(ok);
+      };
+      openModal({
+        title: 'Over SOR return limit',
+        bodyHtml: `
+          <p style="margin:0;font-size:14px;line-height:1.45">
+            You’re returning <strong>${escapeHtml(fmtQty(returnAmount))}</strong> of
+            <strong>${escapeHtml(productName || 'this product')}</strong>, which is above the SOR limit of
+            <strong>${escapeHtml(fmtQty(maxReturnable))}</strong>${sorPct > 0 ? ` (${escapeHtml(fmtSor(sorPct))})` : ''}.
+          </p>
+          <p class="muted" style="margin:12px 0 0;font-size:13px;line-height:1.4">
+            Do you want to continue with this return amount?
+          </p>`,
+        footHtml: `
+          <div class="admin-modal-actions">
+            <button type="button" class="admin-drawer-btn" id="clOverSorCancel">Use max returnable</button>
+            <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="clOverSorContinue">Continue anyway</button>
+          </div>`,
+        onClose: () => {
+          if (!settled) {
+            settled = true;
+            resolve(false);
+          }
+        },
+      });
+      $('clOverSorCancel')?.addEventListener('click', () => finish(false));
+      $('clOverSorContinue')?.addEventListener('click', () => finish(true));
+    });
+  }
 
   function readDraft(pid) {
     const casesEl = document.getElementById(`cl-cases-${pid}`);
@@ -334,8 +374,9 @@ export function mountClosingPanel(route) {
     requestAnimationFrame(layoutTableScroll);
   }
 
-  async function persist(pid) {
+  async function persist(pid, opts = {}) {
     if (!ctx.event) return;
+    if (ctx.overMaxPrompt.has(pid)) return;
     const draft = ctx.drafts[pid] || readDraft(pid);
     const ep = ctx.event.event_products.find((x) => x.product_id === pid);
     if (!ep) return;
@@ -347,11 +388,35 @@ export function mountClosingPanel(route) {
       caseSizes: ctx.caseSizes,
       draft,
     });
+
+    let allowOverMaxReturnable = !!opts.allowOverMaxReturnable;
+    if (
+      !allowOverMaxReturnable
+      && exceedsMaxReturnable(preview.returnAmount, preview.maxReturnable)
+    ) {
+      ctx.overMaxPrompt.add(pid);
+      try {
+        allowOverMaxReturnable = await confirmOverSorReturn({
+          productName: ep.product?.name || preview.p?.name,
+          returnAmount: preview.returnAmount,
+          maxReturnable: preview.maxReturnable,
+          sorPct: preview.sor,
+        });
+      } finally {
+        ctx.overMaxPrompt.delete(pid);
+      }
+    }
+
     const { capped, ...patch } = closingPatchFromDraft(ep.product, draft, ctx.caseSizes, {
       maxReturnable: preview.maxReturnable,
+      allowOverMaxReturnable,
     });
+    // Max-returnable is handled by the confirm dialog; still toast hard closing-count caps.
+    const toastCaps = (capped || []).filter((c) => c !== 'max returnable');
+    if (toastCaps.length) {
+      toast(`Return capped to ${toastCaps.join(' / ')}`, true);
+    }
     if (capped?.length) {
-      toast(`Return capped to ${capped.join(' / ')}`, true);
       const form = returnAmountToForm(patch.return_amount);
       ctx.drafts[pid] = {
         ...draft,
@@ -468,16 +533,17 @@ export function mountClosingPanel(route) {
   }
 
   /** Persist every in-flight draft so navigation / actions do not drop counts. */
-  function flushAllPending() {
-    const pids = new Set([
+  async function flushAllPending() {
+    const pids = [...new Set([
       ...Object.keys(ctx.saveTimers),
       ...Object.keys(ctx.drafts),
-    ]);
+    ])];
     Object.values(ctx.saveTimers).forEach(clearTimeout);
     ctx.saveTimers = {};
-    // Do not re-read inputs — on unmount the grid may already be gone;
-    // drafts were captured on each keystroke.
-    return Promise.all([...pids].map((pid) => flushSave(pid, { reread: false })));
+    // Sequential so over-SOR confirms don’t stack multiple modals.
+    for (const pid of pids) {
+      await flushSave(pid, { reread: false });
+    }
   }
 
   async function saveAllChanges() {

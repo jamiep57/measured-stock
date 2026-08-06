@@ -162,6 +162,12 @@ export function computeClosingRows({
   }));
 }
 
+/** True when return amount is above a positive max-returnable (SOR) limit. */
+export function exceedsMaxReturnable(returnAmount, maxRet) {
+  const max = maxRet != null ? Number(maxRet) : null;
+  return max != null && max > 0 && Number(returnAmount) > max;
+}
+
 export function closingPatchFromDraft(product, draft, caseSizes = [], opts = {}) {
   const cases = Math.max(0, Number(draft?.closingCases) || 0);
   const singles = Math.max(0, Number(draft?.closingSingles) || 0);
@@ -171,8 +177,12 @@ export function closingPatchFromDraft(product, draft, caseSizes = [], opts = {})
   let returnAmount = roundN(closeCountTotal(product, returnCases, returnSingles, caseSizes), 2);
   const maxRet = opts.maxReturnable != null ? Number(opts.maxReturnable) : null;
   const caps = [];
-  // Soft-cap only when there is a positive max (invoice 0 → no max → allow overwrite).
-  if (maxRet != null && maxRet > 0 && returnAmount > maxRet) {
+  // Soft-cap only when there is a positive max and the caller has not allowed overage
+  // (invoice 0 → no max → allow overwrite; UI can confirm and pass allowOverMaxReturnable).
+  if (
+    exceedsMaxReturnable(returnAmount, maxRet)
+    && !opts.allowOverMaxReturnable
+  ) {
     returnAmount = roundN(maxRet, 2);
     caps.push('max returnable');
   }
