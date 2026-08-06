@@ -46,6 +46,10 @@ describe('maxReturnable', () => {
     expect(maxReturnable(100, 0)).toBeNull();
   });
 
+  it('returns null when invoice is 0 so return can be overwritten', () => {
+    expect(maxReturnable(0, 10)).toBeNull();
+  });
+
   it('applies SOR percent', () => {
     expect(maxReturnable(100, 10)).toBe(10);
     expect(maxReturnable(80, 12.5)).toBe(10);
@@ -114,6 +118,22 @@ describe('closingPatchFromDraft', () => {
       return_amount: 2,
       carried_over: 0,
       capped: ['max returnable', 'closing count'],
+    });
+  });
+
+  it('does not soft-cap to max returnable when invoice/max is 0', () => {
+    expect(closingPatchFromDraft(product, {
+      closingCases: 4,
+      closingSingles: 0,
+      returnCases: 3,
+      returnSingles: 0,
+    }, [], { maxReturnable: 0 })).toEqual({
+      closing_cases: 4,
+      closing_singles: 0,
+      close_count: 4,
+      return_amount: 3,
+      carried_over: 1,
+      capped: [],
     });
   });
 });

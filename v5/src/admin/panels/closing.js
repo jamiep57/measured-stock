@@ -25,7 +25,7 @@ import {
   splitPalletQtys,
 } from '../../lib/pallet-sticker-pdf.js';
 
-const COL_COUNT = 12; // product + pack + 9 data cols + actions
+const COL_COUNT = 13; // product + pack + 9 data cols + return + actions
 
 async function adjustWarehouseStock(warehouseId, productId, delta) {
   const DB = getDB();
@@ -98,7 +98,8 @@ function renderRow(r) {
     }
     : { cases: '', singles: '' };
   const canTransfer = (Number(r.carriedOver) || 0) > 0;
-  const canSticker = (Number(r.returnAmount) || 0) > 0 || canTransfer;
+  const canReturn = (Number(r.returnAmount) || 0) > 0;
+  const canSticker = canReturn || canTransfer;
 
   return `
     <tr class="dist-prod-row cl-row" data-cl-pid="${escapeHtml(r.pid)}"
@@ -114,6 +115,15 @@ function renderRow(r) {
       <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-cases', returnForm.cases, 'Return cases')}</td>
       <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-singles', returnForm.singles, 'Return singles')}</td>
       <td class="cl-prod-num cl-carried" id="cl-carried-${escapeHtml(r.pid)}" title="${escapeHtml(r.carriedLabel)}">${escapeHtml(fmtQty(r.carriedOver))}</td>
+      <td class="cl-return-cell">
+        <button type="button" class="cl-return-btn" data-cl-action="return"
+          data-cl-pid="${escapeHtml(r.pid)}"
+          title="Return to ${escapeHtml(r.supplierName || 'supplier')} and print pallet stickers"
+          ${canReturn ? '' : 'disabled'}>
+          ${icon('corner-up-left', { size: 14 })}
+          <span>Return to supplier</span>
+        </button>
+      </td>
       <td class="cl-actions-cell">
         <div class="cl-row-actions">
           <button type="button" class="cl-row-btn" data-cl-action="transfer"
@@ -178,6 +188,7 @@ function renderGridHead() {
     ${th('Return C', 'cl-col-edit')}
     ${th('Return S', 'cl-col-edit')}
     ${th('Carried', 'cl-col-num')}
+    ${th('Return', 'cl-col-return')}
     ${th('Actions', 'cl-col-actions')}
   </tr>`;
 }
@@ -185,11 +196,20 @@ function renderGridHead() {
 export function renderClosingShell() {
   return `
     <div class="cl-panel" id="closingPanel">
-      <div class="wst-stats cl-stats" id="clStats" hidden></div>
+      <div class="cl-top">
+        <div class="wst-stats cl-stats" id="clStats" hidden></div>
+        <button type="button" class="cl-undo-btn" id="clUndoBtn" hidden disabled
+          title="Restore the last count you changed">
+          ${icon('undo-2', { size: 15 })}
+          <span>Undo</span>
+        </button>
+      </div>
       <p class="cl-hint muted">
         Counts auto-save as you type. Closing and return use each product’s stock unit
         (cases / singles, bottles, or kegs). <strong>Max returnable</strong> = invoice × supplier SOR %.
         <strong>Carried over</strong> = close count − return amount.
+        Use <strong>Return to supplier</strong> to print pallet stickers for the return qty.
+        Cleared a number by mistake? Hit <strong>Undo</strong>.
       </p>
       <div class="dist-grid-wrap cl-grid-wrap" id="clTableWrap">
         <table class="dist-grid cl-grid" id="clTable">
@@ -219,7 +239,87 @@ export function mountClosingPanel(route) {
     saveTimers: {},
     theadObserver: null,
     abort: false,
+    /** @type {Record<string, { cases: string, singles: string, returnCases: string, returnSingles: string }>} */
+    focusRaw: {},
+    /** @type {Array<{ pid: string, raw: { cases: string, singles: string, returnCases: string, returnSingles: string } }>} */
+    undoStack: [],
   };
+
+  function readRawFields(pid) {
+    return {
+      cases: document.getElementById(`cl-cases-${pid}`)?.value ?? '',
+      singles: document.getElementById(`cl-singles-${pid}`)?.value ?? '',
+      returnCases: document.getElementById(`cl-return-cases-${pid}`)?.value ?? '',
+      returnSingles: document.getElementById(`cl-return-singles-${pid}`)?.value ?? '',
+    };
+  }
+
+  function applyRawFields(pid, raw) {
+    const map = {
+      cases: `cl-cases-${pid}`,
+      singles: `cl-singles-${pid}`,
+      returnCases: `cl-return-cases-${pid}`,
+      returnSingles: `cl-return-singles-${pid}`,
+    };
+    Object.entries(map).forEach(([key, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = raw?.[key] ?? '';
+    });
+  }
+
+  function draftFromRaw(raw) {
+    return {
+      closingCases: parseQty(raw?.cases),
+      closingSingles: parseQty(raw?.singles),
+      returnCases: parseQty(raw?.returnCases),
+      returnSingles: parseQty(raw?.returnSingles),
+    };
+  }
+
+  function rawEqual(a, b) {
+    return (a?.cases || '') === (b?.cases || '')
+      && (a?.singles || '') === (b?.singles || '')
+      && (a?.returnCases || '') === (b?.returnCases || '')
+      && (a?.returnSingles || '') === (b?.returnSingles || '');
+  }
+
+  function syncUndoBtn() {
+    const btn = $('clUndoBtn');
+    if (!btn) return;
+    const has = ctx.undoStack.length > 0;
+    btn.hidden = !has;
+    btn.disabled = !has;
+  }
+
+  function pushUndo(pid, rawBefore) {
+    if (!pid || !rawBefore) return;
+    const rawNow = readRawFields(pid);
+    if (rawEqual(rawBefore, rawNow)) return;
+    ctx.undoStack.push({ pid, raw: { ...rawBefore } });
+    if (ctx.undoStack.length > 30) ctx.undoStack.shift();
+    syncUndoBtn();
+    const clearedField = Object.keys(rawBefore).some((k) => (
+      String(rawBefore[k] || '').trim() !== ''
+      && String(rawNow[k] || '').trim() === ''
+    ));
+    toast(clearedField ? 'Number cleared' : 'Count updated', false, {
+      action: { label: 'Undo', onClick: () => { undoLast(); } },
+      duration: 7000,
+    });
+  }
+
+  async function undoLast() {
+    const entry = ctx.undoStack.pop();
+    syncUndoBtn();
+    if (!entry) return;
+    const { pid, raw } = entry;
+    delete ctx.focusRaw[pid];
+    applyRawFields(pid, raw);
+    ctx.drafts[pid] = draftFromRaw(raw);
+    previewCarried(pid, ctx.drafts[pid]);
+    await flushSave(pid, { reread: false });
+    toast('Restored');
+  }
 
   function readDraft(pid) {
     const casesEl = document.getElementById(`cl-cases-${pid}`);
@@ -458,9 +558,25 @@ export function mountClosingPanel(route) {
     scheduleSave(input.dataset.clPid);
   }
 
+  function onFocus(e) {
+    const input = e.target.closest?.('.cl-pill-input');
+    if (!input) return;
+    const pid = input.dataset.clPid;
+    if (!pid || ctx.focusRaw[pid]) return;
+    // Snapshot the whole product row when editing starts so Undo restores
+    // every field on that line (not only the cell that changed).
+    ctx.focusRaw[pid] = readRawFields(pid);
+  }
+
   function onBlur(e) {
     if (!e.target?.matches?.('.cl-pill-input')) return;
-    flushSave(e.target.dataset.clPid);
+    const pid = e.target.dataset.clPid;
+    const before = ctx.focusRaw[pid];
+    if (before) {
+      pushUndo(pid, before);
+      delete ctx.focusRaw[pid];
+    }
+    flushSave(pid);
   }
 
   function onPageHide() {
@@ -475,11 +591,14 @@ export function mountClosingPanel(route) {
     const row = rowByPid(pid);
     if (!row) return;
     const canTransfer = (Number(row.carriedOver) || 0) > 0;
-    const canSticker = (Number(row.returnAmount) || 0) > 0 || canTransfer;
+    const canReturn = (Number(row.returnAmount) || 0) > 0;
+    const canSticker = canReturn || canTransfer;
     const tr = panel.querySelector(`.cl-row[data-cl-pid="${CSS.escape(pid)}"]`);
     if (!tr) return;
+    const returnBtn = tr.querySelector('[data-cl-action="return"]');
     const xferBtn = tr.querySelector('[data-cl-action="transfer"]');
     const stickerBtn = tr.querySelector('[data-cl-action="sticker"]');
+    if (returnBtn) returnBtn.disabled = !canReturn;
     if (xferBtn) xferBtn.disabled = !canTransfer;
     if (stickerBtn) stickerBtn.disabled = !canSticker;
   }
@@ -651,7 +770,7 @@ export function mountClosingPanel(route) {
       <div class="cl-pallet-chips">${chips}</div>`;
   }
 
-  async function openPalletStickerSheet(pid) {
+  async function openPalletStickerSheet(pid, { forceMode = null } = {}) {
     await flushAllPending();
     const row = rowByPid(pid);
     if (!row) {
@@ -660,12 +779,18 @@ export function mountClosingPanel(route) {
     }
     const returnQty = Number(row.returnAmount) || 0;
     const carriedQty = Number(row.carriedOver) || 0;
+    if (forceMode === 'return' && returnQty <= 0) {
+      toast('Enter a return amount for this product first.', true);
+      return;
+    }
     if (returnQty <= 0 && carriedQty <= 0) {
       toast('Enter a return amount or carried-over stock first.', true);
       return;
     }
 
-    const mode = returnQty > 0 ? 'return' : 'warehouse';
+    const mode = forceMode === 'return' || (forceMode !== 'warehouse' && returnQty > 0)
+      ? 'return'
+      : 'warehouse';
     const defaultQty = mode === 'return' ? returnQty : carriedQty;
     let warehouses = [];
     if (mode === 'warehouse') {
@@ -777,10 +902,19 @@ export function mountClosingPanel(route) {
   const onResize = () => layoutTableScroll();
 
   function onClick(e) {
+    const undoBtn = e.target.closest('#clUndoBtn');
+    if (undoBtn) {
+      undoLast();
+      return;
+    }
     const btn = e.target.closest('[data-cl-action]');
     if (!btn || btn.disabled) return;
     const pid = btn.dataset.clPid;
     if (!pid) return;
+    if (btn.dataset.clAction === 'return') {
+      openPalletStickerSheet(pid, { forceMode: 'return' });
+      return;
+    }
     if (btn.dataset.clAction === 'transfer') {
       openTransferToWarehouseSheet(pid);
       return;
@@ -792,6 +926,7 @@ export function mountClosingPanel(route) {
 
   panel.addEventListener('input', onInput);
   panel.addEventListener('change', onInput);
+  panel.addEventListener('focusin', onFocus);
   panel.addEventListener('blur', onBlur, true);
   panel.addEventListener('click', onClick);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
@@ -836,6 +971,7 @@ export function mountClosingPanel(route) {
     ctx.theadObserver?.disconnect();
     panel.removeEventListener('input', onInput);
     panel.removeEventListener('change', onInput);
+    panel.removeEventListener('focusin', onFocus);
     panel.removeEventListener('blur', onBlur, true);
     panel.removeEventListener('click', onClick);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);

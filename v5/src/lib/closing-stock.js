@@ -23,11 +23,13 @@ export function closingSorPct(ep, suppliers = []) {
   return Number(sup?.default_sor_pct) || 0;
 }
 
-/** Invoice qty × SOR % (1 d.p.). Null when SOR is unset. */
+/** Invoice qty × SOR % (1 d.p.). Null when SOR unset or invoice is 0 (no soft-cap). */
 export function maxReturnable(invoiceQty, sorPct) {
   const sor = Number(sorPct) || 0;
   if (sor <= 0) return null;
-  return roundN((Number(invoiceQty) || 0) * sor / 100, 1);
+  const inv = Number(invoiceQty) || 0;
+  if (inv <= 0) return null;
+  return roundN(inv * sor / 100, 1);
 }
 
 export function closeCountTotal(product, cases, singles, caseSizes = []) {
@@ -162,7 +164,8 @@ export function closingPatchFromDraft(product, draft, caseSizes = [], opts = {})
   let returnAmount = roundN(closeCountTotal(product, returnCases, returnSingles, caseSizes), 2);
   const maxRet = opts.maxReturnable != null ? Number(opts.maxReturnable) : null;
   const caps = [];
-  if (maxRet != null && maxRet >= 0 && returnAmount > maxRet) {
+  // Soft-cap only when there is a positive max (invoice 0 → no max → allow overwrite).
+  if (maxRet != null && maxRet > 0 && returnAmount > maxRet) {
     returnAmount = roundN(maxRet, 2);
     caps.push('max returnable');
   }

@@ -5358,6 +5358,45 @@ td.rcn-num:not(:has(*)) {
   flex-shrink: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+.cl-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.cl-top .cl-stats {
+  flex: 1;
+  min-width: 0;
+}
+.cl-undo-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shell-shadow, none);
+}
+.cl-undo-btn:hover:not(:disabled) {
+  background: var(--secondary);
+}
+.cl-undo-btn:disabled,
+.cl-undo-btn[hidden] {
+  display: none;
+}
+.cl-undo-btn .lucide,
+.cl-undo-btn svg {
+  flex-shrink: 0;
+}
 .cl-hint {
   margin: 0;
   font-size: 13px;
@@ -5530,6 +5569,50 @@ td.rcn-num:not(:has(*)) {
   margin-top: 2px;
 }
 
+.cl-panel .cl-col-return {
+  width: 148px;
+  min-width: 148px;
+  padding: 10px 6px;
+}
+.cl-return-cell {
+  width: 148px;
+  min-width: 148px;
+  padding: 6px !important;
+  vertical-align: middle;
+  text-align: center;
+}
+.cl-return-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  max-width: 136px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.cl-return-btn:hover:not(:disabled) {
+  color: var(--foreground);
+  border-color: var(--foreground);
+}
+.cl-return-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.cl-return-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
 .cl-panel .cl-col-actions {
   width: 88px;
   min-width: 88px;
