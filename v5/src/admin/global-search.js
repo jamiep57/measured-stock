@@ -31,6 +31,9 @@ function placeholderForRoute(route) {
   if (route.view === 'event' && route.panel === 'sales') return 'Search sales…';
   if (route.view === 'event' && route.panel === 'kit') return 'Filter kit / barcode…';
   if (route.view === 'event' && route.panel === 'deliveries') return 'Search supplier or product…';
+  if (route.view === 'event' && (route.panel === 'closing' || route.panel === 'recon')) {
+    return 'Search product or supplier…';
+  }
   if (route.view === 'event') return 'Filter event products…';
   if (route.view === 'library') return 'Search library…';
   if (route.view === 'kit-library') return 'Search kit / barcode…';
@@ -161,9 +164,10 @@ export function applyGenericProductFilter({ query, productId }) {
     const pid = row.dataset.pid;
     const nameEl = row.querySelector('.dist-prod-name, [data-product-name]');
     const name = (nameEl?.textContent || row.dataset.productName || '').toLowerCase();
+    const supplier = (row.dataset.supplierName || '').toLowerCase();
     const match = productId
       ? pid === productId
-      : (!q || name.includes(q) || pid === q);
+      : (!q || name.includes(q) || supplier.includes(q) || pid === q);
     row.hidden = !match;
   });
 

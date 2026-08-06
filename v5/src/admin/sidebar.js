@@ -158,7 +158,8 @@ function wireWorkspace(onNavigate) {
 
 /** Ensure Reports exists even if a cached admin.html predates the nav link. */
 function ensureReportsNavLink() {
-  const nav = document.getElementById('sidebarEventSales');
+  const nav = document.getElementById('sidebarEventReports')
+    || document.getElementById('sidebarEventSales');
   if (!nav) return;
   if (nav.querySelector('[data-route="reports"]')) return;
 
@@ -196,6 +197,12 @@ export function syncSidebar(route, state) {
   eventSections.forEach((section) => {
     section.hidden = !showEvent;
   });
+
+  const catalogDashboard = document.getElementById('sidebarCatalogDashboard');
+  if (catalogDashboard) catalogDashboard.hidden = !showEvent;
+
+  const eventKitLink = document.getElementById('sidebarEventKitLink');
+  if (eventKitLink) eventKitLink.hidden = !showEvent;
 
   document.querySelectorAll('.nav-link[data-event], .nav-link-cog[data-event]').forEach((el) => {
     if (showEvent && eventId) {

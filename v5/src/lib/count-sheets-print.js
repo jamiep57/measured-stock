@@ -50,13 +50,19 @@ function productRowsHtml(eps, caseSizes) {
 }
 
 function renderBarSheet(bar, eps, caseSizes, meta) {
+  const footLabel = meta.wholeEvent
+    ? `Whole event catalogue · ${eps.length} item${eps.length === 1 ? '' : 's'}`
+    : `Products on ${escapeHtml(bar.name)} distribution · ${eps.length} item${eps.length === 1 ? '' : 's'}`;
+  const eventMeta = meta.wholeEvent
+    ? ''
+    : `<span><strong>Event</strong> ${escapeHtml(meta.eventName)}</span>`;
   return `
     <section class="sheet">
       <header>
         <div class="brand">Stock count sheet</div>
         <h1>${escapeHtml(bar.name)}</h1>
         <div class="meta">
-          <span><strong>Event</strong> ${escapeHtml(meta.eventName)}</span>
+          ${eventMeta}
           <span><strong>Date</strong> _______________</span>
           <span><strong>Counted by</strong> _______________</span>
         </div>
@@ -73,7 +79,7 @@ function renderBarSheet(bar, eps, caseSizes, meta) {
         <tbody>${productRowsHtml(eps, caseSizes)}</tbody>
       </table>
       <footer>
-        <span>Products on ${escapeHtml(bar.name)} distribution · ${eps.length} item${eps.length === 1 ? '' : 's'}</span>
+        <span>${footLabel}</span>
         <span>Checked _______________</span>
       </footer>
     </section>`;
@@ -250,37 +256,75 @@ function printStyles() {
 }
 
 /**
- * Build printable HTML for one sheet per serving bar.
- * Products are limited to each bar's distribution menu (`bar_products`).
+ * Build printable HTML for stock count sheet(s).
+ * @param {'all'|'event'|'bar'} [opts.scope]
+ *   - `all` — one sheet per serving bar (default; products from each bar’s distribution menu)
+ *   - `event` — one sheet for the full event catalogue
+ *   - `bar` — one sheet for `opts.barId`
  * @returns {{ html: string, barCount: number, productCount: number } | { error: string }}
  */
-export function buildCountSheetsHtml({ event, barProducts, caseSizes } = {}) {
+export function buildCountSheetsHtml({
+  event,
+  barProducts,
+  caseSizes,
+  scope = 'all',
+  barId,
+} = {}) {
+  const eventName = event?.name || 'Event';
+  const sizes = caseSizes || [];
+  const mode = scope === 'event' || scope === 'bar' ? scope : 'all';
+
+  if (mode === 'event') {
+    const eps = (event?.event_products || []).filter((ep) => ep.product?.name);
+    if (!eps.length) {
+      return { error: 'Add products to this event before printing count sheets.' };
+    }
+    const sheet = renderBarSheet({ name: eventName }, eps, sizes, {
+      eventName,
+      wholeEvent: true,
+    });
+    const html = wrapPrintHtml(`Count sheet — ${eventName}`, sheet);
+    return { html, barCount: 0, productCount: eps.length };
+  }
+
   const bars = servingBars(event?.bars);
   if (!bars.length) return { error: 'Add bars in Event Setup before printing count sheets.' };
+
+  const targetBars = mode === 'bar'
+    ? bars.filter((b) => b.id === barId)
+    : bars;
+
+  if (mode === 'bar' && !targetBars.length) {
+    return { error: 'Choose a location to print.' };
+  }
 
   const sheets = [];
   let productCount = 0;
 
-  bars.forEach((bar) => {
+  targetBars.forEach((bar) => {
     const eps = filterEventProductsForBar(event?.event_products, barProducts, bar.id);
     if (!eps.length) return;
     productCount += eps.length;
-    sheets.push(renderBarSheet(bar, eps, caseSizes || [], {
-      eventName: event?.name || 'Event',
-    }));
+    sheets.push(renderBarSheet(bar, eps, sizes, { eventName }));
   });
 
   if (!sheets.length) {
-    return { error: 'No products are listed on any location in Distribution yet.' };
+    return {
+      error: mode === 'bar'
+        ? 'No products are listed on this location in Distribution yet.'
+        : 'No products are listed on any location in Distribution yet.',
+    };
   }
 
-  const eventName = event?.name || 'Event';
-  const html = wrapPrintHtml(`Count sheets — ${eventName}`, sheets.join('\n'));
+  const title = mode === 'bar'
+    ? `Count sheet — ${targetBars[0].name}`
+    : `Count sheets — ${eventName}`;
+  const html = wrapPrintHtml(title, sheets.join('\n'));
 
   return { html, barCount: sheets.length, productCount };
 }
 
-/** Open a print window with one paper count sheet per distribution location. */
+/** Open a print window with paper count sheet(s). */
 export function printCountSheets(opts) {
   const result = buildCountSheetsHtml(opts);
   if (result.error) return result;

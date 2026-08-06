@@ -80,7 +80,7 @@ export const PANEL_TOOLBAR = {
           id: 'print-count-sheets',
           icon: 'printer',
           label: 'Print count sheets',
-          title: 'Print paper count sheets — one per location',
+          title: 'Print paper count sheets — all locations, whole event, or one bar',
         },
       ],
     },

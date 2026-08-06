@@ -120,7 +120,8 @@ function renderRow(r) {
 
   return `
     <tr class="dist-prod-row cl-row" data-cl-pid="${escapeHtml(r.pid)}"
-      data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}">
+      data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
+      data-supplier-name="${escapeHtml((r.supplierName && r.supplierName !== '—' ? r.supplierName : '').toLowerCase())}">
       <th class="dist-sticky dist-prod-name" data-col="product" scope="row">${escapeHtml(r.p.name || 'Product')}</th>
       <td class="dist-sticky dist-prod-pack muted" data-col="pack">${escapeHtml(r.packLabel)}</td>
       <td class="cl-prod-num muted" title="Supplier">${escapeHtml(r.supplierName)}</td>
@@ -708,7 +709,9 @@ export function mountClosingPanel(route) {
         tr.hidden = false;
         return;
       }
-      tr.hidden = !(tr.dataset.productName || '').includes(q);
+      const name = tr.dataset.productName || '';
+      const supplier = tr.dataset.supplierName || '';
+      tr.hidden = !(name.includes(q) || supplier.includes(q));
     });
     panel.querySelectorAll('.dist-cat-row').forEach((tr) => {
       let next = tr.nextElementSibling;
@@ -1435,11 +1438,9 @@ export function mountClosingPanel(route) {
       return;
     }
     const bars = servingBarsForPrint();
-    const barOptions = bars.length
-      ? bars.map((b, i) => (
-        `<option value="${escapeHtml(b.id)}"${i === 0 ? ' selected' : ''}>${escapeHtml(b.name)}</option>`
-      )).join('')
-      : '<option value="">No bars yet</option>';
+    const barOptions = bars
+      .map((b) => `<option value="bar:${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`)
+      .join('');
 
     openSheet({
       title: 'Print closing sheet',
@@ -1450,35 +1451,13 @@ export function mountClosingPanel(route) {
             Choose what to print — all locations, the whole event, or a single bar.
           </p>
           <div class="admin-field">
-            <span class="admin-label">Location</span>
-            <div class="cl-print-scope" role="radiogroup" aria-label="Print location">
-              <label class="cl-print-scope-option">
-                <input type="radio" name="clPrintScope" value="all" checked>
-                <span>
-                  <strong>All locations</strong>
-                  <span class="muted">One sheet per bar</span>
-                </span>
-              </label>
-              <label class="cl-print-scope-option">
-                <input type="radio" name="clPrintScope" value="event">
-                <span>
-                  <strong>Whole event</strong>
-                  <span class="muted">One sheet for the full catalogue</span>
-                </span>
-              </label>
-              <label class="cl-print-scope-option">
-                <input type="radio" name="clPrintScope" value="bar"${bars.length ? '' : ' disabled'}>
-                <span>
-                  <strong>One bar</strong>
-                  <span class="muted">A single location</span>
-                </span>
-              </label>
-            </div>
-          </div>
-          <div class="admin-field" id="clPrintBarField" hidden>
-            <label class="admin-label" for="clPrintBar">Bar</label>
-            <select class="admin-select" id="clPrintBar"${bars.length ? '' : ' disabled'}>
-              ${barOptions}
+            <label class="admin-label" for="clPrintScope">Location</label>
+            <select class="admin-select" id="clPrintScope">
+              <option value="all" selected>All locations (one sheet per bar)</option>
+              <option value="event">Whole event (full catalogue)</option>
+              ${barOptions
+                ? `<optgroup label="One bar">${barOptions}</optgroup>`
+                : '<option value="" disabled>No bars yet</option>'}
             </select>
           </div>
         </div>`,
@@ -1489,26 +1468,24 @@ export function mountClosingPanel(route) {
         </div>`,
     });
 
-    const syncBarField = () => {
-      const scope = document.querySelector('input[name="clPrintScope"]:checked')?.value;
-      const field = $('clPrintBarField');
-      if (field) field.hidden = scope !== 'bar';
-    };
-    document.querySelectorAll('input[name="clPrintScope"]').forEach((el) => {
-      el.addEventListener('change', syncBarField);
-    });
-    syncBarField();
-
     $('clPrintCancel')?.addEventListener('click', () => closeSheet());
     $('clPrintGo')?.addEventListener('click', () => {
-      const scope = document.querySelector('input[name="clPrintScope"]:checked')?.value || 'event';
-      const barId = $('clPrintBar')?.value || '';
+      const raw = $('clPrintScope')?.value || 'event';
+      let scope = 'event';
+      let barId;
+      if (raw === 'all') scope = 'all';
+      else if (raw === 'event') scope = 'event';
+      else if (raw.startsWith('bar:')) {
+        scope = 'bar';
+        barId = raw.slice(4);
+      }
       if (scope === 'bar' && !barId) {
         toast('Choose a bar to print', true);
         return;
       }
+      // Open print while still in the click gesture, then close the drawer.
+      runPrintClosingSheet({ scope, barId });
       closeSheet();
-      runPrintClosingSheet({ scope, barId: scope === 'bar' ? barId : undefined });
     });
   }
 

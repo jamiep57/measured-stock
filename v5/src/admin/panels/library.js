@@ -8,6 +8,7 @@ import {
   getDB, loadLibraryProducts, loadCategories, loadSuppliers, loadCaseSizes,
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
+import { productSupplierSearchText } from '../../components/product-search.js';
 import { loadingTableRow } from '../../components/loading-widget.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
@@ -72,7 +73,7 @@ function productHaystack(p, caseSizes) {
   const pack = productStockPack(p, caseSizes);
   return [
     p.name, p.sku, p.case_size, pack.label,
-    p.category?.name, preferredSupplier(p),
+    p.category?.name, preferredSupplier(p), productSupplierSearchText(p),
   ].filter(Boolean).join(' ').toLowerCase();
 }
 

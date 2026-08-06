@@ -108,12 +108,22 @@ function parentSupplierLabel(r) {
   return 'Multiple';
 }
 
+function supplierSearchText(r) {
+  const names = [];
+  if (r.supplierName && r.supplierName !== '—') names.push(r.supplierName);
+  (r.deliverySources || []).forEach((s) => {
+    if (s.supplierName) names.push(s.supplierName);
+  });
+  return [...new Set(names)].join(' ').toLowerCase();
+}
+
 function renderSubRows(r) {
   if (!r.multiSupplierDelivery) return '';
   return (r.deliverySources || []).map((s) => `
     <tr class="recon-sub-row${r.reconHidden ? ' recon-row-hidden' : ''}"
       data-rcn-pid="${escapeHtml(r.pid)}"
       data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
+      data-supplier-name="${escapeHtml((s.supplierName || '').toLowerCase())}"
       data-rcn-status="${escapeHtml(r.reconStatus || '')}">
       <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
         <div class="rcn-item rcn-item--sub">
@@ -169,6 +179,7 @@ function renderRow(r) {
   return `
     <tr class="recon-row${r.reconHidden ? ' recon-row-hidden' : ''}${r.investigate ? ' row-investigate' : ''}${r.multiSupplierDelivery ? ' recon-row--has-subs' : ''}"
       data-rcn-pid="${escapeHtml(r.pid)}" data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
+      data-supplier-name="${escapeHtml(supplierSearchText(r))}"
       data-rcn-status="${escapeHtml(r.reconStatus || '')}">
       <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
         <div class="rcn-item">
@@ -989,7 +1000,8 @@ export function mountReconPanel(route) {
         return;
       }
       const name = tr.dataset.productName || '';
-      tr.hidden = !name.includes(q);
+      const supplier = tr.dataset.supplierName || '';
+      tr.hidden = !(name.includes(q) || supplier.includes(q));
     };
     panel.querySelectorAll('.recon-row[data-rcn-pid], .recon-sub-row[data-rcn-pid]').forEach(setHidden);
     panel.querySelectorAll('.dist-cat-row').forEach((tr) => {

@@ -39,11 +39,24 @@ function normalisePools(list) {
     .filter((p) => p.name);
 }
 
+/** All linked supplier names for type-to-filter matching. */
+export function productSupplierSearchText(product) {
+  const names = [];
+  for (const o of product?.product_suppliers || []) {
+    const n = o?.supplier?.name;
+    if (n) names.push(n);
+  }
+  if (product?.supplier?.name) names.push(product.supplier.name);
+  return [...new Set(names)].join(' ');
+}
+
 function offerSummary(product) {
   const offers = product.product_suppliers || [];
-  if (!offers.length) return '';
+  if (!offers.length) {
+    return product?.supplier?.name || '';
+  }
   const pref = offers.find((o) => o.is_preferred) || offers[0];
-  const name = pref.supplier?.name || 'Supplier';
+  const name = pref.supplier?.name || product?.supplier?.name || 'Supplier';
   const extra = offers.length > 1 ? ` (+${offers.length - 1})` : '';
   const price = pref.unit_price != null ? ` · £${pref.unit_price}` : pref.case_price != null ? ` · £${pref.case_price}/case` : '';
   return name + extra + price;
@@ -311,7 +324,11 @@ export function mountProductSearch(container, options = {}) {
     });
     const filteredProducts = items.filter((p) => {
       if (!query) return true;
-      const hay = [p.name, p.sku, p.barcode, p.case_size, productStockPack(p, caseSizes).label, p.category?.name, offerSummary(p)].join(' ').toLowerCase();
+      const hay = [
+        p.name, p.sku, p.barcode, p.case_size,
+        productStockPack(p, caseSizes).label, p.category?.name,
+        offerSummary(p), productSupplierSearchText(p),
+      ].join(' ').toLowerCase();
       return hay.includes(query);
     }).slice(0, 40);
 

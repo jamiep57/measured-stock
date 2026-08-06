@@ -1,5 +1,5 @@
 /**
- * Admin stock counts — session picker + distribution-style product × bar grid.
+ * Admin stock counts — session picker + recon-style product × bar grid.
  */
 
 import { $, escapeHtml, toast, fmtDateTime, isBoneYard } from '../../lib/util.js';
@@ -10,6 +10,7 @@ import {
   formToCountStored, countStoredToForm, hasQuantity, inputAttrsPrimary, inputAttrsForSecondary, parseQty,
 } from '../../stock-entry.js';
 import { countEntryMode, productStockPack } from '../../pack-metrics.js';
+import { productSupplierSearchText } from '../../components/product-search.js';
 import { printCountSheets } from '../../lib/count-sheets-print.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { loadingWidget } from '../../components/loading-widget.js';
@@ -64,7 +65,7 @@ function renderBarQtyCells(bar, ep, ctx) {
 
   if (!serves) {
     return `
-      <td colspan="2" class="dist-cell dist-cell--off" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
+      <td colspan="2" class="cnt-qty-cell cnt-qty-cell--off cnt-group-start" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
         <button type="button" class="dist-cell-add" title="Add to ${barName} menu" aria-label="Add to ${barName} menu">
           ${icon('plus', { size: 14, strokeWidth: 2.5 })}
         </button>
@@ -79,7 +80,7 @@ function renderBarQtyCells(bar, ep, ctx) {
     : '';
 
   const casesCell = `
-    <td class="dist-cell dist-cell--on cnt-qty-cell cnt-qty-cell--cases${hasCases ? ' cnt-qty-cell--filled' : ''}"
+    <td class="cnt-qty-cell cnt-qty-cell--edit cnt-qty-cell--cases cnt-group-start${hasCases ? ' cnt-qty-cell--filled' : ''}"
       data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
       <input type="text" class="cnt-inp cnt-inp--primary num-math"
         data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}"
@@ -94,7 +95,7 @@ function renderBarQtyCells(bar, ep, ctx) {
 
   const singlesCell = secondary
     ? `
-    <td class="dist-cell dist-cell--on cnt-qty-cell cnt-qty-cell--singles${hasSingles ? ' cnt-qty-cell--filled' : ''}"
+    <td class="cnt-qty-cell cnt-qty-cell--edit cnt-qty-cell--singles${hasSingles ? ' cnt-qty-cell--filled' : ''}"
       data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
       <input type="text" class="cnt-inp cnt-inp--secondary num-math"
         data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}"
@@ -104,7 +105,7 @@ function renderBarQtyCells(bar, ep, ctx) {
         aria-label="${escapeHtml(secondaryLabel)}">
     </td>`
     : `
-    <td class="dist-cell dist-cell--on cnt-qty-cell cnt-qty-cell--singles cnt-qty-cell--na"
+    <td class="cnt-qty-cell cnt-qty-cell--singles cnt-qty-cell--na"
       data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
       <span class="muted">—</span>
     </td>`;
@@ -115,10 +116,17 @@ function renderBarQtyCells(bar, ep, ctx) {
 function renderProductRow(ep, ctx) {
   const pid = ep.product_id;
   const pack = productStockPack(ep.product, ctx.caseSizes);
+  const packLabel = pack?.label || ep.product.case_size || '';
 
-  let html = `<tr class="dist-prod-row cnt-prod-row" data-pid="${escapeHtml(pid)}">
-    <th class="dist-sticky dist-prod-name" scope="row">${escapeHtml(ep.product.name)}</th>
-    <td class="dist-sticky dist-prod-pack muted">${escapeHtml(pack?.label || ep.product.case_size || '—')}</td>`;
+  let html = `<tr class="cnt-prod-row" data-pid="${escapeHtml(pid)}">
+    <th class="cnt-sticky cnt-col-item" scope="row">
+      <div class="cnt-item">
+        <div class="cnt-item-top">
+          <span class="cnt-item-name" title="${escapeHtml(ep.product.name)}">${escapeHtml(ep.product.name)}</span>
+        </div>
+        ${packLabel ? `<span class="cnt-item-meta">${escapeHtml(packLabel)}</span>` : ''}
+      </div>
+    </th>`;
 
   ctx.bars.forEach((b) => {
     html += renderBarQtyCells(b, ep, ctx);
@@ -131,17 +139,21 @@ function barColCount(ctx) {
   return ctx.bars.length * 2;
 }
 
+function cntTh(label, extraClass = '', title = '') {
+  const tip = title || label;
+  return `<th class="cnt-th ${extraClass}" title="${escapeHtml(tip)}">
+    <div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(label)}</span></div>
+  </th>`;
+}
+
 function renderGridHead(ctx) {
   let row1 = `<tr class="cnt-head-row cnt-head-row1">
-    <th class="dist-sticky dist-col-header dist-col-product" rowspan="2">
+    <th class="cnt-th cnt-sticky cnt-col-item cnt-th--item" rowspan="2" title="Product">
       <div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div>
-    </th>
-    <th class="dist-sticky dist-col-header dist-col-pack" rowspan="2">
-      <div class="dist-bar-head"><span class="dist-bar-name">Pack</span></div>
     </th>`;
 
   ctx.bars.forEach((b) => {
-    row1 += `<th class="dist-bar-header cnt-bar-group" colspan="2">
+    row1 += `<th class="cnt-th cnt-bar-group cnt-group-start" colspan="2" title="${escapeHtml(b.name)}">
       <div class="dist-bar-head">
         <span class="dist-bar-name">${escapeHtml(b.name)}</span>
       </div>
@@ -152,8 +164,8 @@ function renderGridHead(ctx) {
   let row2 = '<tr class="cnt-head-row cnt-head-row2">';
   ctx.bars.forEach(() => {
     row2 += `
-      <th class="cnt-qty-header">C</th>
-      <th class="cnt-qty-header">S</th>`;
+      ${cntTh('C', 'cnt-qty-header cnt-th--edit cnt-group-start', 'Cases')}
+      ${cntTh('S', 'cnt-qty-header cnt-th--edit', 'Singles')}`;
   });
   row2 += '</tr>';
 
@@ -162,13 +174,13 @@ function renderGridHead(ctx) {
 
 function renderGridBody(ctx) {
   const filtered = filterProducts(ctx);
-  const colSpan = 2 + barColCount(ctx);
+  const colSpan = 1 + barColCount(ctx);
   let html = '';
 
   const grouped = groupByCategory(filtered);
   Object.keys(grouped).sort().forEach((cat) => {
     html += `<tr class="dist-cat-row">
-      <td colspan="2" class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
+      <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
       <td colspan="${barColCount(ctx)}" class="dist-cat-scroll"></td>
     </tr>`;
     grouped[cat].forEach((ep) => {
@@ -184,17 +196,19 @@ function filterProducts(ctx) {
   if (!q) return ctx.eps;
   return ctx.eps.filter((ep) => {
     const cat = ep.product?.category?.name || '';
-    const hay = [ep.product.name, ep.product.sku, cat].join(' ').toLowerCase();
+    const hay = [ep.product.name, ep.product.sku, cat, productSupplierSearchText(ep.product)]
+      .join(' ')
+      .toLowerCase();
     return hay.includes(q);
   });
 }
 
-function applyCntStickyOffsets(grid, panelEl) {
-  if (!grid) return;
+function applyCntStickyOffsets(_grid, panelEl) {
+  const wrap = panelEl.querySelector('.cnt-table-wrap') || panelEl.querySelector('.dist-grid-wrap');
+  if (!wrap) return;
   const rs = getComputedStyle(panelEl);
-  const productW = rs.getPropertyValue('--dist-product-w').trim() || '200px';
-  grid.style.setProperty('--col-pack-left', productW);
-  grid.closest('.dist-grid-wrap')?.style.setProperty('--dist-scroll-hint-left', productW);
+  const productW = rs.getPropertyValue('--cnt-item-w').trim() || '240px';
+  wrap.style.setProperty('--dist-scroll-hint-left', productW);
 }
 
 function sessionProgress(ctx) {
@@ -313,7 +327,7 @@ export function mountCountsPanel(route) {
 
     panel.innerHTML = `
       ${renderSessionBar(ctx)}
-      <div class="dist-grid-wrap">
+      <div class="dist-grid-wrap cnt-table-wrap">
         <table class="dist-grid cnt-grid" id="cntGrid">
           <thead id="cntGridHead">${renderGridHead(ctx)}</thead>
           <tbody id="cntGridBody">${renderGridBody(ctx)}</tbody>
@@ -634,21 +648,83 @@ export function mountCountsPanel(route) {
     e.detail.handled = true;
   }
 
-  function handlePrintCountSheets() {
-    if (!ctx.event) {
-      toast('Counts are still loading', true);
-      return;
-    }
+  function runPrintCountSheets({ scope, barId }) {
     const result = printCountSheets({
       event: ctx.event,
       barProducts: ctx.barProducts,
       caseSizes: ctx.caseSizes,
+      scope,
+      barId,
     });
     if (result.error) {
       toast(result.error, true);
       return;
     }
-    toast(`Opened ${result.barCount} count sheet${result.barCount === 1 ? '' : 's'}`);
+    if (scope === 'event') {
+      toast(`Opened count sheet (${result.productCount} item${result.productCount === 1 ? '' : 's'})`);
+      return;
+    }
+    const n = result.barCount || 1;
+    toast(`Opened ${n} count sheet${n === 1 ? '' : 's'}`);
+  }
+
+  function openPrintCountSheetsDialog() {
+    if (!ctx.event) {
+      toast('Counts are still loading', true);
+      return;
+    }
+    const bars = servingBars(ctx.event?.bars);
+    const barOptions = bars
+      .map((b) => `<option value="bar:${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`)
+      .join('');
+
+    openSheet({
+      title: 'Print count sheets',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <p class="wst-form-hint muted" style="margin:0 0 4px">
+            Choose what to print — all locations, the whole event, or a single bar.
+          </p>
+          <div class="admin-field">
+            <label class="admin-label" for="cntPrintScope">Location</label>
+            <select class="admin-select" id="cntPrintScope">
+              <option value="all" selected>All locations (one sheet per bar)</option>
+              <option value="event">Whole event (full catalogue)</option>
+              ${barOptions
+                ? `<optgroup label="One bar">${barOptions}</optgroup>`
+                : '<option value="" disabled>No bars yet</option>'}
+            </select>
+          </div>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="cntPrintCancel">Cancel</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="cntPrintGo">Print</button>
+        </div>`,
+    });
+
+    $('cntPrintCancel')?.addEventListener('click', () => closeSheet());
+    $('cntPrintGo')?.addEventListener('click', () => {
+      const raw = $('cntPrintScope')?.value || 'all';
+      let scope = 'all';
+      let barId;
+      if (raw === 'event') scope = 'event';
+      else if (raw.startsWith('bar:')) {
+        scope = 'bar';
+        barId = raw.slice(4);
+      }
+      if (scope === 'bar' && !barId) {
+        toast('Choose a bar to print', true);
+        return;
+      }
+      runPrintCountSheets({ scope, barId });
+      closeSheet();
+    });
+  }
+
+  function handlePrintCountSheets() {
+    openPrintCountSheetsDialog();
   }
 
   const onToolbarAction = (e) => {

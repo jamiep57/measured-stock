@@ -76,6 +76,16 @@ async function render(route) {
 
 function wireNav() {
   document.getElementById('sidebarGlobal')?.addEventListener('click', (e) => {
+    const eventLink = e.target.closest('a[data-event], .nav-link-cog[data-event]');
+    if (eventLink) {
+      e.preventDefault();
+      const route = parseRoute();
+      const eventId = (route.view === 'event' && route.eventId) || state.eventId;
+      if (!eventId) return;
+      navigate({ view: 'event', eventId, panel: eventLink.dataset.route });
+      render(parseRoute());
+      return;
+    }
     const a = e.target.closest('a[data-route]:not([data-event])');
     if (!a) return;
     e.preventDefault();
@@ -98,7 +108,7 @@ function wireNav() {
     render(parseRoute());
   });
 
-  const eventNavIds = ['sidebarEventStock', 'sidebarEventSales'];
+  const eventNavIds = ['sidebarEventStock', 'sidebarEventKit', 'sidebarEventSales', 'sidebarEventReports'];
   eventNavIds.forEach((id) => {
     document.getElementById(id)?.addEventListener('click', (e) => {
       const globalLink = e.target.closest('a[data-route]:not([data-event])');

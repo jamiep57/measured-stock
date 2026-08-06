@@ -42,11 +42,13 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarGlobal">
+                <div class="nav-link-row" id="sidebarCatalogDashboard" hidden>
+                  <a class="nav-link nav-link-row-main" data-route="dashboard" data-event><i data-lucide="gauge"></i> Dashboard</a>
+                  <a class="nav-link-cog" data-route="setup" data-event href="#" title="Event setup" aria-label="Event setup"><i data-lucide="settings"></i></a>
+                </div>
                 <a class="nav-link" href="/v5/admin/library" data-route="library"><i data-lucide="library"></i> Library <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" href="/v5/admin/kit-library" data-route="kit-library"><i data-lucide="boxes"></i> Kit library <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" href="/v5/admin/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" href="/v5/admin/warehouses" data-route="warehouses"><i data-lucide="warehouse"></i> Warehouses <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" href="/v5/admin/bugs" data-route="bugs"><i data-lucide="bug"></i> Bugs <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>
           </div>
@@ -58,18 +60,26 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventStock">
-                <div class="nav-link-row">
-                  <a class="nav-link nav-link-row-main" data-route="dashboard" data-event><i data-lucide="gauge"></i> Dashboard</a>
-                  <a class="nav-link-cog" data-route="setup" data-event href="#" title="Event setup" aria-label="Event setup"><i data-lucide="settings"></i></a>
-                </div>
                 <a class="nav-link" data-route="products" data-event><i data-lucide="list"></i> Products <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="distribution" data-event><i data-lucide="share-2"></i> Distribution <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="deliveries" data-event><i data-lucide="container"></i> Deliveries <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="counts" data-event><i data-lucide="clipboard-list"></i> Counts <span class="nav-status-dot" title="Built — panel is functional"></span></a>
-                <a class="nav-link" data-route="kit" data-event><i data-lucide="boxes"></i> Kit <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="transfers" data-event><i data-lucide="arrow-left-right"></i> Transfers <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="wastage" data-event><i data-lucide="trash"></i> Wastage <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="closing" data-event><i data-lucide="lock"></i> Closing <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="kit">
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Kit library</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventKit">
+                <a class="nav-link" href="/v5/admin/kit-library" data-route="kit-library"><i data-lucide="boxes"></i> Kit library <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+                <a class="nav-link" id="sidebarEventKitLink" data-route="kit" data-event hidden><i data-lucide="package"></i> Kit <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>
           </div>
@@ -81,9 +91,20 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventSales">
-                <a class="nav-link" data-route="reports" data-event><i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="sales" data-event><i data-lucide="store"></i> Square &amp; modifiers <span class="nav-status-dot" title="Modifiers mapping built"></span></a>
                 <a class="nav-link" href="/v5/admin/volume-pools" data-route="volume-pools"><i data-lucide="layers"></i> Volume pools <span class="nav-status-dot" title="Built — panel is functional"></span></a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="event-reports" hidden>
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Reports</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventReports">
+                <a class="nav-link" data-route="reports" data-event><i data-lucide="pie-chart"></i> Reports <span class="nav-status-dot" title="Built — panel is functional"></span></a>
                 <a class="nav-link" data-route="recon" data-event><i data-lucide="pound-sterling"></i> Recon <span class="nav-status-dot" title="Built — panel is functional"></span></a>
               </nav>
             </div>

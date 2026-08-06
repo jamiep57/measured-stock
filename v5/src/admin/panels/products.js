@@ -13,7 +13,7 @@ import {
   countedInFromDeliveries,
   damagedFromDeliveries as damagedFromDeliveriesMap,
 } from '../../lib/opening-stock.js';
-import { mountProductSearch } from '../../components/product-search.js';
+import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { loadingTableRow } from '../../components/loading-widget.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
@@ -43,6 +43,7 @@ function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editi
   const p = ep.product || {};
   const pid = ep.product_id;
   const pack = productStockPack(p, caseSizes);
+  const packLabel = pack.label || p.case_size || '';
   const cin = countedIn[pid] ?? (ep.delivered_qty != null ? Number(ep.delivered_qty) : 0);
   const ordered = Number(ep.qty_ordered) || 0;
   const opening = openingForProduct(pid, countedIn, damagedFromDeliveries, ep);
@@ -50,19 +51,27 @@ function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editi
   const varCls = variance > 0 ? 'ep-var--pos' : variance < 0 ? 'ep-var--neg' : '';
 
   const orderedCell = editingOrderedId === pid
-    ? `<td class="ep-prod-num ep-prod-ordered" onclick="event.stopPropagation()">
-        <input class="ep-ordered-input num-math" type="text" inputmode="decimal" autocomplete="off" id="epOrd-${escapeHtml(pid)}" value="${ep.qty_ordered != null ? escapeHtml(String(ep.qty_ordered)) : ''}">
+    ? `<td class="ep-num ep-cell--edit ep-prod-ordered" onclick="event.stopPropagation()">
+        <input class="ep-ordered-input num-math" type="text" inputmode="decimal" autocomplete="off"
+          id="epOrd-${escapeHtml(pid)}" value="${ep.qty_ordered != null ? escapeHtml(String(ep.qty_ordered)) : ''}"
+          placeholder="—">
       </td>`
-    : `<td class="ep-prod-num ep-prod-ordered ep-prod-ordered--edit" data-pid="${escapeHtml(pid)}" title="Edit ordered">${fmtNum(ordered)}</td>`;
+    : `<td class="ep-num ep-cell--edit ep-prod-ordered ep-prod-ordered--edit" data-pid="${escapeHtml(pid)}" title="Edit ordered">${fmtNum(ordered)}</td>`;
 
   return `
-    <tr class="dist-prod-row ep-prod-row" data-pid="${escapeHtml(pid)}" data-product-name="${escapeHtml((p.name || '').toLowerCase())}" tabindex="0" role="button" title="Edit product">
-      <th class="dist-sticky dist-prod-name" scope="row">${escapeHtml(p.name || 'Product')}</th>
-      <td class="dist-sticky dist-prod-pack muted">${escapeHtml(pack.label || p.case_size || '—')}</td>
+    <tr class="ep-prod-row" data-pid="${escapeHtml(pid)}" data-product-name="${escapeHtml((p.name || '').toLowerCase())}" tabindex="0" role="button" title="Edit product">
+      <th class="ep-sticky ep-col-item" scope="row">
+        <div class="ep-item">
+          <div class="ep-item-top">
+            <span class="ep-item-name" title="${escapeHtml(p.name || 'Product')}">${escapeHtml(p.name || 'Product')}</span>
+          </div>
+          ${packLabel ? `<span class="ep-item-meta">${escapeHtml(packLabel)}</span>` : ''}
+        </div>
+      </th>
       ${orderedCell}
-      <td class="ep-prod-num ep-counted" data-pid="${escapeHtml(pid)}">${fmtNum(cin)}</td>
-      <td class="ep-prod-num ep-var ${varCls}" data-pid="${escapeHtml(pid)}">${variance > 0 ? '+' : ''}${fmtNum(variance)}</td>
-      <td class="ep-prod-num ep-opening" data-pid="${escapeHtml(pid)}">${fmtNum(opening)}</td>
+      <td class="ep-num ep-counted" data-pid="${escapeHtml(pid)}">${fmtNum(cin)}</td>
+      <td class="ep-num ep-var ${varCls}" data-pid="${escapeHtml(pid)}">${variance > 0 ? '+' : ''}${fmtNum(variance)}</td>
+      <td class="ep-num ep-num--emphasis ep-opening ep-group-start" data-pid="${escapeHtml(pid)}">${fmtNum(opening)}</td>
     </tr>`;
 }
 
@@ -72,7 +81,8 @@ function renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, editingOrd
   let html = '';
   Object.keys(grouped).sort().forEach((cat) => {
     html += `<tr class="dist-cat-row">
-      <td colspan="6" class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
+      <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
+      <td colspan="4" class="dist-cat-scroll"></td>
     </tr>`;
     grouped[cat].forEach((ep) => {
       html += renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editingOrderedId);
@@ -91,36 +101,30 @@ function openingForProduct(pid, countedIn, damagedFromDeliveries, ep) {
   return epOpeningStock({ delivered_qty: cin, damaged_qty: dmg });
 }
 
+function epTh(label, extraClass = '', title = '') {
+  const tip = title || label;
+  return `<th class="ep-th ${extraClass}" title="${escapeHtml(tip)}">
+    <div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(label)}</span></div>
+  </th>`;
+}
+
 function renderShell() {
   return `
     <div class="ep-panel">
       <p class="ep-hint muted">Add products from your library and set ordered quantities. <strong>Counted in</strong> and unusable stock come from deliveries; <strong>opening</strong> = counted in − delivery damages.</p>
-      <div class="dist-grid-wrap ep-grid-wrap">
+      <div class="dist-grid-wrap ep-table-wrap">
         <table class="dist-grid ep-grid" id="epTable">
           <thead>
-            <tr>
-              <th class="dist-sticky dist-col-header dist-col-product">
-                <div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div>
-              </th>
-              <th class="dist-sticky dist-col-header dist-col-pack">
-                <div class="dist-bar-head"><span class="dist-bar-name">Pack</span></div>
-              </th>
-              <th class="dist-col-header ep-col-num">
-                <div class="dist-bar-head"><span class="dist-bar-name">Ordered</span></div>
-              </th>
-              <th class="dist-col-header ep-col-num">
-                <div class="dist-bar-head"><span class="dist-bar-name">Counted in</span></div>
-              </th>
-              <th class="dist-col-header ep-col-num">
-                <div class="dist-bar-head"><span class="dist-bar-name">Variance</span></div>
-              </th>
-              <th class="dist-col-header ep-col-num">
-                <div class="dist-bar-head"><span class="dist-bar-name">Opening</span></div>
-              </th>
+            <tr class="ep-head-row">
+              ${epTh('Product', 'ep-sticky ep-col-item ep-th--item')}
+              ${epTh('Ordered', 'ep-num ep-th--edit')}
+              ${epTh('Counted in', 'ep-num', 'Counted in from deliveries')}
+              ${epTh('Variance', 'ep-num', 'Counted in − ordered')}
+              ${epTh('Opening', 'ep-num ep-group-start ep-th--emphasis', 'Opening stock')}
             </tr>
           </thead>
           <tbody id="epBody">
-            ${loadingTableRow(6, 'Loading products…')}
+            ${loadingTableRow(5, 'Loading products…')}
           </tbody>
         </table>
         <div class="dist-empty ep-empty" id="epEmpty" hidden>No products on this event yet. Use <strong>Add product</strong> in the toolbar.</div>
@@ -157,7 +161,10 @@ export function mountProductsPanel(route) {
     if (!q) return eps;
     return eps.filter((ep) => {
       const p = ep.product;
-      const hay = [p.name, p.sku, p.case_size, p.category?.name].join(' ').toLowerCase();
+      const hay = [
+        p.name, p.sku, p.case_size, p.category?.name,
+        productSupplierSearchText(p),
+      ].join(' ').toLowerCase();
       return hay.includes(q);
     });
   }
@@ -179,7 +186,7 @@ export function mountProductsPanel(route) {
     empty.hidden = true;
     table?.removeAttribute('hidden');
     body.innerHTML = renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, editingOrderedId) ||
-      '<tr><td colspan="6" class="dist-empty">No products match your filter.</td></tr>';
+      '<tr><td colspan="5" class="dist-empty">No products match your filter.</td></tr>';
 
     if (editingOrderedId) {
       const inp = $(`epOrd-${editingOrderedId}`);
@@ -337,7 +344,7 @@ export function mountProductsPanel(route) {
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
 
   refresh().catch((err) => {
-    $('epBody').innerHTML = `<tr><td colspan="6" class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
+    $('epBody').innerHTML = `<tr><td colspan="5" class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
   });
 
   return () => {

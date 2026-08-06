@@ -34,6 +34,39 @@ describe('buildCountSheetsHtml', () => {
     expect(result.html).toContain('Cider');
   });
 
+  it('builds one whole-event sheet when scope is event', () => {
+    const result = buildCountSheetsHtml({
+      event,
+      barProducts,
+      caseSizes: [],
+      scope: 'event',
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.barCount).toBe(0);
+    expect(result.productCount).toBe(3);
+    expect(result.html).toContain('Stock count sheet');
+    expect(result.html).toContain('Summer Fest');
+    expect(result.html).toContain('Whole event catalogue · 3 items');
+    expect(result.html).not.toContain('Main Bar');
+  });
+
+  it('builds one sheet for a single bar when scope is bar', () => {
+    const result = buildCountSheetsHtml({
+      event,
+      barProducts,
+      caseSizes: [],
+      scope: 'bar',
+      barId: 'bar-b',
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.barCount).toBe(1);
+    expect(result.productCount).toBe(1);
+    expect(result.html).toContain('VIP');
+    expect(result.html).toContain('Cider');
+    expect(result.html).not.toContain('Lager');
+    expect(result.html).not.toContain('Main Bar');
+  });
+
   it('errors when no bars exist', () => {
     const result = buildCountSheetsHtml({
       event: { name: 'Empty', bars: [], event_products: event.event_products },

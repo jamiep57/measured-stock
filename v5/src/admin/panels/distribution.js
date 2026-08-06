@@ -15,6 +15,7 @@ import {
   round1,
 } from '../../lib/opening-stock.js';
 import { parseQty } from '../../stock-entry.js';
+import { productSupplierSearchText } from '../../components/product-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TABLE_FILTER, getDistControls } from '../table-filter.js';
 import {
@@ -236,7 +237,9 @@ function filterProducts(ctx) {
   if (!q) return ctx.eps;
   return ctx.eps.filter((ep) => {
     const cat = ep.product?.category?.name || '';
-    const hay = [ep.product.name, ep.product.sku, cat].join(' ').toLowerCase();
+    const hay = [ep.product.name, ep.product.sku, cat, productSupplierSearchText(ep.product)]
+      .join(' ')
+      .toLowerCase();
     return hay.includes(q);
   });
 }
