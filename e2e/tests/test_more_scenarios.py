@@ -58,17 +58,22 @@ def test_14_sales_panel_loads(admin_page, seed):
 
 
 def test_15_suppliers_list_shows_seeded(admin_page, seed):
-    """Suppliers catalog lists the fixture supplier."""
+    """Suppliers catalog lists the fixture supplier (via filter panel or raw list)."""
     goto_admin_path(admin_page, "/suppliers")
     expect(admin_page.locator(".sup-panel")).to_be_visible(timeout=20000)
+    expect(admin_page.get_by_text("Loading suppliers…")).to_have_count(0, timeout=20000)
     supplier_name = f"{E2E_PREFIX} Supplier {seed.run_id}"
-    # Search moved into the shared topbar filter; also accept unscrolled list match.
-    search = admin_page.locator("#supSearch, #topbarSearch .product-search-input, .catalog-search input").first
-    if search.count():
-        try:
-            search.fill(supplier_name)
-        except Exception:
-            pass
+    # Filter lives in the topbar table-filter panel (no #supSearch anymore).
+    filter_btn = admin_page.locator("#topbarTableFilterBtn")
+    if filter_btn.count() and filter_btn.is_visible():
+        filter_btn.click()
+        query = admin_page.locator(
+            '#topbarTableFilterPanel input[type="search"], '
+            '#topbarTableFilterPanel input[type="text"], '
+            '#topbarTableFilterPanel input'
+        ).first
+        if query.count():
+            query.fill(supplier_name)
     expect(admin_page.locator("#supList").get_by_text(supplier_name, exact=False)).to_be_visible(
         timeout=20000
     )

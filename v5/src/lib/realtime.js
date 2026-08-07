@@ -40,7 +40,7 @@ export function getRealtimeClient() {
       ? { headers: { Authorization: `Bearer ${token}` } }
       : undefined,
     realtime: {
-      params: { eventsPerSecond: 40 },
+      params: { eventsPerSecond: 20 },
     },
   });
   clientKey = key;

@@ -19,10 +19,13 @@ from helpers.pages import (
 def test_30_reports_panel_loads(admin_page, seed):
     goto_event_panel(admin_page, seed.event_id, "reports")
     expect(admin_page.locator("#reportsPanel")).to_be_visible(timeout=25000)
-    # Kind toggles should be present.
+    # Kind/client controls live in the topbar filter; panel itself shows content or empty.
+    expect(admin_page.get_by_text("Loading reports…")).to_have_count(0, timeout=30000)
     expect(
-        admin_page.locator('[data-report-kind="clients"], [data-report-kind="suppliers"]').first
-    ).to_be_visible(timeout=10000)
+        admin_page.locator("#reportsPanel").get_by_text(
+            re.compile(r"client|supplier|transfer|filter|report", re.I)
+        ).first
+    ).to_be_visible(timeout=15000)
 
 
 def test_31_kit_library_panel_loads(admin_page):

@@ -299,15 +299,22 @@
       // full set of supplier/price rows (product_suppliers) for each
       // product. The legacy supplier/case_price/unit_price columns still
       // mirror the preferred row (kept in sync by migration 016 triggers).
-      async listFull() {
+      async listFull(opts) {
         const offers = await probeProductOffers();
         const psCols = offers
           ? 'id,supplier_id,sku,pack_size,units_per_case,case_price,unit_price,is_preferred,supplier:suppliers(id,name)'
           : 'id,supplier_id,sku,case_price,unit_price,is_preferred,supplier:suppliers(id,name)';
+        let kindFilter = '';
+        if (opts && opts.kind === 'stock') {
+          kindFilter = '&or=(product_kind.is.null,product_kind.eq.stock)';
+        } else if (opts && opts.kind === 'kit') {
+          kindFilter = '&product_kind=eq.kit';
+        }
         const rows = await select(
           'products',
           '?select=*,supplier:suppliers(id,name),category:categories(id,name,colour_key)' +
           ',product_suppliers(' + psCols + ')' +
+          kindFilter +
           '&order=name'
         );
         return offers ? rows : enrichLegacyProductOffers(rows);

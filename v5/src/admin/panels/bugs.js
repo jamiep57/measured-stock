@@ -2,7 +2,6 @@
  * Admin bug & feature reports — global list (bug_reports via DB.bugs).
  */
 
-import { toBlob } from 'html-to-image';
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { getDB } from '../../db.js';
 import { openBugSheet, closeBugSheet, isBugSheetOpen } from '../../components/bug-sheet.js';
@@ -80,6 +79,7 @@ async function captureAdminScreenshot() {
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   try {
+    const { toBlob } = await import('html-to-image');
     const blob = await toBlob(document.body, {
       cacheBust: true,
       pixelRatio: Math.min(window.devicePixelRatio || 1, 2),

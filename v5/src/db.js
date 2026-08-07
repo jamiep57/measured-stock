@@ -447,9 +447,13 @@ export async function loadLibraryProducts() {
     try {
       let rows;
       try {
-        rows = await DB.products.listFull();
+        rows = await DB.products.listFull({ kind: 'stock' });
       } catch {
-        rows = await DB.products.list();
+        try {
+          rows = await DB.products.listFull();
+        } catch {
+          rows = await DB.products.list();
+        }
       }
       const filtered = (rows || []).filter((p) => !p.product_kind || p.product_kind === 'stock');
       if (gen === libraryGen) libraryCache = { at: Date.now(), value: filtered };
