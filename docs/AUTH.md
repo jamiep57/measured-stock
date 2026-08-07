@@ -2,7 +2,7 @@
 
 Supabase Auth (Google + email/password) with invite-only profiles.
 
-**Email / Postmark is optional.** You can run without a mail server: admins create a **setup link** in the Users panel and share it, or activate people after they sign in with Google.
+**Email / Postmark is optional.** Admins create an **invite link** in Users; recipients finish on `/onboard` with their own password.
 
 ## Minimum setup (no mail)
 
@@ -55,7 +55,7 @@ With **zero** active admins, open:
 
 Enter name, email, and password → creates the first **active admin** and signs you in.
 
-After that, `/setup` closes automatically. Teammates use Google (then Activate) or **Users → Add user → Create setup link**.
+After that, `/setup` closes automatically. Teammates: **Users → Add user → Create invite link**.
 
 SQL escape hatch (still works):
 
