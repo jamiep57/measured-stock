@@ -126,10 +126,34 @@ function noteMutation(table) {
   if (RECIPE_MUTATION_TABLES.has(name)) invalidateRecipesCache();
 }
 
+const READ_REPO_METHODS = new Set([
+  'list', 'get', 'where', 'forEvent', 'lines', 'ingredients',
+  'listFull', 'listActive', 'byLegacyId', 'getFull',
+]);
+
+function wrapRepoMutations(repo) {
+  if (!repo || repo.__v5Wrapped) return;
+  repo.__v5Wrapped = true;
+  const table = repo.table;
+  for (const key of Object.keys(repo)) {
+    if (typeof repo[key] !== 'function') continue;
+    if (READ_REPO_METHODS.has(key)) continue;
+    const orig = repo[key].bind(repo);
+    repo[key] = async (...args) => {
+      const result = await orig(...args);
+      if (table) noteMutation(table);
+      else invalidateEventCache();
+      return result;
+    };
+  }
+}
+
 function ensureCacheInvalidationHooks(DB) {
   if (DB.__v5CacheHooks) return;
   DB.__v5CacheHooks = true;
+
   for (const method of ['insert', 'update', 'upsert', 'remove']) {
+    if (typeof DB[method] !== 'function') continue;
     const orig = DB[method].bind(DB);
     DB[method] = async (table, ...args) => {
       const result = await orig(table, ...args);
@@ -137,6 +161,16 @@ function ensureCacheInvalidationHooks(DB) {
       return result;
     };
   }
+
+  const repos = [
+    DB.categories, DB.suppliers, DB.warehouses, DB.caseSizes,
+    DB.products, DB.productSuppliers, DB.warehouseStock,
+    DB.events, DB.eventProducts, DB.bars, DB.recipients,
+    DB.distribution, DB.barProducts, DB.stockCounts, DB.closing,
+    DB.supplierReturns, DB.transfers, DB.deliveries, DB.topups,
+    DB.wastage, DB.tillImports, DB.modifierImports, DB.recipes, DB.bugs,
+  ];
+  for (const repo of repos) wrapRepoMutations(repo);
 }
 
 function getDB() {
