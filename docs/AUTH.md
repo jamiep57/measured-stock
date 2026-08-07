@@ -16,8 +16,10 @@ Supabase → Authentication → Providers:
 Redirect / Site URL allow list:
 
 - `https://measured-stock.vercel.app/login`
+- `https://measured-stock.vercel.app/onboard`
 - `https://measured-stock.vercel.app/**`
 - `https://localhost:5173/login` (local Vite)
+- `https://localhost:5173/onboard`
 
 **Site URL must be** `https://measured-stock.vercel.app`  
 (not `http://localhost:3000` — that breaks invite tokens)
@@ -63,13 +65,11 @@ SELECT public.promote_profile_admin('you@example.com');
 
 ### Adding teammates (no email)
 
-**Admin → Users → Add user → Create setup link**
+**Admin → Users → Add user → Create invite link**
 
 - Creates an **active** account
-- Shows a **copyable setup link** (Supabase invite action link — no email sent)
-- Share that link privately; they set a password and land on `/login`
-
-**Google path:** they sign in with Google → appear as `pending` → you click **Activate**.
+- Shows a **copyable invite link** (no email sent)
+- Recipient opens the link → `/onboard` signup form (name + password) → into the app
 
 ## Later: Postmark (optional)
 

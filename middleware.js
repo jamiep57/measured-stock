@@ -29,8 +29,11 @@ function isPublicPath(pathname) {
     pathname === '/login.html' ||
     pathname === '/setup' ||
     pathname === '/setup.html' ||
+    pathname === '/onboard' ||
+    pathname === '/onboard.html' ||
     pathname.startsWith('/assets/js/login') ||
-    pathname.startsWith('/assets/js/setup')
+    pathname.startsWith('/assets/js/setup') ||
+    pathname.startsWith('/assets/js/onboard')
   );
 }
 
@@ -68,6 +71,6 @@ export const config = {
   //   /api/sync-catchup       — cron (CRON_SECRET inside handler)
   //   static assets           — css/js/images/fonts
   matcher: [
-    '/((?!login(?:\\.html)?$|setup(?:\\.html)?$|api/auth(?:/|$)|api/logout$|api/unlock$|api/sync-catchup|assets/js/(?:login|setup)\\.js$|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
+    '/((?!login(?:\\.html)?$|setup(?:\\.html)?$|onboard(?:\\.html)?$|api/auth(?:/|$)|api/logout$|api/unlock$|api/sync-catchup|assets/js/(?:login|setup|onboard)\\.js$|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
   ],
 };

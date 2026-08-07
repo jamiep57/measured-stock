@@ -23,8 +23,7 @@ export function renderUsersSection() {
         <div class="settings-card-head-text">
           <h2 class="settings-card-title">Users</h2>
           <p class="settings-card-desc muted">
-            Create an account and share a setup link, or activate pending users.
-            Email delivery is optional and can be wired later.
+            Invite teammates with an onboarding link, or activate pending users.
           </p>
         </div>
         <div class="settings-card-actions">
@@ -39,10 +38,10 @@ export function renderUsersSection() {
             <option value="staff">Staff</option>
             <option value="admin">Admin</option>
           </select>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="usersInviteSend">Create account</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="usersInviteSend">Create invite link</button>
         </div>
         <p class="muted" style="margin-top:0.5rem;font-size:0.8rem;">
-          Creates an active account with a temporary password you can copy — nothing is emailed.
+          Creates an active account and a link where they set their own name and password — nothing is emailed.
         </p>
         <div id="usersSetupResult" class="users-setup-result" hidden></div>
       </div>
@@ -98,51 +97,18 @@ function rowHtml(p, selfId) {
 function showSetupResult(data) {
   const box = $('usersSetupResult');
   if (!box) return;
-  const login = data.login_url || 'https://measured-stock.vercel.app/login';
-  const password = data.temporary_password || '';
   const link = data.setup_link || '';
+  const login = data.login_url || 'https://measured-stock.vercel.app/login';
   box.hidden = false;
-
-  if (password) {
-    box.innerHTML = `
-      <p><strong>Account created</strong> — share these privately (not emailed):</p>
-      <p class="muted" style="margin:0.5rem 0 0.25rem;font-size:0.8rem;">Login</p>
-      <div class="users-setup-link-row">
-        <input class="admin-input" type="text" readonly id="usersSetupLogin" value="${escapeHtml(login)}" />
-        <button type="button" class="admin-drawer-btn" id="usersCopyLogin">Copy</button>
-      </div>
-      <p class="muted" style="margin:0.75rem 0 0.25rem;font-size:0.8rem;">Temporary password</p>
-      <div class="users-setup-link-row">
-        <input class="admin-input" type="text" readonly id="usersSetupPassword" value="${escapeHtml(password)}" />
-        <button type="button" class="admin-drawer-btn" id="usersCopyPassword">Copy</button>
-      </div>
-      <p class="muted" style="margin-top:0.5rem;font-size:0.8rem;">
-        Email: <strong>${escapeHtml(data.email || '')}</strong>
-      </p>
-    `;
-    const copy = async (id, label) => {
-      const input = $(id);
-      try {
-        await navigator.clipboard.writeText(input?.value || '');
-        toast(`${label} copied`);
-      } catch {
-        input?.select();
-        toast('Select and copy', true);
-      }
-    };
-    $('usersCopyLogin')?.addEventListener('click', () => copy('usersSetupLogin', 'Login URL'));
-    $('usersCopyPassword')?.addEventListener('click', () => copy('usersSetupPassword', 'Password'));
-    return;
-  }
-
   box.innerHTML = `
-    <p><strong>Account created</strong> — share this privately (not emailed):</p>
+    <p><strong>Invite ready</strong> — share this link privately (not emailed):</p>
     <div class="users-setup-link-row">
       <input class="admin-input" type="text" readonly id="usersSetupLink" value="${escapeHtml(link)}" />
       <button type="button" class="admin-drawer-btn" id="usersCopyLink">Copy link</button>
     </div>
     <p class="muted" style="margin-top:0.5rem;font-size:0.8rem;">
-      After opening the link they can sign in at <a href="${escapeHtml(login)}">${escapeHtml(login)}</a>.
+      They open the link, choose a name and password on the signup form, then land in the app.
+      Later they sign in at <a href="${escapeHtml(login)}">${escapeHtml(login)}</a>.
     </p>
   `;
   $('usersCopyLink')?.addEventListener('click', async () => {
@@ -202,11 +168,11 @@ export function mountUsersPanel() {
     try {
       const res = await authFetch('/api/auth/users', {
         method: 'POST',
-        body: JSON.stringify({ email, role, mode: 'password' }),
+        body: JSON.stringify({ email, role, mode: 'link' }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || data.error || 'Create failed');
-      toast('Account created');
+      toast('Invite link ready');
       showSetupResult(data);
       await loadUsers();
     } catch (err) {

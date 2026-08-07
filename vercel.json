@@ -20,6 +20,10 @@
       "destination": "/setup.html"
     },
     {
+      "source": "/onboard",
+      "destination": "/onboard.html"
+    },
+    {
       "source": "/mobile",
       "destination": "/mobile.html"
     },
