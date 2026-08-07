@@ -8,7 +8,7 @@ import {
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
 import {
-  epOpeningStock,
+  epOpeningFromSources,
   round1,
   countedInFromDeliveries,
   damagedFromDeliveries as damagedFromDeliveriesMap,
@@ -96,9 +96,7 @@ function countedInMap(deliveries, event, caseSizes) {
 }
 
 function openingForProduct(pid, countedIn, damagedFromDeliveries, ep) {
-  const cin = countedIn[pid] ?? (ep?.delivered_qty != null ? Number(ep.delivered_qty) : 0);
-  const dmg = damagedFromDeliveries[pid] ?? 0;
-  return epOpeningStock({ delivered_qty: cin, damaged_qty: dmg });
+  return epOpeningFromSources(ep, countedIn, damagedFromDeliveries);
 }
 
 function epTh(label, extraClass = '', title = '') {

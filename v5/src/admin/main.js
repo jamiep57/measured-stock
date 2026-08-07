@@ -43,6 +43,18 @@ async function loadEvents() {
 }
 
 async function render(route) {
+  if (route.view === 'audit' && route.eventId) {
+    setEventId(route.eventId);
+  }
+  // Canonical audit URL is /v5/admin/dev/audit (legacy event URLs still parse).
+  if (route.view === 'audit') {
+    const canonical = '/v5/admin/dev/audit';
+    if (location.pathname.replace(/\/+$/, '') !== canonical) {
+      navigate({ view: 'audit' }, { replace: true });
+      route = parseRoute();
+    }
+  }
+
   linkSidebar(route);
   syncSidebar(route, state);
 
@@ -53,6 +65,9 @@ async function render(route) {
   if (route.view === 'event' && route.eventId) {
     setEventId(route.eventId);
     const event = state.events.find((e) => e.id === route.eventId);
+    $('pageTitle').textContent = event ? `${title} · ${event.name}` : title;
+  } else if (route.view === 'audit' && state.eventId) {
+    const event = state.events.find((e) => e.id === state.eventId);
     $('pageTitle').textContent = event ? `${title} · ${event.name}` : title;
   } else {
     $('pageTitle').textContent = title;

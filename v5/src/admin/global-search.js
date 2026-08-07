@@ -45,7 +45,10 @@ function hideSearchForRoute(route) {
   return route.view === 'suppliers'
     || route.view === 'warehouses'
     || route.view === 'volume-pools'
-    || route.view === 'settings';
+    || route.view === 'settings'
+    || route.view === 'dev'
+    || route.view === 'bugs'
+    || route.view === 'audit';
 }
 
 export function initGlobalSearch() {

@@ -33,6 +33,14 @@ describe('resolveActiveEventId', () => {
   it('keeps the remembered event on home and tools pages', () => {
     expect(resolveActiveEventId({ view: 'home' }, { eventId: 'evt-1' })).toBe('evt-1');
     expect(resolveActiveEventId({ view: 'bugs' }, { eventId: 'evt-1' })).toBe('evt-1');
+    expect(resolveActiveEventId({ view: 'dev' }, { eventId: 'evt-1' })).toBe('evt-1');
+  });
+
+  it('uses the event id from the URL on audit routes', () => {
+    expect(resolveActiveEventId(
+      { view: 'audit', eventId: 'evt-1' },
+      { eventId: 'evt-old' },
+    )).toBe('evt-1');
   });
 
   it('returns empty when the workspace was cleared', () => {

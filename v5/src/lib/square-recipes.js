@@ -1,6 +1,7 @@
 /** Shared helpers for Square till item / modifier → recipe mapping. */
 
 import { displayFractionQty } from '../components/fraction-input.js';
+import { recipeProductByName } from './recipe-stock.js';
 import { normPoolName } from './volume-pools.js';
 
 export function normVariation(v) {
@@ -43,14 +44,32 @@ export function recipeProductName(recipe) {
   return recipeProductIngredients(recipe)[0]?.product_name || '';
 }
 
-export function productIdForName(name, eventProducts) {
+function eventLibraryProducts(eventProducts) {
+  return (eventProducts || []).map((row) => row.product).filter((p) => p?.name);
+}
+
+/**
+ * Resolve a stored recipe product label to an event product id.
+ * Handles bare names and pack-qualified `Name — Pack` labels; when several
+ * SKUs share a name, qty + caseSizes pick the matching pack.
+ */
+export function productIdForName(name, eventProducts, { qty, caseSizes } = {}) {
   if (!name) return '';
+  const products = eventLibraryProducts(eventProducts);
+  const resolved = recipeProductByName(name, qty, products, caseSizes || []);
+  if (resolved?.id) {
+    const ep = (eventProducts || []).find((row) =>
+      row.product_id === resolved.id || row.product?.id === resolved.id);
+    return ep?.product_id || resolved.id;
+  }
   const ep = (eventProducts || []).find((row) => row.product?.name === name);
   return ep?.product_id || '';
 }
 
-export function mappedProductId(recipe, eventProducts) {
-  return productIdForName(recipeProductName(recipe), eventProducts);
+export function mappedProductId(recipe, eventProducts, caseSizes = []) {
+  const ig = recipeProductIngredients(recipe)[0];
+  if (!ig?.product_name) return '';
+  return productIdForName(ig.product_name, eventProducts, { qty: ig.qty, caseSizes });
 }
 
 function poolOnEvent(poolName, eventProducts) {
@@ -60,13 +79,23 @@ function poolOnEvent(poolName, eventProducts) {
     row.product?.pool_name && normPoolName(row.product.pool_name) === key);
 }
 
+function ingredientProductOnEvent(ig, eventProducts, caseSizes = []) {
+  const products = eventLibraryProducts(eventProducts);
+  const resolved = recipeProductByName(ig.product_name, ig.qty, products, caseSizes);
+  if (resolved?.id) {
+    return (eventProducts || []).some((row) =>
+      row.product_id === resolved.id || row.product?.id === resolved.id);
+  }
+  return (eventProducts || []).some((row) => row.product?.name === ig.product_name);
+}
+
 /** True when every ingredient product (or at least one pool member) is on the event. */
-export function recipeOnEvent(recipe, eventProducts) {
+export function recipeOnEvent(recipe, eventProducts, caseSizes = []) {
   const ings = recipeIngredients(recipe);
   if (!ings.length) return false;
   return ings.every((ig) => {
     if (ig.pool_name) return poolOnEvent(ig.pool_name, eventProducts);
-    return (eventProducts || []).some((row) => row.product?.name === ig.product_name);
+    return ingredientProductOnEvent(ig, eventProducts, caseSizes);
   });
 }
 

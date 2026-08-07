@@ -242,6 +242,19 @@ describe('buildClosingRow', () => {
     expect(drafted.closingCases).toBe(0);
     expect(drafted.closeCount).toBe(0);
   });
+
+  it('prefers supplier_return_lines over closing_stock.return_amount', () => {
+    const row = buildClosingRow({
+      ep: { product_id: 'p1', product, invoice_qty: 100 },
+      closingRow: { closing_cases: 20, closing_singles: 0, return_amount: 0 },
+      suppliers: [{ id: 's1', name: 'Acme', default_sor_pct: 10 }],
+      caseSizes: [],
+      supplierReturns: [{ product_id: 'p1', qty: 7, singles: 0 }],
+    });
+    expect(row.returnAmount).toBe(7);
+    expect(row.returnCases).toBe(7);
+    expect(row.carriedOver).toBe(13);
+  });
 });
 
 describe('filterClosingRows / sortClosingList', () => {

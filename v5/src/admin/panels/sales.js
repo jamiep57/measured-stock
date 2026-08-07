@@ -8,6 +8,7 @@ import {
   findRecipe, recipeIsMapped, recipeOnEvent, recipeIngredients,
   productIdForName, normVariation,
 } from '../../lib/square-recipes.js';
+import { recipeStoredProductName } from '../../lib/recipe-stock.js';
 import { parseFractionQty, displayFractionQty, formatQtyAsFraction } from '../../components/fraction-input.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { groupProductsByPool, poolSummary } from '../../lib/volume-pools.js';
@@ -22,6 +23,20 @@ function fmtNum(n) {
   const v = Number(n);
   if (!Number.isFinite(v) || v === 0) return '—';
   return String(v);
+}
+
+function fmtStatNum(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '0';
+  return v.toLocaleString('en-GB');
+}
+
+function modTh(label, extraClass = '', alignLeft = false) {
+  return `<th class="mod-th ${extraClass}" title="${escapeHtml(label)}">
+    <div class="dist-bar-head${alignLeft ? ' dist-bar-head--left' : ''}">
+      <span class="dist-bar-name">${escapeHtml(label)}</span>
+    </div>
+  </th>`;
 }
 
 function renderPortionInput(qty) {
@@ -43,19 +58,22 @@ function renderProductSlot({ selectedId, poolName, showRemove }) {
     </div>`;
 }
 
-function recipeSlots(recipe, eps) {
+function recipeSlots(recipe, eps, caseSizes = []) {
   const ings = recipeIngredients(recipe);
   return ings.length
     ? ings.map((ig) => ({
-      selectedId: ig.pool_name ? '' : productIdForName(ig.product_name, eps),
+      selectedId: ig.pool_name ? '' : productIdForName(ig.product_name, eps, {
+        qty: ig.qty,
+        caseSizes,
+      }),
       poolName: ig.pool_name || '',
       qty: displayFractionQty({ qty: ig.qty, qty_text: ig.qty_text }),
     }))
     : [{ selectedId: '', poolName: '', qty: '1' }];
 }
 
-function renderRecipeColumns(recipe, eps, attrs) {
-  const slots = recipeSlots(recipe, eps);
+function renderRecipeColumns(recipe, eps, attrs, caseSizes = []) {
+  const slots = recipeSlots(recipe, eps, caseSizes);
   const portionHtml = slots.map((s) => renderPortionInput(s.qty)).join('');
   const productHtml = `
     <div class="mod-recipe" ${attrs}>
@@ -71,35 +89,39 @@ function renderRecipeColumns(recipe, eps, attrs) {
   return { portionHtml, productHtml };
 }
 
-function countMapped(rows, itemKey, variationKey, recipes, eps) {
+function countMapped(rows, itemKey, variationKey, recipes, eps, caseSizes = []) {
   let mapped = 0;
   let warn = 0;
   rows.forEach((r) => {
     const recipe = findRecipe(recipes, r[itemKey], r[variationKey]);
     if (!recipeIsMapped(recipe)) return;
     mapped += 1;
-    if (!recipeOnEvent(recipe, eps)) warn += 1;
+    if (!recipeOnEvent(recipe, eps, caseSizes)) warn += 1;
   });
   return { mapped, warn };
 }
 
 function renderMapRow({
-  recipes, eps, item, variation, label, sublabel, qty, attrs, rowCls,
+  recipes, eps, caseSizes, item, variation, label, sublabel, qty, attrs, rowCls,
 }) {
   const recipe = findRecipe(recipes, item, variation);
   const mapped = recipeIsMapped(recipe);
-  const onEvent = mapped && recipeOnEvent(recipe, eps);
+  const onEvent = mapped && recipeOnEvent(recipe, eps, caseSizes);
   const cls = rowCls || (!mapped ? 'mod-row--unmapped' : onEvent ? 'mod-row--mapped' : 'mod-row--warn');
-  const { portionHtml, productHtml } = renderRecipeColumns(recipe, eps, attrs);
+  const { portionHtml, productHtml } = renderRecipeColumns(recipe, eps, attrs, caseSizes);
 
   return `
-    <tr class="dist-prod-row mod-row ${cls}" ${attrs}>
-      <th class="dist-sticky dist-prod-name mod-name" scope="row">
-        <span>${escapeHtml(label)}</span>
-        ${sublabel ? `<span class="mod-sub muted">${escapeHtml(sublabel)}</span>` : ''}
+    <tr class="mod-prod-row mod-row ${cls}" ${attrs}>
+      <th class="mod-sticky mod-col-item" scope="row">
+        <div class="mod-item">
+          <div class="mod-item-top">
+            <span class="mod-item-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+          </div>
+          ${sublabel ? `<span class="mod-item-meta">${escapeHtml(sublabel)}</span>` : ''}
+        </div>
       </th>
-      <td class="dist-sticky dist-prod-pack muted mod-qty">${fmtNum(qty)}</td>
-      <td class="mod-portion-cell">
+      <td class="mod-num mod-qty">${fmtNum(qty)}</td>
+      <td class="mod-portion-cell mod-cell--edit">
         <div class="mod-portion-stack">${portionHtml}</div>
       </td>
       <td class="mod-map-cell">${productHtml}</td>
@@ -108,10 +130,10 @@ function renderMapRow({
 
 const MAP_STATUS_RANK = { unmapped: 0, warn: 1, mapped: 2 };
 
-function rowMapStatus(row, recipes, eps, itemKey, variationKey) {
+function rowMapStatus(row, recipes, eps, itemKey, variationKey, caseSizes = []) {
   const recipe = findRecipe(recipes, row[itemKey], row[variationKey]);
   if (!recipeIsMapped(recipe)) return 'unmapped';
-  if (!recipeOnEvent(recipe, eps)) return 'warn';
+  if (!recipeOnEvent(recipe, eps, caseSizes)) return 'warn';
   return 'mapped';
 }
 
@@ -123,8 +145,8 @@ function sortMapRows(list, ctx, { nameKey, qtyKey, itemKey, variationKey }) {
         || (a[nameKey] || '').localeCompare(b[nameKey] || '');
     }
     if (key === 'status') {
-      const sa = MAP_STATUS_RANK[rowMapStatus(a, ctx.recipes, ctx.eps, itemKey, variationKey)] ?? 9;
-      const sb = MAP_STATUS_RANK[rowMapStatus(b, ctx.recipes, ctx.eps, itemKey, variationKey)] ?? 9;
+      const sa = MAP_STATUS_RANK[rowMapStatus(a, ctx.recipes, ctx.eps, itemKey, variationKey, ctx.caseSizes)] ?? 9;
+      const sb = MAP_STATUS_RANK[rowMapStatus(b, ctx.recipes, ctx.eps, itemKey, variationKey, ctx.caseSizes)] ?? 9;
       if (sa !== sb) return sa - sb;
       return (a[nameKey] || '').localeCompare(b[nameKey] || '');
     }
@@ -187,7 +209,8 @@ function renderTillGridBody(ctx) {
   let html = '';
   Object.keys(grouped).sort().forEach((cat) => {
     html += `<tr class="dist-cat-row">
-      <td colspan="4" class="dist-cat-pinned mod-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
+      <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
+      <td colspan="3" class="dist-cat-scroll"></td>
     </tr>`;
     grouped[cat].forEach((row) => {
       const varLabel = row.variation && normVariation(row.variation) !== 'regular'
@@ -196,6 +219,7 @@ function renderTillGridBody(ctx) {
       html += renderMapRow({
         recipes: ctx.recipes,
         eps: ctx.eps,
+        caseSizes: ctx.caseSizes,
         item: row.name,
         variation: row.variation,
         label: row.name,
@@ -217,12 +241,14 @@ function renderModGridBody(ctx) {
   let html = '';
   Object.keys(grouped).sort().forEach((set) => {
     html += `<tr class="dist-cat-row">
-      <td colspan="4" class="dist-cat-pinned mod-cat-pinned"><span class="dist-bar-name">${escapeHtml(set)}</span></td>
+      <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(set)}</span></td>
+      <td colspan="3" class="dist-cat-scroll"></td>
     </tr>`;
     grouped[set].forEach((row) => {
       html += renderMapRow({
         recipes: ctx.recipes,
         eps: ctx.eps,
+        caseSizes: ctx.caseSizes,
         item: row.modifier,
         variation: row.modifier_set,
         label: row.modifier,
@@ -242,7 +268,7 @@ function filterTillRows(ctx) {
   return (ctx.tillRows || []).filter((r) => {
     if (cat && (r.category || 'Uncategorised') !== cat) return false;
     if (status) {
-      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'name', 'variation') !== status) return false;
+      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'name', 'variation', ctx.caseSizes) !== status) return false;
     }
     if (!q) return true;
     const hay = [r.name, r.variation, r.category].join(' ').toLowerCase();
@@ -257,7 +283,7 @@ function filterModRows(ctx) {
   return (ctx.modRows || []).filter((r) => {
     if (set && (r.modifier_set || 'Uncategorised') !== set) return false;
     if (status) {
-      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'modifier', 'modifier_set') !== status) return false;
+      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'modifier', 'modifier_set', ctx.caseSizes) !== status) return false;
     }
     if (!q) return true;
     const hay = [r.modifier, r.modifier_set].join(' ').toLowerCase();
@@ -294,6 +320,7 @@ export function mountSalesPanel(route) {
     categoryFilter: '',
     sortKey: 'name',
     saving: new Set(),
+    pendingSaves: new Map(),
     abort: false,
   };
 
@@ -302,58 +329,54 @@ export function mountSalesPanel(route) {
 
   function syncTheadHeight() {
     requestAnimationFrame(() => {
-      const wrap = panel.querySelector('.dist-grid-wrap');
-      const theadRow = panel.querySelector('.dist-grid thead tr');
+      const wrap = panel.querySelector('.mod-table-wrap');
+      const theadRow = panel.querySelector('.mod-grid thead tr');
       if (wrap && theadRow) {
-        wrap.style.setProperty('--dist-thead-h', `${theadRow.getBoundingClientRect().height}px`);
+        const h = `${theadRow.getBoundingClientRect().height}px`;
+        wrap.style.setProperty('--mod-thead-h', h);
+        wrap.style.setProperty('--dist-thead-h', h);
       }
     });
   }
 
   function paintTillStats() {
-    const { mapped, warn } = countMapped(ctx.tillRows, 'name', 'variation', ctx.recipes, ctx.eps);
+    const { mapped, warn } = countMapped(ctx.tillRows, 'name', 'variation', ctx.recipes, ctx.eps, ctx.caseSizes);
     const qtyTotal = ctx.tillRows.reduce((s, r) => s + (Number(r.items_sold) || 0), 0);
+    const cols = warn ? 5 : 4;
     return `
-      <div class="mod-stats">
-        <div class="wst-stat"><span class="wst-stat-label">Till lines</span><span class="wst-stat-value">${ctx.tillRows.length}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Mapped</span><span class="wst-stat-value mod-stat--ok">${mapped}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Need mapping</span><span class="wst-stat-value mod-stat--warn">${ctx.tillRows.length - mapped}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Items sold</span><span class="wst-stat-value">${fmtNum(qtyTotal)}</span></div>
-        ${warn ? `<div class="wst-stat"><span class="wst-stat-label">Stock warn</span><span class="wst-stat-value mod-stat--warn">${warn}</span></div>` : ''}
+      <div class="mod-stats" style="--mod-stat-cols:${cols}">
+        <div class="wst-stat"><span class="wst-stat-label">Till lines</span><span class="wst-stat-value">${fmtStatNum(ctx.tillRows.length)}</span></div>
+        <div class="wst-stat"><span class="wst-stat-label">Mapped</span><span class="wst-stat-value mod-stat--ok">${fmtStatNum(mapped)}</span></div>
+        <div class="wst-stat"><span class="wst-stat-label">Need mapping</span><span class="wst-stat-value mod-stat--warn">${fmtStatNum(ctx.tillRows.length - mapped)}</span></div>
+        <div class="wst-stat"><span class="wst-stat-label">Items sold</span><span class="wst-stat-value">${fmtStatNum(qtyTotal)}</span></div>
+        ${warn ? `<div class="wst-stat"><span class="wst-stat-label">Stock warn</span><span class="wst-stat-value mod-stat--warn">${fmtStatNum(warn)}</span></div>` : ''}
       </div>`;
   }
 
   function paintModStats() {
-    const { mapped, warn } = countMapped(ctx.modRows, 'modifier', 'modifier_set', ctx.recipes, ctx.eps);
+    const { mapped, warn } = countMapped(ctx.modRows, 'modifier', 'modifier_set', ctx.recipes, ctx.eps, ctx.caseSizes);
     const qtyTotal = ctx.modRows.reduce((s, r) => s + (Number(r.qty_sold) || 0), 0);
+    const cols = warn ? 5 : 4;
     return `
-      <div class="mod-stats">
-        <div class="wst-stat"><span class="wst-stat-label">Modifier lines</span><span class="wst-stat-value">${ctx.modRows.length}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Mapped</span><span class="wst-stat-value mod-stat--ok">${mapped}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Need mapping</span><span class="wst-stat-value mod-stat--warn">${ctx.modRows.length - mapped}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Qty sold</span><span class="wst-stat-value">${fmtNum(qtyTotal)}</span></div>
-        ${warn ? `<div class="wst-stat"><span class="wst-stat-label">Stock warn</span><span class="wst-stat-value mod-stat--warn">${warn}</span></div>` : ''}
+      <div class="mod-stats" style="--mod-stat-cols:${cols}">
+        <div class="wst-stat"><span class="wst-stat-label">Modifier lines</span><span class="wst-stat-value">${fmtStatNum(ctx.modRows.length)}</span></div>
+        <div class="wst-stat"><span class="wst-stat-label">Mapped</span><span class="wst-stat-value mod-stat--ok">${fmtStatNum(mapped)}</span></div>
+        <div class="wst-stat"><span class="wst-stat-label">Need mapping</span><span class="wst-stat-value mod-stat--warn">${fmtStatNum(ctx.modRows.length - mapped)}</span></div>
+        <div class="wst-stat"><span class="wst-stat-label">Qty sold</span><span class="wst-stat-value">${fmtStatNum(qtyTotal)}</span></div>
+        ${warn ? `<div class="wst-stat"><span class="wst-stat-label">Stock warn</span><span class="wst-stat-value mod-stat--warn">${fmtStatNum(warn)}</span></div>` : ''}
       </div>`;
   }
 
   function gridShell({ nameCol, qtyCol, bodyHtml }) {
     return `
-      <div class="dist-grid-wrap mod-grid-wrap">
+      <div class="dist-grid-wrap mod-table-wrap">
         <table class="dist-grid mod-grid">
           <thead>
             <tr>
-              <th class="dist-sticky dist-col-header dist-col-product">
-                <div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">${nameCol}</span></div>
-              </th>
-              <th class="dist-sticky dist-col-header dist-col-pack">
-                <div class="dist-bar-head"><span class="dist-bar-name">${qtyCol}</span></div>
-              </th>
-              <th class="dist-col-header mod-col-portion">
-                <div class="dist-bar-head"><span class="dist-bar-name">Portion</span></div>
-              </th>
-              <th class="dist-col-header mod-col-map">
-                <div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div>
-              </th>
+              ${modTh(nameCol, 'mod-sticky mod-col-item mod-th--item', true)}
+              ${modTh(qtyCol, 'mod-num')}
+              ${modTh('Portion', 'mod-col-portion mod-th--edit')}
+              ${modTh('Product', 'mod-col-map mod-th--map', true)}
             </tr>
           </thead>
           <tbody id="salesGridBody">${bodyHtml}</tbody>
@@ -474,7 +497,13 @@ export function mountSalesPanel(route) {
       if (!productId) return null;
       const product = productFromEvent(ctx.event, productId);
       if (!product?.name) return null;
-      return { product_name: product.name, pool_name: null, qty, qty_text: qtyText, position: pos };
+      return {
+        product_name: recipeStoredProductName(product, ctx.caseSizes),
+        pool_name: null,
+        qty,
+        qty_text: qtyText,
+        position: pos,
+      };
     }).filter(Boolean);
   }
 
@@ -556,7 +585,7 @@ export function mountSalesPanel(route) {
     const { item, variation } = recipeKeysFromEl(recipeEl);
     const recipe = findRecipe(ctx.recipes, item, variation);
     const mapped = recipeIsMapped(recipe);
-    const onEvent = mapped && recipeOnEvent(recipe, ctx.eps);
+    const onEvent = mapped && recipeOnEvent(recipe, ctx.eps, ctx.caseSizes);
     tr.classList.remove('mod-row--unmapped', 'mod-row--mapped', 'mod-row--warn');
     tr.classList.add(!mapped ? 'mod-row--unmapped' : onEvent ? 'mod-row--mapped' : 'mod-row--warn');
   }
@@ -688,49 +717,55 @@ export function mountSalesPanel(route) {
   async function saveRecipe(item, variation, ingredients) {
     const DB = getDB();
     const saveId = `${item}|${variation}`;
+    ctx.pendingSaves.set(saveId, ingredients || []);
     if (ctx.saving.has(saveId)) return;
     ctx.saving.add(saveId);
 
-    const existing = findRecipe(ctx.recipes, item, variation);
-    const valid = (ingredients || []).filter((ig) =>
-      (ig.product_name || ig.pool_name) && ig.qty > 0);
-
     try {
-      if (!valid.length) {
-        if (existing) {
-          await DB.recipes.remove(existing.id);
-          ctx.recipes = ctx.recipes.filter((r) => r.id !== existing.id);
+      while (ctx.pendingSaves.has(saveId)) {
+        const nextIngredients = ctx.pendingSaves.get(saveId);
+        ctx.pendingSaves.delete(saveId);
+
+        const existing = findRecipe(ctx.recipes, item, variation);
+        const valid = (nextIngredients || []).filter((ig) =>
+          (ig.product_name || ig.pool_name) && ig.qty > 0);
+
+        if (!valid.length) {
+          if (existing) {
+            await DB.recipes.remove(existing.id);
+            ctx.recipes = ctx.recipes.filter((r) => r.id !== existing.id);
+          }
+          continue;
         }
-        return;
+
+        const payload = {
+          till_item: item,
+          till_variation: variation || '',
+          unit_model: 'case',
+          notes: null,
+          updated_at: new Date().toISOString(),
+        };
+
+        let recipeId = existing?.id;
+        if (existing) {
+          await DB.recipes.update(recipeId, payload);
+          await DB.remove('recipe_ingredients', `recipe_id=eq.${DB._.enc(recipeId)}`);
+        } else {
+          const created = await DB.recipes.create(payload);
+          recipeId = created.id;
+        }
+
+        await DB.insert('recipe_ingredients', valid.map((ig, i) => ({
+          recipe_id: recipeId,
+          product_name: ig.pool_name ? null : ig.product_name,
+          pool_name: ig.pool_name || null,
+          qty: ig.qty,
+          qty_text: ig.qty_text || null,
+          position: i,
+        })), { returning: false });
+
+        ctx.recipes = await DB.recipes.listFull();
       }
-
-      const payload = {
-        till_item: item,
-        till_variation: variation || '',
-        unit_model: 'case',
-        notes: null,
-        updated_at: new Date().toISOString(),
-      };
-
-      let recipeId = existing?.id;
-      if (existing) {
-        await DB.recipes.update(recipeId, payload);
-        await DB.remove('recipe_ingredients', `recipe_id=eq.${DB._.enc(recipeId)}`);
-      } else {
-        const created = await DB.recipes.create(payload);
-        recipeId = created.id;
-      }
-
-      await DB.insert('recipe_ingredients', valid.map((ig, i) => ({
-        recipe_id: recipeId,
-        product_name: ig.pool_name ? null : ig.product_name,
-        pool_name: ig.pool_name || null,
-        qty: ig.qty,
-        qty_text: ig.qty_text || null,
-        position: i,
-      })), { returning: false });
-
-      ctx.recipes = await DB.recipes.listFull();
     } finally {
       ctx.saving.delete(saveId);
     }

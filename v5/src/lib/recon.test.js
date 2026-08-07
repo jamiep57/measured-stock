@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildReconRow, closingInvoiceQty, reconBudgetCost, varianceClass } from './recon.js';
+import { buildReconRow, closingInvoiceQty, computePluByProductId, reconBudgetCost, varianceClass } from './recon.js';
 
 describe('buildReconRow', () => {
   const product = {
@@ -11,6 +11,31 @@ describe('buildReconRow', () => {
     category: { id: 'c1', name: 'Beer' },
     product_suppliers: [{ supplier_id: 's1', is_preferred: true, case_price: 24, supplier: { name: 'Acme' } }],
   };
+
+  it('subtracts damaged from consumption like opening', () => {
+    const ep = {
+      product_id: 'p1',
+      product,
+      delivered_qty: 100,
+      qty_ordered: 100,
+      damaged_qty: 5,
+    };
+    const row = buildReconRow({
+      ep,
+      closingRow: { closing_cases: 20, closing_singles: 0 },
+      pluByPid: { p1: 75 },
+      suppliers: [{ id: 's1', name: 'Acme' }],
+      caseSizes: [],
+      wastageMap: {},
+      transferMap: {},
+      supplierReturns: [],
+      event: { id: 'e1', event_products: [ep] },
+    });
+    // 100 delivered − 5 damaged − 20 closing = 75
+    expect(row.damaged).toBe(5);
+    expect(row.consumption).toBe(75);
+    expect(row.variance).toBe(0);
+  });
 
   it('computes consumption from delivered minus closing', () => {
     const ep = {
@@ -480,6 +505,58 @@ describe('closingInvoiceQty', () => {
   it('prefers invoice_qty over ordered', () => {
     expect(closingInvoiceQty({ invoice_qty: 12, qty_ordered: 10 })).toBe(12);
     expect(closingInvoiceQty({ qty_ordered: 10 })).toBe(10);
+  });
+});
+
+describe('computePluByProductId', () => {
+  const product = {
+    id: 'p1',
+    name: 'Test Lager',
+    case_size: '24×330ml',
+    units_per_case: 24,
+    case_price: 24,
+  };
+  const ep = { product_id: 'p1', product, delivered_qty: 100, damaged_qty: 0 };
+  const recipes = [
+    {
+      id: 'r1',
+      till_item: 'Lager Pint',
+      till_variation: 'Regular',
+      ingredients: [{ product_name: 'Test Lager', qty: 1, position: 0 }],
+    },
+    {
+      id: 'rm',
+      till_item: 'Shot Upgrade',
+      till_variation: 'Extras',
+      ingredients: [{ product_name: 'Test Lager', qty: 1, position: 0 }],
+    },
+  ];
+
+  it('includes mapped modifier sales in PLU', () => {
+    const plu = computePluByProductId(
+      [ep],
+      [{ name: 'Lager Pint', variation: 'Regular', items_sold: 24 }],
+      recipes,
+      [product],
+      [],
+      null,
+      [{ modifier: 'Shot Upgrade', modifier_set: 'Extras', qty_sold: 24 }],
+    );
+    // 24 bottles from till + 24 from modifier = 48 / 24 upc = 2 cases
+    expect(plu.p1).toBe(2);
+  });
+
+  it('ignores unmapped modifiers', () => {
+    const plu = computePluByProductId(
+      [ep],
+      [],
+      recipes,
+      [product],
+      [],
+      null,
+      [{ modifier: 'Unknown Extra', modifier_set: 'Extras', qty_sold: 99 }],
+    );
+    expect(plu.p1).toBe(0);
   });
 });
 

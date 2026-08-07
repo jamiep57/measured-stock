@@ -143,6 +143,7 @@ Real URLs (History API), not hash-only:
 /v5/admin/events/:eventId/wastage
 /v5/admin/events/:eventId/closing
 /v5/admin/events/:eventId/recon        Financial recon
+/v5/admin/events/:eventId/audit        Forensic audit (math + save integrity)
 /v5/admin/events/:eventId/sales        Square + Modifiers (single page)
 /v5/admin/events/:eventId/summary
 ```
@@ -280,6 +281,7 @@ Requires repo-root `/assets/js/db.js` (served in dev by Vite plugin).
 | Wastage | `…/wastage` | |
 | Closing | `…/closing` | |
 | Financial Recon | `…/recon` | Supplier-aware |
+| Forensic Audit | `…/audit` | Math + save integrity checks |
 | Square | `…/sales` | Merged with modifiers |
 | Modifiers | `…/sales` | Same page |
 | Summary | `…/summary` | |

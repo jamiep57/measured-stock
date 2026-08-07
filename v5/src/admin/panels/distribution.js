@@ -1,7 +1,7 @@
 import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
-import { getDB, loadEventFull } from '../../db.js';
+import { getDB, loadEventFull, loadCaseSizes } from '../../db.js';
 import {
   barServesProduct,
   hasBarMenu,
@@ -12,6 +12,8 @@ import {
   epOpeningStock,
   leftToAllocate,
   openingByProduct,
+  countedInFromDeliveries,
+  damagedFromDeliveries,
   round1,
 } from '../../lib/opening-stock.js';
 import { parseQty } from '../../stock-entry.js';
@@ -404,15 +406,25 @@ export function mountDistributionPanel(route, state) {
 
   async function reload() {
     const DB = getDB();
-    const event = await loadEventFull(ctx.eventId);
+    const [event, distRows, deliveries, caseSizes] = await Promise.all([
+      loadEventFull(ctx.eventId),
+      DB.distribution.forEvent(ctx.eventId),
+      DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+      loadCaseSizes(),
+    ]);
     if (ctx.abort || !event) return;
-    const distRows = (await DB.distribution.forEvent(ctx.eventId)) || [];
     ctx.event = event;
-    ctx.distRows = distRows;
+    ctx.distRows = distRows || [];
     ctx.barProducts = event.bar_products || [];
     ctx.bars = servingBars(event.bars);
     ctx.eps = eventProducts(event);
-    ctx.opening = openingByProduct(ctx.eps);
+    const hasLines = (deliveries || []).some((d) => (d.lines || []).length);
+    const countedIn = hasLines
+      ? countedInFromDeliveries(deliveries, event.event_products, caseSizes)
+      : null;
+    const damagedMap = hasLines ? damagedFromDeliveries(deliveries) : null;
+    // Prefer live delivery sums so distribution matches products / recon.
+    ctx.opening = openingByProduct(ctx.eps, countedIn, damagedMap);
     paint();
   }
 

@@ -24,10 +24,12 @@ export function writeRememberedEventId(id) {
 
 /**
  * Resolve which event the sidebar workspace should show.
- * URL wins on event routes; otherwise keep the remembered id until
+ * URL wins on event / audit routes; otherwise keep the remembered id until
  * the user explicitly leaves via the workspace switcher ("All events").
  */
 export function resolveActiveEventId(route, state) {
-  if (route?.view === 'event' && route.eventId) return route.eventId;
+  if ((route?.view === 'event' || route?.view === 'audit') && route.eventId) {
+    return route.eventId;
+  }
   return state?.eventId || '';
 }

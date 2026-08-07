@@ -34,7 +34,6 @@ import {
 import {
   getClientId,
   getDisplayName,
-  setDisplayName,
 } from '../../lib/session-identity.js';
 import { getRealtimeClient } from '../../lib/realtime.js';
 import {
@@ -215,14 +214,6 @@ export function renderClosingShell() {
   return `
     <div class="cl-panel" id="closingPanel">
       <div class="wst-stats cl-stats" id="clStats" hidden></div>
-      <div class="cl-name-gate" id="clNameGate" hidden>
-        <p class="cl-name-gate-copy">Enter your name so others can see which cell you’re editing.</p>
-        <div class="cl-name-gate-row">
-          <input type="text" class="admin-input" id="clNameInput" maxlength="40"
-            autocomplete="nickname" placeholder="Your name" aria-label="Your name">
-          <button type="button" class="cl-name-gate-btn" id="clNameSave">Continue</button>
-        </div>
-      </div>
       <div class="cl-live-bar" id="clLiveBar" hidden>
         <span class="cl-live-dot" aria-hidden="true"></span>
         <span class="cl-live-text" id="clLivePresence">Connecting…</span>
@@ -807,13 +798,6 @@ export function mountClosingPanel(route) {
     if (stickerBtn) stickerBtn.disabled = !canSticker;
   }
 
-  function setNameGateVisible(show) {
-    const gate = $('clNameGate');
-    if (gate) gate.hidden = !show;
-    const liveBar = $('clLiveBar');
-    if (liveBar && show) liveBar.hidden = true;
-  }
-
   function rebuildPeerCells() {
     const fromPresence = cellFocusOwners(ctx.presencePeers, getClientId());
     /** @type {Record<string, object>} */
@@ -862,8 +846,29 @@ export function mountClosingPanel(route) {
 
   function applyRemoteRowToUi(pid, { flash = true } = {}) {
     const cl = rowFor(ctx.closingRows, pid) || {};
-    const countForm = closingCountToForm(cl);
-    const returnForm = returnAmountToForm(cl.return_amount);
+    const ep = ctx.event?.event_products?.find((x) => x.product_id === pid);
+    const stored = ep
+      ? buildClosingRow({
+        ep,
+        closingRow: cl,
+        suppliers: ctx.suppliers,
+        caseSizes: ctx.caseSizes,
+        event: ctx.event,
+        supplierReturns: ctx.supplierReturns,
+      })
+      : null;
+    const countForm = stored
+      ? {
+        cases: stored.hasClosing ? String(stored.closingCases ?? 0) : '',
+        singles: stored.hasClosing ? String(stored.closingSingles ?? 0) : '',
+      }
+      : closingCountToForm(cl);
+    const returnForm = stored
+      ? {
+        cases: Number(stored.returnCases) > 0 ? String(stored.returnCases) : '',
+        singles: Number(stored.returnSingles) > 0 ? String(stored.returnSingles) : '',
+      }
+      : returnAmountToForm(cl.return_amount);
     const casesEl = document.getElementById(`cl-cases-${pid}`);
     const singlesEl = document.getElementById(`cl-singles-${pid}`);
     const retCasesEl = document.getElementById(`cl-return-cases-${pid}`);
@@ -874,21 +879,14 @@ export function mountClosingPanel(route) {
     if (retCasesEl && active !== retCasesEl) retCasesEl.value = returnForm.cases;
     if (retSinglesEl && active !== retSinglesEl) retSinglesEl.value = returnForm.singles;
 
-    const ep = ctx.event?.event_products?.find((x) => x.product_id === pid);
-    if (ep) {
-      const row = buildClosingRow({
-        ep,
-        closingRow: cl,
-        suppliers: ctx.suppliers,
-        caseSizes: ctx.caseSizes,
-      });
+    if (stored) {
       const carriedEl = document.getElementById(`cl-carried-${pid}`);
       const maxEl = document.getElementById(`cl-max-${pid}`);
       if (carriedEl) {
-        carriedEl.textContent = fmtQty(row.carriedOver);
-        carriedEl.title = row.carriedLabel;
+        carriedEl.textContent = fmtQty(stored.carriedOver);
+        carriedEl.title = stored.carriedLabel;
       }
-      if (maxEl) maxEl.textContent = fmtMax(row.maxReturnable);
+      if (maxEl) maxEl.textContent = fmtMax(stored.maxReturnable);
       syncRowActions(pid);
     }
 
@@ -1049,9 +1047,6 @@ export function mountClosingPanel(route) {
 
   async function startLive() {
     if (ctx.abort || ctx.liveChannel) return;
-    const name = getDisplayName();
-    setNameGateVisible(!name);
-    if (!name) return;
 
     const rt = getRealtimeClient();
     const liveBar = $('clLiveBar');
@@ -1114,18 +1109,6 @@ export function mountClosingPanel(route) {
         if (textEl) textEl.textContent = 'Live sync unavailable';
       }
     });
-  }
-
-  function saveDisplayNameFromGate() {
-    const input = $('clNameInput');
-    const name = setDisplayName(input?.value || '');
-    if (!name) {
-      toast('Enter your name (up to 40 characters)', true);
-      input?.focus();
-      return;
-    }
-    setNameGateVisible(false);
-    startLive();
   }
 
   function onFocusIn(e) {
@@ -1548,10 +1531,6 @@ export function mountClosingPanel(route) {
   };
 
   function onClick(e) {
-    if (e.target.closest('#clNameSave')) {
-      saveDisplayNameFromGate();
-      return;
-    }
     const btn = e.target.closest('[data-cl-action]');
     if (!btn || btn.disabled) return;
     const pid = btn.dataset.clPid;
@@ -1569,20 +1548,11 @@ export function mountClosingPanel(route) {
     }
   }
 
-  function onKeyDown(e) {
-    if (e.key !== 'Enter') return;
-    if (e.target?.id === 'clNameInput') {
-      e.preventDefault();
-      saveDisplayNameFromGate();
-    }
-  }
-
   panel.addEventListener('input', onInput);
   panel.addEventListener('change', onInput);
   panel.addEventListener('blur', onBlur, true);
   panel.addEventListener('focusin', onFocusIn);
   panel.addEventListener('focusout', onFocusOut);
-  panel.addEventListener('keydown', onKeyDown);
   panel.addEventListener('click', onClick);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
@@ -1599,17 +1569,19 @@ export function mountClosingPanel(route) {
   (async () => {
     try {
       const DB = getDB();
-      const [event, caseSizes, suppliers, closing] = await Promise.all([
+      const [event, caseSizes, suppliers, closing, supplierReturns] = await Promise.all([
         loadEventFull(ctx.eventId),
         loadCaseSizes(),
         loadSuppliers(),
         DB.closing.forEvent(ctx.eventId),
+        DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
       ]);
       if (ctx.abort) return;
       ctx.event = event;
       ctx.caseSizes = caseSizes || [];
       ctx.suppliers = suppliers || [];
       ctx.closingRows = closing || [];
+      ctx.supplierReturns = supplierReturns || [];
       renderTable();
       applyProductFilter(getLastProductFilter());
       startLive();

@@ -64,6 +64,10 @@ import {
   mountClosingPanel,
 } from './closing.js';
 import {
+  renderAuditShell,
+  mountAuditPanel,
+} from './audit.js';
+import {
   renderSettingsShell,
   mountSettingsPanel,
 } from './settings.js';
@@ -83,9 +87,15 @@ import {
   renderHomeShell,
   mountHomePanel,
 } from './home.js';
+import {
+  renderDevShell,
+  mountDevPanel,
+} from './dev.js';
+import { resolveActiveEventId } from '../event-workspace.js';
 
 export const PANEL_TITLES = {
   home: 'Events',
+  dev: 'Dev tools',
   library: 'Product library',
   'kit-library': 'Kit library',
   suppliers: 'Suppliers',
@@ -106,6 +116,7 @@ export const PANEL_TITLES = {
   closing: 'Closing stock',
   sales: 'Square & modifiers',
   recon: 'Financial recon',
+  audit: 'Forensic audit',
   reports: 'Reports',
   summary: 'Reports',
   'not-found': 'Not found',
@@ -141,6 +152,10 @@ export async function renderPanel(route, state) {
     return renderHomeShell(state.events);
   }
 
+  if (route.view === 'dev') {
+    return renderDevShell(state);
+  }
+
   if (route.view === 'library') {
     return renderLibraryShell();
   }
@@ -159,6 +174,10 @@ export async function renderPanel(route, state) {
 
   if (route.view === 'bugs') {
     return renderBugsShell();
+  }
+
+  if (route.view === 'audit') {
+    return renderAuditShell();
   }
 
   if (route.view === 'settings') {
@@ -287,6 +306,9 @@ export function mountPanel(route, state) {
   if (route.view === 'home') {
     return mountHomePanel();
   }
+  if (route.view === 'dev') {
+    return mountDevPanel();
+  }
   if (route.view === 'event' && route.panel === 'distribution') {
     return mountDistributionPanel(route, state);
   }
@@ -340,6 +362,10 @@ export function mountPanel(route, state) {
   }
   if (route.view === 'bugs') {
     return mountBugsPanel();
+  }
+  if (route.view === 'audit') {
+    const eventId = resolveActiveEventId(route, state);
+    return mountAuditPanel({ ...route, eventId });
   }
   if (route.view === 'settings') {
     return mountSettingsPanel();

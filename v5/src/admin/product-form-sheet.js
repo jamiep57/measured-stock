@@ -13,6 +13,7 @@ import {
   poolFractionText,
   poolServingsFromFraction,
 } from '../lib/volume-pools.js';
+import { syncRecipeIngredientsForProductRename } from '../lib/recipe-stock.js';
 import { parseQty } from '../stock-entry.js';
 
 function displayOfferPrice(row) {
@@ -425,6 +426,9 @@ export function openProductFormSheet(opts) {
       const created = !productId;
       if (productId) {
         await DB.products.update(productId, patch);
+        if (p) {
+          await syncRecipeIngredientsForProductRename(DB, p, { ...p, ...patch }, caseSizes);
+        }
       } else {
         const createdRow = await DB.products.create(patch);
         productId = createdRow.id;

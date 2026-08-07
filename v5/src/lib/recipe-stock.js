@@ -52,22 +52,122 @@ function pickProductByRecipeQty(candidates, qty, caseSizes = []) {
   return best;
 }
 
+/** Em dash separator used when multiple SKUs share a product name. */
+export const RECIPE_PACK_SEP = ' \u2014 ';
+
+/**
+ * Persistable recipe ingredient label. When a pack label exists, store
+ * `Name — Pack` so cans / 30L / 50L (same name) stay distinct on reload.
+ */
+export function recipeStoredProductName(product, caseSizes = []) {
+  const name = String(product?.name || '').trim();
+  if (!name) return '';
+  const pack = productStockPack(product, caseSizes);
+  const label = (pack.label || product.case_size || '').trim();
+  return label ? `${name}${RECIPE_PACK_SEP}${label}` : name;
+}
+
+/**
+ * Exact product_name strings that should be rewritten when a catalogue
+ * product is renamed or its pack label changes. Recipes store names (not
+ * ids), so renames must update recipe_ingredients or mappings appear empty.
+ */
+export function recipeProductNameRewrites(oldProduct, newProduct, caseSizes = []) {
+  const oldStored = recipeStoredProductName(oldProduct, caseSizes);
+  const newStored = recipeStoredProductName(newProduct, caseSizes);
+  if (!oldStored || !newStored || oldStored === newStored) return [];
+
+  const rewrites = [{ from: oldStored, to: newStored }];
+  const oldName = String(oldProduct?.name || '').trim();
+  const newName = String(newProduct?.name || '').trim();
+  // Legacy bare labels (no pack suffix) still need updating when the name
+  // itself changes. Skip on pack-only edits so shared bare names stay put.
+  if (oldName && newName && oldName !== newName && oldName !== oldStored) {
+    rewrites.push({ from: oldName, to: newStored });
+  }
+  return rewrites;
+}
+
+/**
+ * Update recipe_ingredients.product_name after a product rename / pack change.
+ * Mirrors volume-pool rename behaviour. Failures are ignored so a missing
+ * recipes table never blocks saving the product.
+ */
+export async function syncRecipeIngredientsForProductRename(
+  DB,
+  oldProduct,
+  newProduct,
+  caseSizes = [],
+) {
+  const rewrites = recipeProductNameRewrites(oldProduct, newProduct, caseSizes);
+  const oldName = String(oldProduct?.name || '').trim();
+  const newName = String(newProduct?.name || '').trim();
+  if (!rewrites.length && !(oldName && newName && oldName !== newName)) return;
+
+  const enc = DB._.enc;
+  for (const { from, to } of rewrites) {
+    try {
+      await DB.update(
+        'recipe_ingredients',
+        'product_name=eq.' + enc(from),
+        { product_name: to },
+      );
+    } catch {
+      // Recipe table may be empty / unavailable — product rename still matters.
+    }
+  }
+
+  // Catch pack-qualified variants that differ slightly from recipeStoredProductName
+  // (e.g. × vs x) when the product name itself changed.
+  if (oldName && newName && oldName !== newName) {
+    try {
+      const rows = await DB.select(
+        'recipe_ingredients',
+        '?product_name=like.' + enc(oldName + RECIPE_PACK_SEP) + '*&select=id,product_name',
+      );
+      for (const row of rows || []) {
+        const raw = String(row.product_name || '');
+        const sepAt = raw.indexOf(RECIPE_PACK_SEP);
+        if (sepAt < 0) continue;
+        const next = newName + raw.slice(sepAt);
+        if (!next || next === raw) continue;
+        await DB.update(
+          'recipe_ingredients',
+          'id=eq.' + enc(row.id),
+          { product_name: next },
+        );
+      }
+    } catch {
+      // Same as above — product save should still succeed.
+    }
+  }
+}
+
+function productPackLabel(product, caseSizes = []) {
+  const pack = productStockPack(product, caseSizes);
+  return (pack.label || product?.case_size || '').trim();
+}
+
 /**
  * Resolve a recipe ingredient name to a library product.
  * When several SKUs share a name, prefer the pack whose size matches qtyHint
  * (case fraction), using caseSizes / legacy units_per_case.
+ * Stored names may be bare (`Gin`) or pack-qualified (`Gin — 70cl`).
  */
 export function recipeProductByName(storedName, qtyHint, products = [], caseSizes = []) {
   const raw = String(storedName ?? '').trim();
   if (!raw) return null;
   const nLower = raw.toLowerCase();
-  const dash = raw.indexOf(' \u2014 ');
+  const dash = raw.indexOf(RECIPE_PACK_SEP);
   if (dash > 0) {
     const name = raw.slice(0, dash).trim().toLowerCase();
-    const cs = raw.slice(dash + 3).trim().toLowerCase();
-    const byPack = products.find((p) =>
-      (p.name || '').trim().toLowerCase() === name
-      && (p.case_size || '').trim().toLowerCase() === cs);
+    const cs = normCaseSizeLabel(raw.slice(dash + RECIPE_PACK_SEP.length));
+    const byPack = products.find((p) => {
+      if ((p.name || '').trim().toLowerCase() !== name) return false;
+      const pack = normCaseSizeLabel(productPackLabel(p, caseSizes));
+      const legacy = normCaseSizeLabel(p.case_size || '');
+      return (pack && pack === cs) || (legacy && legacy === cs);
+    });
     if (byPack) return byPack;
   }
   const byName = products.filter((p) => (p.name || '').trim().toLowerCase() === nLower);

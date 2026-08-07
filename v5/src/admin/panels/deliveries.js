@@ -524,7 +524,7 @@ export function mountDeliveriesPanel(route) {
     if (Object.keys(patch).length) await DB.deliveries.update(deliveryId, patch);
   }
 
-  /** Persist summed delivery-line qty onto event_products (source of truth). */
+  /** Persist summed delivery-line qty onto event_products (keeps aggregates close to live lines). */
   async function syncDeliveredFromDeliveries() {
     if (!event) return;
     const countedIn = countedInFromDeliveries(deliveries, event.event_products, caseSizes);
@@ -546,10 +546,19 @@ export function mountDeliveriesPanel(route) {
       }
       if (!Object.keys(patch).length) return null;
       return DB.eventProducts.setForEvent(route.eventId, ep.product_id, patch)
-        .catch((e) => console.warn('syncDeliveredFromDeliveries', e));
+        .then(() => ({ ok: true, productId: ep.product_id }))
+        .catch((e) => {
+          console.warn('syncDeliveredFromDeliveries', e);
+          return { ok: false, productId: ep.product_id, error: e };
+        });
     }).filter(Boolean);
 
-    if (updates.length) await Promise.allSettled(updates);
+    if (!updates.length) return;
+    const results = await Promise.all(updates);
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length) {
+      toast(`Could not sync delivered qty for ${failed.length} product${failed.length === 1 ? '' : 's'}`, true);
+    }
   }
 
   async function syncInvoiceFromDeliveries() {

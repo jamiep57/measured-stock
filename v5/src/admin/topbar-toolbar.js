@@ -126,6 +126,33 @@ export const PANEL_TOOLBAR = {
       ],
     },
   ],
+  audit: [
+    {
+      id: 'actions',
+      label: 'Audit',
+      items: [
+        {
+          id: 'audit-run',
+          icon: 'refresh-cw',
+          label: 'Run audit',
+          title: 'Re-run forensic invariant checks',
+          primary: true,
+        },
+      ],
+    },
+    {
+      id: 'data',
+      label: 'Export',
+      items: [
+        {
+          id: 'audit-export',
+          icon: 'download',
+          label: 'Export JSON',
+          title: 'Download audit findings as JSON',
+        },
+      ],
+    },
+  ],
   reports: [
     {
       id: 'data',
@@ -195,7 +222,7 @@ export const PANEL_TOOLBAR = {
         },
         {
           id: 'clear-till-sales',
-          icon: 'trash-2',
+          icon: 'trash',
           title: 'Clear item sales',
         },
       ],
@@ -213,7 +240,7 @@ export const PANEL_TOOLBAR = {
         },
         {
           id: 'clear-modifiers',
-          icon: 'trash-2',
+          icon: 'trash',
           title: 'Clear modifiers',
         },
       ],

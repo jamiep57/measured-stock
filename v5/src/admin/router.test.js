@@ -12,8 +12,17 @@ describe('admin router', () => {
     expect(parseRoute('/v5/admin/suppliers')).toEqual({ view: 'suppliers' });
     expect(parseRoute('/v5/admin/warehouses')).toEqual({ view: 'warehouses' });
     expect(parseRoute('/v5/admin/volume-pools')).toEqual({ view: 'volume-pools' });
-    expect(parseRoute('/v5/admin/bugs')).toEqual({ view: 'bugs' });
     expect(parseRoute('/v5/admin/settings')).toEqual({ view: 'settings' });
+  });
+
+  it('parses dev tools home and nested pages', () => {
+    expect(parseRoute('/v5/admin/dev')).toEqual({ view: 'dev' });
+    expect(parseRoute('/v5/admin/dev/bugs')).toEqual({ view: 'bugs' });
+    expect(parseRoute('/v5/admin/dev/audit')).toEqual({ view: 'audit' });
+  });
+
+  it('keeps legacy bugs URL', () => {
+    expect(parseRoute('/v5/admin/bugs')).toEqual({ view: 'bugs' });
   });
 
   it('redirects legacy case-sizes to workspace settings', () => {
@@ -68,6 +77,13 @@ describe('admin router', () => {
     });
   });
 
+  it('maps legacy event audit URL onto the dev audit view', () => {
+    expect(parseRoute('/v5/admin/events/abc-123/audit')).toEqual({
+      view: 'audit',
+      eventId: 'abc-123',
+    });
+  });
+
   it('keeps known event panels', () => {
     for (const panel of [
       'dashboard', 'setup', 'products', 'distribution', 'deliveries',
@@ -89,6 +105,8 @@ describe('admin router', () => {
     expect(hrefForRoute({ view: 'event', eventId: 'x', panel: 'sales' }))
       .toBe('/v5/admin/events/x/sales');
     expect(hrefForRoute({ view: 'home' })).toBe('/v5/admin');
-    expect(hrefForRoute({ view: 'bugs' })).toBe('/v5/admin/bugs');
+    expect(hrefForRoute({ view: 'dev' })).toBe('/v5/admin/dev');
+    expect(hrefForRoute({ view: 'bugs' })).toBe('/v5/admin/dev/bugs');
+    expect(hrefForRoute({ view: 'audit' })).toBe('/v5/admin/dev/audit');
   });
 });

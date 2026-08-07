@@ -181,7 +181,7 @@ function renderRow(r) {
     : '';
 
   return `
-    <tr class="recon-row${r.reconHidden ? ' recon-row-hidden' : ''}${r.investigate ? ' row-investigate' : ''}${r.multiSupplierDelivery ? ' recon-row--has-subs' : ''}"
+    <tr class="recon-row${r.reconHidden ? ' recon-row-hidden' : ''}${r.multiSupplierDelivery ? ' recon-row--has-subs' : ''}"
       data-rcn-pid="${escapeHtml(r.pid)}" data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
       data-supplier-name="${escapeHtml(supplierSearchText(r))}"
       data-rcn-status="${escapeHtml(r.reconStatus || '')}">
@@ -330,6 +330,7 @@ export function mountReconPanel(route) {
     event: null,
     closingRows: [],
     tillRows: [],
+    modifierRows: [],
     recipes: [],
     products: [],
     caseSizes: [],
@@ -375,6 +376,7 @@ export function mountReconPanel(route) {
       event: ctx.event,
       closingRows: ctx.closingRows,
       tillRows: ctx.tillRows,
+      modifierRows: ctx.modifierRows,
       recipes: ctx.recipes,
       products: ctx.products,
       caseSizes: ctx.caseSizes,
@@ -498,7 +500,6 @@ export function mountReconPanel(route) {
       const varPct = (row.consumption !== 0 || row.plu !== 0) ? ` (${row.variancePct}%)` : '';
       varTd.innerHTML = `<span class="${varCls}">${varSign}${formatReconQty(row.variance)}${varPct}</span>`;
     }
-    tr.classList.toggle('row-investigate', !!row.investigate);
   }
 
   async function persistInline(pid) {
@@ -751,9 +752,11 @@ export function mountReconPanel(route) {
 
     function consumptionStockLines(r) {
       const already = Number(ep.already_in_stock) || 0;
+      const damaged = Number(r.damaged) || Number(ep.damaged_qty) || 0;
       const closingStock = roundN(
         (Number(r.delivered) || 0)
         + already
+        - damaged
         - (Number(r.transferred) || 0)
         - (Number(r.wastage) || 0)
         - (Number(r.consumption) || 0),
@@ -761,6 +764,7 @@ export function mountReconPanel(route) {
       );
       let html = ledgerLine('', 'Delivered', r.delivered);
       if (already) html += ledgerLine('+', 'Already on hand', already);
+      if (damaged) html += ledgerLine('−', 'Damaged', damaged);
       html += ledgerLine('−', 'Closing', closingStock);
       html += ledgerLine('−', 'Transferred', r.transferred);
       html += ledgerLine('−', 'Wastage', r.wastage);
@@ -1104,7 +1108,7 @@ export function mountReconPanel(route) {
 
   async function load() {
     const DB = getDB();
-    const [event, caseSizes, products, suppliers, closing, tillImport, recipes, wastage, transfers, supplierReturns, deliveries] =
+    const [event, caseSizes, products, suppliers, closing, tillImport, modImport, recipes, wastage, transfers, supplierReturns, deliveries] =
       await Promise.all([
         loadEventFull(ctx.eventId),
         loadCaseSizes(),
@@ -1112,6 +1116,7 @@ export function mountReconPanel(route) {
         loadSuppliers(),
         DB.closing.forEvent(ctx.eventId),
         DB.tillImports.forEvent(ctx.eventId).catch(() => null),
+        DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
         DB.recipes.listFull().catch(() => []),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
         DB.transfers.forEvent(ctx.eventId).catch(() => []),
@@ -1125,6 +1130,7 @@ export function mountReconPanel(route) {
     ctx.suppliers = suppliers;
     ctx.closingRows = closing || [];
     ctx.tillRows = tillImport?.rows || [];
+    ctx.modifierRows = modImport?.rows || [];
     ctx.recipes = recipes || [];
     ctx.wastageBatches = wastage || [];
     ctx.transfers = transfers || [];

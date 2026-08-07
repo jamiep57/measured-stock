@@ -1,6 +1,7 @@
 /**
  * Financial recon calculations — ported from v2 Financial Recon panel.
- * Consumption = Delivered + pre-event on hand − closing − transferred − wastage.
+ * Consumption = Delivered + pre-event on hand − damaged − closing − transferred − wastage.
+ * (Damaged matches opening: it never entered sellable stock.)
  * Variance = PLU − Consumption.
  */
 
@@ -254,28 +255,48 @@ export function supplierReturnCases(supplierReturns, pid, event, caseSizes) {
 }
 
 /** PLU consumption in stock units (cases / kegs / bottle-equivalent cases). */
-export function computePluByProductId(eps, tillRows, recipes, products, caseSizes, countedIn = null) {
+export function computePluByProductId(
+  eps,
+  tillRows,
+  recipes,
+  products,
+  caseSizes,
+  countedIn = null,
+  modifierRows = null,
+) {
   const byName = {};
   const byPool = {};
 
-  (tillRows || []).forEach((r) => {
-    const recipe = findRecipe(recipes, r.name, r.variation);
-    if (!recipe) return;
-    const sold = Number(r.items_sold) || 0;
+  function accumulateSold(recipe, sold) {
+    const n = Number(sold) || 0;
+    if (!(n > 0) || !recipe) return;
     (recipe.ingredients || []).forEach((ig) => {
       const qty = Number(ig.qty) || 0;
       if (!(qty > 0)) return;
       if (ig.pool_name) {
         const key = normProductName(ig.pool_name);
         if (!key) return;
-        byPool[key] = (byPool[key] || 0) + sold * qty;
+        byPool[key] = (byPool[key] || 0) + n * qty;
         return;
       }
       const p = recipeProductByName(ig.product_name, qty, products, caseSizes);
       const key = pluStockKeyForRecipeIngredient(ig.product_name, qty, eps, products, caseSizes);
       if (!key) return;
-      byName[key] = (byName[key] || 0) + recipeQtyToStockUnits(p, qty, sold, caseSizes);
+      byName[key] = (byName[key] || 0) + recipeQtyToStockUnits(p, qty, n, caseSizes);
     });
+  }
+
+  (tillRows || []).forEach((r) => {
+    const recipe = findRecipe(recipes, r.name, r.variation);
+    accumulateSold(recipe, r.items_sold);
+  });
+
+  // Modifier recipes are keyed as till_item=modifier, till_variation=modifier_set.
+  (modifierRows || []).forEach((r) => {
+    const item = r.modifier ?? r.modifier_name ?? r.name;
+    const variation = r.modifier_set ?? r.variation;
+    const recipe = findRecipe(recipes, item, variation);
+    accumulateSold(recipe, r.qty_sold ?? r.items_sold ?? r.qty);
   });
 
   const pluByPid = {};
@@ -471,6 +492,7 @@ export function buildReconRow(ctx) {
 
   const { closingCases, closingSingles } = resolveClosingCounts(cl, draft);
   const preEventOnHand = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
+  const damaged = Number(ep.damaged_qty || 0);
   const fromReturnLines = supplierReturnCases(supplierReturns, pid, event, caseSizes);
   const supplierReturnsQty = draft?.returnSet != null
     ? roundN(Number(draft.returnStored) || 0, 2)
@@ -481,7 +503,10 @@ export function buildReconRow(ctx) {
   const stockRem = stockRemaining(cl, closingTotal);
   const transferred = transferOutCases(transferMap, pid, event, caseSizes);
   const wastage = wastageMap[pid] || 0;
-  const consumption = roundN(delivered + preEventOnHand - stockRem - transferred - wastage, 2);
+  const consumption = roundN(
+    delivered + preEventOnHand - damaged - stockRem - transferred - wastage,
+    2,
+  );
   const plu = pluByPid[pid] || 0;
 
   const casePrice = reconCasePrice(ep, draft, caseSizes);
@@ -529,7 +554,7 @@ export function buildReconRow(ctx) {
   const multiSupplierPriceWarn = multiSupplierDelivery && sourcePrices.size > 1;
 
   const charges = {
-    ep, pid, p, ups, delivered, invoiced, closingCases, closingSingles,
+    ep, pid, p, ups, delivered, damaged, invoiced, closingCases, closingSingles,
     supplierReturns: supplierReturnsQty, transferred, wastage, consumption, plu,
     casePrice, unitPrice, rowPrice, consumptionCharge, consumptionLooseCharge,
     pluCharge, invoiceCharge,
@@ -542,8 +567,6 @@ export function buildReconRow(ctx) {
   const denom = Math.max(Math.abs(consumption), Math.abs(plu), 0.01);
   const variancePct = (consumption !== 0 || plu !== 0)
     ? roundN((variance / denom) * 100, 1) : 0;
-  const investigate = (consumption !== 0 || plu !== 0)
-    && Math.abs(variance) / denom > 0.08;
 
   const reconNote = (draft?.reconNote != null ? draft.reconNote : cl.recon_note) || '';
   const reconStatus = draft?.reconStatus !== undefined
@@ -566,7 +589,6 @@ export function buildReconRow(ctx) {
     budgetCost,
     supplierName: supplierNameStr,
     supplierId: sid,
-    investigate,
     reconNote,
     reconStatus,
     reconHidden,
@@ -595,6 +617,7 @@ export function computeReconRows(state) {
     event,
     closingRows,
     tillRows,
+    modifierRows,
     recipes,
     products,
     caseSizes,
@@ -614,7 +637,9 @@ export function computeReconRows(state) {
   const countedIn = deliveries
     ? countedInFromDeliveries(deliveries, event?.event_products, caseSizes)
     : null;
-  const pluByPid = computePluByProductId(eps, tillRows, recipes, products, caseSizes, countedIn);
+  const pluByPid = computePluByProductId(
+    eps, tillRows, recipes, products, caseSizes, countedIn, modifierRows,
+  );
   const wastageMap = wastageByProduct(wastageBatches, event, caseSizes);
   const transferMap = transferOutByProduct(transfers, event?.id);
 
