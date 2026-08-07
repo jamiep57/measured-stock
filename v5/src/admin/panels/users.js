@@ -7,6 +7,7 @@ import { $, escapeHtml, toast } from '../../lib/util.js';
 import { authFetch, getCachedProfile } from '../../lib/auth.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { icon } from '../../lib/icons.js';
+import { confirmDialog } from '../../components/modal.js';
 
 /** @type {Array<Record<string, unknown>>} */
 let cachedProfiles = [];
@@ -187,12 +188,27 @@ async function deleteUser(id) {
   return data;
 }
 
+/** Open the signed-in user's profile editor (from the account menu). */
+export function openOwnProfileEditor() {
+  const profile = getCachedProfile();
+  if (!profile?.id) {
+    toast('Profile not loaded', true);
+    return;
+  }
+  openUserEditorFromProfile(profile);
+}
+
 function openUserEditor(userId) {
-  const profile = cachedProfiles.find((p) => p.id === userId);
+  const profile = cachedProfiles.find((p) => p.id === userId)
+    || (getCachedProfile()?.id === userId ? getCachedProfile() : null);
   if (!profile) {
     toast('User not found', true);
     return;
   }
+  openUserEditorFromProfile(profile);
+}
+
+async function openUserEditorFromProfile(profile) {
   const selfId = getCachedProfile()?.id;
   const isSelf = profile.id === selfId;
 
@@ -276,8 +292,15 @@ function openUserEditor(userId) {
     if (errEl) errEl.textContent = '';
     try {
       await patchUser(profile.id, patch);
+      if (isSelf) {
+        const cached = getCachedProfile();
+        if (cached) {
+          cached.display_name = display_name;
+          cached.email = email;
+        }
+      }
       closeSheet();
-      toast('User updated');
+      toast(isSelf ? 'Profile updated' : 'User updated');
       await loadUsers();
     } catch (err) {
       if (errEl) errEl.textContent = err.message || 'Update failed';
@@ -294,7 +317,7 @@ function openUserEditor(userId) {
       if (errEl) errEl.textContent = 'Password must be at least 8 characters.';
       return;
     }
-    if (!confirm(`Reset password for ${profile.email || 'this user'}?`)) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: `Reset password for ${profile.email || 'this user'}?`, confirmLabel: 'Confirm', danger: true }))) return;
     btn.disabled = true;
     if (errEl) errEl.textContent = '';
     try {
@@ -317,7 +340,7 @@ function openUserEditor(userId) {
   $('usersEditDelete')?.addEventListener('click', async () => {
     const errEl = $('usersEditErr');
     const label = profile.email || profile.display_name || 'this user';
-    if (!confirm(`Permanently delete ${label}? This cannot be undone.`)) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: `Permanently delete ${label}? This cannot be undone.`, confirmLabel: 'Delete', danger: true }))) return;
     const btn = $('usersEditDelete');
     btn.disabled = true;
     if (errEl) errEl.textContent = '';
@@ -336,7 +359,7 @@ function openUserEditor(userId) {
 export function mountUsersPanel() {
   const inviteBtn = $('usersInviteBtn');
   const form = $('usersInviteForm');
-  inviteBtn?.addEventListener('click', () => {
+  inviteBtn?.addEventListener('click', async () => {
     if (form) form.hidden = !form.hidden;
   });
 

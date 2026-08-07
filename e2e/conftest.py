@@ -105,6 +105,13 @@ def admin_page(page):
     return page
 
 
+@pytest.fixture
+def guest_page(page):
+    """Browser with cloud config but no auth session (for gate tests)."""
+    inject_cloud_config(page)
+    return page
+
+
 def pytest_configure(config):
     # Make pytest-base-url / playwright baseURL match our env.
     os.environ.setdefault("BASE_URL", base_url())

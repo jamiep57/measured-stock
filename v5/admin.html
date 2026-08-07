@@ -152,15 +152,30 @@
               </button>
               <div class="topbar-search" id="topbarSearch"></div>
             </div>
-            <div class="topbar-actions">
-              <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings/users" data-route="settings"
-                title="Workspace settings" aria-label="Workspace settings">
-                <i data-lucide="settings" aria-hidden="true"></i>
-              </a>
-              <a class="topbar-logout" id="topbarLogout" href="/login" title="Sign out">
-                <i data-lucide="log-out" aria-hidden="true"></i>
-                <span>Log out</span>
-              </a>
+            <div class="topbar-profile-wrap" id="topbarProfileWrap">
+              <button type="button" class="topbar-profile" id="topbarProfileBtn"
+                aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileMenu"
+                title="Account" aria-label="Account menu">
+                <i data-lucide="user" aria-hidden="true"></i>
+              </button>
+              <div class="topbar-menu topbar-profile-menu" id="topbarProfileMenu" role="menu" hidden>
+                <div class="topbar-menu-label" id="topbarProfileLabel">Account</div>
+                <div class="topbar-menu-section">
+                  <button type="button" class="topbar-menu-item" role="menuitem" data-profile-action="profile">
+                    Profile
+                  </button>
+                  <a class="topbar-menu-item" role="menuitem" href="/v5/admin/settings/users"
+                    data-profile-action="settings" data-route="settings">
+                    Workspace settings
+                  </a>
+                </div>
+                <div class="topbar-menu-section">
+                  <button type="button" class="topbar-menu-item topbar-menu-item--danger" role="menuitem"
+                    id="topbarLogout" data-profile-action="logout">
+                    Log out
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </header>

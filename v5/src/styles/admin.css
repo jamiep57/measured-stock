@@ -28,6 +28,14 @@ body:has(.admin-app) {
   --radius-sm: 4px;
   --radius-lg: 0.625rem;
   --topbar-h: 36px;
+  /* Topbar control system — shared geometry for every toolbar button */
+  --tb-control-h: var(--topbar-h);
+  --tb-control-radius: var(--radius);
+  --tb-control-pad-x: 12px;
+  --tb-control-gap: 8px;
+  --tb-icon-size: 16px;
+  --tb-font-size: 13px;
+  --tb-font-weight: 600;
   --primary-foreground: #fafafa;
   /* Admin has no bottom nav — don't inherit the staff-app 56px offset */
   --nav-h: 0px;
@@ -462,7 +470,7 @@ body:has(.admin-app) .toast.err {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--tb-control-gap);
   flex: 1 1 auto;
   min-width: 0;
   margin-left: auto;
@@ -471,68 +479,59 @@ body:has(.admin-app) .toast.err {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--tb-control-gap);
   flex: 1 1 auto;
   min-width: 0;
   max-width: min(100%, 920px);
 }
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.topbar-profile-wrap {
+  position: relative;
   flex-shrink: 0;
 }
-.topbar-settings {
-  width: 28px;
-  height: 28px;
+/* Profile uses the same outlined icon-control recipe as toolbar tools */
+.topbar-profile {
+  box-sizing: border-box;
+  width: var(--tb-control-h);
+  height: var(--tb-control-h);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border-radius: calc(var(--radius) - 2px);
-  color: var(--muted-foreground);
-  text-decoration: none;
-}
-.topbar-settings .lucide-icon {
-  width: 16px;
-  height: 16px;
-}
-.topbar-settings:hover {
-  background: var(--secondary);
-  color: var(--foreground);
-}
-.topbar-settings.active {
-  color: var(--foreground);
-  background: var(--secondary);
-}
-.topbar-logout {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex-shrink: 0;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: calc(var(--radius) - 2px);
+  padding: 0;
   border: 1px solid var(--border);
+  border-radius: var(--tb-control-radius);
   background: var(--card);
   color: var(--foreground);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
+  cursor: pointer;
+}
+.topbar-profile .lucide-icon,
+.topbar-profile [data-lucide] {
+  width: var(--tb-icon-size);
+  height: var(--tb-icon-size);
+}
+.topbar-profile:hover,
+.topbar-profile[aria-expanded="true"] {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.topbar-profile.active {
+  color: var(--foreground);
+  background: var(--secondary);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--foreground));
+}
+.topbar-profile-menu {
+  min-width: 200px;
+}
+.topbar-profile-menu .topbar-menu-item {
   text-decoration: none;
-  white-space: nowrap;
 }
-.topbar-logout .lucide-icon,
-.topbar-logout [data-lucide] {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-.topbar-logout:hover {
+.topbar-menu-item--danger {
   color: var(--danger, #dc2626);
-  border-color: color-mix(in srgb, var(--danger, #dc2626) 35%, var(--border));
+}
+.topbar-menu-item--danger:hover {
   background: color-mix(in srgb, var(--danger, #dc2626) 8%, var(--card));
+  color: var(--danger, #dc2626);
 }
 
 /* Users panel */
@@ -667,22 +666,23 @@ body:has(.admin-app) .toast.err {
 .topbar-toolbar-strips {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--tb-control-gap);
   flex-shrink: 0;
 }
 
+/* Toolbar groups are layout-only — each control owns its own chrome */
 .topbar-toolbar {
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: var(--tb-control-gap);
   flex-shrink: 0;
-  height: var(--topbar-h);
-  padding: 3px;
+  height: auto;
+  padding: 0;
   box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .topbar-search {
@@ -691,27 +691,17 @@ body:has(.admin-app) .toast.err {
   max-width: 320px;
 }
 
-.topbar-tools > .field-undo-btn {
-  flex-shrink: 0;
-  height: var(--topbar-h);
-  padding: 0 10px;
-  gap: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
-}
-.topbar-tools > .field-undo-btn[hidden] {
-  display: none !important;
-}
-.topbar-tools > .field-undo-btn:hover:not(:disabled) {
-  background: var(--secondary);
-}
-
 .topbar-tool-wrap {
   position: relative;
 }
 
+/*
+ * Topbar control system
+ * ----------------------
+ * Base `.topbar-tool` stays a compact ghost icon for in-page use (cards, tables).
+ * Inside `.admin-topbar`, every tool is a full-height outlined control so primary,
+ * icon-only, labeled, undo, and profile share one geometry.
+ */
 .topbar-tool {
   width: 28px;
   height: 28px;
@@ -766,51 +756,80 @@ body:has(.admin-app) .toast.err {
   font-weight: 600;
   white-space: nowrap;
 }
+
 .topbar-tool--primary {
   background: var(--primary);
-  color: #fafafa;
+  color: var(--primary-foreground);
   border: 1px solid var(--primary);
 }
 .topbar-tool--primary .lucide-icon {
-  color: #fafafa;
+  color: var(--primary-foreground);
 }
 .topbar-tool--primary:hover:not(:disabled) {
   background: var(--primary);
   filter: brightness(0.96);
-  color: #fafafa;
+  color: var(--primary-foreground);
   border-color: var(--primary);
 }
 
-/* Primary CTA — no nested white toolbar chrome (alone or with companion icons) */
-.topbar-toolbar:has(> .topbar-tool--primary) {
+/* Unified topbar geometry — outlined secondary + solid primary */
+.admin-topbar .topbar-tool {
+  box-sizing: border-box;
+  width: var(--tb-control-h);
+  height: var(--tb-control-h);
+  min-height: var(--tb-control-h);
   padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  height: auto;
   gap: 6px;
-}
-.topbar-toolbar:has(> .topbar-tool--primary) .topbar-tool--primary {
-  height: var(--topbar-h);
-  padding: 0 14px;
-  border-radius: var(--radius);
-}
-.topbar-toolbar:has(> .topbar-tool--primary) > .topbar-tool:not(.topbar-tool--primary) {
-  width: var(--topbar-h);
-  height: var(--topbar-h);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--tb-control-radius);
   background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--tb-font-size);
+  font-weight: var(--tb-font-weight);
+  line-height: 1;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
 }
-/* Labeled companions (e.g. Merge duplicates) need auto width — square chrome is icon-only */
-.topbar-toolbar:has(> .topbar-tool--primary) > .topbar-tool--label:not(.topbar-tool--primary) {
-  width: auto;
-  padding: 0 12px;
-  gap: 6px;
+.admin-topbar .topbar-tool .lucide-icon {
+  width: var(--tb-icon-size);
+  height: var(--tb-icon-size);
+  flex-shrink: 0;
 }
-.topbar-toolbar:has(> .topbar-tool--primary) > .topbar-tool:not(.topbar-tool--primary):hover:not(:disabled) {
+.admin-topbar .topbar-tool:hover:not(:disabled) {
   background: var(--secondary);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--foreground));
+}
+.admin-topbar .topbar-tool--label {
+  width: auto;
+  padding: 0 var(--tb-control-pad-x);
+}
+.admin-topbar .topbar-tool--primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+  box-shadow: none;
+}
+.admin-topbar .topbar-tool--primary .lucide-icon {
+  color: var(--primary-foreground);
+}
+.admin-topbar .topbar-tool--primary:hover:not(:disabled) {
+  background: var(--primary);
+  filter: brightness(0.96);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+.admin-topbar .topbar-tool--active {
+  background: color-mix(in srgb, var(--secondary) 65%, var(--foreground) 10%);
+  border-color: color-mix(in srgb, var(--border) 55%, var(--foreground));
+}
+.admin-topbar .topbar-tool--active::after {
+  top: 6px;
+  right: 6px;
+}
+
+/* Undo inherits the same outlined control; no extra chrome overrides */
+.admin-topbar .topbar-tools > .field-undo-btn[hidden] {
+  display: none !important;
 }
 
 /* Legacy aliases — remove when unused */

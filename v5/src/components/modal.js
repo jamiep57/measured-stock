@@ -107,3 +107,59 @@ export function openModal({ title, bodyHtml, footHtml, onClose }) {
 
   return modalEl;
 }
+
+/**
+ * Promise-based confirm dialog (replaces window.confirm).
+ * @param {object} opts
+ * @param {string} [opts.title]
+ * @param {string} opts.message
+ * @param {string} [opts.confirmLabel]
+ * @param {string} [opts.cancelLabel]
+ * @param {boolean} [opts.danger]
+ * @returns {Promise<boolean>}
+ */
+export function confirmDialog(opts = {}) {
+  const {
+    title = 'Confirm',
+    message = '',
+    confirmLabel = 'Confirm',
+    cancelLabel = 'Cancel',
+    danger = true,
+  } = opts;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      closeModal();
+      resolve(value);
+    };
+
+    const confirmClass = danger
+      ? 'admin-drawer-btn admin-drawer-btn--danger'
+      : 'admin-drawer-btn admin-drawer-btn--primary';
+
+    const el = openModal({
+      title,
+      bodyHtml: `<p class="admin-modal-confirm-msg">${escapeHtml(message)}</p>`,
+      footHtml: `
+        <div class="admin-modal-confirm-foot">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-confirm-cancel>
+            ${escapeHtml(cancelLabel)}
+          </button>
+          <button type="button" class="${confirmClass}" data-confirm-ok>
+            ${escapeHtml(confirmLabel)}
+          </button>
+        </div>`,
+      onClose: () => settle(false),
+    });
+
+    el?.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => settle(false));
+    el?.querySelector('[data-confirm-ok]')?.addEventListener('click', () => settle(true));
+
+    requestAnimationFrame(() => {
+      el?.querySelector('[data-confirm-ok]')?.focus();
+    });
+  });
+}

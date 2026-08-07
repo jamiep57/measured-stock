@@ -90,7 +90,7 @@ export function startRouter(onRoute) {
 }
 
 export function linkSidebar(route) {
-  document.querySelectorAll('.nav-link[data-route], .nav-link-cog[data-route], .topbar-settings[data-route]').forEach((el) => {
+  document.querySelectorAll('.nav-link[data-route], .nav-link-cog[data-route], [data-profile-action="settings"][data-route]').forEach((el) => {
     const isEvent = el.hasAttribute('data-event');
     let active = false;
     if (route.view === 'event' && isEvent) {
@@ -107,6 +107,7 @@ export function linkSidebar(route) {
       el.href = `${BASE}/events/${route.eventId}/${el.dataset.route}`;
     }
   });
+  document.getElementById('topbarProfileBtn')?.classList.toggle('active', route.view === 'settings');
 }
 
 export { BASE };

@@ -6,6 +6,7 @@ import { flushQueue } from './sync-queue.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountSupplierSearch } from './components/supplier-search.js';
 import { mountProductSearch } from './components/product-search.js';
+import { confirmDialog } from 'components/modal.js';
 
 const DELIVERY_BUCKET = 'delivery-photos';
 
@@ -87,10 +88,10 @@ function renderDeliveryList() {
   }).join('')}`;
 
   list.querySelectorAll('[data-edit]').forEach((btn) => {
-    btn.onclick = () => openDeliveryForm(btn.dataset.edit);
+    btn.onclick = async () => openDeliveryForm(btn.dataset.edit);
   });
   list.querySelectorAll('[data-del]').forEach((btn) => {
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.stopPropagation();
       deleteDelivery(btn.dataset.del);
     };
@@ -223,7 +224,7 @@ let lineMenuDocBound = false;
 function ensureLineMenuDocClose() {
   if (lineMenuDocBound) return;
   lineMenuDocBound = true;
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
     if (e.target.closest('.del-line-menu')) return;
     closeAllLineMenus();
   });
@@ -232,7 +233,7 @@ function ensureLineMenuDocClose() {
 function wireLineMenus(root) {
   ensureLineMenuDocClose();
   root.querySelectorAll('.del-line-more').forEach((btn) => {
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.stopPropagation();
       const pop = btn.parentElement?.querySelector('.del-line-menu-pop');
       if (!pop) return;
@@ -244,7 +245,7 @@ function wireLineMenus(root) {
   });
 
   root.querySelectorAll('.del-line-menu-item').forEach((item) => {
-    item.onclick = (e) => {
+    item.onclick = async (e) => {
       e.stopPropagation();
       const line = delLines.find((l) => l.lineId === item.dataset.lid);
       const action = item.dataset.action;
@@ -611,7 +612,7 @@ async function uploadPhotosAsync(deliveryId) {
 }
 
 async function deleteDelivery(id) {
-  if (!confirm('Delete this delivery?')) return;
+  if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this delivery?', confirmLabel: 'Delete', danger: true }))) return;
   try {
     const DB = getDB();
     await DB.deliveries.clearLines(id);

@@ -1,4 +1,12 @@
+/**
+ * Admin panel registry — shells + mounts.
+ * Heavy panels (sales, recon, reports, closing, audit, kit) load on demand.
+ */
+
 import { escapeHtml } from '../../lib/util.js';
+import { notFoundState } from '../../components/empty-state.js';
+import { resolveActiveEventId } from '../event-workspace.js';
+
 import {
   renderDistributionShell,
   mountDistributionPanel,
@@ -36,17 +44,9 @@ import {
   mountLibraryPanel,
 } from './library.js';
 import {
-  renderSalesShell,
-  mountSalesPanel,
-} from './sales.js';
-import {
   renderCountsShell,
   mountCountsPanel,
 } from './counts.js';
-import {
-  renderReconShell,
-  mountReconPanel,
-} from './recon.js';
 import {
   renderDashboardShell,
   mountDashboardPanel,
@@ -56,18 +56,6 @@ import {
   mountBugsPanel,
 } from './bugs.js';
 import {
-  renderReportsShell,
-  mountReportsPanel,
-} from './reports.js';
-import {
-  renderClosingShell,
-  mountClosingPanel,
-} from './closing.js';
-import {
-  renderAuditShell,
-  mountAuditPanel,
-} from './audit.js';
-import {
   renderSettingsShell,
   mountSettingsPanel,
 } from './settings.js';
@@ -76,14 +64,6 @@ import {
   mountWarehousesPanel,
 } from './warehouses.js';
 import {
-  renderKitLibraryShell,
-  mountKitLibraryPanel,
-} from './kit-library.js';
-import {
-  renderKitShell,
-  mountKitPanel,
-} from './kit.js';
-import {
   renderHomeShell,
   mountHomePanel,
 } from './home.js';
@@ -91,7 +71,17 @@ import {
   renderDevShell,
   mountDevPanel,
 } from './dev.js';
-import { resolveActiveEventId } from '../event-workspace.js';
+
+/** Lazy-loaded heavy panels */
+const lazy = {
+  sales: () => import('./sales.js'),
+  recon: () => import('./recon.js'),
+  reports: () => import('./reports.js'),
+  closing: () => import('./closing.js'),
+  audit: () => import('./audit.js'),
+  kit: () => import('./kit.js'),
+  'kit-library': () => import('./kit-library.js'),
+};
 
 export const PANEL_TITLES = {
   home: 'Events',
@@ -133,14 +123,13 @@ function placeholder(title, bullets) {
 }
 
 function notFoundPage() {
-  return `
-    <div class="admin-page">
-      <div class="admin-surface admin-not-found">
-        <h2>Page not found</h2>
-        <p class="muted">That URL doesn’t match a V5 admin page. Check the link or pick an event from the sidebar.</p>
-        <a class="admin-drawer-btn admin-drawer-btn--primary" href="/v5/admin">Back to events</a>
-      </div>
-    </div>`;
+  return notFoundState({
+    title: 'Page not found',
+    copy: 'That URL doesn’t match a V5 admin page. Check the link or pick an event from the sidebar.',
+    homeHref: '/v5/admin',
+    homeLabel: 'Back to events',
+    surface: 'admin',
+  });
 }
 
 export async function renderPanel(route, state) {
@@ -161,7 +150,8 @@ export async function renderPanel(route, state) {
   }
 
   if (route.view === 'kit-library') {
-    return renderKitLibraryShell();
+    const m = await lazy['kit-library']();
+    return m.renderKitLibraryShell();
   }
 
   if (route.view === 'suppliers') {
@@ -177,7 +167,8 @@ export async function renderPanel(route, state) {
   }
 
   if (route.view === 'audit') {
-    return renderAuditShell();
+    const m = await lazy.audit();
+    return m.renderAuditShell();
   }
 
   if (route.view === 'settings') {
@@ -268,7 +259,8 @@ export async function renderPanel(route, state) {
     }
 
     if (panel === 'sales') {
-      return renderSalesShell();
+      const m = await lazy.sales();
+      return m.renderSalesShell();
     }
 
     if (panel === 'counts') {
@@ -276,19 +268,23 @@ export async function renderPanel(route, state) {
     }
 
     if (panel === 'kit') {
-      return renderKitShell();
+      const m = await lazy.kit();
+      return m.renderKitShell();
     }
 
     if (panel === 'recon') {
-      return renderReconShell();
+      const m = await lazy.recon();
+      return m.renderReconShell();
     }
 
     if (panel === 'closing') {
-      return renderClosingShell();
+      const m = await lazy.closing();
+      return m.renderClosingShell();
     }
 
     if (panel === 'reports' || panel === 'summary') {
-      return renderReportsShell();
+      const m = await lazy.reports();
+      return m.renderReportsShell();
     }
 
     return `
@@ -302,7 +298,7 @@ export async function renderPanel(route, state) {
 }
 
 /** Wire interactive panels after HTML is inserted. Returns cleanup fn. */
-export function mountPanel(route, state) {
+export async function mountPanel(route, state) {
   if (route.view === 'home') {
     return mountHomePanel();
   }
@@ -331,22 +327,27 @@ export function mountPanel(route, state) {
     return mountDashboardPanel(route);
   }
   if (route.view === 'event' && route.panel === 'sales') {
-    return mountSalesPanel(route);
+    const m = await lazy.sales();
+    return m.mountSalesPanel(route);
   }
   if (route.view === 'event' && route.panel === 'counts') {
     return mountCountsPanel(route);
   }
   if (route.view === 'event' && route.panel === 'kit') {
-    return mountKitPanel(route);
+    const m = await lazy.kit();
+    return m.mountKitPanel(route);
   }
   if (route.view === 'event' && route.panel === 'recon') {
-    return mountReconPanel(route);
+    const m = await lazy.recon();
+    return m.mountReconPanel(route);
   }
   if (route.view === 'event' && route.panel === 'closing') {
-    return mountClosingPanel(route);
+    const m = await lazy.closing();
+    return m.mountClosingPanel(route);
   }
   if (route.view === 'event' && (route.panel === 'reports' || route.panel === 'summary')) {
-    return mountReportsPanel(route);
+    const m = await lazy.reports();
+    return m.mountReportsPanel(route);
   }
   if (route.view === 'suppliers') {
     return mountSuppliersPanel();
@@ -358,14 +359,16 @@ export function mountPanel(route, state) {
     return mountLibraryPanel();
   }
   if (route.view === 'kit-library') {
-    return mountKitLibraryPanel();
+    const m = await lazy['kit-library']();
+    return m.mountKitLibraryPanel();
   }
   if (route.view === 'bugs') {
     return mountBugsPanel();
   }
   if (route.view === 'audit') {
+    const m = await lazy.audit();
     const eventId = resolveActiveEventId(route, state);
-    return mountAuditPanel({ ...route, eventId });
+    return m.mountAuditPanel({ ...route, eventId });
   }
   if (route.view === 'settings') {
     return mountSettingsPanel(route.section || 'users');

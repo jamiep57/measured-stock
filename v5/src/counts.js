@@ -12,6 +12,7 @@ import {
 import { enqueueWrite, flushQueue, getQueueStats } from './sync-queue.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountSearchSelect } from './components/search-select.js';
+import { confirmDialog } from 'components/modal.js';
 
 let ctx = null;
 let counts = [];
@@ -136,10 +137,10 @@ function renderCountList() {
   }).join('')}`;
 
   list.querySelectorAll('[data-open]').forEach((btn) => {
-    btn.onclick = () => activateCount(btn.dataset.open);
+    btn.onclick = async () => activateCount(btn.dataset.open);
   });
   list.querySelectorAll('[data-del]').forEach((btn) => {
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.stopPropagation();
       deleteCount(btn.dataset.del);
     };
@@ -212,7 +213,7 @@ async function createCountSession() {
 }
 
 async function deleteCount(id) {
-  if (!confirm('Delete this count session?')) return;
+  if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this count session?', confirmLabel: 'Delete', danger: true }))) return;
   try {
     await getDB().stockCounts.clearLines(id);
     await getDB().remove('stock_counts', 'id=eq.' + getDB()._.enc(id));
@@ -279,7 +280,7 @@ async function renderActiveCount() {
   $('cntSearch').oninput = filterCountItems;
   if (showBarPicker) {
     $('cntBarChips').querySelectorAll('[data-bar]').forEach((chip) => {
-      chip.onclick = () => {
+      chip.onclick = async () => {
         activeCountBar = chip.dataset.bar;
         renderActiveCount();
       };

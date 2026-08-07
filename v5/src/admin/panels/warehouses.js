@@ -11,6 +11,7 @@ import { productStockPack } from '../../pack-metrics.js';
 import { round1 } from '../../lib/opening-stock.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { mountProductSearch } from '../../components/product-search.js';
+import { confirmDialog } from '../../components/modal.js';
 
 const WH_STORAGE_KEY = 'v5_warehouse';
 
@@ -311,7 +312,7 @@ export function renderWarehousesShell() {
   return renderShell();
 }
 
-export function mountWarehousesPanel() {
+export async function mountWarehousesPanel() {
   const listEl = $('whList');
   const detailEmpty = $('whDetailEmpty');
   const detailBody = $('whDetailBody');
@@ -348,7 +349,7 @@ export function mountWarehousesPanel() {
   function paintList() {
     listEl.innerHTML = renderListItems(warehouses, selectedId, searchQuery);
     listEl.querySelectorAll('[data-wh-id]').forEach((btn) => {
-      btn.onclick = () => selectWarehouse(btn.dataset.whId);
+      btn.onclick = async () => selectWarehouse(btn.dataset.whId);
     });
   }
 
@@ -372,14 +373,14 @@ export function mountWarehousesPanel() {
     detailBody.innerHTML = renderDetail(
       w, stockRows, transfers, warehouses, events, caseSizes, stockKind,
     );
-    $('whEditBtn')?.addEventListener('click', () => openWarehouseForm(w.id));
+    $('whEditBtn')?.addEventListener('click', async () => openWarehouseForm(w.id));
     detailBody.querySelectorAll('[data-wh-kind]').forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         stockKind = btn.dataset.whKind === 'kit' ? 'kit' : 'stock';
         paintDetail();
       };
     });
-    $('whReceiveKitBtn')?.addEventListener('click', () => openReceiveKit(w.id));
+    $('whReceiveKitBtn')?.addEventListener('click', async () => openReceiveKit(w.id));
   }
 
   async function openReceiveKit(warehouseId) {
@@ -613,17 +614,689 @@ export function mountWarehousesPanel() {
         try {
           const hasStock = (stockRows || []).some((s) =>
             s.warehouse_id === w.id && (Number(s.qty_on_hand) || 0) > 0);
-          if (hasStock && !confirm('This warehouse still holds stock. Delete anyway?')) return;
+          if (hasStock && !(await confirmDialog({ title: 'Confirm', message: 'This warehouse still holds stock. Delete anyway?', confirmLabel: 'Delete', danger: true }))) return;
 
           const xferRows = await DB.select(
             'transfers',
             '?or=(from_warehouse_id.eq.' + enc(w.id) + ',to_warehouse_id.eq.' + enc(w.id) + ')&select=id',
           );
           const xferCount = (xferRows || []).length;
-          if (xferCount && !confirm(
-            `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
-            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.',
-          )) return;
+          if (xferCount && !(await confirmDialog({ title: 'Confirm', message: `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
+            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.',, confirmLabel: 'Delete', danger: true }))) return;
+
+          if (!hasStock && !xferCount && !confirm(`Delete “${w.name}”? This cannot be undone.`)) return;
+
+          await DB.warehouses.remove(w.id);
+          closeSheet();
+          if (selectedId === w.id) {
+            selectedId = null;
+            rememberId(null);
+          }
+          await refreshList();
+          toast('Warehouse deleted');
+        } catch (err) {
+          const msg = String(err?.message || err);
+          if (/23503/.test(msg) && /warehouse/i.test(msg)) {
+            toast('Can’t delete — transfers still reference this warehouse.', true);
+          } else {
+            toast(err.message || 'Delete failed', true);
+          }
+        }
+      };
+    }
+  }
+
+  function onToolbarAction(e) {
+    if (e.detail?.action !== 'new-warehouse') return;
+    e.detail.handled = true;
+    openWarehouseForm(null);
+  }
+
+  searchEl?.addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    paintList();
+  });
+
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+
+  refreshList().catch((err) => {
+    listEl.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+  });
+
+  return () => {
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  };
+}function rememberId(id) {
+    try {
+      if (id) localStorage.setItem(WH_STORAGE_KEY, id);
+      else localStorage.removeItem(WH_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function rememberedId() {
+    try {
+      return localStorage.getItem(WH_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function paintList() {
+    listEl.innerHTML = renderListItems(warehouses, selectedId, searchQuery);
+    listEl.querySelectorAll('[data-wh-id]').forEach((btn) => {
+      btn.onclick = async () => selectWarehouse(btn.dataset.whId);
+    });
+  }
+
+  function paintDetail() {
+    const w = warehouses.find((x) => x.id === selectedId) || null;
+    if (!w) {
+      detailEmpty.hidden = false;
+      detailBody.hidden = true;
+      detailBody.innerHTML = '';
+      return;
+    }
+
+    detailEmpty.hidden = true;
+    detailBody.hidden = false;
+
+    if (detailLoading) {
+      detailBody.innerHTML = '<div class="catalog-list-empty muted">Loading stock…</div>';
+      return;
+    }
+
+    detailBody.innerHTML = renderDetail(
+      w, stockRows, transfers, warehouses, events, caseSizes, stockKind,
+    );
+    $('whEditBtn')?.addEventListener('click', async () => openWarehouseForm(w.id));
+    detailBody.querySelectorAll('[data-wh-kind]').forEach((btn) => {
+      btn.onclick = async () => {
+        stockKind = btn.dataset.whKind === 'kit' ? 'kit' : 'stock';
+        paintDetail();
+      };
+    });
+    $('whReceiveKitBtn')?.addEventListener('click', async () => openReceiveKit(w.id));
+  }
+
+  async function openReceiveKit(warehouseId) {
+    let kitProducts = [];
+    try {
+      kitProducts = await loadKitLibraryProducts();
+    } catch {
+      kitProducts = [];
+    }
+    if (!kitProducts.length) {
+      toast('Add kit items in Kit library first.', true);
+      return;
+    }
+
+    let selectedId = kitProducts[0]?.id || '';
+    openSheet({
+      title: 'Receive kit into warehouse',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="whKitErr"></div>
+          <div class="admin-field">
+            <label class="admin-label">Kit item</label>
+            <div id="whKitSearch"></div>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="whKitQty">Quantity to add</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal" id="whKitQty" value="1" placeholder="1">
+          </div>
+          <p class="wst-form-hint muted">Increases warehouse on-hand. Use the event Kit tab to count kit out to a show.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          <span></span>
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="whKitCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="whKitSave">Receive</button>
+          </div>
+        </div>`,
+    });
+
+    mountProductSearch($('whKitSearch'), {
+      products: kitProducts,
+      value: selectedId,
+      placeholder: 'Search kit library…',
+      onSelect: ({ productId }) => { selectedId = productId; },
+    });
+
+    $('whKitCancel').onclick = closeSheet;
+    $('whKitSave').onclick = async () => {
+      if (!selectedId) {
+        $('whKitErr').textContent = 'Pick a kit item.';
+        return;
+      }
+      const qty = parseQty($('whKitQty')?.value || '');
+      if (!Number.isFinite(qty) || qty <= 0) {
+        $('whKitErr').textContent = 'Enter a quantity greater than zero.';
+        return;
+      }
+      const DB = getDB();
+      const btn = $('whKitSave');
+      btn.disabled = true;
+      try {
+        const rows = await DB.select(
+          'warehouse_stock',
+          '?warehouse_id=eq.' + DB._.enc(warehouseId) +
+          '&product_id=eq.' + DB._.enc(selectedId) +
+          '&select=qty_on_hand',
+        );
+        const current = rows?.[0] ? Number(rows[0].qty_on_hand) || 0 : 0;
+        await DB.warehouseStock.setQty(warehouseId, selectedId, round1(current + qty));
+        closeSheet();
+        await loadDetail(warehouseId);
+        toast('Kit received into warehouse');
+      } catch (err) {
+        $('whKitErr').textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  async function loadDetail(warehouseId) {
+    if (!warehouseId) {
+      stockRows = [];
+      transfers = [];
+      paintDetail();
+      return;
+    }
+
+    detailLoading = true;
+    paintDetail();
+
+    const DB = getDB();
+    const enc = DB._.enc;
+    try {
+      const [stock, xfers] = await Promise.all([
+        DB.select(
+          'warehouse_stock',
+          '?warehouse_id=eq.' + enc(warehouseId) +
+          '&select=*,product:products(id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit,product_kind,category:categories(id,name,colour_key))',
+        ),
+        DB.select(
+          'transfers',
+          '?or=(from_warehouse_id.eq.' + enc(warehouseId) + ',to_warehouse_id.eq.' + enc(warehouseId) + ')' +
+          '&select=*,recipients(id,name),lines:transfer_lines(*,product:products(id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit))' +
+          '&order=transferred_at.desc',
+        ),
+      ]);
+      if (selectedId !== warehouseId) return;
+      stockRows = stock || [];
+      transfers = xfers || [];
+    } catch (err) {
+      if (selectedId !== warehouseId) return;
+      stockRows = [];
+      transfers = [];
+      detailLoading = false;
+      detailEmpty.hidden = true;
+      detailBody.hidden = false;
+      detailBody.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+      return;
+    }
+
+    detailLoading = false;
+    paintDetail();
+  }
+
+  async function selectWarehouse(id) {
+    selectedId = id || null;
+    rememberId(selectedId);
+    paintList();
+    await loadDetail(selectedId);
+  }
+
+  async function refreshList({ preferId } = {}) {
+    const [wh, ev, cs] = await Promise.all([
+      getDB().warehouses.list(),
+      loadEventsList(),
+      loadCaseSizes(),
+    ]);
+    warehouses = wh || [];
+    events = ev || [];
+    caseSizes = cs || [];
+
+    const want = preferId || selectedId || rememberedId();
+    if (want && warehouses.some((w) => w.id === want)) {
+      selectedId = want;
+    } else {
+      selectedId = warehouses[0]?.id || null;
+    }
+    rememberId(selectedId);
+    paintList();
+    await loadDetail(selectedId);
+  }
+
+  async function openWarehouseForm(editId) {
+    const w = editId ? warehouses.find((x) => x.id === editId) : null;
+
+    openSheet({
+      title: w ? 'Edit warehouse' : 'New warehouse',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="whFormErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="whFormName">Name</label>
+            <input class="admin-input" type="text" id="whFormName" required placeholder="e.g. Main Depot">
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="whFormAddress">Address</label>
+            <textarea class="admin-textarea" id="whFormAddress" rows="3" placeholder="Street, City, Postcode"></textarea>
+          </div>
+          <p class="wst-form-hint muted">Stock moves in and out of warehouses via Transfers on an event.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          ${w ? '<button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="whFormDelete">Delete</button>' : '<span></span>'}
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="whFormCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="whFormSave">${w ? 'Update warehouse' : 'Save warehouse'}</button>
+          </div>
+        </div>`,
+    });
+
+    if (w) {
+      $('whFormName').value = w.name || '';
+      $('whFormAddress').value = w.address || '';
+    }
+
+    $('whFormCancel').onclick = closeSheet;
+    $('whFormSave').onclick = async () => {
+      const name = ($('whFormName')?.value || '').trim();
+      if (!name) {
+        $('whFormErr').textContent = 'Name is required.';
+        return;
+      }
+      const dupe = warehouses.find((x) =>
+        (x.name || '').toLowerCase() === name.toLowerCase() && (!w || x.id !== w.id));
+      if (dupe) {
+        $('whFormErr').textContent = 'A warehouse with that name already exists.';
+        return;
+      }
+      const patch = {
+        name,
+        address: ($('whFormAddress')?.value || '').trim() || null,
+      };
+      const btn = $('whFormSave');
+      btn.disabled = true;
+      try {
+        const DB = getDB();
+        let createdId = w?.id || null;
+        if (w) await DB.warehouses.update(w.id, patch);
+        else {
+          const created = await DB.warehouses.create(patch);
+          createdId = created?.id || null;
+        }
+        closeSheet();
+        await refreshList({ preferId: createdId });
+        toast(w ? 'Warehouse updated' : 'Warehouse created');
+      } catch (err) {
+        $('whFormErr').textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    if (w) {
+      $('whFormDelete').onclick = async () => {
+        const DB = getDB();
+        const enc = DB._.enc;
+        try {
+          const hasStock = (stockRows || []).some((s) =>
+            s.warehouse_id === w.id && (Number(s.qty_on_hand) || 0) > 0);
+          if (hasStock && !(await confirmDialog({ title: 'Confirm', message: 'This warehouse still holds stock. Delete anyway?', confirmLabel: 'Delete', danger: true }))) return;
+
+          const xferRows = await DB.select(
+            'transfers',
+            '?or=(from_warehouse_id.eq.' + enc(w.id) + ',to_warehouse_id.eq.' + enc(w.id) + ')&select=id',
+          );
+          const xferCount = (xferRows || []).length;
+          if (xferCount && !(await confirmDialog({ title: 'Confirm', message: `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
+            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.',, confirmLabel: 'Delete', danger: true }))) return;
+
+          if (!hasStock && !xferCount && !confirm(`Delete “${w.name}”? This cannot be undone.`)) return;
+
+          await DB.warehouses.remove(w.id);
+          closeSheet();
+          if (selectedId === w.id) {
+            selectedId = null;
+            rememberId(null);
+          }
+          await refreshList();
+          toast('Warehouse deleted');
+        } catch (err) {
+          const msg = String(err?.message || err);
+          if (/23503/.test(msg) && /warehouse/i.test(msg)) {
+            toast('Can’t delete — transfers still reference this warehouse.', true);
+          } else {
+            toast(err.message || 'Delete failed', true);
+          }
+        }
+      };
+    }
+  }
+
+  function onToolbarAction(e) {
+    if (e.detail?.action !== 'new-warehouse') return;
+    e.detail.handled = true;
+    openWarehouseForm(null);
+  }
+
+  searchEl?.addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    paintList();
+  });
+
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+
+  refreshList().catch((err) => {
+    listEl.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+  });
+
+  return () => {
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  };
+}function rememberId(id) {
+    try {
+      if (id) localStorage.setItem(WH_STORAGE_KEY, id);
+      else localStorage.removeItem(WH_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function rememberedId() {
+    try {
+      return localStorage.getItem(WH_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function paintList() {
+    listEl.innerHTML = renderListItems(warehouses, selectedId, searchQuery);
+    listEl.querySelectorAll('[data-wh-id]').forEach((btn) => {
+      btn.onclick = async () => selectWarehouse(btn.dataset.whId);
+    });
+  }
+
+  function paintDetail() {
+    const w = warehouses.find((x) => x.id === selectedId) || null;
+    if (!w) {
+      detailEmpty.hidden = false;
+      detailBody.hidden = true;
+      detailBody.innerHTML = '';
+      return;
+    }
+
+    detailEmpty.hidden = true;
+    detailBody.hidden = false;
+
+    if (detailLoading) {
+      detailBody.innerHTML = '<div class="catalog-list-empty muted">Loading stock…</div>';
+      return;
+    }
+
+    detailBody.innerHTML = renderDetail(
+      w, stockRows, transfers, warehouses, events, caseSizes, stockKind,
+    );
+    $('whEditBtn')?.addEventListener('click', async () => openWarehouseForm(w.id));
+    detailBody.querySelectorAll('[data-wh-kind]').forEach((btn) => {
+      btn.onclick = async () => {
+        stockKind = btn.dataset.whKind === 'kit' ? 'kit' : 'stock';
+        paintDetail();
+      };
+    });
+    $('whReceiveKitBtn')?.addEventListener('click', async () => openReceiveKit(w.id));
+  }
+
+  async function openReceiveKit(warehouseId) {
+    let kitProducts = [];
+    try {
+      kitProducts = await loadKitLibraryProducts();
+    } catch {
+      kitProducts = [];
+    }
+    if (!kitProducts.length) {
+      toast('Add kit items in Kit library first.', true);
+      return;
+    }
+
+    let selectedId = kitProducts[0]?.id || '';
+    openSheet({
+      title: 'Receive kit into warehouse',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="whKitErr"></div>
+          <div class="admin-field">
+            <label class="admin-label">Kit item</label>
+            <div id="whKitSearch"></div>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="whKitQty">Quantity to add</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal" id="whKitQty" value="1" placeholder="1">
+          </div>
+          <p class="wst-form-hint muted">Increases warehouse on-hand. Use the event Kit tab to count kit out to a show.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          <span></span>
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="whKitCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="whKitSave">Receive</button>
+          </div>
+        </div>`,
+    });
+
+    mountProductSearch($('whKitSearch'), {
+      products: kitProducts,
+      value: selectedId,
+      placeholder: 'Search kit library…',
+      onSelect: ({ productId }) => { selectedId = productId; },
+    });
+
+    $('whKitCancel').onclick = closeSheet;
+    $('whKitSave').onclick = async () => {
+      if (!selectedId) {
+        $('whKitErr').textContent = 'Pick a kit item.';
+        return;
+      }
+      const qty = parseQty($('whKitQty')?.value || '');
+      if (!Number.isFinite(qty) || qty <= 0) {
+        $('whKitErr').textContent = 'Enter a quantity greater than zero.';
+        return;
+      }
+      const DB = getDB();
+      const btn = $('whKitSave');
+      btn.disabled = true;
+      try {
+        const rows = await DB.select(
+          'warehouse_stock',
+          '?warehouse_id=eq.' + DB._.enc(warehouseId) +
+          '&product_id=eq.' + DB._.enc(selectedId) +
+          '&select=qty_on_hand',
+        );
+        const current = rows?.[0] ? Number(rows[0].qty_on_hand) || 0 : 0;
+        await DB.warehouseStock.setQty(warehouseId, selectedId, round1(current + qty));
+        closeSheet();
+        await loadDetail(warehouseId);
+        toast('Kit received into warehouse');
+      } catch (err) {
+        $('whKitErr').textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  async function loadDetail(warehouseId) {
+    if (!warehouseId) {
+      stockRows = [];
+      transfers = [];
+      paintDetail();
+      return;
+    }
+
+    detailLoading = true;
+    paintDetail();
+
+    const DB = getDB();
+    const enc = DB._.enc;
+    try {
+      const [stock, xfers] = await Promise.all([
+        DB.select(
+          'warehouse_stock',
+          '?warehouse_id=eq.' + enc(warehouseId) +
+          '&select=*,product:products(id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit,product_kind,category:categories(id,name,colour_key))',
+        ),
+        DB.select(
+          'transfers',
+          '?or=(from_warehouse_id.eq.' + enc(warehouseId) + ',to_warehouse_id.eq.' + enc(warehouseId) + ')' +
+          '&select=*,recipients(id,name),lines:transfer_lines(*,product:products(id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit))' +
+          '&order=transferred_at.desc',
+        ),
+      ]);
+      if (selectedId !== warehouseId) return;
+      stockRows = stock || [];
+      transfers = xfers || [];
+    } catch (err) {
+      if (selectedId !== warehouseId) return;
+      stockRows = [];
+      transfers = [];
+      detailLoading = false;
+      detailEmpty.hidden = true;
+      detailBody.hidden = false;
+      detailBody.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+      return;
+    }
+
+    detailLoading = false;
+    paintDetail();
+  }
+
+  async function selectWarehouse(id) {
+    selectedId = id || null;
+    rememberId(selectedId);
+    paintList();
+    await loadDetail(selectedId);
+  }
+
+  async function refreshList({ preferId } = {}) {
+    const [wh, ev, cs] = await Promise.all([
+      getDB().warehouses.list(),
+      loadEventsList(),
+      loadCaseSizes(),
+    ]);
+    warehouses = wh || [];
+    events = ev || [];
+    caseSizes = cs || [];
+
+    const want = preferId || selectedId || rememberedId();
+    if (want && warehouses.some((w) => w.id === want)) {
+      selectedId = want;
+    } else {
+      selectedId = warehouses[0]?.id || null;
+    }
+    rememberId(selectedId);
+    paintList();
+    await loadDetail(selectedId);
+  }
+
+  async function openWarehouseForm(editId) {
+    const w = editId ? warehouses.find((x) => x.id === editId) : null;
+
+    openSheet({
+      title: w ? 'Edit warehouse' : 'New warehouse',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="whFormErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="whFormName">Name</label>
+            <input class="admin-input" type="text" id="whFormName" required placeholder="e.g. Main Depot">
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="whFormAddress">Address</label>
+            <textarea class="admin-textarea" id="whFormAddress" rows="3" placeholder="Street, City, Postcode"></textarea>
+          </div>
+          <p class="wst-form-hint muted">Stock moves in and out of warehouses via Transfers on an event.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          ${w ? '<button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="whFormDelete">Delete</button>' : '<span></span>'}
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="whFormCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="whFormSave">${w ? 'Update warehouse' : 'Save warehouse'}</button>
+          </div>
+        </div>`,
+    });
+
+    if (w) {
+      $('whFormName').value = w.name || '';
+      $('whFormAddress').value = w.address || '';
+    }
+
+    $('whFormCancel').onclick = closeSheet;
+    $('whFormSave').onclick = async () => {
+      const name = ($('whFormName')?.value || '').trim();
+      if (!name) {
+        $('whFormErr').textContent = 'Name is required.';
+        return;
+      }
+      const dupe = warehouses.find((x) =>
+        (x.name || '').toLowerCase() === name.toLowerCase() && (!w || x.id !== w.id));
+      if (dupe) {
+        $('whFormErr').textContent = 'A warehouse with that name already exists.';
+        return;
+      }
+      const patch = {
+        name,
+        address: ($('whFormAddress')?.value || '').trim() || null,
+      };
+      const btn = $('whFormSave');
+      btn.disabled = true;
+      try {
+        const DB = getDB();
+        let createdId = w?.id || null;
+        if (w) await DB.warehouses.update(w.id, patch);
+        else {
+          const created = await DB.warehouses.create(patch);
+          createdId = created?.id || null;
+        }
+        closeSheet();
+        await refreshList({ preferId: createdId });
+        toast(w ? 'Warehouse updated' : 'Warehouse created');
+      } catch (err) {
+        $('whFormErr').textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    if (w) {
+      $('whFormDelete').onclick = async () => {
+        const DB = getDB();
+        const enc = DB._.enc;
+        try {
+          const hasStock = (stockRows || []).some((s) =>
+            s.warehouse_id === w.id && (Number(s.qty_on_hand) || 0) > 0);
+          if (hasStock && !(await confirmDialog({ title: 'Confirm', message: 'This warehouse still holds stock. Delete anyway?', confirmLabel: 'Delete', danger: true }))) return;
+
+          const xferRows = await DB.select(
+            'transfers',
+            '?or=(from_warehouse_id.eq.' + enc(w.id) + ',to_warehouse_id.eq.' + enc(w.id) + ')&select=id',
+          );
+          const xferCount = (xferRows || []).length;
+          if (xferCount && !(await confirmDialog({ title: 'Confirm', message: `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
+            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.',, confirmLabel: 'Delete', danger: true }))) return;
 
           if (!hasStock && !xferCount && !confirm(`Delete “${w.name}”? This cannot be undone.`)) return;
 

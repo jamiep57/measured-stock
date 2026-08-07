@@ -8,6 +8,7 @@ import { getDB, loadSuppliers, loadLibraryProducts } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
+import { confirmDialog } from '../../components/modal.js';
 
 function fmtGbp(n) {
   if (n == null || !Number.isFinite(Number(n))) return '';
@@ -177,7 +178,7 @@ export function renderSuppliersShell() {
   return renderShell();
 }
 
-export function mountSuppliersPanel() {
+export async function mountSuppliersPanel() {
   const listEl = $('supList');
   const detailEmpty = $('supDetailEmpty');
   const detailBody = $('supDetailBody');
@@ -192,7 +193,7 @@ export function mountSuppliersPanel() {
   function paintList() {
     listEl.innerHTML = renderListItems(suppliers, selectedId, searchQuery);
     listEl.querySelectorAll('[data-sup-id]').forEach((btn) => {
-      btn.onclick = () => selectSupplier(btn.dataset.supId);
+      btn.onclick = async () => selectSupplier(btn.dataset.supId);
     });
   }
 
@@ -207,7 +208,7 @@ export function mountSuppliersPanel() {
     detailEmpty.hidden = true;
     detailBody.hidden = false;
     detailBody.innerHTML = renderDetail(s, products);
-    $('supEditBtn')?.addEventListener('click', () => openSupplierForm(s.id));
+    $('supEditBtn')?.addEventListener('click', async () => openSupplierForm(s.id));
   }
 
   function selectSupplier(id) {
@@ -272,7 +273,7 @@ export function mountSuppliersPanel() {
   }
 
   async function deleteSupplier(id) {
-    if (!confirm('Delete this supplier? This cannot be undone.')) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this supplier? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
     if (isSupplierLinked(id, products)) {
       toast('Can\'t delete — products are still linked to this supplier. Reassign them first.', true);
       return;
@@ -347,8 +348,372 @@ export function mountSuppliersPanel() {
     }
 
     $('supCancel').onclick = closeSheet;
-    $('supSave').onclick = () => saveSupplier(editId || null);
-    if (s) $('supDelete').onclick = () => deleteSupplier(s.id);
+    $('supSave').onclick = async () => saveSupplier(editId || null);
+    if (s) $('supDelete').onclick = async () => deleteSupplier(s.id);
+  }
+
+  searchEl?.addEventListener('input', () => {
+    searchQuery = searchEl.value;
+    paintList();
+  });
+
+  const onToolbarAction = (e) => {
+    if (e.detail?.action === 'new-supplier') {
+      e.detail.handled = true;
+      openSupplierForm();
+    }
+  };
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+
+  refresh().catch((err) => {
+    listEl.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+  });
+
+  return () => {
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  };
+}function paintList() {
+    listEl.innerHTML = renderListItems(suppliers, selectedId, searchQuery);
+    listEl.querySelectorAll('[data-sup-id]').forEach((btn) => {
+      btn.onclick = async () => selectSupplier(btn.dataset.supId);
+    });
+  }
+
+  function paintDetail() {
+    const s = selectedId ? suppliers.find((x) => x.id === selectedId) : null;
+    if (!s) {
+      detailEmpty.hidden = false;
+      detailBody.hidden = true;
+      detailBody.innerHTML = '';
+      return;
+    }
+    detailEmpty.hidden = true;
+    detailBody.hidden = false;
+    detailBody.innerHTML = renderDetail(s, products);
+    $('supEditBtn')?.addEventListener('click', async () => openSupplierForm(s.id));
+  }
+
+  function selectSupplier(id) {
+    selectedId = id;
+    paintList();
+    paintDetail();
+  }
+
+  async function refresh() {
+    const DB = getDB();
+    [suppliers, products] = await Promise.all([
+      loadSuppliers(),
+      loadLibraryProducts(),
+    ]);
+    if (selectedId && !suppliers.some((s) => s.id === selectedId)) {
+      selectedId = suppliers[0]?.id || null;
+    }
+    if (!selectedId && suppliers.length === 1) {
+      selectedId = suppliers[0].id;
+    }
+    paintList();
+    paintDetail();
+  }
+
+  async function saveSupplier(editId) {
+    const name = ($('supName')?.value || '').trim();
+    if (!name) {
+      $('supErr').textContent = 'Name is required.';
+      return;
+    }
+
+    const patch = {
+      name,
+      contact_name: ($('supContact')?.value || '').trim() || null,
+      email: ($('supEmail')?.value || '').trim() || null,
+      phone: ($('supPhone')?.value || '').trim() || null,
+      address: ($('supAddress')?.value || '').trim() || null,
+      default_sor_pct: clampSor($('supSor')?.value),
+    };
+
+    const btn = $('supSave');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    try {
+      const DB = getDB();
+      if (editId) {
+        await DB.suppliers.update(editId, patch);
+      } else {
+        const created = await DB.suppliers.create(patch);
+        if (created?.id) selectedId = created.id;
+      }
+      closeSheet();
+      await refresh();
+      toast(editId ? 'Supplier updated' : 'Supplier created');
+    } catch (err) {
+      $('supErr').textContent = err.message || 'Save failed';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = editId ? 'Update supplier' : 'Save supplier';
+    }
+  }
+
+  async function deleteSupplier(id) {
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this supplier? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
+    if (isSupplierLinked(id, products)) {
+      toast('Can\'t delete — products are still linked to this supplier. Reassign them first.', true);
+      return;
+    }
+    try {
+      await getDB().suppliers.remove(id);
+      if (selectedId === id) selectedId = null;
+      closeSheet();
+      await refresh();
+      toast('Supplier deleted');
+    } catch (err) {
+      toast(err.message || 'Delete failed', true);
+    }
+  }
+
+  function openSupplierForm(editId) {
+    const s = editId ? suppliers.find((x) => x.id === editId) : null;
+
+    openSheet({
+      title: s ? 'Edit supplier' : 'New supplier',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="supErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="supName">Name</label>
+            <input class="admin-input" type="text" id="supName" required placeholder="Supplier name">
+          </div>
+          <div class="admin-field-grid">
+            <div class="admin-field">
+              <label class="admin-label" for="supContact">Contact name</label>
+              <input class="admin-input" type="text" id="supContact" placeholder="Optional">
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="supSor">Default SOR %</label>
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="supSor" placeholder="0">
+            </div>
+          </div>
+          <div class="admin-field-grid">
+            <div class="admin-field">
+              <label class="admin-label" for="supEmail">Email</label>
+              <input class="admin-input" type="email" id="supEmail" placeholder="Optional">
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="supPhone">Phone</label>
+              <input class="admin-input" type="tel" id="supPhone" placeholder="Optional">
+            </div>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="supAddress">Address</label>
+            <textarea class="admin-textarea" id="supAddress" rows="3" placeholder="Optional"></textarea>
+          </div>
+          <p class="wst-form-hint muted">SOR % is the default sale-or-return allowance for products from this supplier.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          ${s ? '<button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="supDelete">Delete</button>' : '<span></span>'}
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="supCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="supSave">${s ? 'Update supplier' : 'Save supplier'}</button>
+          </div>
+        </div>`,
+    });
+
+    if (s) {
+      $('supName').value = s.name || '';
+      $('supContact').value = s.contact_name || '';
+      $('supSor').value = s.default_sor_pct != null ? String(s.default_sor_pct) : '';
+      $('supEmail').value = s.email || '';
+      $('supPhone').value = s.phone || '';
+      $('supAddress').value = s.address || '';
+    }
+
+    $('supCancel').onclick = closeSheet;
+    $('supSave').onclick = async () => saveSupplier(editId || null);
+    if (s) $('supDelete').onclick = async () => deleteSupplier(s.id);
+  }
+
+  searchEl?.addEventListener('input', () => {
+    searchQuery = searchEl.value;
+    paintList();
+  });
+
+  const onToolbarAction = (e) => {
+    if (e.detail?.action === 'new-supplier') {
+      e.detail.handled = true;
+      openSupplierForm();
+    }
+  };
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+
+  refresh().catch((err) => {
+    listEl.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+  });
+
+  return () => {
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  };
+}function paintList() {
+    listEl.innerHTML = renderListItems(suppliers, selectedId, searchQuery);
+    listEl.querySelectorAll('[data-sup-id]').forEach((btn) => {
+      btn.onclick = async () => selectSupplier(btn.dataset.supId);
+    });
+  }
+
+  function paintDetail() {
+    const s = selectedId ? suppliers.find((x) => x.id === selectedId) : null;
+    if (!s) {
+      detailEmpty.hidden = false;
+      detailBody.hidden = true;
+      detailBody.innerHTML = '';
+      return;
+    }
+    detailEmpty.hidden = true;
+    detailBody.hidden = false;
+    detailBody.innerHTML = renderDetail(s, products);
+    $('supEditBtn')?.addEventListener('click', async () => openSupplierForm(s.id));
+  }
+
+  function selectSupplier(id) {
+    selectedId = id;
+    paintList();
+    paintDetail();
+  }
+
+  async function refresh() {
+    const DB = getDB();
+    [suppliers, products] = await Promise.all([
+      loadSuppliers(),
+      loadLibraryProducts(),
+    ]);
+    if (selectedId && !suppliers.some((s) => s.id === selectedId)) {
+      selectedId = suppliers[0]?.id || null;
+    }
+    if (!selectedId && suppliers.length === 1) {
+      selectedId = suppliers[0].id;
+    }
+    paintList();
+    paintDetail();
+  }
+
+  async function saveSupplier(editId) {
+    const name = ($('supName')?.value || '').trim();
+    if (!name) {
+      $('supErr').textContent = 'Name is required.';
+      return;
+    }
+
+    const patch = {
+      name,
+      contact_name: ($('supContact')?.value || '').trim() || null,
+      email: ($('supEmail')?.value || '').trim() || null,
+      phone: ($('supPhone')?.value || '').trim() || null,
+      address: ($('supAddress')?.value || '').trim() || null,
+      default_sor_pct: clampSor($('supSor')?.value),
+    };
+
+    const btn = $('supSave');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    try {
+      const DB = getDB();
+      if (editId) {
+        await DB.suppliers.update(editId, patch);
+      } else {
+        const created = await DB.suppliers.create(patch);
+        if (created?.id) selectedId = created.id;
+      }
+      closeSheet();
+      await refresh();
+      toast(editId ? 'Supplier updated' : 'Supplier created');
+    } catch (err) {
+      $('supErr').textContent = err.message || 'Save failed';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = editId ? 'Update supplier' : 'Save supplier';
+    }
+  }
+
+  async function deleteSupplier(id) {
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this supplier? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
+    if (isSupplierLinked(id, products)) {
+      toast('Can\'t delete — products are still linked to this supplier. Reassign them first.', true);
+      return;
+    }
+    try {
+      await getDB().suppliers.remove(id);
+      if (selectedId === id) selectedId = null;
+      closeSheet();
+      await refresh();
+      toast('Supplier deleted');
+    } catch (err) {
+      toast(err.message || 'Delete failed', true);
+    }
+  }
+
+  function openSupplierForm(editId) {
+    const s = editId ? suppliers.find((x) => x.id === editId) : null;
+
+    openSheet({
+      title: s ? 'Edit supplier' : 'New supplier',
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="supErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="supName">Name</label>
+            <input class="admin-input" type="text" id="supName" required placeholder="Supplier name">
+          </div>
+          <div class="admin-field-grid">
+            <div class="admin-field">
+              <label class="admin-label" for="supContact">Contact name</label>
+              <input class="admin-input" type="text" id="supContact" placeholder="Optional">
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="supSor">Default SOR %</label>
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="supSor" placeholder="0">
+            </div>
+          </div>
+          <div class="admin-field-grid">
+            <div class="admin-field">
+              <label class="admin-label" for="supEmail">Email</label>
+              <input class="admin-input" type="email" id="supEmail" placeholder="Optional">
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="supPhone">Phone</label>
+              <input class="admin-input" type="tel" id="supPhone" placeholder="Optional">
+            </div>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="supAddress">Address</label>
+            <textarea class="admin-textarea" id="supAddress" rows="3" placeholder="Optional"></textarea>
+          </div>
+          <p class="wst-form-hint muted">SOR % is the default sale-or-return allowance for products from this supplier.</p>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          ${s ? '<button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="supDelete">Delete</button>' : '<span></span>'}
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="supCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="supSave">${s ? 'Update supplier' : 'Save supplier'}</button>
+          </div>
+        </div>`,
+    });
+
+    if (s) {
+      $('supName').value = s.name || '';
+      $('supContact').value = s.contact_name || '';
+      $('supSor').value = s.default_sor_pct != null ? String(s.default_sor_pct) : '';
+      $('supEmail').value = s.email || '';
+      $('supPhone').value = s.phone || '';
+      $('supAddress').value = s.address || '';
+    }
+
+    $('supCancel').onclick = closeSheet;
+    $('supSave').onclick = async () => saveSupplier(editId || null);
+    if (s) $('supDelete').onclick = async () => deleteSupplier(s.id);
   }
 
   searchEl?.addEventListener('input', () => {

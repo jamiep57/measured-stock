@@ -7,6 +7,7 @@ import { formToStored, storedToForm, hasQuantity } from './stock-entry.js';
 import { entryMode } from './pack-metrics.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountProductSearch } from './components/product-search.js';
+import { confirmDialog } from 'components/modal.js';
 
 const WASTAGE_REASONS = [
   'Breakage / spillage',
@@ -106,10 +107,10 @@ function renderWastageList() {
     }).join('')}`;
 
   list.querySelectorAll('[data-edit]').forEach((btn) => {
-    btn.onclick = () => openWastageForm(btn.dataset.edit);
+    btn.onclick = async () => openWastageForm(btn.dataset.edit);
   });
   list.querySelectorAll('[data-del]').forEach((btn) => {
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.stopPropagation();
       deleteWastage(btn.dataset.del);
     };
@@ -177,7 +178,7 @@ function renderLines() {
     };
   });
   wrap.querySelectorAll('.del-line-remove').forEach((btn) => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
       wstLines = wstLines.filter((l) => l.lineId !== btn.dataset.lid);
       renderLines();
     };
@@ -288,7 +289,7 @@ async function saveWastage() {
 }
 
 async function deleteWastage(id) {
-  if (!confirm('Delete this wastage entry?')) return;
+  if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this wastage entry?', confirmLabel: 'Delete', danger: true }))) return;
   try {
     const DB = getDB();
     await DB.wastage.clearLines(id);
@@ -374,7 +375,7 @@ async function openWastageForm(editId) {
   }
 
   $('wfCancel').onclick = closeSheet;
-  $('wfSave').onclick = () => saveWastage();
+  $('wfSave').onclick = async () => saveWastage();
   renderLines();
   mountProductComposer();
 }

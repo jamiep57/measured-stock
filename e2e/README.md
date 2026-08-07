@@ -130,6 +130,14 @@ You can also ask the Cursor agent: “run the e2e tests” — it should use the
 | 16 | `test_16_setup_edit_event_name` | Setup name autosave |
 | 17 | `test_17_audit_panel_loads` | Dev audit panel |
 
+## Deep surgical suite
+
+| File | Focus |
+|---|---|
+| `tests/test_auth_gates.py` | Unauthenticated redirect, wrong password, logout, cloud config |
+| `tests/test_surgical_stock.py` | Delivery/transfer/wastage create, distribution/closing edits, counts, recipient, delivery delete |
+| `tests/test_surgical_admin.py` | Reports/kit/warehouses/pools/settings, route aliases, nav stress, supplier create, recon save, library search |
+
 ## Cleanup guarantees
 
 - Function fixtures `seed` / `seed_minimal` / `tracker` delete created IDs in `finally`

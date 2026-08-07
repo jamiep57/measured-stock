@@ -9,6 +9,7 @@ import { openSheet, closeSheet } from './components/sheet.js';
 import { mountProductSearch } from './components/product-search.js';
 import { mountSearchSelect } from './components/search-select.js';
 import {
+import { confirmDialog } from 'components/modal.js';
   parseSourceValue,
   transferSourceFromSaved,
   transferDestValueFromSaved,
@@ -125,10 +126,10 @@ function renderTransferList() {
   }).join('')}`;
 
   list.querySelectorAll('[data-edit]').forEach((btn) => {
-    btn.onclick = () => openTransferForm(btn.dataset.edit);
+    btn.onclick = async () => openTransferForm(btn.dataset.edit);
   });
   list.querySelectorAll('[data-del]').forEach((btn) => {
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.stopPropagation();
       deleteTransfer(btn.dataset.del);
     };
@@ -206,7 +207,7 @@ function renderTransferLines() {
 
   wireLineQtyInputs(wrap);
   wrap.querySelectorAll('.del-line-remove').forEach((btn) => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
       xferLines = xferLines.filter((l) => l.lineId !== btn.dataset.lid);
       renderTransferLines();
     };
@@ -422,7 +423,7 @@ async function openTransferForm(editId) {
   }
 
   $('xfCancel').onclick = closeSheet;
-  $('xfSave').onclick = () => saveTransfer();
+  $('xfSave').onclick = async () => saveTransfer();
   mountProductComposer();
   renderTransferLines();
 }
@@ -571,7 +572,7 @@ async function saveTransfer() {
 }
 
 async function deleteTransfer(id) {
-  if (!confirm('Delete this transfer? Warehouse stock will be restored where applicable.')) return;
+  if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this transfer? Warehouse stock will be restored where applicable.', confirmLabel: 'Delete', danger: true }))) return;
   const t = transfers.find((x) => x.id === id);
   const lines = t?.lines || [];
   try {

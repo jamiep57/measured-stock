@@ -7,6 +7,27 @@ const DB_VERSION = 1;
 let dbPromise = null;
 let flushPromise = null;
 let onStatusChange = null;
+/** @type {string | null} ISO timestamp of last successful flush write */
+let lastSyncedAt = null;
+const LAST_SYNC_KEY = 'v5_last_synced_at';
+
+try {
+  lastSyncedAt = sessionStorage.getItem(LAST_SYNC_KEY) || null;
+} catch {
+  lastSyncedAt = null;
+}
+
+function markSynced() {
+  lastSyncedAt = new Date().toISOString();
+  try {
+    sessionStorage.setItem(LAST_SYNC_KEY, lastSyncedAt);
+  } catch { /* ignore */ }
+}
+
+/** @returns {string | null} */
+export function getLastSyncedAt() {
+  return lastSyncedAt;
+}
 
 function getDb() {
   if (!dbPromise) {
@@ -117,10 +138,12 @@ export async function flushQueue(DB) {
       .filter((r) => r.status === 'pending' || r.status === 'failed')
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
+    let wrote = false;
     for (const record of pending) {
       try {
         await executeWrite(DB, record);
         await db.delete(STORE, record.id);
+        wrote = true;
       } catch (err) {
         record.retries = (record.retries || 0) + 1;
         record.status = record.retries >= 5 ? 'failed' : 'pending';
@@ -129,6 +152,7 @@ export async function flushQueue(DB) {
         if (!navigator.onLine) break;
       }
     }
+    if (wrote || pending.length === 0) markSynced();
     notifyStatus();
   })().finally(() => {
     flushPromise = null;

@@ -14,7 +14,8 @@ import { syncBugOpenDot, mountBugReportFab, syncBugFabVisibility } from './panel
 import { initGlobalSearch, applyGenericProductFilter, ADMIN_PRODUCT_FILTER } from './global-search.js';
 import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
 import { syncAppPresence } from '../lib/app-presence.js';
-import { ensureAppAuth, signOutApp } from '../lib/auth.js';
+import { ensureAppAuth, signOutApp, getCachedProfile } from '../lib/auth.js';
+import { openOwnProfileEditor } from './panels/users.js';
 
 const state = {
   events: [],
@@ -129,12 +130,6 @@ function wireNav() {
     render(parseRoute());
   });
 
-  document.getElementById('topbarSettings')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    navigate({ view: 'settings', section: 'users' });
-    render(parseRoute());
-  });
-
   document.querySelector('.sidebar-nav-tools')?.addEventListener('click', (e) => {
     const a = e.target.closest('a[data-route]:not([data-event])');
     if (!a) return;
@@ -169,6 +164,77 @@ function wireNav() {
   });
 }
 
+function syncProfileMenuLabel() {
+  const label = document.getElementById('topbarProfileLabel');
+  if (!label) return;
+  const profile = getCachedProfile();
+  const name = profile?.display_name?.trim();
+  const email = profile?.email?.trim();
+  label.textContent = name || email || 'Account';
+}
+
+function closeProfileMenu() {
+  const btn = document.getElementById('topbarProfileBtn');
+  const menu = document.getElementById('topbarProfileMenu');
+  if (!btn || !menu || menu.hidden) return;
+  menu.hidden = true;
+  btn.setAttribute('aria-expanded', 'false');
+}
+
+function openProfileMenu() {
+  const btn = document.getElementById('topbarProfileBtn');
+  const menu = document.getElementById('topbarProfileMenu');
+  if (!btn || !menu) return;
+  syncProfileMenuLabel();
+  menu.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+}
+
+function wireProfileMenu() {
+  const wrap = document.getElementById('topbarProfileWrap');
+  const btn = document.getElementById('topbarProfileBtn');
+  const menu = document.getElementById('topbarProfileMenu');
+  if (!wrap || !btn || !menu) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu.hidden) openProfileMenu();
+    else closeProfileMenu();
+  });
+
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-profile-action]');
+    if (!item) return;
+    const action = item.getAttribute('data-profile-action');
+    if (action === 'settings') {
+      e.preventDefault();
+      closeProfileMenu();
+      navigate({ view: 'settings', section: 'users' });
+      render(parseRoute());
+      return;
+    }
+    if (action === 'profile') {
+      e.preventDefault();
+      closeProfileMenu();
+      openOwnProfileEditor();
+      return;
+    }
+    if (action === 'logout') {
+      e.preventDefault();
+      closeProfileMenu();
+      signOutApp();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !wrap.contains(e.target)) closeProfileMenu();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeProfileMenu();
+  });
+}
+
 async function boot() {
   try {
     await loadDbScript();
@@ -180,10 +246,8 @@ async function boot() {
   const auth = await ensureAppAuth({ requireAdmin: true });
   if (!auth) return;
 
-  document.getElementById('topbarLogout')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    signOutApp();
-  });
+  wireProfileMenu();
+  syncProfileMenuLabel();
 
   initSheet();
   initBugSheet();

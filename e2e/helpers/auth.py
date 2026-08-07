@@ -129,6 +129,21 @@ def sign_in_via_api() -> dict:
     }
 
 
+def clear_supabase_session(page: "Page") -> None:
+    """Strip injected auth token so the next navigation is unauthenticated."""
+    cfg = cloud_config_for_browser()
+    key = _supabase_storage_key(cfg["url"])
+    page.add_init_script(
+        f"""
+        try {{
+          localStorage.removeItem({json.dumps(key)});
+          localStorage.removeItem('sb-access-token');
+          localStorage.removeItem('supabase.auth.token');
+        }} catch (e) {{}}
+        """
+    )
+
+
 def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
     """
     Open admin authenticated.

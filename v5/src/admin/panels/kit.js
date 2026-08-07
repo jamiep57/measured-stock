@@ -16,7 +16,7 @@ import {
   getDB, loadEventKit, loadKitLibraryProducts, loadSuppliers,
 } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
-import { openModal, closeModal } from '../../components/modal.js';
+import { openModal, closeModal, confirmDialog} from '../../components/modal.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
@@ -478,7 +478,7 @@ export function renderKitShell() {
   return renderShell();
 }
 
-export function mountKitPanel(route) {
+export async function mountKitPanel(route) {
   const eventId = route?.eventId;
   if (!eventId) return () => {};
 
@@ -562,7 +562,7 @@ export function mountKitPanel(route) {
       paint();
     });
     controlsEl?.querySelectorAll('[data-kit-filter]').forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         sourceFilter = btn.dataset.kitFilter || 'all';
         try { localStorage.setItem(FILTER_KEY, sourceFilter); } catch { /* ignore */ }
         paint();
@@ -669,12 +669,12 @@ export function mountKitPanel(route) {
 
   function wireScanBanner() {
     scanBannerEl?.querySelectorAll('[data-kit-scan-mode]').forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         setScanMode(btn.dataset.kitScanMode || SCAN_MODE_PACK)
           .catch((err) => toast(err.message || 'Could not switch mode', true));
       };
     });
-    $('kitScanStop')?.addEventListener('click', () => {
+    $('kitScanStop')?.addEventListener('click', async () => {
       stopScanMode();
       toast('Scan mode stopped');
     });
@@ -698,12 +698,12 @@ export function mountKitPanel(route) {
         }
       });
     }
-    $('kitScanClearPending')?.addEventListener('click', () => {
+    $('kitScanClearPending')?.addEventListener('click', async () => {
       checkInPending = new Map();
       scanLastMsg = 'Check-in batch cleared';
       paintScanBanner();
     });
-    $('kitScanCommit')?.addEventListener('click', () => {
+    $('kitScanCommit')?.addEventListener('click', async () => {
       commitCheckIn().catch((err) => toast(err.message || 'Check-in failed', true));
     });
   }
@@ -740,7 +740,7 @@ export function mountKitPanel(route) {
       });
     });
     itemsWrap.querySelectorAll('[data-remove-item]').forEach((btn) => {
-      btn.onclick = () => removeItem(btn.dataset.removeItem);
+      btn.onclick = async () => removeItem(btn.dataset.removeItem);
     });
   }
 
@@ -789,7 +789,7 @@ export function mountKitPanel(route) {
       toast('Clear Packed qty before removing this line.', true);
       return;
     }
-    if (!confirm(`Remove “${it.product?.name || 'item'}” from the kit list?`)) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: `Remove “${it.product?.name || 'item'}” from the kit list?`, confirmLabel: 'Delete', danger: true }))) return;
     const DB = getDB();
     await DB.remove('event_kit_items', 'id=eq.' + DB._.enc(itemId));
     await refresh();
@@ -1051,7 +1051,7 @@ export function mountKitPanel(route) {
     const searchMount = $('kitAssignSearch');
     let saving = false;
 
-    $('kitAssignSkip')?.addEventListener('click', () => {
+    $('kitAssignSkip')?.addEventListener('click', async () => {
       scanLastMsg = 'Skipped unknown barcode';
       paintScanBanner();
       closeModal();
@@ -1068,9 +1068,7 @@ export function mountKitPanel(route) {
 
           const existingBc = normalizeBarcode(target.barcode);
           if (existingBc && existingBc.toLowerCase() !== code.toLowerCase()) {
-            const ok = confirm(
-              `“${target.name}” already has barcode “${existingBc}”.\n\nReplace it with this scan?`,
-            );
+            const ok = await confirmDialog({ title: 'Confirm', message: `“${target.name}” already has barcode “${existingBc}”.\n\nReplace it with this scan?`,, confirmLabel: 'Confirm', danger: true });
             if (!ok) return;
           }
 
@@ -1080,9 +1078,7 @@ export function mountKitPanel(route) {
             return findProductByBarcode([p], code);
           });
           if (taken) {
-            const ok = confirm(
-              `“${taken.name}” already matches this scan.\n\nMove the barcode to “${target.name}”?`,
-            );
+            const ok = await confirmDialog({ title: 'Confirm', message: `“${taken.name}” already matches this scan.\n\nMove the barcode to “${target.name}”?`,, confirmLabel: 'Confirm', danger: true });
             if (!ok) return;
           }
 
@@ -1323,7 +1319,7 @@ export function mountKitPanel(route) {
         };
       });
       linesEl.querySelectorAll('[data-remove-line]').forEach((btn) => {
-        btn.onclick = () => {
+        btn.onclick = async () => {
           const idx = draftLines.findIndex((l) => l.id === btn.dataset.removeLine);
           if (idx >= 0) draftLines.splice(idx, 1);
           paintLines();
@@ -1331,7 +1327,2458 @@ export function mountKitPanel(route) {
       });
     }
 
-    $('kitMovAddLine').onclick = () => {
+    $('kitMovAddLine').onclick = async () => {
+      draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+      paintLines();
+    };
+    $('kitMovCancel').onclick = closeSheet;
+    draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+    paintLines();
+
+    $('kitMovSave').onclick = async () => {
+      const errEl = $('kitMovErr');
+      const whId = needsWarehouse ? ($('kitMovWarehouse')?.value || '') : '';
+      if (needsWarehouse && !whId) {
+        errEl.textContent = 'Select a warehouse.';
+        return;
+      }
+
+      const hireCompany = needsHire ? ($('kitMovHireCompany')?.value || '').trim() : '';
+      const supplierId = needsHire ? ($('kitMovSupplier')?.value || null) : null;
+      if (needsHire && !hireCompany && !supplierId) {
+        errEl.textContent = 'Enter a hire company (or pick a supplier).';
+        return;
+      }
+
+      const lines = [];
+      for (const row of draftLines) {
+        const qty = parseQty(row.qty);
+        if (!row.productId) continue;
+        if (!Number.isFinite(qty) || qty <= 0) {
+          errEl.textContent = 'Each line needs a quantity greater than zero.';
+          return;
+        }
+        lines.push({ product_id: row.productId, qty });
+      }
+      if (!lines.length) {
+        errEl.textContent = 'Add at least one line.';
+        return;
+      }
+
+      const onEvent = new Set(items.map((i) => i.product_id));
+      for (const line of lines) {
+        if (!onEvent.has(line.product_id)) {
+          try {
+            const defaultSource = needsHire ? 'hire' : 'own';
+            await getDB().insert('event_kit_items', {
+              event_id: eventId,
+              product_id: line.product_id,
+              qty_planned: 0,
+              qty_packed: 0,
+              source: defaultSource,
+            });
+            onEvent.add(line.product_id);
+          } catch (err) {
+            if (!/23505/.test(String(err?.message || err))) {
+              errEl.textContent = err.message || 'Could not add item to event';
+              return;
+            }
+          }
+        }
+      }
+
+      const check = validateEventStock(balancesByProduct(movements), movementType, lines);
+      if (!check.ok) {
+        const name = kitProducts.find((p) => p.id === check.productId)?.name || 'Item';
+        errEl.textContent = `Not enough booked on event for ${name} (have ${qtyDisplay(check.available)}).`;
+        return;
+      }
+
+      const DB = getDB();
+      const btn = $('kitMovSave');
+      btn.disabled = true;
+      try {
+        if (needsWarehouse) {
+          for (const line of lines) {
+            const delta = warehouseQtyDelta(movementType, line.qty);
+            if (delta) await adjustWarehouseStock(whId, line.product_id, delta);
+          }
+        }
+
+        const movedAt = $('kitMovWhen')?.value
+          ? new Date($('kitMovWhen').value).toISOString()
+          : new Date().toISOString();
+
+        const [header] = await DB.insert('kit_movements', {
+          event_id: eventId,
+          movement_type: movementType,
+          moved_at: movedAt,
+          notes: ($('kitMovNotes')?.value || '').trim() || null,
+        });
+
+        await DB.insert('kit_movement_lines', lines.map((l) => ({
+          movement_id: header.id,
+          product_id: l.product_id,
+          qty: l.qty,
+          warehouse_id: needsWarehouse ? whId : null,
+          supplier_id: supplierId || null,
+          hire_company: hireCompany || null,
+        })));
+
+        // Keep Packed in step with hire / send own kit
+        if (movementType === 'warehouse_in' || movementType === 'hire_in') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = round1((Number(it.qty_packed) || 0) + line.qty);
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+        if (movementType === 'warehouse_out' || movementType === 'hire_return' || movementType === 'write_off') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = Math.max(0, round1((Number(it.qty_packed) || 0) - line.qty));
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+
+        closeSheet();
+        await refresh();
+        toast('Saved');
+      } catch (err) {
+        errEl.textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  const onProductFilter = (e) => {
+    productFilter = e.detail || {};
+    paint();
+    if (e.detail?.productId) e.detail.handled = true;
+  };
+
+  const onToolbarAction = (e) => {
+    const action = e.detail?.action;
+    if (!action) return;
+    const map = {
+      'kit-scan': () => {
+        startScanMode(scanMode).catch((err) => toast(err.message || 'Could not start scan', true));
+      },
+      'kit-warehouse-in': () => openMovement('warehouse_in'),
+      'kit-warehouse-out': () => openMovement('warehouse_out'),
+      'kit-hire-in': () => openMovement('hire_in'),
+      'kit-hire-return': () => openMovement('hire_return'),
+      'kit-write-off': () => openMovement('write_off'),
+    };
+    if (map[action]) {
+      e.detail.handled = true;
+      map[action]();
+    }
+  };
+
+  document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+
+  refresh().catch((err) => {
+    itemsWrap.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+  });
+
+  return () => {
+    stopScanMode();
+    stopCollab();
+    clearTimeout(flashTimer);
+    assignBarcodePending = null;
+    if (assignBarcodeOpen) closeModal();
+    document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    saveTimers.forEach((t) => clearTimeout(t));
+  };
+}function stopCollab() {
+    const session = collab;
+    collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    if (collab) {
+      collab.repaint();
+      return;
+    }
+    collab = createGridCollabSession({
+      channelName: `collab:kit:${eventId}`,
+      root: itemsWrap,
+      inputSelector: '.kit-pack-inp',
+      cellKeyFromInput: kitCellKeyFromInput,
+      findCellEl: kitFindCellEl,
+    });
+  }
+
+  try {
+    warehouseId = localStorage.getItem(WH_KEY) || '';
+  } catch { /* ignore */ }
+  try {
+    const stored = localStorage.getItem(FILTER_KEY);
+    if (stored === 'own' || stored === 'hire' || stored === 'short' || stored === 'all') {
+      sourceFilter = stored;
+    }
+  } catch { /* ignore */ }
+
+  function wireToolbar() {
+    $('kitPackWarehouse')?.addEventListener('change', async (e) => {
+      warehouseId = e.target.value || '';
+      try { localStorage.setItem(WH_KEY, warehouseId); } catch { /* ignore */ }
+      availMap = await loadWarehouseAvail(warehouseId || undefined);
+      paint();
+    });
+    controlsEl?.querySelectorAll('[data-kit-filter]').forEach((btn) => {
+      btn.onclick = async () => {
+        sourceFilter = btn.dataset.kitFilter || 'all';
+        try { localStorage.setItem(FILTER_KEY, sourceFilter); } catch { /* ignore */ }
+        paint();
+      };
+    });
+  }
+
+  function availableKitProducts() {
+    const onEvent = new Set(items.map((i) => i.product_id));
+    return kitProducts.filter((p) => !onEvent.has(p.id));
+  }
+
+  function mountAddSearch() {
+    if (!addSearchEl) return;
+    const available = availableKitProducts();
+    mountProductSearch(addSearchEl, {
+      products: available,
+      placeholder: 'Start typing a product…',
+      onSelect: ({ productId }) => {
+        addItem(productId).catch((err) => toast(err.message || 'Add failed', true));
+      },
+    });
+  }
+
+  function paint() {
+    const stats = packListStats(items, availMap, balanceMap);
+    if (controlsEl) {
+      controlsEl.innerHTML = renderPackControls(warehouses, warehouseId, sourceFilter);
+      wireToolbar();
+    }
+    if (statsEl) {
+      statsEl.innerHTML = renderPackStats(stats, movements.length);
+    }
+    if (movCountEl) {
+      movCountEl.textContent = movements.length
+        ? `(${movements.length})`
+        : '';
+    }
+    paintScanBanner();
+    itemsWrap.innerHTML = renderPackList(
+      items, availMap, balanceMap,
+      productFilter.query, productFilter.productId, sourceFilter,
+      contentsMap,
+    );
+    if (flashProductId) {
+      itemsWrap.querySelector(`[data-pid="${flashProductId}"]`)
+        ?.classList.add('kit-pack-item-row--flash');
+    }
+    wirePackInputs();
+    movWrap.innerHTML = renderMovements(movements);
+    startCollab();
+
+    const scrollPid = flashProductId || productFilter.productId;
+    if (scrollPid) {
+      itemsWrap.querySelector(`[data-pid="${scrollPid}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function currentPairUrl() {
+    if (!scanSession?.id) return '';
+    return scanPageUrl(scanSession.id, phoneOrigin);
+  }
+
+  function paintScanBanner() {
+    if (!scanBannerEl) return;
+    if (!scanSession) {
+      scanBannerEl.hidden = true;
+      scanBannerEl.innerHTML = '';
+      return;
+    }
+    const pairUrl = currentPairUrl();
+    scanBannerEl.hidden = false;
+    scanBannerEl.innerHTML = renderScanBanner({
+      mode: scanMode,
+      pairUrl,
+      lastMsg: scanLastMsg,
+      pendingTotal: pendingCheckInTotal(checkInPending),
+      committing: checkInCommitting,
+      phoneOrigin,
+      phoneEditable: phoneOriginEditable,
+      phoneCandidates: phoneOriginCandidates,
+    });
+    wireScanBanner();
+  }
+
+  function applyPhoneHostInput(rawHost) {
+    const next = originWithHost(phoneOrigin || location.origin, rawHost);
+    if (!next || next === phoneOrigin) return;
+    let host = '';
+    try { host = new URL(next).hostname; } catch { /* ignore */ }
+    if (isLoopbackHost(host)) {
+      toast('Use your computer’s Wi‑Fi IP (e.g. 192.168.x.x), not localhost', true);
+      return;
+    }
+    phoneOrigin = next;
+    setStoredPhoneOrigin(next);
+    if (!phoneOriginCandidates.includes(next)) {
+      phoneOriginCandidates = [next, ...phoneOriginCandidates];
+    }
+    paintScanBanner();
+    toast('QR updated for phone');
+  }
+
+  function wireScanBanner() {
+    scanBannerEl?.querySelectorAll('[data-kit-scan-mode]').forEach((btn) => {
+      btn.onclick = async () => {
+        setScanMode(btn.dataset.kitScanMode || SCAN_MODE_PACK)
+          .catch((err) => toast(err.message || 'Could not switch mode', true));
+      };
+    });
+    $('kitScanStop')?.addEventListener('click', async () => {
+      stopScanMode();
+      toast('Scan mode stopped');
+    });
+    $('kitScanCopyLink')?.addEventListener('click', async () => {
+      const url = currentPairUrl();
+      try {
+        await navigator.clipboard.writeText(url);
+        toast('Link copied');
+      } catch {
+        toast('Copy failed — select the link instead', true);
+      }
+    });
+    const hostInput = $('kitScanHost');
+    if (hostInput) {
+      hostInput.addEventListener('change', () => applyPhoneHostInput(hostInput.value));
+      hostInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applyPhoneHostInput(hostInput.value);
+          hostInput.blur();
+        }
+      });
+    }
+    $('kitScanClearPending')?.addEventListener('click', async () => {
+      checkInPending = new Map();
+      scanLastMsg = 'Check-in batch cleared';
+      paintScanBanner();
+    });
+    $('kitScanCommit')?.addEventListener('click', async () => {
+      commitCheckIn().catch((err) => toast(err.message || 'Check-in failed', true));
+    });
+  }
+
+  function flashRow(productId) {
+    flashProductId = productId || '';
+    clearTimeout(flashTimer);
+    if (!flashProductId) return;
+    flashTimer = setTimeout(() => {
+      flashProductId = '';
+      itemsWrap.querySelector('.kit-pack-item-row--flash')
+        ?.classList.remove('kit-pack-item-row--flash');
+    }, 1600);
+  }
+
+  function wirePackInputs() {
+    itemsWrap.querySelectorAll('.kit-pack-inp').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        const row = inp.closest('[data-item-id]');
+        if (!row) return;
+        scheduleSave(row.dataset.itemId, inp.dataset.field, inp.value);
+      });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          inp.blur();
+        }
+      });
+    });
+    itemsWrap.querySelectorAll('select[data-field="source"]').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        saveSource(sel.dataset.itemId, sel.value)
+          .catch((err) => toast(err.message || 'Save failed', true));
+      });
+    });
+    itemsWrap.querySelectorAll('[data-remove-item]').forEach((btn) => {
+      btn.onclick = async () => removeItem(btn.dataset.removeItem);
+    });
+  }
+
+  function scheduleSave(itemId, field, raw) {
+    const key = `${itemId}:${field}`;
+    clearTimeout(saveTimers.get(key));
+    saveTimers.set(key, setTimeout(() => {
+      saveField(itemId, field, raw).catch((err) => toast(err.message || 'Save failed', true));
+    }, 250));
+  }
+
+  async function saveSource(itemId, raw) {
+    const it = items.find((x) => x.id === itemId);
+    if (!it) return;
+    const source = normalizeKitSource(raw);
+    if (normalizeKitSource(it.source) === source) return;
+    const DB = getDB();
+    await DB.update('event_kit_items', 'id=eq.' + DB._.enc(itemId), { source });
+    it.source = source;
+    paint();
+  }
+
+  async function saveField(itemId, field, raw) {
+    const it = items.find((x) => x.id === itemId);
+    if (!it) return;
+    const trimmed = String(raw || '').trim();
+    const qty = trimmed === '' ? 0 : parseQty(trimmed);
+    if (!Number.isFinite(qty) || qty < 0) {
+      toast('Enter a valid quantity', true);
+      paint();
+      return;
+    }
+    if (field !== 'qty_planned' && field !== 'qty_packed') return;
+    if (Number(it[field]) === qty) return;
+
+    const DB = getDB();
+    await DB.update('event_kit_items', 'id=eq.' + DB._.enc(itemId), { [field]: qty });
+    it[field] = qty;
+    paint();
+  }
+
+  async function removeItem(itemId) {
+    const it = items.find((x) => x.id === itemId);
+    if (!it) return;
+    if ((Number(it.qty_packed) || 0) > 0) {
+      toast('Clear Packed qty before removing this line.', true);
+      return;
+    }
+    if (!(await confirmDialog({ title: 'Confirm', message: `Remove “${it.product?.name || 'item'}” from the kit list?`, confirmLabel: 'Delete', danger: true }))) return;
+    const DB = getDB();
+    await DB.remove('event_kit_items', 'id=eq.' + DB._.enc(itemId));
+    await refresh();
+    toast('Removed from kit list');
+  }
+
+  async function refresh() {
+    const [kit, products, wh, sup, avail] = await Promise.all([
+      loadEventKit(eventId),
+      loadKitLibraryProducts(),
+      getDB().warehouses.list(),
+      loadSuppliers(),
+      loadWarehouseAvail(warehouseId || undefined),
+    ]);
+    items = (kit.items || []).map((it) => ({
+      ...it,
+      source: normalizeKitSource(it.source),
+    }));
+    movements = kit.movements || [];
+    contentsMap = contentsByContainer(kit.contents || []);
+    kitProducts = products || [];
+    warehouses = wh || [];
+    suppliers = sup || [];
+    availMap = avail;
+    balanceMap = balancesByProduct(movements);
+    if (warehouseId && !warehouses.some((w) => w.id === warehouseId)) {
+      warehouseId = warehouses[0]?.id || '';
+      if (warehouseId) {
+        availMap = await loadWarehouseAvail(warehouseId);
+      }
+    }
+    paint();
+    mountAddSearch();
+  }
+
+  async function addItem(productId) {
+    if (!productId || addingProduct) return;
+    if (!kitProducts.length) {
+      toast('Add kit items in Kit library first.', true);
+      return;
+    }
+    const existing = items.find((i) => i.product_id === productId);
+    if (existing) {
+      toast('Already on this kit list.');
+      itemsWrap.querySelector(`[data-item-id="${existing.id}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+      mountAddSearch();
+      return;
+    }
+    if (!kitProducts.some((p) => p.id === productId)) {
+      toast('Pick a kit library item.', true);
+      return;
+    }
+
+    addingProduct = true;
+    const DB = getDB();
+    try {
+      await DB.insert('event_kit_items', {
+        event_id: eventId,
+        product_id: productId,
+        qty_planned: 1,
+        qty_packed: 0,
+        source: 'own',
+      });
+      await refresh();
+      toast(`Added as ${KIT_SOURCE_LABELS.own}`);
+      requestAnimationFrame(() => {
+        itemsWrap.querySelector(`[data-pid="${productId}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
+        addSearchEl?.querySelector('.product-search-input')?.focus();
+      });
+    } finally {
+      addingProduct = false;
+    }
+  }
+
+  function stopScanMode() {
+    if (stopScanPoll) {
+      stopScanPoll();
+      stopScanPoll = null;
+    }
+    scanSession = null;
+    scanLastMsg = '';
+    checkInPending = new Map();
+    checkInCommitting = false;
+    paintScanBanner();
+  }
+
+  async function startScanMode(initialMode = SCAN_MODE_PACK) {
+    if (scanSession) {
+      paintScanBanner();
+      return;
+    }
+    const DB = getDB();
+    scanMode = normalizeScanMode(initialMode);
+
+    try {
+      const resolved = await resolvePhoneOrigin();
+      phoneOrigin = resolved.origin;
+      phoneOriginEditable = resolved.editable;
+      phoneOriginCandidates = resolved.candidates || [];
+      if (resolved.editable && phoneOrigin) setStoredPhoneOrigin(phoneOrigin);
+    } catch {
+      phoneOrigin = location.origin;
+      phoneOriginEditable = isLoopbackHost(location.hostname);
+      phoneOriginCandidates = [];
+    }
+
+    const row = await createScanSession(DB, { eventId, mode: scanMode });
+    scanSession = { id: row.id, mode: scanMode };
+    scanLastMsg = phoneOriginEditable
+      ? 'Waiting for phone on Wi‑Fi…'
+      : 'Waiting for phone…';
+    checkInPending = new Map();
+    paintScanBanner();
+
+    stopScanPoll = startScanPoll(DB, row.id, async (events) => {
+      for (const ev of events || []) {
+        await applyScanBarcode(ev.barcode);
+      }
+    }, {
+      onError: (err) => toast(err.message || 'Scan poll failed', true),
+    });
+  }
+
+  async function setScanMode(nextMode) {
+    const mode = normalizeScanMode(nextMode);
+    if (mode === scanMode) return;
+    scanMode = mode;
+    if (scanSession?.id) {
+      await updateScanSessionMode(getDB(), scanSession.id, mode);
+      scanSession.mode = mode;
+    }
+    scanLastMsg = mode === SCAN_MODE_CHECK_IN
+      ? 'Check-in mode — scan returns'
+      : 'Pack mode — scan to pack';
+    paintScanBanner();
+  }
+
+  async function applyScanBarcode(rawBarcode) {
+    const code = normalizeBarcode(rawBarcode);
+    if (!code) return;
+
+    const product = findProductByBarcode(kitProducts, code);
+    if (!product) {
+      openAssignBarcodeModal(code);
+      return;
+    }
+    await applyMatchedProduct(product);
+  }
+
+  async function applyMatchedProduct(product) {
+    if (!product?.id) return;
+
+    if (scanMode === SCAN_MODE_CHECK_IN) {
+      const onList = items.find((it) => it.product_id === product.id);
+      if (!onList) {
+        scanLastMsg = `“${product.name}” is not on this pack list`;
+        toast(scanLastMsg, true);
+        paintScanBanner();
+        return;
+      }
+      checkInPending = bumpCheckInPending(checkInPending, product.id, 1);
+      const n = checkInPending.get(product.id) || 1;
+      scanLastMsg = `Check-in +1 ${product.name} (${n})`;
+      flashRow(product.id);
+      paint();
+      return;
+    }
+
+    // Pack mode
+    const plan = planPackScan({ items, product });
+    const DB = getDB();
+    try {
+      if (plan.action === 'bump') {
+        await DB.update(
+          'event_kit_items',
+          'id=eq.' + DB._.enc(plan.itemId),
+          { qty_packed: plan.nextPacked },
+        );
+        const it = items.find((x) => x.id === plan.itemId);
+        if (it) it.qty_packed = plan.nextPacked;
+        scanLastMsg = `Packed +1 ${plan.name || product.name} → ${plan.nextPacked}`;
+        flashRow(product.id);
+        paint();
+        return;
+      }
+      if (plan.action === 'add') {
+        await DB.insert('event_kit_items', {
+          event_id: eventId,
+          product_id: plan.productId,
+          qty_planned: plan.nextPlanned,
+          qty_packed: plan.nextPacked,
+          source: 'own',
+        });
+        await refresh();
+        scanLastMsg = `Added + packed ${plan.name || product.name}`;
+        flashRow(product.id);
+        paint();
+      }
+    } catch (err) {
+      toast(err.message || 'Scan apply failed', true);
+      throw err;
+    }
+  }
+
+  async function openAssignBarcodeModal(rawCode) {
+    const code = normalizeBarcode(rawCode);
+    if (!code) return;
+
+    if (assignBarcodeOpen) {
+      assignBarcodePending = code;
+      scanLastMsg = 'Finish assigning the previous barcode first';
+      paintScanBanner();
+      return;
+    }
+
+    assignBarcodeOpen = true;
+    const candidates = scanCodeCandidates(code);
+    const idHint = candidates.find((c) => /^\d+$/.test(c));
+    const displayCode = code.length > 64 ? `${code.slice(0, 40)}…${code.slice(-16)}` : code;
+
+    scanLastMsg = idHint
+      ? `Unknown Current RMS #${idHint} — pick a kit item`
+      : 'Unknown barcode — pick a kit item';
+    paintScanBanner();
+
+    openModal({
+      title: 'Assign barcode',
+      bodyHtml: `
+        <div class="kit-assign-barcode">
+          <p class="muted" style="margin:0 0 10px;font-size:13px;line-height:1.4">
+            This scan isn’t linked to a kit library item yet. Pick the product to attach it to — it’ll be saved for next time.
+          </p>
+          <div class="admin-field">
+            <label class="admin-label">Scanned</label>
+            <div class="kit-assign-code" title="${escapeHtml(code)}">${escapeHtml(displayCode)}</div>
+            ${idHint ? `<div class="muted" style="font-size:12px;margin-top:4px">Current RMS id · ${escapeHtml(idHint)}</div>` : ''}
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="kitAssignSearch">Kit library item</label>
+            <div id="kitAssignSearch"></div>
+          </div>
+          <div class="del-form-err" id="kitAssignErr" hidden></div>
+        </div>`,
+      footHtml: `
+        <button type="button" class="admin-drawer-btn" id="kitAssignSkip">Skip</button>`,
+      onClose: () => {
+        assignBarcodeOpen = false;
+        const next = assignBarcodePending;
+        assignBarcodePending = null;
+        if (next && next !== code) {
+          queueMicrotask(() => openAssignBarcodeModal(next));
+        }
+      },
+    });
+
+    const errEl = $('kitAssignErr');
+    const searchMount = $('kitAssignSearch');
+    let saving = false;
+
+    $('kitAssignSkip')?.addEventListener('click', async () => {
+      scanLastMsg = 'Skipped unknown barcode';
+      paintScanBanner();
+      closeModal();
+    });
+
+    if (searchMount) {
+      mountProductSearch(searchMount, {
+        products: kitProducts,
+        placeholder: 'Search kit library…',
+        onSelect: async ({ productId, product }) => {
+          if (!productId || saving) return;
+          const target = product || kitProducts.find((p) => p.id === productId);
+          if (!target) return;
+
+          const existingBc = normalizeBarcode(target.barcode);
+          if (existingBc && existingBc.toLowerCase() !== code.toLowerCase()) {
+            const ok = await confirmDialog({ title: 'Confirm', message: `“${target.name}” already has barcode “${existingBc}”.\n\nReplace it with this scan?`,, confirmLabel: 'Confirm', danger: true });
+            if (!ok) return;
+          }
+
+          // Another product already owns this code?
+          const taken = kitProducts.find((p) => {
+            if (p.id === productId) return false;
+            return findProductByBarcode([p], code);
+          });
+          if (taken) {
+            const ok = await confirmDialog({ title: 'Confirm', message: `“${taken.name}” already matches this scan.\n\nMove the barcode to “${target.name}”?`,, confirmLabel: 'Confirm', danger: true });
+            if (!ok) return;
+          }
+
+          saving = true;
+          if (errEl) {
+            errEl.hidden = true;
+            errEl.textContent = '';
+          }
+          try {
+            const DB = getDB();
+            if (taken?.barcode && normalizeBarcode(taken.barcode).toLowerCase() === code.toLowerCase()) {
+              await DB.update(
+                'products',
+                'id=eq.' + DB._.enc(taken.id),
+                { barcode: null },
+              );
+              taken.barcode = null;
+            }
+            await DB.update(
+              'products',
+              'id=eq.' + DB._.enc(productId),
+              { barcode: code },
+            );
+            target.barcode = code;
+            const local = kitProducts.find((p) => p.id === productId);
+            if (local) local.barcode = code;
+
+            scanLastMsg = `Linked → ${target.name}`;
+            closeModal();
+            toast(`Barcode saved on ${target.name}`);
+            await applyMatchedProduct(target);
+          } catch (err) {
+            const msg = err?.message || 'Could not save barcode';
+            if (errEl) {
+              errEl.hidden = false;
+              errEl.textContent = /23505|duplicate|unique/i.test(msg)
+                ? 'That barcode is already used by another product.'
+                : msg;
+            } else {
+              toast(msg, true);
+            }
+          } finally {
+            saving = false;
+          }
+        },
+      });
+      queueMicrotask(() => {
+        searchMount.querySelector('.product-search-input')?.focus();
+      });
+    }
+  }
+
+  async function writeMovementBatch(movementType, lines, notes) {
+    if (!lines.length) return;
+    const DB = getDB();
+    const needsWarehouse = affectsWarehouse(movementType);
+    const whId = warehouseId || '';
+    if (needsWarehouse && !whId) {
+      throw new Error('Select a warehouse in the pack toolbar before committing check-in.');
+    }
+
+    const check = validateEventStock(balancesByProduct(movements), movementType, lines);
+    if (!check.ok) {
+      const name = kitProducts.find((p) => p.id === check.productId)?.name || 'Item';
+      throw new Error(`Not enough booked on event for ${name} (have ${qtyDisplay(check.available)}).`);
+    }
+
+    if (needsWarehouse) {
+      for (const line of lines) {
+        const delta = warehouseQtyDelta(movementType, line.qty);
+        if (delta) await adjustWarehouseStock(whId, line.product_id, delta);
+      }
+    }
+
+    const [header] = await DB.insert('kit_movements', {
+      event_id: eventId,
+      movement_type: movementType,
+      moved_at: new Date().toISOString(),
+      notes: notes || null,
+    });
+
+    await DB.insert('kit_movement_lines', lines.map((l) => ({
+      movement_id: header.id,
+      product_id: l.product_id,
+      qty: l.qty,
+      warehouse_id: needsWarehouse ? whId : null,
+      supplier_id: null,
+      hire_company: null,
+    })));
+
+    if (movementType === 'warehouse_out' || movementType === 'hire_return' || movementType === 'write_off') {
+      for (const line of lines) {
+        const it = items.find((x) => x.product_id === line.product_id);
+        if (!it) continue;
+        const next = Math.max(0, round1((Number(it.qty_packed) || 0) - line.qty));
+        await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+      }
+    }
+  }
+
+  async function commitCheckIn() {
+    if (checkInCommitting) return;
+    const groups = pendingCheckInGroups(checkInPending, items);
+    if (!groups.warehouseOut.length && !groups.hireReturn.length) {
+      toast('Nothing to check in', true);
+      return;
+    }
+    if (groups.missing.length) {
+      toast('Some scanned items are no longer on the list — clear and rescan.', true);
+      return;
+    }
+
+    checkInCommitting = true;
+    paintScanBanner();
+    try {
+      if (groups.warehouseOut.length) {
+        await writeMovementBatch(
+          'warehouse_out',
+          groups.warehouseOut.map((l) => ({ product_id: l.product_id, qty: l.qty })),
+          'Phone scan check-in',
+        );
+      }
+      if (groups.hireReturn.length) {
+        await writeMovementBatch(
+          'hire_return',
+          groups.hireReturn.map((l) => ({ product_id: l.product_id, qty: l.qty })),
+          'Phone scan hire return',
+        );
+      }
+      checkInPending = new Map();
+      scanLastMsg = 'Check-in committed';
+      await refresh();
+      toast('Check-in saved');
+    } finally {
+      checkInCommitting = false;
+      paintScanBanner();
+    }
+  }
+
+  function openMovement(movementType) {
+    const label = KIT_MOVEMENT_LABELS[movementType] || movementType;
+    const needsWarehouse = affectsWarehouse(movementType);
+    const needsHire = movementType === 'hire_in' || movementType === 'hire_return';
+    const draftLines = [];
+
+    const whOpts = warehouses.map((w) =>
+      `<option value="${escapeHtml(w.id)}"${w.id === warehouseId ? ' selected' : ''}>${escapeHtml(w.name)}</option>`).join('');
+    const hireOpts = suppliers.map((s) =>
+      `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('');
+
+    openSheet({
+      title: label,
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="kitMovErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="kitMovWhen">When</label>
+            <input class="admin-input" type="datetime-local" id="kitMovWhen" value="${escapeHtml(nowLocalInput())}">
+          </div>
+          ${needsWarehouse ? `
+            <div class="admin-field">
+              <label class="admin-label" for="kitMovWarehouse">Warehouse</label>
+              <select class="admin-select" id="kitMovWarehouse">
+                <option value="">— select —</option>
+                ${whOpts}
+              </select>
+            </div>` : ''}
+          ${needsHire ? `
+            <div class="admin-field">
+              <label class="admin-label" for="kitMovHireCompany">Hire company</label>
+              <input class="admin-input" type="text" id="kitMovHireCompany" list="kitMovHireList" placeholder="Company name">
+              <datalist id="kitMovHireList">${suppliers.map((s) =>
+                `<option value="${escapeHtml(s.name)}"></option>`).join('')}</datalist>
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="kitMovSupplier">Or pick supplier</label>
+              <select class="admin-select" id="kitMovSupplier">
+                <option value="">— optional —</option>
+                ${hireOpts}
+              </select>
+            </div>` : ''}
+          <div class="admin-field">
+            <label class="admin-label">Lines</label>
+            <div id="kitMovLines" class="del-lines"></div>
+            <button type="button" class="admin-drawer-btn" id="kitMovAddLine">+ Add line</button>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="kitMovNotes">Notes</label>
+            <textarea class="admin-textarea" id="kitMovNotes" rows="2" placeholder="Optional"></textarea>
+          </div>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          <span></span>
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="kitMovCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="kitMovSave">Save</button>
+          </div>
+        </div>`,
+    });
+
+    const linesEl = $('kitMovLines');
+
+    function paintLines() {
+      if (!draftLines.length) {
+        linesEl.innerHTML = '<p class="muted" style="font-size:13px">No lines yet.</p>';
+        return;
+      }
+      linesEl.innerHTML = draftLines.map((line) => `
+        <div class="del-line-row" data-lid="${escapeHtml(line.id)}">
+          <div class="del-line-search" id="kitLineSearch_${escapeHtml(line.id)}"></div>
+          <div class="del-qty-field">
+            <label class="admin-label">Qty</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal"
+              data-qty="${escapeHtml(line.id)}" value="${escapeHtml(line.qty || '')}" placeholder="0">
+          </div>
+          <button type="button" class="topbar-tool" data-remove-line="${escapeHtml(line.id)}" aria-label="Remove line">
+            ${icon('x', { size: 14 })}
+          </button>
+        </div>`).join('');
+
+      draftLines.forEach((line) => {
+        const mount = $(`kitLineSearch_${line.id}`);
+        if (!mount) return;
+        mountProductSearch(mount, {
+          products: kitProducts,
+          value: line.productId || '',
+          placeholder: 'Search kit…',
+          onSelect: ({ productId }) => { line.productId = productId; },
+        });
+      });
+
+      linesEl.querySelectorAll('[data-qty]').forEach((inp) => {
+        inp.oninput = () => {
+          const line = draftLines.find((l) => l.id === inp.dataset.qty);
+          if (line) line.qty = inp.value;
+        };
+      });
+      linesEl.querySelectorAll('[data-remove-line]').forEach((btn) => {
+        btn.onclick = async () => {
+          const idx = draftLines.findIndex((l) => l.id === btn.dataset.removeLine);
+          if (idx >= 0) draftLines.splice(idx, 1);
+          paintLines();
+        };
+      });
+    }
+
+    $('kitMovAddLine').onclick = async () => {
+      draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+      paintLines();
+    };
+    $('kitMovCancel').onclick = closeSheet;
+    draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+    paintLines();
+
+    $('kitMovSave').onclick = async () => {
+      const errEl = $('kitMovErr');
+      const whId = needsWarehouse ? ($('kitMovWarehouse')?.value || '') : '';
+      if (needsWarehouse && !whId) {
+        errEl.textContent = 'Select a warehouse.';
+        return;
+      }
+
+      const hireCompany = needsHire ? ($('kitMovHireCompany')?.value || '').trim() : '';
+      const supplierId = needsHire ? ($('kitMovSupplier')?.value || null) : null;
+      if (needsHire && !hireCompany && !supplierId) {
+        errEl.textContent = 'Enter a hire company (or pick a supplier).';
+        return;
+      }
+
+      const lines = [];
+      for (const row of draftLines) {
+        const qty = parseQty(row.qty);
+        if (!row.productId) continue;
+        if (!Number.isFinite(qty) || qty <= 0) {
+          errEl.textContent = 'Each line needs a quantity greater than zero.';
+          return;
+        }
+        lines.push({ product_id: row.productId, qty });
+      }
+      if (!lines.length) {
+        errEl.textContent = 'Add at least one line.';
+        return;
+      }
+
+      const onEvent = new Set(items.map((i) => i.product_id));
+      for (const line of lines) {
+        if (!onEvent.has(line.product_id)) {
+          try {
+            const defaultSource = needsHire ? 'hire' : 'own';
+            await getDB().insert('event_kit_items', {
+              event_id: eventId,
+              product_id: line.product_id,
+              qty_planned: 0,
+              qty_packed: 0,
+              source: defaultSource,
+            });
+            onEvent.add(line.product_id);
+          } catch (err) {
+            if (!/23505/.test(String(err?.message || err))) {
+              errEl.textContent = err.message || 'Could not add item to event';
+              return;
+            }
+          }
+        }
+      }
+
+      const check = validateEventStock(balancesByProduct(movements), movementType, lines);
+      if (!check.ok) {
+        const name = kitProducts.find((p) => p.id === check.productId)?.name || 'Item';
+        errEl.textContent = `Not enough booked on event for ${name} (have ${qtyDisplay(check.available)}).`;
+        return;
+      }
+
+      const DB = getDB();
+      const btn = $('kitMovSave');
+      btn.disabled = true;
+      try {
+        if (needsWarehouse) {
+          for (const line of lines) {
+            const delta = warehouseQtyDelta(movementType, line.qty);
+            if (delta) await adjustWarehouseStock(whId, line.product_id, delta);
+          }
+        }
+
+        const movedAt = $('kitMovWhen')?.value
+          ? new Date($('kitMovWhen').value).toISOString()
+          : new Date().toISOString();
+
+        const [header] = await DB.insert('kit_movements', {
+          event_id: eventId,
+          movement_type: movementType,
+          moved_at: movedAt,
+          notes: ($('kitMovNotes')?.value || '').trim() || null,
+        });
+
+        await DB.insert('kit_movement_lines', lines.map((l) => ({
+          movement_id: header.id,
+          product_id: l.product_id,
+          qty: l.qty,
+          warehouse_id: needsWarehouse ? whId : null,
+          supplier_id: supplierId || null,
+          hire_company: hireCompany || null,
+        })));
+
+        // Keep Packed in step with hire / send own kit
+        if (movementType === 'warehouse_in' || movementType === 'hire_in') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = round1((Number(it.qty_packed) || 0) + line.qty);
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+        if (movementType === 'warehouse_out' || movementType === 'hire_return' || movementType === 'write_off') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = Math.max(0, round1((Number(it.qty_packed) || 0) - line.qty));
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+
+        closeSheet();
+        await refresh();
+        toast('Saved');
+      } catch (err) {
+        errEl.textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }function paintLines() {
+      if (!draftLines.length) {
+        linesEl.innerHTML = '<p class="muted" style="font-size:13px">No lines yet.</p>';
+        return;
+      }
+      linesEl.innerHTML = draftLines.map((line) => `
+        <div class="del-line-row" data-lid="${escapeHtml(line.id)}">
+          <div class="del-line-search" id="kitLineSearch_${escapeHtml(line.id)}"></div>
+          <div class="del-qty-field">
+            <label class="admin-label">Qty</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal"
+              data-qty="${escapeHtml(line.id)}" value="${escapeHtml(line.qty || '')}" placeholder="0">
+          </div>
+          <button type="button" class="topbar-tool" data-remove-line="${escapeHtml(line.id)}" aria-label="Remove line">
+            ${icon('x', { size: 14 })}
+          </button>
+        </div>`).join('');
+
+      draftLines.forEach((line) => {
+        const mount = $(`kitLineSearch_${line.id}`);
+        if (!mount) return;
+        mountProductSearch(mount, {
+          products: kitProducts,
+          value: line.productId || '',
+          placeholder: 'Search kit…',
+          onSelect: ({ productId }) => { line.productId = productId; },
+        });
+      });
+
+      linesEl.querySelectorAll('[data-qty]').forEach((inp) => {
+        inp.oninput = () => {
+          const line = draftLines.find((l) => l.id === inp.dataset.qty);
+          if (line) line.qty = inp.value;
+        };
+      });
+      linesEl.querySelectorAll('[data-remove-line]').forEach((btn) => {
+        btn.onclick = async () => {
+          const idx = draftLines.findIndex((l) => l.id === btn.dataset.removeLine);
+          if (idx >= 0) draftLines.splice(idx, 1);
+          paintLines();
+        };
+      });
+    }
+
+    $('kitMovAddLine').onclick = async () => {
+      draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+      paintLines();
+    };
+    $('kitMovCancel').onclick = closeSheet;
+    draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+    paintLines();
+
+    $('kitMovSave').onclick = async () => {
+      const errEl = $('kitMovErr');
+      const whId = needsWarehouse ? ($('kitMovWarehouse')?.value || '') : '';
+      if (needsWarehouse && !whId) {
+        errEl.textContent = 'Select a warehouse.';
+        return;
+      }
+
+      const hireCompany = needsHire ? ($('kitMovHireCompany')?.value || '').trim() : '';
+      const supplierId = needsHire ? ($('kitMovSupplier')?.value || null) : null;
+      if (needsHire && !hireCompany && !supplierId) {
+        errEl.textContent = 'Enter a hire company (or pick a supplier).';
+        return;
+      }
+
+      const lines = [];
+      for (const row of draftLines) {
+        const qty = parseQty(row.qty);
+        if (!row.productId) continue;
+        if (!Number.isFinite(qty) || qty <= 0) {
+          errEl.textContent = 'Each line needs a quantity greater than zero.';
+          return;
+        }
+        lines.push({ product_id: row.productId, qty });
+      }
+      if (!lines.length) {
+        errEl.textContent = 'Add at least one line.';
+        return;
+      }
+
+      const onEvent = new Set(items.map((i) => i.product_id));
+      for (const line of lines) {
+        if (!onEvent.has(line.product_id)) {
+          try {
+            const defaultSource = needsHire ? 'hire' : 'own';
+            await getDB().insert('event_kit_items', {
+              event_id: eventId,
+              product_id: line.product_id,
+              qty_planned: 0,
+              qty_packed: 0,
+              source: defaultSource,
+            });
+            onEvent.add(line.product_id);
+          } catch (err) {
+            if (!/23505/.test(String(err?.message || err))) {
+              errEl.textContent = err.message || 'Could not add item to event';
+              return;
+            }
+          }
+        }
+      }
+
+      const check = validateEventStock(balancesByProduct(movements), movementType, lines);
+      if (!check.ok) {
+        const name = kitProducts.find((p) => p.id === check.productId)?.name || 'Item';
+        errEl.textContent = `Not enough booked on event for ${name} (have ${qtyDisplay(check.available)}).`;
+        return;
+      }
+
+      const DB = getDB();
+      const btn = $('kitMovSave');
+      btn.disabled = true;
+      try {
+        if (needsWarehouse) {
+          for (const line of lines) {
+            const delta = warehouseQtyDelta(movementType, line.qty);
+            if (delta) await adjustWarehouseStock(whId, line.product_id, delta);
+          }
+        }
+
+        const movedAt = $('kitMovWhen')?.value
+          ? new Date($('kitMovWhen').value).toISOString()
+          : new Date().toISOString();
+
+        const [header] = await DB.insert('kit_movements', {
+          event_id: eventId,
+          movement_type: movementType,
+          moved_at: movedAt,
+          notes: ($('kitMovNotes')?.value || '').trim() || null,
+        });
+
+        await DB.insert('kit_movement_lines', lines.map((l) => ({
+          movement_id: header.id,
+          product_id: l.product_id,
+          qty: l.qty,
+          warehouse_id: needsWarehouse ? whId : null,
+          supplier_id: supplierId || null,
+          hire_company: hireCompany || null,
+        })));
+
+        // Keep Packed in step with hire / send own kit
+        if (movementType === 'warehouse_in' || movementType === 'hire_in') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = round1((Number(it.qty_packed) || 0) + line.qty);
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+        if (movementType === 'warehouse_out' || movementType === 'hire_return' || movementType === 'write_off') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = Math.max(0, round1((Number(it.qty_packed) || 0) - line.qty));
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+
+        closeSheet();
+        await refresh();
+        toast('Saved');
+      } catch (err) {
+        errEl.textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  const onProductFilter = (e) => {
+    productFilter = e.detail || {};
+    paint();
+    if (e.detail?.productId) e.detail.handled = true;
+  };
+
+  const onToolbarAction = (e) => {
+    const action = e.detail?.action;
+    if (!action) return;
+    const map = {
+      'kit-scan': () => {
+        startScanMode(scanMode).catch((err) => toast(err.message || 'Could not start scan', true));
+      },
+      'kit-warehouse-in': () => openMovement('warehouse_in'),
+      'kit-warehouse-out': () => openMovement('warehouse_out'),
+      'kit-hire-in': () => openMovement('hire_in'),
+      'kit-hire-return': () => openMovement('hire_return'),
+      'kit-write-off': () => openMovement('write_off'),
+    };
+    if (map[action]) {
+      e.detail.handled = true;
+      map[action]();
+    }
+  };
+
+  document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+
+  refresh().catch((err) => {
+    itemsWrap.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+  });
+
+  return () => {
+    stopScanMode();
+    stopCollab();
+    clearTimeout(flashTimer);
+    assignBarcodePending = null;
+    if (assignBarcodeOpen) closeModal();
+    document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    saveTimers.forEach((t) => clearTimeout(t));
+  };
+}function stopCollab() {
+    const session = collab;
+    collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    if (collab) {
+      collab.repaint();
+      return;
+    }
+    collab = createGridCollabSession({
+      channelName: `collab:kit:${eventId}`,
+      root: itemsWrap,
+      inputSelector: '.kit-pack-inp',
+      cellKeyFromInput: kitCellKeyFromInput,
+      findCellEl: kitFindCellEl,
+    });
+  }
+
+  try {
+    warehouseId = localStorage.getItem(WH_KEY) || '';
+  } catch { /* ignore */ }
+  try {
+    const stored = localStorage.getItem(FILTER_KEY);
+    if (stored === 'own' || stored === 'hire' || stored === 'short' || stored === 'all') {
+      sourceFilter = stored;
+    }
+  } catch { /* ignore */ }
+
+  function wireToolbar() {
+    $('kitPackWarehouse')?.addEventListener('change', async (e) => {
+      warehouseId = e.target.value || '';
+      try { localStorage.setItem(WH_KEY, warehouseId); } catch { /* ignore */ }
+      availMap = await loadWarehouseAvail(warehouseId || undefined);
+      paint();
+    });
+    controlsEl?.querySelectorAll('[data-kit-filter]').forEach((btn) => {
+      btn.onclick = async () => {
+        sourceFilter = btn.dataset.kitFilter || 'all';
+        try { localStorage.setItem(FILTER_KEY, sourceFilter); } catch { /* ignore */ }
+        paint();
+      };
+    });
+  }
+
+  function availableKitProducts() {
+    const onEvent = new Set(items.map((i) => i.product_id));
+    return kitProducts.filter((p) => !onEvent.has(p.id));
+  }
+
+  function mountAddSearch() {
+    if (!addSearchEl) return;
+    const available = availableKitProducts();
+    mountProductSearch(addSearchEl, {
+      products: available,
+      placeholder: 'Start typing a product…',
+      onSelect: ({ productId }) => {
+        addItem(productId).catch((err) => toast(err.message || 'Add failed', true));
+      },
+    });
+  }
+
+  function paint() {
+    const stats = packListStats(items, availMap, balanceMap);
+    if (controlsEl) {
+      controlsEl.innerHTML = renderPackControls(warehouses, warehouseId, sourceFilter);
+      wireToolbar();
+    }
+    if (statsEl) {
+      statsEl.innerHTML = renderPackStats(stats, movements.length);
+    }
+    if (movCountEl) {
+      movCountEl.textContent = movements.length
+        ? `(${movements.length})`
+        : '';
+    }
+    paintScanBanner();
+    itemsWrap.innerHTML = renderPackList(
+      items, availMap, balanceMap,
+      productFilter.query, productFilter.productId, sourceFilter,
+      contentsMap,
+    );
+    if (flashProductId) {
+      itemsWrap.querySelector(`[data-pid="${flashProductId}"]`)
+        ?.classList.add('kit-pack-item-row--flash');
+    }
+    wirePackInputs();
+    movWrap.innerHTML = renderMovements(movements);
+    startCollab();
+
+    const scrollPid = flashProductId || productFilter.productId;
+    if (scrollPid) {
+      itemsWrap.querySelector(`[data-pid="${scrollPid}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function currentPairUrl() {
+    if (!scanSession?.id) return '';
+    return scanPageUrl(scanSession.id, phoneOrigin);
+  }
+
+  function paintScanBanner() {
+    if (!scanBannerEl) return;
+    if (!scanSession) {
+      scanBannerEl.hidden = true;
+      scanBannerEl.innerHTML = '';
+      return;
+    }
+    const pairUrl = currentPairUrl();
+    scanBannerEl.hidden = false;
+    scanBannerEl.innerHTML = renderScanBanner({
+      mode: scanMode,
+      pairUrl,
+      lastMsg: scanLastMsg,
+      pendingTotal: pendingCheckInTotal(checkInPending),
+      committing: checkInCommitting,
+      phoneOrigin,
+      phoneEditable: phoneOriginEditable,
+      phoneCandidates: phoneOriginCandidates,
+    });
+    wireScanBanner();
+  }
+
+  function applyPhoneHostInput(rawHost) {
+    const next = originWithHost(phoneOrigin || location.origin, rawHost);
+    if (!next || next === phoneOrigin) return;
+    let host = '';
+    try { host = new URL(next).hostname; } catch { /* ignore */ }
+    if (isLoopbackHost(host)) {
+      toast('Use your computer’s Wi‑Fi IP (e.g. 192.168.x.x), not localhost', true);
+      return;
+    }
+    phoneOrigin = next;
+    setStoredPhoneOrigin(next);
+    if (!phoneOriginCandidates.includes(next)) {
+      phoneOriginCandidates = [next, ...phoneOriginCandidates];
+    }
+    paintScanBanner();
+    toast('QR updated for phone');
+  }
+
+  function wireScanBanner() {
+    scanBannerEl?.querySelectorAll('[data-kit-scan-mode]').forEach((btn) => {
+      btn.onclick = async () => {
+        setScanMode(btn.dataset.kitScanMode || SCAN_MODE_PACK)
+          .catch((err) => toast(err.message || 'Could not switch mode', true));
+      };
+    });
+    $('kitScanStop')?.addEventListener('click', async () => {
+      stopScanMode();
+      toast('Scan mode stopped');
+    });
+    $('kitScanCopyLink')?.addEventListener('click', async () => {
+      const url = currentPairUrl();
+      try {
+        await navigator.clipboard.writeText(url);
+        toast('Link copied');
+      } catch {
+        toast('Copy failed — select the link instead', true);
+      }
+    });
+    const hostInput = $('kitScanHost');
+    if (hostInput) {
+      hostInput.addEventListener('change', () => applyPhoneHostInput(hostInput.value));
+      hostInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applyPhoneHostInput(hostInput.value);
+          hostInput.blur();
+        }
+      });
+    }
+    $('kitScanClearPending')?.addEventListener('click', async () => {
+      checkInPending = new Map();
+      scanLastMsg = 'Check-in batch cleared';
+      paintScanBanner();
+    });
+    $('kitScanCommit')?.addEventListener('click', async () => {
+      commitCheckIn().catch((err) => toast(err.message || 'Check-in failed', true));
+    });
+  }
+
+  function flashRow(productId) {
+    flashProductId = productId || '';
+    clearTimeout(flashTimer);
+    if (!flashProductId) return;
+    flashTimer = setTimeout(() => {
+      flashProductId = '';
+      itemsWrap.querySelector('.kit-pack-item-row--flash')
+        ?.classList.remove('kit-pack-item-row--flash');
+    }, 1600);
+  }
+
+  function wirePackInputs() {
+    itemsWrap.querySelectorAll('.kit-pack-inp').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        const row = inp.closest('[data-item-id]');
+        if (!row) return;
+        scheduleSave(row.dataset.itemId, inp.dataset.field, inp.value);
+      });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          inp.blur();
+        }
+      });
+    });
+    itemsWrap.querySelectorAll('select[data-field="source"]').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        saveSource(sel.dataset.itemId, sel.value)
+          .catch((err) => toast(err.message || 'Save failed', true));
+      });
+    });
+    itemsWrap.querySelectorAll('[data-remove-item]').forEach((btn) => {
+      btn.onclick = async () => removeItem(btn.dataset.removeItem);
+    });
+  }
+
+  function scheduleSave(itemId, field, raw) {
+    const key = `${itemId}:${field}`;
+    clearTimeout(saveTimers.get(key));
+    saveTimers.set(key, setTimeout(() => {
+      saveField(itemId, field, raw).catch((err) => toast(err.message || 'Save failed', true));
+    }, 250));
+  }
+
+  async function saveSource(itemId, raw) {
+    const it = items.find((x) => x.id === itemId);
+    if (!it) return;
+    const source = normalizeKitSource(raw);
+    if (normalizeKitSource(it.source) === source) return;
+    const DB = getDB();
+    await DB.update('event_kit_items', 'id=eq.' + DB._.enc(itemId), { source });
+    it.source = source;
+    paint();
+  }
+
+  async function saveField(itemId, field, raw) {
+    const it = items.find((x) => x.id === itemId);
+    if (!it) return;
+    const trimmed = String(raw || '').trim();
+    const qty = trimmed === '' ? 0 : parseQty(trimmed);
+    if (!Number.isFinite(qty) || qty < 0) {
+      toast('Enter a valid quantity', true);
+      paint();
+      return;
+    }
+    if (field !== 'qty_planned' && field !== 'qty_packed') return;
+    if (Number(it[field]) === qty) return;
+
+    const DB = getDB();
+    await DB.update('event_kit_items', 'id=eq.' + DB._.enc(itemId), { [field]: qty });
+    it[field] = qty;
+    paint();
+  }
+
+  async function removeItem(itemId) {
+    const it = items.find((x) => x.id === itemId);
+    if (!it) return;
+    if ((Number(it.qty_packed) || 0) > 0) {
+      toast('Clear Packed qty before removing this line.', true);
+      return;
+    }
+    if (!(await confirmDialog({ title: 'Confirm', message: `Remove “${it.product?.name || 'item'}” from the kit list?`, confirmLabel: 'Delete', danger: true }))) return;
+    const DB = getDB();
+    await DB.remove('event_kit_items', 'id=eq.' + DB._.enc(itemId));
+    await refresh();
+    toast('Removed from kit list');
+  }
+
+  async function refresh() {
+    const [kit, products, wh, sup, avail] = await Promise.all([
+      loadEventKit(eventId),
+      loadKitLibraryProducts(),
+      getDB().warehouses.list(),
+      loadSuppliers(),
+      loadWarehouseAvail(warehouseId || undefined),
+    ]);
+    items = (kit.items || []).map((it) => ({
+      ...it,
+      source: normalizeKitSource(it.source),
+    }));
+    movements = kit.movements || [];
+    contentsMap = contentsByContainer(kit.contents || []);
+    kitProducts = products || [];
+    warehouses = wh || [];
+    suppliers = sup || [];
+    availMap = avail;
+    balanceMap = balancesByProduct(movements);
+    if (warehouseId && !warehouses.some((w) => w.id === warehouseId)) {
+      warehouseId = warehouses[0]?.id || '';
+      if (warehouseId) {
+        availMap = await loadWarehouseAvail(warehouseId);
+      }
+    }
+    paint();
+    mountAddSearch();
+  }
+
+  async function addItem(productId) {
+    if (!productId || addingProduct) return;
+    if (!kitProducts.length) {
+      toast('Add kit items in Kit library first.', true);
+      return;
+    }
+    const existing = items.find((i) => i.product_id === productId);
+    if (existing) {
+      toast('Already on this kit list.');
+      itemsWrap.querySelector(`[data-item-id="${existing.id}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+      mountAddSearch();
+      return;
+    }
+    if (!kitProducts.some((p) => p.id === productId)) {
+      toast('Pick a kit library item.', true);
+      return;
+    }
+
+    addingProduct = true;
+    const DB = getDB();
+    try {
+      await DB.insert('event_kit_items', {
+        event_id: eventId,
+        product_id: productId,
+        qty_planned: 1,
+        qty_packed: 0,
+        source: 'own',
+      });
+      await refresh();
+      toast(`Added as ${KIT_SOURCE_LABELS.own}`);
+      requestAnimationFrame(() => {
+        itemsWrap.querySelector(`[data-pid="${productId}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
+        addSearchEl?.querySelector('.product-search-input')?.focus();
+      });
+    } finally {
+      addingProduct = false;
+    }
+  }
+
+  function stopScanMode() {
+    if (stopScanPoll) {
+      stopScanPoll();
+      stopScanPoll = null;
+    }
+    scanSession = null;
+    scanLastMsg = '';
+    checkInPending = new Map();
+    checkInCommitting = false;
+    paintScanBanner();
+  }
+
+  async function startScanMode(initialMode = SCAN_MODE_PACK) {
+    if (scanSession) {
+      paintScanBanner();
+      return;
+    }
+    const DB = getDB();
+    scanMode = normalizeScanMode(initialMode);
+
+    try {
+      const resolved = await resolvePhoneOrigin();
+      phoneOrigin = resolved.origin;
+      phoneOriginEditable = resolved.editable;
+      phoneOriginCandidates = resolved.candidates || [];
+      if (resolved.editable && phoneOrigin) setStoredPhoneOrigin(phoneOrigin);
+    } catch {
+      phoneOrigin = location.origin;
+      phoneOriginEditable = isLoopbackHost(location.hostname);
+      phoneOriginCandidates = [];
+    }
+
+    const row = await createScanSession(DB, { eventId, mode: scanMode });
+    scanSession = { id: row.id, mode: scanMode };
+    scanLastMsg = phoneOriginEditable
+      ? 'Waiting for phone on Wi‑Fi…'
+      : 'Waiting for phone…';
+    checkInPending = new Map();
+    paintScanBanner();
+
+    stopScanPoll = startScanPoll(DB, row.id, async (events) => {
+      for (const ev of events || []) {
+        await applyScanBarcode(ev.barcode);
+      }
+    }, {
+      onError: (err) => toast(err.message || 'Scan poll failed', true),
+    });
+  }
+
+  async function setScanMode(nextMode) {
+    const mode = normalizeScanMode(nextMode);
+    if (mode === scanMode) return;
+    scanMode = mode;
+    if (scanSession?.id) {
+      await updateScanSessionMode(getDB(), scanSession.id, mode);
+      scanSession.mode = mode;
+    }
+    scanLastMsg = mode === SCAN_MODE_CHECK_IN
+      ? 'Check-in mode — scan returns'
+      : 'Pack mode — scan to pack';
+    paintScanBanner();
+  }
+
+  async function applyScanBarcode(rawBarcode) {
+    const code = normalizeBarcode(rawBarcode);
+    if (!code) return;
+
+    const product = findProductByBarcode(kitProducts, code);
+    if (!product) {
+      openAssignBarcodeModal(code);
+      return;
+    }
+    await applyMatchedProduct(product);
+  }
+
+  async function applyMatchedProduct(product) {
+    if (!product?.id) return;
+
+    if (scanMode === SCAN_MODE_CHECK_IN) {
+      const onList = items.find((it) => it.product_id === product.id);
+      if (!onList) {
+        scanLastMsg = `“${product.name}” is not on this pack list`;
+        toast(scanLastMsg, true);
+        paintScanBanner();
+        return;
+      }
+      checkInPending = bumpCheckInPending(checkInPending, product.id, 1);
+      const n = checkInPending.get(product.id) || 1;
+      scanLastMsg = `Check-in +1 ${product.name} (${n})`;
+      flashRow(product.id);
+      paint();
+      return;
+    }
+
+    // Pack mode
+    const plan = planPackScan({ items, product });
+    const DB = getDB();
+    try {
+      if (plan.action === 'bump') {
+        await DB.update(
+          'event_kit_items',
+          'id=eq.' + DB._.enc(plan.itemId),
+          { qty_packed: plan.nextPacked },
+        );
+        const it = items.find((x) => x.id === plan.itemId);
+        if (it) it.qty_packed = plan.nextPacked;
+        scanLastMsg = `Packed +1 ${plan.name || product.name} → ${plan.nextPacked}`;
+        flashRow(product.id);
+        paint();
+        return;
+      }
+      if (plan.action === 'add') {
+        await DB.insert('event_kit_items', {
+          event_id: eventId,
+          product_id: plan.productId,
+          qty_planned: plan.nextPlanned,
+          qty_packed: plan.nextPacked,
+          source: 'own',
+        });
+        await refresh();
+        scanLastMsg = `Added + packed ${plan.name || product.name}`;
+        flashRow(product.id);
+        paint();
+      }
+    } catch (err) {
+      toast(err.message || 'Scan apply failed', true);
+      throw err;
+    }
+  }
+
+  async function openAssignBarcodeModal(rawCode) {
+    const code = normalizeBarcode(rawCode);
+    if (!code) return;
+
+    if (assignBarcodeOpen) {
+      assignBarcodePending = code;
+      scanLastMsg = 'Finish assigning the previous barcode first';
+      paintScanBanner();
+      return;
+    }
+
+    assignBarcodeOpen = true;
+    const candidates = scanCodeCandidates(code);
+    const idHint = candidates.find((c) => /^\d+$/.test(c));
+    const displayCode = code.length > 64 ? `${code.slice(0, 40)}…${code.slice(-16)}` : code;
+
+    scanLastMsg = idHint
+      ? `Unknown Current RMS #${idHint} — pick a kit item`
+      : 'Unknown barcode — pick a kit item';
+    paintScanBanner();
+
+    openModal({
+      title: 'Assign barcode',
+      bodyHtml: `
+        <div class="kit-assign-barcode">
+          <p class="muted" style="margin:0 0 10px;font-size:13px;line-height:1.4">
+            This scan isn’t linked to a kit library item yet. Pick the product to attach it to — it’ll be saved for next time.
+          </p>
+          <div class="admin-field">
+            <label class="admin-label">Scanned</label>
+            <div class="kit-assign-code" title="${escapeHtml(code)}">${escapeHtml(displayCode)}</div>
+            ${idHint ? `<div class="muted" style="font-size:12px;margin-top:4px">Current RMS id · ${escapeHtml(idHint)}</div>` : ''}
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="kitAssignSearch">Kit library item</label>
+            <div id="kitAssignSearch"></div>
+          </div>
+          <div class="del-form-err" id="kitAssignErr" hidden></div>
+        </div>`,
+      footHtml: `
+        <button type="button" class="admin-drawer-btn" id="kitAssignSkip">Skip</button>`,
+      onClose: () => {
+        assignBarcodeOpen = false;
+        const next = assignBarcodePending;
+        assignBarcodePending = null;
+        if (next && next !== code) {
+          queueMicrotask(() => openAssignBarcodeModal(next));
+        }
+      },
+    });
+
+    const errEl = $('kitAssignErr');
+    const searchMount = $('kitAssignSearch');
+    let saving = false;
+
+    $('kitAssignSkip')?.addEventListener('click', async () => {
+      scanLastMsg = 'Skipped unknown barcode';
+      paintScanBanner();
+      closeModal();
+    });
+
+    if (searchMount) {
+      mountProductSearch(searchMount, {
+        products: kitProducts,
+        placeholder: 'Search kit library…',
+        onSelect: async ({ productId, product }) => {
+          if (!productId || saving) return;
+          const target = product || kitProducts.find((p) => p.id === productId);
+          if (!target) return;
+
+          const existingBc = normalizeBarcode(target.barcode);
+          if (existingBc && existingBc.toLowerCase() !== code.toLowerCase()) {
+            const ok = await confirmDialog({ title: 'Confirm', message: `“${target.name}” already has barcode “${existingBc}”.\n\nReplace it with this scan?`,, confirmLabel: 'Confirm', danger: true });
+            if (!ok) return;
+          }
+
+          // Another product already owns this code?
+          const taken = kitProducts.find((p) => {
+            if (p.id === productId) return false;
+            return findProductByBarcode([p], code);
+          });
+          if (taken) {
+            const ok = await confirmDialog({ title: 'Confirm', message: `“${taken.name}” already matches this scan.\n\nMove the barcode to “${target.name}”?`,, confirmLabel: 'Confirm', danger: true });
+            if (!ok) return;
+          }
+
+          saving = true;
+          if (errEl) {
+            errEl.hidden = true;
+            errEl.textContent = '';
+          }
+          try {
+            const DB = getDB();
+            if (taken?.barcode && normalizeBarcode(taken.barcode).toLowerCase() === code.toLowerCase()) {
+              await DB.update(
+                'products',
+                'id=eq.' + DB._.enc(taken.id),
+                { barcode: null },
+              );
+              taken.barcode = null;
+            }
+            await DB.update(
+              'products',
+              'id=eq.' + DB._.enc(productId),
+              { barcode: code },
+            );
+            target.barcode = code;
+            const local = kitProducts.find((p) => p.id === productId);
+            if (local) local.barcode = code;
+
+            scanLastMsg = `Linked → ${target.name}`;
+            closeModal();
+            toast(`Barcode saved on ${target.name}`);
+            await applyMatchedProduct(target);
+          } catch (err) {
+            const msg = err?.message || 'Could not save barcode';
+            if (errEl) {
+              errEl.hidden = false;
+              errEl.textContent = /23505|duplicate|unique/i.test(msg)
+                ? 'That barcode is already used by another product.'
+                : msg;
+            } else {
+              toast(msg, true);
+            }
+          } finally {
+            saving = false;
+          }
+        },
+      });
+      queueMicrotask(() => {
+        searchMount.querySelector('.product-search-input')?.focus();
+      });
+    }
+  }
+
+  async function writeMovementBatch(movementType, lines, notes) {
+    if (!lines.length) return;
+    const DB = getDB();
+    const needsWarehouse = affectsWarehouse(movementType);
+    const whId = warehouseId || '';
+    if (needsWarehouse && !whId) {
+      throw new Error('Select a warehouse in the pack toolbar before committing check-in.');
+    }
+
+    const check = validateEventStock(balancesByProduct(movements), movementType, lines);
+    if (!check.ok) {
+      const name = kitProducts.find((p) => p.id === check.productId)?.name || 'Item';
+      throw new Error(`Not enough booked on event for ${name} (have ${qtyDisplay(check.available)}).`);
+    }
+
+    if (needsWarehouse) {
+      for (const line of lines) {
+        const delta = warehouseQtyDelta(movementType, line.qty);
+        if (delta) await adjustWarehouseStock(whId, line.product_id, delta);
+      }
+    }
+
+    const [header] = await DB.insert('kit_movements', {
+      event_id: eventId,
+      movement_type: movementType,
+      moved_at: new Date().toISOString(),
+      notes: notes || null,
+    });
+
+    await DB.insert('kit_movement_lines', lines.map((l) => ({
+      movement_id: header.id,
+      product_id: l.product_id,
+      qty: l.qty,
+      warehouse_id: needsWarehouse ? whId : null,
+      supplier_id: null,
+      hire_company: null,
+    })));
+
+    if (movementType === 'warehouse_out' || movementType === 'hire_return' || movementType === 'write_off') {
+      for (const line of lines) {
+        const it = items.find((x) => x.product_id === line.product_id);
+        if (!it) continue;
+        const next = Math.max(0, round1((Number(it.qty_packed) || 0) - line.qty));
+        await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+      }
+    }
+  }
+
+  async function commitCheckIn() {
+    if (checkInCommitting) return;
+    const groups = pendingCheckInGroups(checkInPending, items);
+    if (!groups.warehouseOut.length && !groups.hireReturn.length) {
+      toast('Nothing to check in', true);
+      return;
+    }
+    if (groups.missing.length) {
+      toast('Some scanned items are no longer on the list — clear and rescan.', true);
+      return;
+    }
+
+    checkInCommitting = true;
+    paintScanBanner();
+    try {
+      if (groups.warehouseOut.length) {
+        await writeMovementBatch(
+          'warehouse_out',
+          groups.warehouseOut.map((l) => ({ product_id: l.product_id, qty: l.qty })),
+          'Phone scan check-in',
+        );
+      }
+      if (groups.hireReturn.length) {
+        await writeMovementBatch(
+          'hire_return',
+          groups.hireReturn.map((l) => ({ product_id: l.product_id, qty: l.qty })),
+          'Phone scan hire return',
+        );
+      }
+      checkInPending = new Map();
+      scanLastMsg = 'Check-in committed';
+      await refresh();
+      toast('Check-in saved');
+    } finally {
+      checkInCommitting = false;
+      paintScanBanner();
+    }
+  }
+
+  function openMovement(movementType) {
+    const label = KIT_MOVEMENT_LABELS[movementType] || movementType;
+    const needsWarehouse = affectsWarehouse(movementType);
+    const needsHire = movementType === 'hire_in' || movementType === 'hire_return';
+    const draftLines = [];
+
+    const whOpts = warehouses.map((w) =>
+      `<option value="${escapeHtml(w.id)}"${w.id === warehouseId ? ' selected' : ''}>${escapeHtml(w.name)}</option>`).join('');
+    const hireOpts = suppliers.map((s) =>
+      `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('');
+
+    openSheet({
+      title: label,
+      variant: 'admin-full',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <div class="del-form-err" id="kitMovErr"></div>
+          <div class="admin-field">
+            <label class="admin-label" for="kitMovWhen">When</label>
+            <input class="admin-input" type="datetime-local" id="kitMovWhen" value="${escapeHtml(nowLocalInput())}">
+          </div>
+          ${needsWarehouse ? `
+            <div class="admin-field">
+              <label class="admin-label" for="kitMovWarehouse">Warehouse</label>
+              <select class="admin-select" id="kitMovWarehouse">
+                <option value="">— select —</option>
+                ${whOpts}
+              </select>
+            </div>` : ''}
+          ${needsHire ? `
+            <div class="admin-field">
+              <label class="admin-label" for="kitMovHireCompany">Hire company</label>
+              <input class="admin-input" type="text" id="kitMovHireCompany" list="kitMovHireList" placeholder="Company name">
+              <datalist id="kitMovHireList">${suppliers.map((s) =>
+                `<option value="${escapeHtml(s.name)}"></option>`).join('')}</datalist>
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="kitMovSupplier">Or pick supplier</label>
+              <select class="admin-select" id="kitMovSupplier">
+                <option value="">— optional —</option>
+                ${hireOpts}
+              </select>
+            </div>` : ''}
+          <div class="admin-field">
+            <label class="admin-label">Lines</label>
+            <div id="kitMovLines" class="del-lines"></div>
+            <button type="button" class="admin-drawer-btn" id="kitMovAddLine">+ Add line</button>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="kitMovNotes">Notes</label>
+            <textarea class="admin-textarea" id="kitMovNotes" rows="2" placeholder="Optional"></textarea>
+          </div>
+        </div>`,
+      footHtml: `
+        <div class="admin-drawer-foot admin-drawer-foot--split">
+          <span></span>
+          <div class="admin-drawer-foot-actions">
+            <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="kitMovCancel">Cancel</button>
+            <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="kitMovSave">Save</button>
+          </div>
+        </div>`,
+    });
+
+    const linesEl = $('kitMovLines');
+
+    function paintLines() {
+      if (!draftLines.length) {
+        linesEl.innerHTML = '<p class="muted" style="font-size:13px">No lines yet.</p>';
+        return;
+      }
+      linesEl.innerHTML = draftLines.map((line) => `
+        <div class="del-line-row" data-lid="${escapeHtml(line.id)}">
+          <div class="del-line-search" id="kitLineSearch_${escapeHtml(line.id)}"></div>
+          <div class="del-qty-field">
+            <label class="admin-label">Qty</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal"
+              data-qty="${escapeHtml(line.id)}" value="${escapeHtml(line.qty || '')}" placeholder="0">
+          </div>
+          <button type="button" class="topbar-tool" data-remove-line="${escapeHtml(line.id)}" aria-label="Remove line">
+            ${icon('x', { size: 14 })}
+          </button>
+        </div>`).join('');
+
+      draftLines.forEach((line) => {
+        const mount = $(`kitLineSearch_${line.id}`);
+        if (!mount) return;
+        mountProductSearch(mount, {
+          products: kitProducts,
+          value: line.productId || '',
+          placeholder: 'Search kit…',
+          onSelect: ({ productId }) => { line.productId = productId; },
+        });
+      });
+
+      linesEl.querySelectorAll('[data-qty]').forEach((inp) => {
+        inp.oninput = () => {
+          const line = draftLines.find((l) => l.id === inp.dataset.qty);
+          if (line) line.qty = inp.value;
+        };
+      });
+      linesEl.querySelectorAll('[data-remove-line]').forEach((btn) => {
+        btn.onclick = async () => {
+          const idx = draftLines.findIndex((l) => l.id === btn.dataset.removeLine);
+          if (idx >= 0) draftLines.splice(idx, 1);
+          paintLines();
+        };
+      });
+    }
+
+    $('kitMovAddLine').onclick = async () => {
+      draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+      paintLines();
+    };
+    $('kitMovCancel').onclick = closeSheet;
+    draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+    paintLines();
+
+    $('kitMovSave').onclick = async () => {
+      const errEl = $('kitMovErr');
+      const whId = needsWarehouse ? ($('kitMovWarehouse')?.value || '') : '';
+      if (needsWarehouse && !whId) {
+        errEl.textContent = 'Select a warehouse.';
+        return;
+      }
+
+      const hireCompany = needsHire ? ($('kitMovHireCompany')?.value || '').trim() : '';
+      const supplierId = needsHire ? ($('kitMovSupplier')?.value || null) : null;
+      if (needsHire && !hireCompany && !supplierId) {
+        errEl.textContent = 'Enter a hire company (or pick a supplier).';
+        return;
+      }
+
+      const lines = [];
+      for (const row of draftLines) {
+        const qty = parseQty(row.qty);
+        if (!row.productId) continue;
+        if (!Number.isFinite(qty) || qty <= 0) {
+          errEl.textContent = 'Each line needs a quantity greater than zero.';
+          return;
+        }
+        lines.push({ product_id: row.productId, qty });
+      }
+      if (!lines.length) {
+        errEl.textContent = 'Add at least one line.';
+        return;
+      }
+
+      const onEvent = new Set(items.map((i) => i.product_id));
+      for (const line of lines) {
+        if (!onEvent.has(line.product_id)) {
+          try {
+            const defaultSource = needsHire ? 'hire' : 'own';
+            await getDB().insert('event_kit_items', {
+              event_id: eventId,
+              product_id: line.product_id,
+              qty_planned: 0,
+              qty_packed: 0,
+              source: defaultSource,
+            });
+            onEvent.add(line.product_id);
+          } catch (err) {
+            if (!/23505/.test(String(err?.message || err))) {
+              errEl.textContent = err.message || 'Could not add item to event';
+              return;
+            }
+          }
+        }
+      }
+
+      const check = validateEventStock(balancesByProduct(movements), movementType, lines);
+      if (!check.ok) {
+        const name = kitProducts.find((p) => p.id === check.productId)?.name || 'Item';
+        errEl.textContent = `Not enough booked on event for ${name} (have ${qtyDisplay(check.available)}).`;
+        return;
+      }
+
+      const DB = getDB();
+      const btn = $('kitMovSave');
+      btn.disabled = true;
+      try {
+        if (needsWarehouse) {
+          for (const line of lines) {
+            const delta = warehouseQtyDelta(movementType, line.qty);
+            if (delta) await adjustWarehouseStock(whId, line.product_id, delta);
+          }
+        }
+
+        const movedAt = $('kitMovWhen')?.value
+          ? new Date($('kitMovWhen').value).toISOString()
+          : new Date().toISOString();
+
+        const [header] = await DB.insert('kit_movements', {
+          event_id: eventId,
+          movement_type: movementType,
+          moved_at: movedAt,
+          notes: ($('kitMovNotes')?.value || '').trim() || null,
+        });
+
+        await DB.insert('kit_movement_lines', lines.map((l) => ({
+          movement_id: header.id,
+          product_id: l.product_id,
+          qty: l.qty,
+          warehouse_id: needsWarehouse ? whId : null,
+          supplier_id: supplierId || null,
+          hire_company: hireCompany || null,
+        })));
+
+        // Keep Packed in step with hire / send own kit
+        if (movementType === 'warehouse_in' || movementType === 'hire_in') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = round1((Number(it.qty_packed) || 0) + line.qty);
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+        if (movementType === 'warehouse_out' || movementType === 'hire_return' || movementType === 'write_off') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = Math.max(0, round1((Number(it.qty_packed) || 0) - line.qty));
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+
+        closeSheet();
+        await refresh();
+        toast('Saved');
+      } catch (err) {
+        errEl.textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }function paintLines() {
+      if (!draftLines.length) {
+        linesEl.innerHTML = '<p class="muted" style="font-size:13px">No lines yet.</p>';
+        return;
+      }
+      linesEl.innerHTML = draftLines.map((line) => `
+        <div class="del-line-row" data-lid="${escapeHtml(line.id)}">
+          <div class="del-line-search" id="kitLineSearch_${escapeHtml(line.id)}"></div>
+          <div class="del-qty-field">
+            <label class="admin-label">Qty</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal"
+              data-qty="${escapeHtml(line.id)}" value="${escapeHtml(line.qty || '')}" placeholder="0">
+          </div>
+          <button type="button" class="topbar-tool" data-remove-line="${escapeHtml(line.id)}" aria-label="Remove line">
+            ${icon('x', { size: 14 })}
+          </button>
+        </div>`).join('');
+
+      draftLines.forEach((line) => {
+        const mount = $(`kitLineSearch_${line.id}`);
+        if (!mount) return;
+        mountProductSearch(mount, {
+          products: kitProducts,
+          value: line.productId || '',
+          placeholder: 'Search kit…',
+          onSelect: ({ productId }) => { line.productId = productId; },
+        });
+      });
+
+      linesEl.querySelectorAll('[data-qty]').forEach((inp) => {
+        inp.oninput = () => {
+          const line = draftLines.find((l) => l.id === inp.dataset.qty);
+          if (line) line.qty = inp.value;
+        };
+      });
+      linesEl.querySelectorAll('[data-remove-line]').forEach((btn) => {
+        btn.onclick = async () => {
+          const idx = draftLines.findIndex((l) => l.id === btn.dataset.removeLine);
+          if (idx >= 0) draftLines.splice(idx, 1);
+          paintLines();
+        };
+      });
+    }
+
+    $('kitMovAddLine').onclick = async () => {
+      draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+      paintLines();
+    };
+    $('kitMovCancel').onclick = closeSheet;
+    draftLines.push({ id: rid('kl'), productId: '', qty: '' });
+    paintLines();
+
+    $('kitMovSave').onclick = async () => {
+      const errEl = $('kitMovErr');
+      const whId = needsWarehouse ? ($('kitMovWarehouse')?.value || '') : '';
+      if (needsWarehouse && !whId) {
+        errEl.textContent = 'Select a warehouse.';
+        return;
+      }
+
+      const hireCompany = needsHire ? ($('kitMovHireCompany')?.value || '').trim() : '';
+      const supplierId = needsHire ? ($('kitMovSupplier')?.value || null) : null;
+      if (needsHire && !hireCompany && !supplierId) {
+        errEl.textContent = 'Enter a hire company (or pick a supplier).';
+        return;
+      }
+
+      const lines = [];
+      for (const row of draftLines) {
+        const qty = parseQty(row.qty);
+        if (!row.productId) continue;
+        if (!Number.isFinite(qty) || qty <= 0) {
+          errEl.textContent = 'Each line needs a quantity greater than zero.';
+          return;
+        }
+        lines.push({ product_id: row.productId, qty });
+      }
+      if (!lines.length) {
+        errEl.textContent = 'Add at least one line.';
+        return;
+      }
+
+      const onEvent = new Set(items.map((i) => i.product_id));
+      for (const line of lines) {
+        if (!onEvent.has(line.product_id)) {
+          try {
+            const defaultSource = needsHire ? 'hire' : 'own';
+            await getDB().insert('event_kit_items', {
+              event_id: eventId,
+              product_id: line.product_id,
+              qty_planned: 0,
+              qty_packed: 0,
+              source: defaultSource,
+            });
+            onEvent.add(line.product_id);
+          } catch (err) {
+            if (!/23505/.test(String(err?.message || err))) {
+              errEl.textContent = err.message || 'Could not add item to event';
+              return;
+            }
+          }
+        }
+      }
+
+      const check = validateEventStock(balancesByProduct(movements), movementType, lines);
+      if (!check.ok) {
+        const name = kitProducts.find((p) => p.id === check.productId)?.name || 'Item';
+        errEl.textContent = `Not enough booked on event for ${name} (have ${qtyDisplay(check.available)}).`;
+        return;
+      }
+
+      const DB = getDB();
+      const btn = $('kitMovSave');
+      btn.disabled = true;
+      try {
+        if (needsWarehouse) {
+          for (const line of lines) {
+            const delta = warehouseQtyDelta(movementType, line.qty);
+            if (delta) await adjustWarehouseStock(whId, line.product_id, delta);
+          }
+        }
+
+        const movedAt = $('kitMovWhen')?.value
+          ? new Date($('kitMovWhen').value).toISOString()
+          : new Date().toISOString();
+
+        const [header] = await DB.insert('kit_movements', {
+          event_id: eventId,
+          movement_type: movementType,
+          moved_at: movedAt,
+          notes: ($('kitMovNotes')?.value || '').trim() || null,
+        });
+
+        await DB.insert('kit_movement_lines', lines.map((l) => ({
+          movement_id: header.id,
+          product_id: l.product_id,
+          qty: l.qty,
+          warehouse_id: needsWarehouse ? whId : null,
+          supplier_id: supplierId || null,
+          hire_company: hireCompany || null,
+        })));
+
+        // Keep Packed in step with hire / send own kit
+        if (movementType === 'warehouse_in' || movementType === 'hire_in') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = round1((Number(it.qty_packed) || 0) + line.qty);
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+        if (movementType === 'warehouse_out' || movementType === 'hire_return' || movementType === 'write_off') {
+          for (const line of lines) {
+            const it = items.find((x) => x.product_id === line.product_id);
+            if (!it) continue;
+            const next = Math.max(0, round1((Number(it.qty_packed) || 0) - line.qty));
+            await DB.update('event_kit_items', 'id=eq.' + DB._.enc(it.id), { qty_packed: next });
+          }
+        }
+
+        closeSheet();
+        await refresh();
+        toast('Saved');
+      } catch (err) {
+        errEl.textContent = err.message || 'Save failed';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }function paintLines() {
+      if (!draftLines.length) {
+        linesEl.innerHTML = '<p class="muted" style="font-size:13px">No lines yet.</p>';
+        return;
+      }
+      linesEl.innerHTML = draftLines.map((line) => `
+        <div class="del-line-row" data-lid="${escapeHtml(line.id)}">
+          <div class="del-line-search" id="kitLineSearch_${escapeHtml(line.id)}"></div>
+          <div class="del-qty-field">
+            <label class="admin-label">Qty</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal"
+              data-qty="${escapeHtml(line.id)}" value="${escapeHtml(line.qty || '')}" placeholder="0">
+          </div>
+          <button type="button" class="topbar-tool" data-remove-line="${escapeHtml(line.id)}" aria-label="Remove line">
+            ${icon('x', { size: 14 })}
+          </button>
+        </div>`).join('');
+
+      draftLines.forEach((line) => {
+        const mount = $(`kitLineSearch_${line.id}`);
+        if (!mount) return;
+        mountProductSearch(mount, {
+          products: kitProducts,
+          value: line.productId || '',
+          placeholder: 'Search kit…',
+          onSelect: ({ productId }) => { line.productId = productId; },
+        });
+      });
+
+      linesEl.querySelectorAll('[data-qty]').forEach((inp) => {
+        inp.oninput = () => {
+          const line = draftLines.find((l) => l.id === inp.dataset.qty);
+          if (line) line.qty = inp.value;
+        };
+      });
+      linesEl.querySelectorAll('[data-remove-line]').forEach((btn) => {
+        btn.onclick = async () => {
+          const idx = draftLines.findIndex((l) => l.id === btn.dataset.removeLine);
+          if (idx >= 0) draftLines.splice(idx, 1);
+          paintLines();
+        };
+      });
+    }
+
+    $('kitMovAddLine').onclick = async () => {
       draftLines.push({ id: rid('kl'), productId: '', qty: '' });
       paintLines();
     };

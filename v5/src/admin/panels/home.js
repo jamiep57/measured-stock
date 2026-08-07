@@ -5,6 +5,8 @@
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { getDB } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { emptyState } from '../../components/empty-state.js';
+import { initIcons } from '../../lib/icons.js';
 import { navigate } from '../router.js';
 
 export const ADMIN_EVENTS_CHANGED = 'v5-admin-events-changed';
@@ -27,7 +29,14 @@ export function renderHomeShell(events) {
             <div class="event-card-meta">${escapeHtml(e.status || 'Event')} · Open dashboard →</div>
           </a>`).join('')}
       </div>`
-    : `<div class="admin-empty">No events yet. Create one to get started.</div>`;
+    : emptyState({
+      iconHtml: '<i data-lucide="calendar-plus"></i>',
+      title: 'No events yet',
+      copy: 'Create your first event, then add bars, products, and opening stock.',
+      variant: 'admin',
+      ctaHtml: `<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="homeEmptyCreate">Create event</button>`,
+      className: 'empty--onboarding',
+    });
 
   return `
     <div class="admin-page home-page">
@@ -136,6 +145,9 @@ function openCreateEventSheet() {
 }
 
 export function mountHomePanel() {
-  $('homeNewEvent')?.addEventListener('click', openCreateEventSheet);
+  const open = () => openCreateEventSheet();
+  $('homeNewEvent')?.addEventListener('click', open);
+  $('homeEmptyCreate')?.addEventListener('click', open);
+  initIcons(document.querySelector('.home-page'));
   return () => {};
 }
