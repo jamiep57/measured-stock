@@ -31,6 +31,13 @@ describe('errorState', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('data-empty-retry');
     expect(html).toContain('empty--error');
+    expect(html).toContain('ph-warning-circle');
+  });
+
+  it('uses inline SVG warning on admin variant', () => {
+    const html = errorState({ title: 'Failed', variant: 'admin' });
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('ph-warning-circle');
   });
 });
 
@@ -45,5 +52,6 @@ describe('notFoundState', () => {
     expect(html).toContain('admin-not-found');
     expect(html).toContain('href="/"');
     expect(html).toContain('Back to events');
+    expect(html).toContain('<svg');
   });
 });

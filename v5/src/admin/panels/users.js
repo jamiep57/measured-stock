@@ -173,7 +173,7 @@ async function loadUsers() {
   cachedProfiles = data.profiles || [];
   if (!cachedProfiles.length) {
     list.innerHTML = emptyState({
-      icon: 'users',
+      iconHtml: icon('user', { size: 22 }),
       title: 'No users yet',
       copy: 'Add someone with a setup link.',
       variant: 'admin',

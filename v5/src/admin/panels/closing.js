@@ -230,7 +230,7 @@ export function renderClosingShell() {
         </table>
         <div class="dist-empty cl-empty" id="clEmpty" hidden>
           ${emptyState({
-            icon: 'clipboard-text',
+            iconHtml: icon('clipboard-list', { size: 22 }),
             title: 'No products to close',
             copy: 'Add products to this event before entering closing stock.',
             variant: 'admin',

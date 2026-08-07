@@ -29,6 +29,7 @@ import {
   getTableFilterValues,
 } from '../table-filter.js';
 import { parseQty } from '../../stock-entry.js';
+import { icon } from '../../lib/icons.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 
@@ -165,7 +166,7 @@ function renderShell() {
         </table>
         <div class="dist-empty ep-empty" id="epEmpty" hidden>
           ${emptyState({
-            icon: 'package',
+            iconHtml: icon('package', { size: 22 }),
             title: 'No products on this event yet',
             copy: 'Use Add product in the toolbar to get started.',
             variant: 'admin',

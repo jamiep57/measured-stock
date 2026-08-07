@@ -4,6 +4,11 @@
 
 import { escapeHtml } from '../lib/util.js';
 
+/** Inline Lucide-style icons for admin (Phosphor isn’t loaded there). */
+const ADMIN_WARN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>`;
+
+const ADMIN_PIN_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>`;
+
 /**
  * @param {object} opts
  * @param {string} [opts.icon] Phosphor class suffix, e.g. "package" → ph-package
@@ -65,6 +70,7 @@ export function emptyState(opts = {}) {
  * @param {boolean} [opts.showRetry]
  * @param {string} [opts.variant]
  * @param {string} [opts.className]
+ * @param {string} [opts.iconHtml]
  */
 export function errorState(opts = {}) {
   const {
@@ -74,14 +80,17 @@ export function errorState(opts = {}) {
     showRetry = true,
     variant = 'panel',
     className = '',
+    iconHtml = '',
   } = opts;
 
   const ctaHtml = showRetry
     ? `<button type="button" class="empty-retry-btn" data-empty-retry>${escapeHtml(retryLabel)}</button>`
     : '';
 
+  const useAdminIcon = variant === 'admin';
   return emptyState({
-    icon: 'warning-circle',
+    icon: useAdminIcon || iconHtml ? undefined : 'warning-circle',
+    iconHtml: iconHtml || (useAdminIcon ? ADMIN_WARN_ICON : ''),
     title,
     copy,
     ctaHtml,
@@ -129,16 +138,18 @@ export function notFoundState(opts = {}) {
     );
   }
 
+  const isAdmin = surface === 'admin';
   const inner = emptyState({
-    icon: 'map-pin-simple',
+    icon: isAdmin ? undefined : 'map-pin-simple',
+    iconHtml: isAdmin ? ADMIN_PIN_ICON : '',
     title,
     copy,
     ctaHtml: `<div class="empty-cta-row">${links.join('')}</div>`,
-    variant: surface === 'admin' ? 'admin' : 'panel',
+    variant: isAdmin ? 'admin' : 'panel',
     className: 'empty--not-found',
   });
 
-  if (surface === 'admin') {
+  if (isAdmin) {
     return `<div class="admin-page"><div class="admin-surface admin-not-found">${inner}</div></div>`;
   }
   return inner;

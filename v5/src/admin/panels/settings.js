@@ -242,7 +242,7 @@ export function mountSettingsPanel(section = 'users') {
 
     if (!sorted.length) {
       whWrap.innerHTML = emptyState({
-        icon: 'warehouse',
+        iconHtml: icon('warehouse', { size: 22 }),
         title: warehouses.length ? 'No matching warehouses' : 'No warehouses yet',
         copy: warehouses.length
           ? 'No warehouses match your search.'
@@ -283,7 +283,7 @@ export function mountSettingsPanel(section = 'users') {
 
     if (!sorted.length) {
       catWrap.innerHTML = emptyState({
-        icon: 'tag',
+        iconHtml: icon('list', { size: 22 }),
         title: categories.length ? 'No matching categories' : 'No categories yet',
         copy: categories.length
           ? 'No categories match your search.'
@@ -343,7 +343,7 @@ export function mountSettingsPanel(section = 'users') {
 
     if (!sorted.length) {
       csWrap.innerHTML = emptyState({
-        icon: 'cube',
+        iconHtml: icon('package', { size: 22 }),
         title: caseSizes.length ? 'No matching case sizes' : 'No case sizes yet',
         copy: caseSizes.length
           ? 'No case sizes match your search.'
