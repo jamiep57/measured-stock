@@ -1,5 +1,6 @@
 /**
- * Event forensic audit — pure invariant checks for stock math + save integrity.
+ * Event forensic audit — software integrity only (dual-writes, formula drift, sync).
+ * Not recon quality, stock variance, or mapping completeness.
  * Panel loads data; this module only analyses a context object.
  */
 
@@ -16,8 +17,7 @@ import {
   wastageByProduct,
 } from './recon.js';
 import {
-  carriedOver,
-  closeCountTotal,
+  buildClosingRow,
   hasClosingCount,
 } from './closing-stock.js';
 import {
@@ -28,9 +28,7 @@ import {
   epOpeningFromSources,
   epOpeningStock,
   leftToAllocate,
-  round1,
 } from './opening-stock.js';
-import { findRecipe, recipeIngredients } from './square-recipes.js';
 
 const EPS = 0.05;
 
@@ -48,27 +46,12 @@ export const CHECK_META = {
   closing_identity: {
     label: 'Closing identity',
     relatedPanel: 'closing',
-    fixHint: 'carried_over should equal max(0, close_count − return_amount); return ≤ close.',
+    fixHint: 'carried_over should equal max(0, close_count − return_amount). Returns may exceed close when sourced from a credit note without a full onsite count.',
   },
   recon_consumption: {
     label: 'Recon consumption rebuild',
     relatedPanel: 'recon',
     fixHint: 'Consumption must equal delivered + already_in − damaged − closing − transfers − wastage.',
-  },
-  variance_outliers: {
-    label: 'Variance outliers',
-    relatedPanel: 'recon',
-    fixHint: 'Investigate PLU vs consumption (mapping, counts, or deliveries).',
-  },
-  plu_unmapped_sales: {
-    label: 'Unmapped till sales',
-    relatedPanel: 'sales',
-    fixHint: 'Map Square till items to recipes so PLU reflects sold stock.',
-  },
-  modifier_plu_gap: {
-    label: 'Unmapped modifiers',
-    relatedPanel: 'sales',
-    fixHint: 'Map modifier sales to recipes so their stock usage is included in PLU.',
   },
   damaged_semantics: {
     label: 'Damaged in consumption',
@@ -85,20 +68,10 @@ export const CHECK_META = {
     relatedPanel: 'distribution',
     fixHint: 'Bar allocations must not exceed opening stock.',
   },
-  recipe_orphan: {
-    label: 'Recipe orphan / empty',
-    relatedPanel: 'sales',
-    fixHint: 'Recipe exists but has no usable ingredients — re-save mapping.',
-  },
   sync_queue_backlog: {
     label: 'Sync queue backlog',
     relatedPanel: 'counts',
     fixHint: 'Mobile write queue has pending or failed saves — flush or retry.',
-  },
-  closing_count_incomplete: {
-    label: 'Closing incomplete',
-    relatedPanel: 'closing',
-    fixHint: 'Product has stock on event but no closing count.',
   },
   stale_aggregate: {
     label: 'Stale aggregates',
@@ -306,25 +279,36 @@ function checkClosingIdentity(ctx) {
     const pid = ep.product_id;
     const cl = closingRowFor(ctx.closingRows, pid);
     if (!cl || !hasClosingCount(cl)) continue;
-    const { closingCases, closingSingles } = resolveClosingCounts(cl, null);
-    const closeCount = closeCountTotal(ep.product, closingCases, closingSingles, ctx.caseSizes);
+
+    // Same row model as the Closing panel — avoids false positives from
+    // re-deriving return/close with a different unit path.
+    const row = buildClosingRow({
+      ep,
+      closingRow: cl,
+      suppliers: ctx.suppliers,
+      caseSizes: ctx.caseSizes,
+      event: ctx.event,
+      supplierReturns: ctx.supplierReturns,
+    });
+    const closeCount = Number(row.closeCount) || 0;
+    const returnAmt = Number(row.returnAmount) || 0;
+    const expectedCarried = Number(row.carriedOver) || 0;
     const fromLines = supplierReturnCases(ctx.supplierReturns, pid, ctx.event, ctx.caseSizes);
-    const returnAmt = fromLines > 0
-      ? fromLines
-      : (cl.return_amount != null ? Number(cl.return_amount) || 0 : 0);
-    const expectedCarried = carriedOver(closeCount, returnAmt);
-    if (returnAmt > closeCount + EPS) {
-      out.push(finding({
-        checkId: 'closing_identity',
-        id: `closing_identity:return-over:${pid}`,
-        severity: 'error',
-        productId: pid,
-        productName: productName(ep),
-        expected: closeCount,
-        actual: returnAmt,
-        message: `Return (${returnAmt}) exceeds close count (${closeCount})`,
-      }));
-    }
+    const detail = {
+      closeCases: row.closingCases,
+      closeSingles: row.closingSingles,
+      closeCount,
+      returnCases: row.returnCases,
+      returnSingles: row.returnSingles,
+      returnAmount: returnAmt,
+      returnFromLines: fromLines,
+      returnStored: cl.return_amount != null ? Number(cl.return_amount) || 0 : null,
+      carriedOver: expectedCarried,
+      carriedStored: cl.carried_over != null ? Number(cl.carried_over) || 0 : null,
+    };
+
+    // Do not flag return > close: onsite often skips a full close and records
+    // return qty from the supplier credit note (close may be 0 / partial).
     if (cl.carried_over != null && !nearlyEqual(cl.carried_over, expectedCarried)) {
       out.push(finding({
         checkId: 'closing_identity',
@@ -334,7 +318,7 @@ function checkClosingIdentity(ctx) {
         expected: expectedCarried,
         actual: Number(cl.carried_over) || 0,
         message: `Stored carried_over ≠ max(0, close − return)`,
-        detail: { closeCount, returnAmt },
+        detail,
       }));
     }
     if (cl.close_count != null && !nearlyEqual(cl.close_count, closeCount, 0.01)) {
@@ -347,6 +331,7 @@ function checkClosingIdentity(ctx) {
         expected: closeCount,
         actual: Number(cl.close_count) || 0,
         message: `Stored close_count ≠ cases+singles total`,
+        detail,
       }));
     }
   }
@@ -393,72 +378,6 @@ function checkReconConsumption(ctx) {
       }));
     }
   }
-  return out;
-}
-
-function checkVarianceOutliers(ctx) {
-  return ctx.reconRows
-    .filter((r) => (r.consumption !== 0 || r.plu !== 0) && Math.abs(r.variancePct) > 8)
-    .map((r) => finding({
-      checkId: 'variance_outliers',
-      severity: Math.abs(r.variancePct) >= 15 ? 'error' : 'warn',
-      productId: r.pid,
-      productName: productName(r.ep),
-      expected: r.plu,
-      actual: r.consumption,
-      delta: r.variance,
-      message: `Variance ${r.variance} (${r.variancePct}%) — PLU ${r.plu} vs consumption ${r.consumption}`,
-      detail: { variancePct: r.variancePct, plu: r.plu, consumption: r.consumption },
-    }));
-}
-
-function checkPluUnmappedSales(ctx) {
-  const out = [];
-  (ctx.tillRows || []).forEach((r, i) => {
-    const sold = Number(r.items_sold) || 0;
-    if (!(sold > 0)) return;
-    const recipe = findRecipe(ctx.recipes, r.name, r.variation);
-    if (recipe) return;
-    out.push(finding({
-      checkId: 'plu_unmapped_sales',
-      id: `plu_unmapped_sales:${i}:${r.name}|${r.variation || ''}`,
-      severity: 'warn',
-      productId: null,
-      productName: r.name || 'Till line',
-      expected: 'mapped recipe',
-      actual: 'unmapped',
-      delta: null,
-      message: `Till sale “${r.name}” (${sold} sold) has no recipe — PLU understated`,
-      detail: { variation: r.variation, items_sold: sold },
-    }));
-  });
-  return out;
-}
-
-function checkModifierPluGap(ctx) {
-  const out = [];
-  (ctx.modifierRows || []).forEach((r, i) => {
-    const sold = Number(r.qty_sold) || Number(r.items_sold) || Number(r.qty) || 0;
-    if (!(sold > 0)) return;
-    const item = r.modifier ?? r.modifier_name ?? r.name;
-    const variation = r.modifier_set ?? r.variation;
-    const recipe = findRecipe(ctx.recipes, item, variation);
-    if (recipe && recipeIngredients(recipe).length > 0) return;
-    out.push(finding({
-      checkId: 'modifier_plu_gap',
-      id: `modifier_plu_gap:${i}:${item}|${variation || ''}`,
-      severity: 'warn',
-      productId: null,
-      productName: item || 'Modifier',
-      expected: 'mapped recipe',
-      actual: recipe ? 'empty ingredients' : 'unmapped',
-      delta: null,
-      message: recipe
-        ? `Modifier “${item}” (${sold} sold) has a recipe with no ingredients`
-        : `Modifier “${item}” (${sold} sold) has no recipe — PLU understated`,
-      detail: { modifier_set: variation, qty_sold: sold },
-    }));
-  });
   return out;
 }
 
@@ -560,35 +479,6 @@ function checkDistributionOveralloc(ctx) {
   return out;
 }
 
-function checkRecipeOrphan(ctx) {
-  const out = [];
-  const seen = new Set();
-  for (const r of ctx.tillRows || []) {
-    const sold = Number(r.items_sold) || 0;
-    if (!(sold > 0)) continue;
-    const recipe = findRecipe(ctx.recipes, r.name, r.variation);
-    if (!recipe) continue;
-    const igs = recipeIngredients(recipe);
-    if (igs.length > 0) continue;
-    const key = `${recipe.id || r.name}|${r.variation || ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(finding({
-      checkId: 'recipe_orphan',
-      id: `recipe_orphan:${key}`,
-      severity: 'error',
-      productId: null,
-      productName: r.name,
-      expected: '≥1 ingredient',
-      actual: 0,
-      delta: null,
-      message: `Recipe for “${r.name}” exists but has no mappable ingredients`,
-      detail: { recipeId: recipe.id, variation: r.variation },
-    }));
-  }
-  return out;
-}
-
 function checkSyncQueueBacklog(ctx) {
   const stats = ctx.syncQueueStats;
   if (!stats) return [];
@@ -605,30 +495,6 @@ function checkSyncQueueBacklog(ctx) {
     message: `Write queue: ${pending} pending, ${failed} failed`,
     detail: stats,
   })];
-}
-
-function checkClosingCountIncomplete(ctx) {
-  const out = [];
-  for (const ep of ctx.eps) {
-    if (!ep.product?.name) continue;
-    const delivered = epDeliveredQty(ep, ctx.countedIn);
-    const pre = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
-    if (!(delivered > 0 || pre > 0)) continue;
-    const cl = closingRowFor(ctx.closingRows, ep.product_id);
-    if (hasClosingCount(cl)) continue;
-    out.push(finding({
-      checkId: 'closing_count_incomplete',
-      severity: 'warn',
-      productId: ep.product_id,
-      productName: productName(ep),
-      expected: 'closing count',
-      actual: 'missing',
-      delta: null,
-      message: `Has delivered/on-hand stock but no closing count`,
-      detail: { delivered, already_in_stock: pre },
-    }));
-  }
-  return out;
 }
 
 function checkStaleAggregate(ctx) {
@@ -686,15 +552,10 @@ export const CHECKS = [
   { id: 'opening_identity', run: checkOpeningIdentity },
   { id: 'closing_identity', run: checkClosingIdentity },
   { id: 'recon_consumption', run: checkReconConsumption },
-  { id: 'variance_outliers', run: checkVarianceOutliers },
-  { id: 'plu_unmapped_sales', run: checkPluUnmappedSales },
-  { id: 'modifier_plu_gap', run: checkModifierPluGap },
   { id: 'damaged_semantics', run: checkDamagedSemantics },
   { id: 'return_dual_write', run: checkReturnDualWrite },
   { id: 'distribution_overalloc', run: checkDistributionOveralloc },
-  { id: 'recipe_orphan', run: checkRecipeOrphan },
   { id: 'sync_queue_backlog', run: checkSyncQueueBacklog },
-  { id: 'closing_count_incomplete', run: checkClosingCountIncomplete },
   { id: 'stale_aggregate', run: checkStaleAggregate },
 ];
 

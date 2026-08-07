@@ -44,36 +44,20 @@ For multi-device sync, connect a Supabase project in the Setup panel (see Setup 
 
 ---
 
-## Access control (Vercel)
+## Access control (Supabase Auth)
 
-When deployed on Vercel, the app is gated by a **4-digit PIN** checked on the server (not in the browser).
+The app uses **Supabase Auth** (Google + email/password) with invite-only profiles.
+RLS denies anonymous access; only **active** profiles can read/write stock data.
 
-Set these environment variables in **Vercel → Project → Settings → Environment Variables**:
+See **[docs/AUTH.md](docs/AUTH.md)** for Google OAuth, Postmark SMTP, env vars, and promoting the first admin.
 
-| Variable | Description |
-|----------|-------------|
-| `STOCK_PIN` | 4-digit code, e.g. `4829` |
-| `COOKIE_SECRET` | Long random string (e.g. `openssl rand -hex 32`) |
-
-After a correct PIN, browsers get a signed cookie (remembered ~30 days). Change `STOCK_PIN` anytime in Vercel; redeploy if needed.
-
-Files: `middleware.js` (gate), `api/unlock.js` (PIN check), `lib/cookie.js` (signed cookie).
+Edge gate (`middleware.js`) requires a signed `ms_auth` cookie issued by `/api/auth/session` after login. Set `COOKIE_SECRET` in Vercel.
 
 ---
 
 ## Deployment
 
-Upload the entire `measured-stock/` folder to your web server. No build step required.
-
-```bash
-# Example: rsync to a server
-rsync -avz measured-stock/ user@yourserver.com:/var/www/html/stock/
-
-# Example: Netlify drag-and-drop
-# Just drag the measured-stock/ folder onto netlify.com/drop
-```
-
-The app works over `file://` locally and over `http://` / `https://` on a server.
+Vercel build runs `v5` Vite then serves the repo root. Configure Auth + Postmark before cutover (see `docs/AUTH.md`).
 
 ---
 

@@ -22,7 +22,7 @@ export function renderDevShell(state = {}) {
   return `
     <div class="admin-page home-page dev-page">
       <div class="home-toolbar">
-        <p class="home-lead muted">Developer tools — forensic audit and bug reports, kept off the main nav.</p>
+        <p class="home-lead muted">Developer tools — software integrity audit and bug reports, kept off the main nav.</p>
       </div>
       <div class="event-grid">
         <a class="event-card" href="${escapeHtml(hrefForRoute({ view: 'bugs' }))}">
@@ -31,7 +31,7 @@ export function renderDevShell(state = {}) {
         </a>
         <a class="event-card${eventId ? '' : ' event-card--muted'}" href="${escapeHtml(auditHref)}">
           <div class="event-card-name">Forensic audit</div>
-          <div class="event-card-meta">${escapeHtml(auditMeta)} →</div>
+          <div class="event-card-meta">${escapeHtml(auditMeta)} — dual-writes, formula drift, sync →</div>
         </a>
       </div>
     </div>`;

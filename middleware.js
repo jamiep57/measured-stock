@@ -1,126 +1,11 @@
+/**
+ * Edge auth gate for Measured Stock.
+ * Requires a signed ms_auth cookie (issued by /api/auth/session after
+ * Supabase Auth sign-in). Unauthenticated HTML requests redirect to /login.
+ */
 import { COOKIE_NAME, getAuthCookie, verifyAuthToken } from './lib/cookie.js';
 
-/** @param {string | null} error */
-function loginPage(error) {
-  const msg =
-    error === 'invalid'
-      ? 'Incorrect PIN. Try again.'
-      : error === 'name'
-        ? 'Enter your name (up to 40 characters) so others can see who is editing.'
-      : error === 'config'
-        ? 'App is not configured yet. Contact your administrator.'
-        : 'Enter your name and 4-digit PIN to continue.';
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Measured Stock — Sign in</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Outfit, system-ui, sans-serif;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #fafafa;
-      color: #18181b;
-      padding: 1.5rem;
-    }
-    .card {
-      width: 100%;
-      max-width: 22rem;
-      background: #fff;
-      border: 1px solid #e4e4e7;
-      border-radius: 4px;
-      padding: 2rem;
-      box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
-    }
-    h1 { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.25rem; }
-    p { font-size: 0.875rem; color: #71717a; margin-bottom: 1.5rem; line-height: 1.5; }
-    p.error { color: #dc2626; }
-    label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; }
-    .field { margin-bottom: 1rem; }
-    input {
-      width: 100%;
-      font: inherit;
-      padding: 0.75rem 1rem;
-      border: 1px solid #e4e4e7;
-      border-radius: 4px;
-      outline: none;
-    }
-    input[name="name"] {
-      font-size: 1rem;
-      letter-spacing: normal;
-      text-align: left;
-    }
-    input[name="pin"] {
-      font-size: 1.5rem;
-      letter-spacing: 0.35em;
-      text-align: center;
-    }
-    input:focus { border-color: #18181b; box-shadow: 0 0 0 2px rgb(24 24 27 / 0.1); }
-    button {
-      margin-top: 0.25rem;
-      width: 100%;
-      font: inherit;
-      font-weight: 500;
-      padding: 0.625rem 1rem;
-      background: #18181b;
-      color: #fafafa;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover { background: #27272a; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Measured Stock</h1>
-    <p class="${error ? 'error' : ''}">${msg}</p>
-    <form method="POST" action="/api/unlock" autocomplete="off">
-      <div class="field">
-        <label for="name">Your name</label>
-        <input
-          id="name"
-          name="name"
-          type="text"
-          maxlength="40"
-          required
-          autofocus
-          autocomplete="nickname"
-          placeholder="e.g. Charlie"
-        />
-      </div>
-      <div class="field">
-        <label for="pin">PIN</label>
-        <input
-          id="pin"
-          name="pin"
-          type="password"
-          inputmode="numeric"
-          pattern="[0-9]{4}"
-          maxlength="4"
-          minlength="4"
-          required
-          placeholder="••••"
-        />
-      </div>
-      <button type="submit">Unlock</button>
-    </form>
-  </div>
-</body>
-</html>`;
-}
-
 // Paths a "staff" session may reach. Everything else is admin-only.
-// Staff get the mobile view plus the shared static assets it needs.
 function isStaffAllowed(pathname) {
   if (pathname.startsWith('/v5/admin')) return false;
   return (
@@ -132,48 +17,57 @@ function isStaffAllowed(pathname) {
     pathname.startsWith('/mobile/') ||
     pathname.startsWith('/assets/') ||
     pathname === '/favicon.ico' ||
-    pathname === '/api/logout'
+    pathname === '/api/logout' ||
+    pathname === '/login' ||
+    pathname === '/login.html'
+  );
+}
+
+function isPublicPath(pathname) {
+  return (
+    pathname === '/login' ||
+    pathname === '/login.html' ||
+    pathname === '/setup' ||
+    pathname === '/setup.html' ||
+    pathname.startsWith('/assets/js/login') ||
+    pathname.startsWith('/assets/js/setup')
   );
 }
 
 export default async function middleware(request) {
-  const secret = process.env.COOKIE_SECRET;
-  if (!secret) {
-    return new Response(loginPage('config'), {
-      status: 503,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
+  const url = new URL(request.url);
+
+  if (isPublicPath(url.pathname)) {
+    return;
   }
 
-  const url = new URL(request.url);
+  const secret = process.env.COOKIE_SECRET;
+  if (!secret) {
+    return Response.redirect(new URL('/login?error=config', request.url), 302);
+  }
+
   const cookie = getAuthCookie(request.headers.get('cookie'));
   const session = cookie ? await verifyAuthToken(secret, cookie) : null;
 
   if (session) {
-    // Admins go anywhere; staff are confined to the mobile view.
     if (session.role === 'admin' || isStaffAllowed(url.pathname)) {
       return;
     }
     return Response.redirect(new URL('/v5/', request.url), 302);
   }
 
-  return new Response(loginPage(url.searchParams.get('error')), {
-    status: 401,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
-  });
+  const next = encodeURIComponent(url.pathname + url.search);
+  return Response.redirect(new URL(`/login?next=${next}`, request.url), 302);
 }
 
 export const config = {
-  // Skip the PIN gate for:
-  //   /api/unlock        — the gate itself
-  //   /api/sync-catchup  — server-to-server cron + manual catch-ups
-  //                         (gated by CRON_SECRET inside the handler)
-  //   static assets      — Vite ships CSS/JS with crossorigin=anonymous
-  //                         (no cookies); blocking them leaves /v5 unstyled
+  // Skip auth for:
+  //   /login, /login.html     — sign-in UI
+  //   /api/auth/*             — session + user admin APIs
+  //   /api/logout             — clear cookies
+  //   /api/sync-catchup       — cron (CRON_SECRET inside handler)
+  //   static assets           — css/js/images/fonts
   matcher: [
-    '/((?!api/unlock|api/sync-catchup|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
+    '/((?!login(?:\\.html)?$|setup(?:\\.html)?$|api/auth(?:/|$)|api/logout$|api/unlock$|api/sync-catchup|assets/js/(?:login|setup)\\.js$|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
   ],
 };

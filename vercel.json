@@ -12,6 +12,14 @@
   ],
   "rewrites": [
     {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/setup",
+      "destination": "/setup.html"
+    },
+    {
       "source": "/mobile",
       "destination": "/mobile.html"
     },

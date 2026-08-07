@@ -31,25 +31,20 @@ import {
   generatePalletStickerPDF,
   splitPalletQtys,
 } from '../../lib/pallet-sticker-pdf.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
-  getClientId,
-  getDisplayName,
-} from '../../lib/session-identity.js';
-import { getRealtimeClient } from '../../lib/realtime.js';
+  closingCellKeyFromInput,
+  closingFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 import {
-  cellFocusOwners,
-  flattenPresenceState,
-  formatClosingPresence,
   mergeClosingRemoteRow,
-  peerColor,
   shouldApplyRemoteClosingEdit,
 } from '../../lib/closing-live.js';
 
-const COL_COUNT = 13; // product + pack + 9 data cols + return + actions
+const COL_COUNT = 12; // product (pack in meta) + 9 data cols + return + actions
 const LOCAL_ECHO_MS = 1500;
 const AUTOSAVE_MS = 180;
 const VALUE_BROADCAST_MS = 40;
-const PRESENCE_HEARTBEAT_MS = 2500;
 
 async function adjustWarehouseStock(warehouseId, productId, delta) {
   const DB = getDB();
@@ -117,12 +112,19 @@ function renderRow(r) {
   const canReturn = (Number(r.returnAmount) || 0) > 0;
   const canSticker = canReturn || canTransfer;
 
+  const packLabel = r.packLabel || '';
   return `
     <tr class="dist-prod-row cl-row" data-cl-pid="${escapeHtml(r.pid)}"
       data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
       data-supplier-name="${escapeHtml((r.supplierName && r.supplierName !== '—' ? r.supplierName : '').toLowerCase())}">
-      <th class="dist-sticky dist-prod-name" data-col="product" scope="row">${escapeHtml(r.p.name || 'Product')}</th>
-      <td class="dist-sticky dist-prod-pack muted" data-col="pack">${escapeHtml(r.packLabel)}</td>
+      <th class="dist-sticky cl-col-item" data-col="product" scope="row">
+        <div class="cl-item">
+          <div class="cl-item-top">
+            <span class="cl-item-name" title="${escapeHtml(r.p.name || 'Product')}">${escapeHtml(r.p.name || 'Product')}</span>
+          </div>
+          ${packLabel ? `<span class="cl-item-meta">${escapeHtml(packLabel)}</span>` : ''}
+        </div>
+      </th>
       <td class="cl-prod-num muted" title="Supplier">${escapeHtml(r.supplierName)}</td>
       <td class="cl-prod-num cl-sor">${escapeHtml(fmtSor(r.sor))}</td>
       <td class="cl-prod-num cl-invoice" title="${escapeHtml(r.invoiceLabel)}">${escapeHtml(fmtQty(r.invoiceQty))}</td>
@@ -190,11 +192,8 @@ function renderStats(rows) {
 
 function renderGridHead() {
   return `<tr>
-    <th class="dist-sticky dist-col-header dist-col-product" data-col="product">
+    <th class="dist-sticky dist-col-header cl-col-item cl-th--item" data-col="product">
       <div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div>
-    </th>
-    <th class="dist-sticky dist-col-header dist-col-pack" data-col="pack">
-      <div class="dist-bar-head"><span class="dist-bar-name">Pack</span></div>
     </th>
     ${th('Supplier', 'cl-col-supplier', true)}
     ${th('SOR %', 'cl-col-num')}
@@ -214,10 +213,6 @@ export function renderClosingShell() {
   return `
     <div class="cl-panel" id="closingPanel">
       <div class="wst-stats cl-stats" id="clStats" hidden></div>
-      <div class="cl-live-bar" id="clLiveBar" hidden>
-        <span class="cl-live-dot" aria-hidden="true"></span>
-        <span class="cl-live-text" id="clLivePresence">Connecting…</span>
-      </div>
       <p class="cl-hint muted">
         Counts <strong>auto-save as you type</strong> and update live for anyone else on Closing.
         Closing and return use each product’s stock unit
@@ -258,16 +253,11 @@ export function mountClosingPanel(route) {
     theadObserver: null,
     abort: false,
     overMaxPrompt: new Set(),
-    liveChannel: null,
+    collab: null,
     recentLocalWrites: new Map(),
     focusPid: null,
     focusField: null,
-    peerCells: {},
-    presencePeers: [],
-    focusBroadcast: {},
-    presenceTimer: null,
     valueBroadcastTimer: null,
-    liveReady: false,
     statusFilter: '',
     categoryFilter: '',
     supplierFilter: '',
@@ -537,13 +527,13 @@ export function mountClosingPanel(route) {
     let html = '';
     Object.keys(grouped).sort().forEach((cat) => {
       html += `<tr class="dist-cat-row">
-        <td colspan="2" class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
-        <td colspan="${COL_COUNT - 2}" class="dist-cat-scroll"></td>
+        <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
+        <td colspan="${COL_COUNT - 1}" class="dist-cat-scroll"></td>
       </tr>`;
       grouped[cat].forEach((r) => { html += renderRow(r); });
     });
     body.innerHTML = html;
-    syncPeerCellMarkers();
+    ctx.collab?.repaint();
     applyProductFilter({ query: ctx.searchQuery, productId: getLastProductFilter().productId });
     requestAnimationFrame(layoutTableScroll);
   }
@@ -798,52 +788,6 @@ export function mountClosingPanel(route) {
     if (stickerBtn) stickerBtn.disabled = !canSticker;
   }
 
-  function rebuildPeerCells() {
-    const fromPresence = cellFocusOwners(ctx.presencePeers, getClientId());
-    /** @type {Record<string, object>} */
-    const merged = { ...fromPresence };
-    const selfId = getClientId();
-    Object.values(ctx.focusBroadcast || {}).forEach((info) => {
-      if (!info || info.clientId === selfId) return;
-      if (!info.productId || !info.field || !info.name) return;
-      const key = `${info.productId}::${info.field}`;
-      merged[key] = info;
-    });
-    ctx.peerCells = merged;
-    syncPeerCellMarkers();
-  }
-
-  function updatePresenceUi(peers) {
-    const liveBar = $('clLiveBar');
-    const textEl = $('clLivePresence');
-    if (!liveBar || !textEl) return;
-    liveBar.hidden = false;
-    ctx.presencePeers = peers || [];
-    const fmt = formatClosingPresence(ctx.presencePeers, getClientId());
-    textEl.textContent = fmt.text;
-    rebuildPeerCells();
-  }
-
-  function syncPeerCellMarkers() {
-    panel.querySelectorAll('.cl-cell--peer').forEach((cell) => {
-      cell.classList.remove('cl-cell--peer');
-      cell.style.removeProperty('--cl-peer-color');
-      cell.querySelector('.cl-peer-tag')?.remove();
-    });
-    Object.values(ctx.peerCells || {}).forEach((info) => {
-      if (!info?.productId || !info?.field || !info.name) return;
-      const input = document.getElementById(`cl-${info.field}-${info.productId}`);
-      const cell = input?.closest('.cl-cell') || input?.closest('td');
-      if (!cell) return;
-      cell.classList.add('cl-cell--peer');
-      cell.style.setProperty('--cl-peer-color', info.color || '#2563eb');
-      const tag = document.createElement('span');
-      tag.className = 'cl-peer-tag';
-      tag.textContent = info.name;
-      cell.appendChild(tag);
-    });
-  }
-
   function applyRemoteRowToUi(pid, { flash = true } = {}) {
     const cl = rowFor(ctx.closingRows, pid) || {};
     const ep = ctx.event?.event_products?.find((x) => x.product_id === pid);
@@ -900,7 +844,7 @@ export function mountClosingPanel(route) {
         window.setTimeout(() => tr.classList.remove('cl-row--live'), 900);
       }
     }
-    syncPeerCellMarkers();
+    ctx.collab?.repaint();
   }
 
   function handleRemoteClosingChange(payload) {
@@ -930,64 +874,16 @@ export function mountClosingPanel(route) {
     applyRemoteRowToUi(remote.product_id);
   }
 
-  function focusPayload(extra = {}) {
-    const name = getDisplayName();
-    const clientId = getClientId();
-    const field = ctx.focusField;
-    const productId = ctx.focusPid;
-    let value;
-    if (productId && field) {
-      const el = document.getElementById(`cl-${field}-${productId}`);
-      if (el) value = el.value;
-    }
-    return {
-      name: name || 'Someone',
-      clientId,
-      productId,
-      field,
-      value,
-      color: peerColor(clientId),
-      at: Date.now(),
-      ...extra,
-    };
-  }
-
-  async function broadcastFocus(extra = {}) {
-    const channel = ctx.liveChannel;
-    if (!channel || !ctx.liveReady) return;
-    try {
-      await channel.send({
-        type: 'broadcast',
-        event: 'cell-focus',
-        payload: focusPayload(extra),
-      });
-    } catch { /* ignore */ }
-  }
-
   function scheduleValueBroadcast() {
-    if (!ctx.liveReady || !ctx.focusPid || !ctx.focusField) return;
+    if (!ctx.collab?.isReady() || !ctx.focusPid || !ctx.focusField) return;
     clearTimeout(ctx.valueBroadcastTimer);
     ctx.valueBroadcastTimer = setTimeout(() => {
       ctx.valueBroadcastTimer = null;
-      broadcastFocus({ live: true });
+      let value;
+      const el = document.getElementById(`cl-${ctx.focusField}-${ctx.focusPid}`);
+      if (el) value = el.value;
+      ctx.collab?.broadcastFocus({ live: true, value, productId: ctx.focusPid, field: ctx.focusField });
     }, VALUE_BROADCAST_MS);
-  }
-
-  async function trackPresence(patch = {}) {
-    const channel = ctx.liveChannel;
-    if (!channel || !ctx.liveReady) return;
-    const name = getDisplayName();
-    if (!name) return;
-    try {
-      await channel.track({
-        name,
-        clientId: getClientId(),
-        focusPid: ctx.focusPid,
-        focusField: ctx.focusField,
-        at: Date.now(),
-        ...patch,
-      });
-    } catch { /* ignore presence blips */ }
   }
 
   function applyRemoteDraftValue(payload) {
@@ -1005,136 +901,59 @@ export function mountClosingPanel(route) {
     delete ctx.drafts[payload.productId];
   }
 
-  function handleFocusBroadcast(payload) {
-    if (ctx.abort || !payload) return;
-    const clientId = payload.clientId;
-    if (!clientId || clientId === getClientId()) return;
-    if (!payload.productId || !payload.field) {
-      delete ctx.focusBroadcast[clientId];
-    } else {
-      ctx.focusBroadcast[clientId] = {
-        name: (payload.name || '').trim() || 'Someone',
-        clientId,
-        productId: payload.productId,
-        field: payload.field,
-        color: payload.color || peerColor(clientId),
-      };
-      applyRemoteDraftValue(payload);
-    }
-    rebuildPeerCells();
-  }
-
   async function stopLive() {
-    ctx.liveReady = false;
-    if (ctx.presenceTimer) {
-      clearInterval(ctx.presenceTimer);
-      ctx.presenceTimer = null;
-    }
     if (ctx.valueBroadcastTimer) {
       clearTimeout(ctx.valueBroadcastTimer);
       ctx.valueBroadcastTimer = null;
     }
-    const channel = ctx.liveChannel;
-    ctx.liveChannel = null;
-    if (!channel) return;
-    try {
-      await channel.unsubscribe();
-    } catch { /* ignore */ }
-    try {
-      getRealtimeClient()?.removeChannel(channel);
-    } catch { /* ignore */ }
+    const session = ctx.collab;
+    ctx.collab = null;
+    if (session) await session.destroy();
   }
 
-  async function startLive() {
-    if (ctx.abort || ctx.liveChannel) return;
+  function startLive() {
+    if (ctx.abort || ctx.collab) return;
 
-    const rt = getRealtimeClient();
-    const liveBar = $('clLiveBar');
-    const textEl = $('clLivePresence');
-    if (!rt) {
-      if (liveBar) liveBar.hidden = true;
-      return;
-    }
-    if (liveBar) liveBar.hidden = false;
-    if (textEl) textEl.textContent = 'Connecting…';
-
-    const selfId = getClientId();
-    const channel = rt.channel(`closing:${ctx.eventId}`, {
-      config: {
-        broadcast: { self: false },
-        presence: { key: selfId },
-      },
-    });
-    ctx.liveChannel = channel;
-
-    channel.on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'closing_stock',
-        filter: `event_id=eq.${ctx.eventId}`,
-      },
-      (payload) => handleRemoteClosingChange(payload),
-    );
-
-    channel.on('broadcast', { event: 'cell-focus' }, ({ payload }) => {
-      handleFocusBroadcast(payload);
-    });
-
-    const refreshPeers = () => {
-      const peers = flattenPresenceState(channel.presenceState() || {});
-      updatePresenceUi(peers);
-    };
-
-    channel.on('presence', { event: 'sync' }, refreshPeers);
-    channel.on('presence', { event: 'join' }, refreshPeers);
-    channel.on('presence', { event: 'leave' }, refreshPeers);
-
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        ctx.liveReady = true;
-        await trackPresence();
-        await broadcastFocus();
-        refreshPeers();
-        if (ctx.presenceTimer) clearInterval(ctx.presenceTimer);
-        ctx.presenceTimer = setInterval(() => {
-          trackPresence();
-        }, PRESENCE_HEARTBEAT_MS);
-        if (textEl && (textEl.textContent === 'Connecting…' || !textEl.textContent)) {
-          textEl.textContent = 'Just you here';
+    ctx.collab = createGridCollabSession({
+      channelName: `collab:closing:${ctx.eventId}`,
+      root: panel,
+      inputSelector: '.cl-pill-input',
+      cellKeyFromInput: closingCellKeyFromInput,
+      findCellEl: closingFindCellEl,
+      onLocalFocusChange: (key) => {
+        if (!key) {
+          ctx.focusPid = null;
+          ctx.focusField = null;
+          return;
         }
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        ctx.liveReady = false;
-        if (textEl) textEl.textContent = 'Live sync unavailable';
-      }
+        const [pid, ...fieldParts] = String(key).split('::');
+        ctx.focusPid = pid || null;
+        ctx.focusField = fieldParts.join('::') || null;
+      },
+      onRemoteFocus: (payload) => {
+        applyRemoteDraftValue(payload);
+      },
+      onChannel: (channel) => {
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'closing_stock',
+            filter: `event_id=eq.${ctx.eventId}`,
+          },
+          (payload) => handleRemoteClosingChange(payload),
+        );
+      },
+      extraBroadcastPayload: () => {
+        let value;
+        if (ctx.focusPid && ctx.focusField) {
+          const el = document.getElementById(`cl-${ctx.focusField}-${ctx.focusPid}`);
+          if (el) value = el.value;
+        }
+        return { value, productId: ctx.focusPid, field: ctx.focusField };
+      },
     });
-  }
-
-  function onFocusIn(e) {
-    const input = e.target?.closest?.('.cl-pill-input');
-    if (!input) return;
-    ctx.focusPid = input.dataset.clPid || null;
-    ctx.focusField = input.dataset.clField || null;
-    trackPresence();
-    broadcastFocus();
-  }
-
-  function onFocusOut(e) {
-    const input = e.target?.closest?.('.cl-pill-input');
-    if (!input) return;
-    window.setTimeout(() => {
-      const active = document.activeElement?.closest?.('.cl-pill-input');
-      if (active) {
-        ctx.focusPid = active.dataset.clPid || null;
-        ctx.focusField = active.dataset.clField || null;
-      } else {
-        ctx.focusPid = null;
-        ctx.focusField = null;
-      }
-      trackPresence();
-      broadcastFocus();
-    }, 0);
   }
 
   async function openTransferToWarehouseSheet(pid) {
@@ -1551,8 +1370,6 @@ export function mountClosingPanel(route) {
   panel.addEventListener('input', onInput);
   panel.addEventListener('change', onInput);
   panel.addEventListener('blur', onBlur, true);
-  panel.addEventListener('focusin', onFocusIn);
-  panel.addEventListener('focusout', onFocusOut);
   panel.addEventListener('click', onClick);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
@@ -1602,9 +1419,6 @@ export function mountClosingPanel(route) {
     panel.removeEventListener('input', onInput);
     panel.removeEventListener('change', onInput);
     panel.removeEventListener('blur', onBlur, true);
-    panel.removeEventListener('focusin', onFocusIn);
-    panel.removeEventListener('focusout', onFocusOut);
-    panel.removeEventListener('keydown', onKeyDown);
     panel.removeEventListener('click', onClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);

@@ -20,6 +20,11 @@ import { openModal, closeModal } from '../../components/modal.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
+import {
+  kitCellKeyFromInput,
+  kitFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 import {
   KIT_MOVEMENT_LABELS,
   KIT_SOURCE_LABELS,
@@ -517,6 +522,27 @@ export function mountKitPanel(route) {
   let assignBarcodeOpen = false;
   /** @type {string | null} */
   let assignBarcodePending = null;
+  let collab = null;
+
+  function stopCollab() {
+    const session = collab;
+    collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    if (collab) {
+      collab.repaint();
+      return;
+    }
+    collab = createGridCollabSession({
+      channelName: `collab:kit:${eventId}`,
+      root: itemsWrap,
+      inputSelector: '.kit-pack-inp',
+      cellKeyFromInput: kitCellKeyFromInput,
+      findCellEl: kitFindCellEl,
+    });
+  }
 
   try {
     warehouseId = localStorage.getItem(WH_KEY) || '';
@@ -587,6 +613,7 @@ export function mountKitPanel(route) {
     }
     wirePackInputs();
     movWrap.innerHTML = renderMovements(movements);
+    startCollab();
 
     const scrollPid = flashProductId || productFilter.productId;
     if (scrollPid) {
@@ -1465,6 +1492,7 @@ export function mountKitPanel(route) {
 
   return () => {
     stopScanMode();
+    stopCollab();
     clearTimeout(flashTimer);
     assignBarcodePending = null;
     if (assignBarcodeOpen) closeModal();

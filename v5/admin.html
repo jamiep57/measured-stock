@@ -111,14 +111,20 @@
           </div>
         </div>
 
-        <footer class="sidebar-footer" aria-hidden="true"></footer>
-      </div>
-
-      <div class="bug-fab" id="bugReportFab">
-        <button type="button" class="bug-fab-btn" id="bugReportFabBtn"
-          title="Report a bug or idea" aria-label="Report a bug or idea">
-          <i data-lucide="bug" aria-hidden="true"></i>
-        </button>
+        <footer class="sidebar-footer">
+          <div class="sidebar-footer-row">
+            <div class="bug-fab" id="bugReportFab">
+              <button type="button" class="bug-fab-btn" id="bugReportFabBtn"
+                title="Report a bug or idea" aria-label="Report a bug or idea">
+                <i data-lucide="bug" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div class="sidebar-presence" id="sidebarPresence" hidden>
+              <span class="sidebar-presence-dot" aria-hidden="true"></span>
+              <span class="sidebar-presence-text" id="sidebarPresenceText">Just you here</span>
+            </div>
+          </div>
+        </footer>
       </div>
     </aside>
 
@@ -147,11 +153,15 @@
               <div class="topbar-search" id="topbarSearch"></div>
             </div>
             <div class="topbar-actions">
-              <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings" data-route="settings"
+              <a class="topbar-settings" id="topbarUsers" href="/v5/admin/settings/users" data-route="settings"
+                data-section="users" title="Users" aria-label="Users">
+                <i data-lucide="users" aria-hidden="true"></i>
+              </a>
+              <a class="topbar-settings" id="topbarSettings" href="/v5/admin/settings/users" data-route="settings"
                 title="Workspace settings" aria-label="Workspace settings">
                 <i data-lucide="settings" aria-hidden="true"></i>
               </a>
-              <a class="topbar-logout" id="topbarLogout" href="/api/logout" title="Sign out">
+              <a class="topbar-logout" id="topbarLogout" href="/login" title="Sign out">
                 <i data-lucide="log-out" aria-hidden="true"></i>
                 <span>Log out</span>
               </a>

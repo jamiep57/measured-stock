@@ -6,7 +6,9 @@ let lastFocus = null;
 let onKeyDown = null;
 
 function isAnimatedDrawer(sheet) {
-  return sheet.classList.contains('sheet--admin-full');
+  return sheet.classList.contains('sheet--admin-full')
+    || sheet.classList.contains('sheet--admin-wide')
+    || sheet.classList.contains('sheet--bug-left');
 }
 
 function focusables(root) {
@@ -69,7 +71,7 @@ export function openSheet({ title, bodyHtml, footHtml, onClose, variant }) {
   closeHandler = onClose || null;
   sheet.hidden = false;
   document.body.style.overflow = 'hidden';
-  if (variant === 'admin-full') {
+  if (variant === 'admin-full' || variant === 'admin-wide') {
     document.body.classList.add('admin-drawer-open');
   }
 

@@ -30,6 +30,11 @@ import {
   roundN,
   consumptionPlusLooseCharge,
 } from '../../lib/recon.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
+import {
+  reconCellKeyFromInput,
+  reconFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 
 const STATUS_TITLES = {
   red: 'Action needed',
@@ -87,17 +92,8 @@ function rcnTh(col, label, extraClass = '', title = '') {
 }
 
 function productMetaLine(r) {
-  const bits = [];
-  if (r.p?.case_size) bits.push(r.p.case_size);
-  if (r.multiSupplierDelivery) {
-    const names = (r.deliverySources || []).map((s) => s.supplierName).filter(Boolean);
-    if (names.length) bits.push(names.join(' + '));
-  } else {
-    if (r.supplierName && r.supplierName !== '—') bits.push(r.supplierName);
-    const price = formatReconMoney(r.rowPrice);
-    if (price && price !== '—') bits.push(price);
-  }
-  return bits.join(' · ');
+  // Pack size only — supplier and price have their own columns.
+  return r.p?.case_size || '';
 }
 
 function deliveryWarnIcon(title) {
@@ -347,7 +343,25 @@ export function mountReconPanel(route) {
     saving: false,
     abort: false,
     drawerPid: null,
+    collab: null,
   };
+
+  function stopCollab() {
+    const session = ctx.collab;
+    ctx.collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    if (ctx.collab || ctx.abort) return;
+    ctx.collab = createGridCollabSession({
+      channelName: `collab:recon:${ctx.eventId}`,
+      root: panel,
+      inputSelector: '.recon-cell-input',
+      cellKeyFromInput: reconCellKeyFromInput,
+      findCellEl: reconFindCellEl,
+    });
+  }
 
   function dirtyCount() {
     return Object.keys(ctx.drafts).length;
@@ -437,6 +451,7 @@ export function mountReconPanel(route) {
     applyColVisibility(panel, ctx.colVis);
     initIcons(panel);
     layoutTableScroll();
+    ctx.collab?.repaint();
   }
 
   function syncScrollHint() {
@@ -1138,6 +1153,7 @@ export function mountReconPanel(route) {
     ctx.deliveries = deliveries || [];
     renderTable();
     applyProductFilter(getLastProductFilter());
+    startCollab();
   }
 
   load().catch((e) => {
@@ -1146,6 +1162,7 @@ export function mountReconPanel(route) {
 
   return () => {
     ctx.abort = true;
+    stopCollab();
     if (dirtyCount()) flushAllPending();
     window.removeEventListener('resize', onResize);
     window.removeEventListener('pagehide', onPageHide);

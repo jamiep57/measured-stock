@@ -1,6 +1,6 @@
 import { COOKIE_NAME, DISPLAY_NAME_COOKIE } from '../lib/cookie.js';
 
-/** Clears the auth cookie so the next request hits the PIN gate again. */
+/** Clears the edge session cookie so the next request hits /login. */
 /** @param {import('http').IncomingMessage} req @param {import('http').ServerResponse} res */
 export default async function handler(req, res) {
   const secure =
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   ]);
 
   if (req.method === 'GET') {
-    res.writeHead(302, { Location: '/v5/' });
+    res.writeHead(302, { Location: '/login' });
     res.end();
     return;
   }

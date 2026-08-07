@@ -1,30 +1,17 @@
 /**
- * Pure helpers for Closing collaborative sync (testable without DOM).
+ * Closing-specific collaborative sync helpers.
+ * Shared caret/presence utilities live in collab-presence.js.
  */
 
-export const PEER_COLORS = [
-  '#2563eb', // blue
-  '#db2777', // pink
-  '#059669', // green
-  '#d97706', // amber
-  '#7c3aed', // violet
-  '#0891b2', // cyan
-  '#dc2626', // red
-  '#4f46e5', // indigo
-];
-
-/** Stable color per client for Google Sheets–style caret. */
-export function peerColor(clientId) {
-  const s = String(clientId || '');
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return PEER_COLORS[h % PEER_COLORS.length];
-}
-
-export function cellFocusKey(productId, field) {
-  if (!productId || !field) return null;
-  return `${productId}::${field}`;
-}
+export {
+  PEER_COLORS,
+  peerColor,
+  cellFocusKey,
+  flattenPresenceState,
+  formatCollabPresence,
+  formatClosingPresence,
+  cellFocusOwners,
+} from './collab-presence.js';
 
 /**
  * Merge a remote closing_stock row into the local list (by product_id).
@@ -67,71 +54,4 @@ export function shouldApplyRemoteClosingEdit({
   else if (recentLocalWrites) writtenAt = Number(recentLocalWrites[productId]) || 0;
   if (writtenAt && now - writtenAt < localEchoMs) return { apply: false, reason: 'local-echo' };
   return { apply: true, reason: 'ok' };
-}
-
-/**
- * Flatten Supabase presenceState() into peer metas.
- * Uses the presence key as clientId when the payload omits it.
- * @param {Record<string, object[]>} state
- */
-export function flattenPresenceState(state) {
-  const peers = [];
-  for (const [key, metas] of Object.entries(state || {})) {
-    for (const meta of metas || []) {
-      if (!meta || typeof meta !== 'object') continue;
-      peers.push({
-        ...meta,
-        clientId: meta.clientId || key,
-        name: (meta.name || '').trim(),
-      });
-    }
-  }
-  return peers;
-}
-
-/**
- * Format presence peers for the Closing live bar (excludes self).
- */
-export function formatClosingPresence(peers, selfClientId) {
-  const others = (peers || []).filter((p) => p && p.clientId && p.clientId !== selfClientId);
-  const names = [...new Set(others.map((p) => (p.name || '').trim()).filter(Boolean))];
-  if (!names.length) {
-    return { text: 'Just you here', names: [], others };
-  }
-  if (names.length === 1) {
-    return { text: `${names[0]} is also here`, names, others };
-  }
-  if (names.length === 2) {
-    return { text: `${names[0]} and ${names[1]} are also here`, names, others };
-  }
-  return {
-    text: `${names[0]}, ${names[1]} +${names.length - 2} also here`,
-    names,
-    others,
-  };
-}
-
-/**
- * Map `${productId}::${field}` → first peer currently focused on that cell.
- * @returns {Record<string, { name: string, color: string, clientId: string, productId: string, field: string }>}
- */
-export function cellFocusOwners(peers, selfClientId) {
-  /** @type {Record<string, { name: string, color: string, clientId: string, productId: string, field: string }>} */
-  const map = {};
-  for (const p of peers || []) {
-    if (!p || p.clientId === selfClientId) continue;
-    const productId = p.focusPid;
-    const field = p.focusField;
-    const name = (p.name || '').trim();
-    const key = cellFocusKey(productId, field);
-    if (!key || !name || map[key]) continue;
-    map[key] = {
-      name,
-      color: peerColor(p.clientId),
-      clientId: p.clientId,
-      productId,
-      field,
-    };
-  }
-  return map;
 }

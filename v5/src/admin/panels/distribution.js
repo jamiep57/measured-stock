@@ -18,6 +18,11 @@ import {
 } from '../../lib/opening-stock.js';
 import { parseQty } from '../../stock-entry.js';
 import { productSupplierSearchText } from '../../components/product-search.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
+import {
+  distributionCellKeyFromInput,
+  distributionFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TABLE_FILTER, getDistControls } from '../table-filter.js';
 import {
@@ -265,7 +270,25 @@ export function mountDistributionPanel(route, state) {
     theadObserver: null,
     gridWrap: null,
     abort: false,
+    collab: null,
   };
+
+  function stopCollab() {
+    const session = ctx.collab;
+    ctx.collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    stopCollab();
+    ctx.collab = createGridCollabSession({
+      channelName: `collab:distribution:${ctx.eventId}`,
+      root: panel,
+      inputSelector: '.dist-pill-input',
+      cellKeyFromInput: distributionCellKeyFromInput,
+      findCellEl: distributionFindCellEl,
+    });
+  }
 
   function refreshLtaForProduct(productId) {
     const opening = ctx.opening[productId] ?? 0;
@@ -303,12 +326,14 @@ export function mountDistributionPanel(route, state) {
     if (thead) thead.innerHTML = renderGridHead(ctx);
     if (tbody) tbody.innerHTML = renderGridBody(ctx);
     syncGridLayout();
+    ctx.collab?.repaint();
   }
 
   function paintBodyOnly() {
     const tbody = panel.querySelector('#distGridBody');
     if (tbody) tbody.innerHTML = renderGridBody(ctx);
     syncGridLayout();
+    ctx.collab?.repaint();
   }
 
   function bindGridLayoutSync() {
@@ -348,6 +373,7 @@ export function mountDistributionPanel(route, state) {
     panel.addEventListener('click', onPanelClick);
     panel.addEventListener('input', onPanelInput);
     bindGridLayoutSync();
+    startCollab();
   }
 
   function onDistControls(e) {
@@ -536,6 +562,7 @@ export function mountDistributionPanel(route, state) {
 
   return () => {
     ctx.abort = true;
+    stopCollab();
     Object.values(ctx.saveTimers).forEach(clearTimeout);
     ctx.theadObserver?.disconnect();
     ctx.gridWrap?.removeEventListener('scroll', syncGridLayout);

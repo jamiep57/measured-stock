@@ -325,6 +325,8 @@ export function syncBugFabVisibility() {
 export function mountBugReportFab() {
   let wrap = $('bugReportFab');
   if (!wrap) {
+    const footerRow = document.querySelector('.sidebar-footer-row');
+    const footer = document.querySelector('.sidebar-footer');
     const sidebar = $('adminSidebar') || document.querySelector('.admin-sidebar');
     wrap = document.createElement('div');
     wrap.className = 'bug-fab';
@@ -332,9 +334,11 @@ export function mountBugReportFab() {
     wrap.innerHTML = `
       <button type="button" class="bug-fab-btn" id="bugReportFabBtn"
         title="Report a bug or idea" aria-label="Report a bug or idea">
-        ${icon('bug', { size: 22, strokeWidth: 2 })}
+        ${icon('bug', { size: 20, strokeWidth: 2 })}
       </button>`;
-    (sidebar || document.body).appendChild(wrap);
+    if (footerRow) footerRow.prepend(wrap);
+    else if (footer) footer.prepend(wrap);
+    else (sidebar || document.body).appendChild(wrap);
   }
 
   const btn = $('bugReportFabBtn');

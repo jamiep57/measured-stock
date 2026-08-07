@@ -21,6 +21,7 @@ import { startKitCountApp } from './kit-count-app.js';
 import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
 import { initAppMenu, closeAppDrawer } from './app-menu.js';
+import { ensureAppAuth } from './lib/auth.js';
 
 const TABS = new Set(['counts', 'kit', 'deliveries', 'transfers', 'wastage']);
 const DEFAULT_TAB = 'counts';
@@ -553,6 +554,9 @@ async function boot() {
     toast('Database layer failed to load', true);
     return;
   }
+
+  const auth = await ensureAppAuth();
+  if (!auth) return;
 
   initSheet();
   initSpreadsheetCells(document.body);

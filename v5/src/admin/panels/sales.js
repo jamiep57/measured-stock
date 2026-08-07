@@ -18,6 +18,11 @@ import { readModifierFile } from '../../lib/modifier-import.js';
 import { readTillFile } from '../../lib/till-import.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
+import {
+  salesCellKeyFromInput,
+  salesFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 
 function fmtNum(n) {
   const v = Number(n);
@@ -322,10 +327,28 @@ export function mountSalesPanel(route) {
     saving: new Set(),
     pendingSaves: new Map(),
     abort: false,
+    collab: null,
   };
 
   let tillFileInput = null;
   let modFileInput = null;
+
+  function stopCollab() {
+    const session = ctx.collab;
+    ctx.collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    stopCollab();
+    ctx.collab = createGridCollabSession({
+      channelName: `collab:sales:${ctx.eventId}`,
+      root: panel,
+      inputSelector: '.mod-ing-qty',
+      cellKeyFromInput: salesCellKeyFromInput,
+      findCellEl: salesFindCellEl,
+    });
+  }
 
   function syncTheadHeight() {
     requestAnimationFrame(() => {
@@ -826,6 +849,8 @@ export function mountSalesPanel(route) {
     bindToolbar();
     bindRecipeControls();
     syncTheadHeight();
+    if (rows.length) startCollab();
+    else stopCollab();
   }
 
   function paintBodyOnly() {
@@ -838,6 +863,7 @@ export function mountSalesPanel(route) {
     bindRecipeControls();
     refreshStats();
     syncTheadHeight();
+    ctx.collab?.repaint();
   }
 
   async function importTillFile(file) {
@@ -1022,6 +1048,7 @@ export function mountSalesPanel(route) {
 
   return () => {
     ctx.abort = true;
+    stopCollab();
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     panel.removeEventListener('keydown', onRecipeTabNav);

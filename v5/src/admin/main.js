@@ -13,6 +13,8 @@ import { ADMIN_EVENTS_CHANGED } from './panels/home.js';
 import { syncBugOpenDot, mountBugReportFab, syncBugFabVisibility } from './panels/bugs.js';
 import { initGlobalSearch, applyGenericProductFilter, ADMIN_PRODUCT_FILTER } from './global-search.js';
 import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
+import { syncAppPresence } from '../lib/app-presence.js';
+import { ensureAppAuth, signOutApp } from '../lib/auth.js';
 
 const state = {
   events: [],
@@ -57,6 +59,13 @@ async function render(route) {
 
   linkSidebar(route);
   syncSidebar(route, state);
+  const presenceEventId = (route.view === 'event' && route.eventId)
+    || (route.view === 'audit' ? state.eventId : '')
+    || '';
+  const presencePanel = route.view === 'event'
+    ? (route.panel || '')
+    : (route.view || '');
+  syncAppPresence({ eventId: presenceEventId, panel: presencePanel });
 
   const title = route.view === 'event'
     ? (PANEL_TITLES[route.panel] || route.panel)
@@ -105,13 +114,21 @@ function wireNav() {
     if (!a) return;
     e.preventDefault();
     const view = a.dataset.route;
-    navigate(view === 'home' ? { view: 'home' } : { view });
+    if (view === 'home') navigate({ view: 'home' });
+    else if (view === 'settings') navigate({ view: 'settings', section: a.dataset.section || 'users' });
+    else navigate({ view });
     render(parseRoute());
   });
 
   document.getElementById('topbarSettings')?.addEventListener('click', (e) => {
     e.preventDefault();
-    navigate({ view: 'settings' });
+    navigate({ view: 'settings', section: 'users' });
+    render(parseRoute());
+  });
+
+  document.getElementById('topbarUsers')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    navigate({ view: 'settings', section: 'users' });
     render(parseRoute());
   });
 
@@ -152,6 +169,14 @@ async function boot() {
     toast('Database layer failed to load', true);
     return;
   }
+
+  const auth = await ensureAppAuth({ requireAdmin: true });
+  if (!auth) return;
+
+  document.getElementById('topbarLogout')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    signOutApp();
+  });
 
   initSheet();
   initBugSheet();

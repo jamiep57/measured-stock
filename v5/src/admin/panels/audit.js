@@ -1,5 +1,5 @@
 /**
- * Forensic Audit — event invariant checks (math + save integrity).
+ * Forensic Audit — software integrity checks (dual-writes, formula drift, sync).
  */
 
 import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
@@ -77,7 +77,7 @@ export function mountAuditPanel(route) {
     root.innerHTML = `
       <div class="admin-surface admin-not-found">
         <h2>Pick an event first</h2>
-        <p class="muted">Forensic audit runs against the active event workspace.</p>
+        <p class="muted">Software integrity audit for the active event workspace.</p>
         <a class="admin-drawer-btn admin-drawer-btn--primary" href="${escapeHtml(hrefForRoute({ view: 'home' }))}">Back to events</a>
         <a class="admin-drawer-btn admin-drawer-btn--solid" href="${escapeHtml(hrefForRoute({ view: 'dev' }))}">Dev tools</a>
       </div>`;
@@ -180,6 +180,7 @@ export function mountAuditPanel(route) {
           <div>
             <p class="admin-eyebrow">Forensics</p>
             <h2 class="audit-title">Event audit</h2>
+            <p class="muted audit-lead">Software integrity checks — dual-writes, formula drift, sync failures. Not stock variance or mapping completeness.</p>
             <p class="muted audit-ran">Last run ${escapeHtml(report.ranAt ? new Date(report.ranAt).toLocaleString() : '—')}</p>
           </div>
           ${summaryChips(report.summary)}

@@ -6,6 +6,7 @@
 import { BrowserMultiFormatReader, BarcodeFormat } from '@zxing/browser';
 import DecodeHintType from '@zxing/library/esm/core/DecodeHintType.js';
 import { loadDbScript } from './lib/load-db.js';
+import { ensureAppAuth } from './lib/auth.js';
 import {
   loadScanSession,
   isSessionExpired,
@@ -343,6 +344,9 @@ async function main() {
   }
 
   await loadDbScript();
+  const auth = await ensureAppAuth();
+  if (!auth) return;
+
   const DB = window.DB;
   if (!DB) {
     setFatal('Could not load data layer.');

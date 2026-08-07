@@ -181,7 +181,7 @@ export async function renderPanel(route, state) {
   }
 
   if (route.view === 'settings') {
-    return renderSettingsShell();
+    return renderSettingsShell(route.section || 'users');
   }
 
   if (route.view === 'warehouses') {
@@ -368,7 +368,7 @@ export function mountPanel(route, state) {
     return mountAuditPanel({ ...route, eventId });
   }
   if (route.view === 'settings') {
-    return mountSettingsPanel();
+    return mountSettingsPanel(route.section || 'users');
   }
   if (route.view === 'warehouses') {
     return mountWarehousesPanel();

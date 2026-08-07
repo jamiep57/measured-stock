@@ -1,5 +1,5 @@
 /**
- * Workspace settings — warehouses, product categories and case sizes.
+ * Workspace settings — users, warehouses, product categories and case sizes.
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
@@ -7,6 +7,15 @@ import { icon } from '../../lib/icons.js';
 import { getDB, loadCategories, loadCaseSizes, loadLibraryProducts } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { parseQty } from '../../stock-entry.js';
+import { navigate, hrefForRoute } from '../router.js';
+import { renderUsersSection, mountUsersPanel } from './users.js';
+
+const SETTINGS_NAV = [
+  { id: 'users', label: 'Users' },
+  { id: 'warehouses', label: 'Warehouses' },
+  { id: 'categories', label: 'Product categories' },
+  { id: 'case-sizes', label: 'Case sizes' },
+];
 
 const CATEGORY_COLOURS = [
   { value: 'beer', label: 'Beer (amber)' },
@@ -60,91 +69,146 @@ function addressPreview(address) {
   return line || '';
 }
 
-function renderShell() {
+function renderSubnav(section) {
+  return `
+    <nav class="settings-subnav" aria-label="Workspace settings">
+      ${SETTINGS_NAV.map((item) => `
+        <a class="settings-subnav-link${item.id === section ? ' is-active' : ''}"
+          href="${escapeHtml(hrefForRoute({ view: 'settings', section: item.id }))}"
+          data-settings-section="${escapeHtml(item.id)}">${escapeHtml(item.label)}</a>
+      `).join('')}
+    </nav>`;
+}
+
+function renderWarehousesSection() {
+  return `
+    <section class="settings-section">
+      <header class="settings-card-head">
+        <div class="settings-card-head-text">
+          <h2 class="settings-card-title">Warehouses</h2>
+          <p class="settings-card-desc muted">Storage locations for stock that isn’t on an event.</p>
+        </div>
+        <div class="settings-card-actions">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsAddWh">
+            ${icon('plus', { size: 14 })} Add
+          </button>
+        </div>
+      </header>
+      <div class="settings-card-search">
+        <input type="search" class="admin-input" id="settingsWhSearch"
+          placeholder="Search warehouses…" autocomplete="off" aria-label="Search warehouses">
+      </div>
+      <div class="settings-list" id="settingsWarehouses" role="list">
+        <div class="settings-list-empty muted">Loading…</div>
+      </div>
+    </section>`;
+}
+
+function renderCategoriesSection() {
+  return `
+    <section class="settings-section">
+      <header class="settings-card-head">
+        <div class="settings-card-head-text">
+          <h2 class="settings-card-title">Product categories</h2>
+          <p class="settings-card-desc muted">Group products and set badge colours.</p>
+        </div>
+        <div class="settings-card-actions" id="settingsCatActions">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="settingsCatMergeToggle">Merge</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsAddCat">
+            ${icon('plus', { size: 14 })} Add
+          </button>
+        </div>
+        <div class="settings-merge-bar" id="settingsCatMergeBar" hidden>
+          <span class="settings-merge-count" id="settingsCatMergeCount">0 selected</span>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsCatMergeBtn" disabled>Merge selected…</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="settingsCatMergeCancel">Cancel</button>
+        </div>
+      </header>
+      <div class="settings-card-search">
+        <input type="search" class="admin-input" id="settingsCatSearch"
+          placeholder="Search categories…" autocomplete="off" aria-label="Search categories">
+      </div>
+      <div class="settings-list" id="settingsCategories" role="list">
+        <div class="settings-list-empty muted">Loading…</div>
+      </div>
+    </section>`;
+}
+
+function renderCaseSizesSection() {
+  return `
+    <section class="settings-section">
+      <header class="settings-card-head">
+        <div class="settings-card-head-text">
+          <h2 class="settings-card-title">Case sizes</h2>
+          <p class="settings-card-desc muted">Pack definitions used across every product.</p>
+        </div>
+        <div class="settings-card-actions">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsAddCs">
+            ${icon('plus', { size: 14 })} Add
+          </button>
+        </div>
+      </header>
+      <div class="settings-card-search">
+        <input type="search" class="admin-input" id="settingsCsSearch"
+          placeholder="Search case sizes…" autocomplete="off" aria-label="Search case sizes">
+      </div>
+      <div class="settings-list settings-list--case" id="settingsCaseSizes" role="list">
+        <div class="settings-list-empty muted">Loading…</div>
+      </div>
+    </section>`;
+}
+
+function renderSectionPane(section) {
+  if (section === 'users') return renderUsersSection();
+  if (section === 'warehouses') return renderWarehousesSection();
+  if (section === 'categories') return renderCategoriesSection();
+  if (section === 'case-sizes') return renderCaseSizesSection();
+  return renderUsersSection();
+}
+
+function renderShell(section = 'users') {
   return `
     <div class="admin-page settings-panel">
-      <div class="settings-layout">
-        <section class="settings-card settings-card--warehouses admin-surface">
-          <header class="settings-card-head">
-            <div class="settings-card-head-text">
-              <h2 class="settings-card-title">Warehouses</h2>
-              <p class="settings-card-desc muted">Storage locations for stock that isn’t on an event.</p>
-            </div>
-            <div class="settings-card-actions">
-              <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsAddWh">
-                ${icon('plus', { size: 14 })} Add
-              </button>
-            </div>
-          </header>
-          <div class="settings-card-search">
-            <input type="search" class="admin-input" id="settingsWhSearch"
-              placeholder="Search warehouses…" autocomplete="off" aria-label="Search warehouses">
+      <div class="settings-shell admin-surface">
+        <header class="settings-shell-head">
+          <h1 class="settings-shell-title">Workspace settings</h1>
+        </header>
+        <div class="settings-layout">
+          ${renderSubnav(section)}
+          <div class="settings-pane" id="settingsPane">
+            ${renderSectionPane(section)}
           </div>
-          <div class="settings-list" id="settingsWarehouses" role="list">
-            <div class="settings-list-empty muted">Loading…</div>
-          </div>
-        </section>
-
-        <section class="settings-card admin-surface">
-          <header class="settings-card-head">
-            <div class="settings-card-head-text">
-              <h2 class="settings-card-title">Product categories</h2>
-              <p class="settings-card-desc muted">Group products and set badge colours.</p>
-            </div>
-            <div class="settings-card-actions" id="settingsCatActions">
-              <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="settingsCatMergeToggle">Merge</button>
-              <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsAddCat">
-                ${icon('plus', { size: 14 })} Add
-              </button>
-            </div>
-            <div class="settings-merge-bar" id="settingsCatMergeBar" hidden>
-              <span class="settings-merge-count" id="settingsCatMergeCount">0 selected</span>
-              <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsCatMergeBtn" disabled>Merge selected…</button>
-              <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="settingsCatMergeCancel">Cancel</button>
-            </div>
-          </header>
-          <div class="settings-card-search">
-            <input type="search" class="admin-input" id="settingsCatSearch"
-              placeholder="Search categories…" autocomplete="off" aria-label="Search categories">
-          </div>
-          <div class="settings-list" id="settingsCategories" role="list">
-            <div class="settings-list-empty muted">Loading…</div>
-          </div>
-        </section>
-
-        <section class="settings-card admin-surface">
-          <header class="settings-card-head">
-            <div class="settings-card-head-text">
-              <h2 class="settings-card-title">Case sizes</h2>
-              <p class="settings-card-desc muted">Pack definitions used across every product.</p>
-            </div>
-            <div class="settings-card-actions">
-              <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsAddCs">
-                ${icon('plus', { size: 14 })} Add
-              </button>
-            </div>
-          </header>
-          <div class="settings-card-search">
-            <input type="search" class="admin-input" id="settingsCsSearch"
-              placeholder="Search case sizes…" autocomplete="off" aria-label="Search case sizes">
-          </div>
-          <div class="settings-list settings-list--case" id="settingsCaseSizes" role="list">
-            <div class="settings-list-empty muted">Loading…</div>
-          </div>
-        </section>
+        </div>
       </div>
     </div>`;
 }
 
-export function renderSettingsShell() {
-  return renderShell();
+export function renderSettingsShell(section = 'users') {
+  return renderShell(section);
 }
 
-export function mountSettingsPanel() {
+function wireSettingsSubnav(section) {
+  document.querySelectorAll('a[data-settings-section]').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const next = a.dataset.settingsSection;
+      if (!next || next === section) return;
+      navigate({ view: 'settings', section: next });
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+  });
+}
+
+export function mountSettingsPanel(section = 'users') {
+  wireSettingsSubnav(section);
+
+  if (section === 'users') {
+    return mountUsersPanel();
+  }
+
   const whWrap = $('settingsWarehouses');
   const catWrap = $('settingsCategories');
   const csWrap = $('settingsCaseSizes');
-  if (!whWrap || !catWrap || !csWrap) return () => {};
 
   let warehouses = [];
   let categories = [];
@@ -156,7 +220,12 @@ export function mountSettingsPanel() {
   let csQuery = '';
   const selected = new Set();
 
+  if (section === 'warehouses' && !whWrap) return () => {};
+  if (section === 'categories' && !catWrap) return () => {};
+  if (section === 'case-sizes' && !csWrap) return () => {};
+
   function paintWarehouses() {
+    if (!whWrap) return;
     const q = whQuery.trim().toLowerCase();
     const sorted = warehouses
       .filter((w) => {
@@ -193,6 +262,7 @@ export function mountSettingsPanel() {
   }
 
   function paintCategories() {
+    if (!catWrap) return;
     catWrap.classList.toggle('settings-list--merge', mergeMode);
     const q = catQuery.trim().toLowerCase();
     const sorted = categories
@@ -237,6 +307,7 @@ export function mountSettingsPanel() {
   }
 
   function paintCaseSizes() {
+    if (!csWrap) return;
     const q = csQuery.trim().toLowerCase();
     const sorted = caseSizes
       .filter((cs) => {
@@ -314,15 +385,20 @@ export function mountSettingsPanel() {
   }
 
   async function refresh() {
-    [warehouses, categories, caseSizes, products] = await Promise.all([
-      getDB().warehouses.list(),
-      loadCategories(),
-      loadCaseSizes(),
-      loadLibraryProducts(),
-    ]);
-    paintWarehouses();
-    paintCategories();
-    paintCaseSizes();
+    if (section === 'warehouses') {
+      warehouses = await getDB().warehouses.list();
+      paintWarehouses();
+      return;
+    }
+    if (section === 'categories') {
+      [categories, products] = await Promise.all([loadCategories(), loadLibraryProducts()]);
+      paintCategories();
+      return;
+    }
+    if (section === 'case-sizes') {
+      [caseSizes, products] = await Promise.all([loadCaseSizes(), loadLibraryProducts()]);
+      paintCaseSizes();
+    }
   }
 
   function openWarehouseForm(editId) {
@@ -751,9 +827,9 @@ export function mountSettingsPanel() {
 
   refresh().catch((err) => {
     const msg = `<div class="settings-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
-    whWrap.innerHTML = msg;
-    catWrap.innerHTML = msg;
-    csWrap.innerHTML = '';
+    if (whWrap) whWrap.innerHTML = msg;
+    if (catWrap) catWrap.innerHTML = msg;
+    if (csWrap) csWrap.innerHTML = msg;
   });
 
   return () => {};

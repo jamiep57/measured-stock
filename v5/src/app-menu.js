@@ -6,6 +6,7 @@ import { $, toast } from './lib/util.js';
 import { getDB } from './db.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountSearchSelect } from './components/search-select.js';
+import { signOutApp } from './lib/auth.js';
 
 /** @type {null | (() => void)} */
 let onChangeLocation = null;
@@ -256,7 +257,7 @@ export function initAppMenu(opts = {}) {
       else if (action === 'bugs') openBugReportSheet();
       else if (action === 'logout') {
         closeAppDrawer();
-        window.location.href = '/api/logout';
+        signOutApp();
       }
     });
   });

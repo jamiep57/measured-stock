@@ -19,6 +19,11 @@ import { icon, initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
+import {
+  reportsCellKeyFromInput,
+  reportsFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 
 function fmtQty(n) {
   if (!Number.isFinite(n)) return '—';
@@ -108,7 +113,26 @@ export function mountReportsPanel(route) {
     baseClientReport: null,
     clientReport: null,
     pricing: loadPricing(route.eventId),
+    collab: null,
   };
+
+  function stopCollab() {
+    const session = ctx.collab;
+    ctx.collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    stopCollab();
+    if (ctx.reportKind !== 'clients') return;
+    ctx.collab = createGridCollabSession({
+      channelName: `collab:reports:${ctx.eventId}`,
+      root,
+      inputSelector: '.reports-price-input, .reports-markup-input',
+      cellKeyFromInput: reportsCellKeyFromInput,
+      findCellEl: reportsFindCellEl,
+    });
+  }
 
   function clientsWithTransfers() {
     const withXfer = new Set(
@@ -721,6 +745,8 @@ export function mountReportsPanel(route) {
       ${body}`;
     initIcons(root);
     bind();
+    if (isClients) startCollab();
+    else stopCollab();
   }
 
   async function reload() {
@@ -763,6 +789,7 @@ export function mountReportsPanel(route) {
 
   return () => {
     ctx.abort = true;
+    stopCollab();
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
   };
 }

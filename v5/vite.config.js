@@ -30,6 +30,22 @@ function serveRootAssets() {
           sendLanOrigins(req, res);
           return;
         }
+        if (url === '/login' || url === '/login.html') {
+          const filePath = path.join(repoRoot, 'login.html');
+          if (fs.existsSync(filePath)) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            fs.createReadStream(filePath).pipe(res);
+            return;
+          }
+        }
+        if (url === '/setup' || url === '/setup.html') {
+          const filePath = path.join(repoRoot, 'setup.html');
+          if (fs.existsSync(filePath)) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            fs.createReadStream(filePath).pipe(res);
+            return;
+          }
+        }
         if (url.startsWith('/v5/admin/') && !path.extname(url)) {
           req.url = '/v5/admin.html';
         }

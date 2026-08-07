@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { getDB } from '../db.js';
+import { getAccessToken, getAuthClient } from './auth.js';
 
 /** @type {import('@supabase/supabase-js').SupabaseClient | null} */
 let client = null;
@@ -20,9 +21,14 @@ function cloudConfig() {
 
 /** @returns {import('@supabase/supabase-js').SupabaseClient | null} */
 export function getRealtimeClient() {
+  // Prefer the shared auth client so Realtime uses the user JWT.
+  const authClient = getAuthClient();
+  if (authClient) return authClient;
+
   const cfg = cloudConfig();
   if (!cfg) return null;
-  const key = `${cfg.url}|${cfg.key}`;
+  const token = getAccessToken();
+  const key = `${cfg.url}|${cfg.key}|${token || ''}`;
   if (client && clientKey === key) return client;
   client = createClient(cfg.url, cfg.key, {
     auth: {
@@ -30,6 +36,9 @@ export function getRealtimeClient() {
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
+    global: token
+      ? { headers: { Authorization: `Bearer ${token}` } }
+      : undefined,
     realtime: {
       params: { eventsPerSecond: 40 },
     },

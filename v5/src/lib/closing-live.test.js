@@ -2,12 +2,16 @@ import { describe, it, expect } from 'vitest';
 import {
   mergeClosingRemoteRow,
   shouldApplyRemoteClosingEdit,
+} from './closing-live.js';
+import {
+  formatCollabPresence,
   formatClosingPresence,
   cellFocusOwners,
   cellFocusKey,
   peerColor,
   flattenPresenceState,
-} from './closing-live.js';
+  peerFocusKey,
+} from './collab-presence.js';
 import { normalizeDisplayName } from './session-identity.js';
 
 describe('normalizeDisplayName', () => {
@@ -59,16 +63,23 @@ describe('shouldApplyRemoteClosingEdit', () => {
 });
 
 describe('cellFocusOwners', () => {
-  it('maps peer focus to product+field cells with colors', () => {
+  it('maps peer focus to cells with colors (focusKey or pid/field)', () => {
     const map = cellFocusOwners([
       { clientId: 'me', name: 'Me', focusPid: 'p1', focusField: 'cases' },
       { clientId: 'a', name: 'Alice', focusPid: 'p1', focusField: 'cases' },
-      { clientId: 'b', name: 'Bob', focusPid: 'p2', focusField: 'return-cases' },
+      { clientId: 'b', name: 'Bob', focusKey: 'p2::return-cases' },
     ], 'me');
     expect(cellFocusKey('p1', 'cases')).toBe('p1::cases');
     expect(map['p1::cases'].name).toBe('Alice');
     expect(map['p1::cases'].color).toBe(peerColor('a'));
     expect(map['p2::return-cases'].name).toBe('Bob');
+  });
+});
+
+describe('peerFocusKey', () => {
+  it('prefers opaque focusKey', () => {
+    expect(peerFocusKey({ focusKey: 'a::b', focusPid: 'x', focusField: 'y' })).toBe('a::b');
+    expect(peerFocusKey({ focusPid: 'p1', focusField: 'cases' })).toBe('p1::cases');
   });
 });
 
@@ -86,12 +97,16 @@ describe('flattenPresenceState', () => {
   });
 });
 
-describe('formatClosingPresence', () => {
+describe('formatCollabPresence', () => {
   it('lists other people', () => {
-    expect(formatClosingPresence([
+    expect(formatCollabPresence([
       { clientId: 'me', name: 'Me' },
       { clientId: 'a', name: 'Alice' },
       { clientId: 'b', name: 'Bob' },
     ], 'me').text).toBe('Alice and Bob are also here');
+  });
+
+  it('keeps formatClosingPresence alias', () => {
+    expect(formatClosingPresence).toBe(formatCollabPresence);
   });
 });

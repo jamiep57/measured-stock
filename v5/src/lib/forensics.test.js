@@ -72,22 +72,17 @@ function cleanFixture() {
 
 describe('buildAuditContext / runEventAudit', () => {
   it('registers all planned checks', () => {
-    expect(ALL_CHECK_IDS).toEqual(expect.arrayContaining([
+    expect(ALL_CHECK_IDS).toEqual([
       'delivered_consistency',
       'opening_identity',
       'closing_identity',
       'recon_consumption',
-      'variance_outliers',
-      'plu_unmapped_sales',
-      'modifier_plu_gap',
       'damaged_semantics',
       'return_dual_write',
       'distribution_overalloc',
-      'recipe_orphan',
       'sync_queue_backlog',
-      'closing_count_incomplete',
       'stale_aggregate',
-    ]));
+    ]);
   });
 
   it('clean event produces zero errors', () => {
@@ -118,41 +113,71 @@ describe('math checks', () => {
     expect(hit.actual).toBe(99);
   });
 
-  it('flags variance_outliers when PLU and consumption diverge', () => {
-    const raw = cleanFixture();
-    // consumption ≈ 100 - 20 = 80; force PLU via sold qty
-    raw.tillRows[0].items_sold = 10;
-    const report = runEventAudit(raw, { checkIds: ['variance_outliers'] });
-    expect(report.findings.some((f) => f.checkId === 'variance_outliers')).toBe(true);
+  it('does not flag when return equals close (decimal Return C / cases+singles)', () => {
+    // Gottwood-style: close 5C+2S = 5.5, return stored as 5.5 in qty (shown in Return C).
+    const product = {
+      id: 'p-lemon',
+      name: 'Little Mixers Lemon Juice',
+      case_size: '4×1000ml',
+      units_per_case: 4,
+      stock_unit: 'case',
+      case_size_id: 'cs4',
+      stock_case_size_id: 'cs4',
+      category: { id: 'c1', name: 'COCKTAILS' },
+    };
+    const ep = {
+      product_id: 'p-lemon',
+      product,
+      delivered_qty: 15,
+      invoice_qty: 15,
+      damaged_qty: 0,
+    };
+    const report = runEventAudit({
+      event: { id: 'gottwood', event_products: [ep] },
+      caseSizes: [{ id: 'cs4', label: '4×1000ml', units_per_case: 4, stock_unit: 'case' }],
+      closingRows: [{
+        product_id: 'p-lemon',
+        closing_cases: 5,
+        closing_singles: 2,
+        close_count: 5.5,
+        return_amount: 5.5,
+        carried_over: 0,
+      }],
+      supplierReturns: [{
+        product_id: 'p-lemon',
+        supplier_id: 's1',
+        qty: 5.5,
+        singles: 0,
+      }],
+      suppliers: [{ id: 's1', name: 'Proof', default_sor_pct: 100 }],
+      deliveries: [],
+      transfers: [],
+      wastageBatches: [],
+      tillRows: [],
+      recipes: [],
+      products: [product],
+      distRows: [],
+      bars: [],
+    }, { checkIds: ['closing_identity'] });
+    expect(report.findings).toEqual([]);
   });
 
-  it('flags plu_unmapped_sales for till lines without recipes', () => {
+  it('does not flag return over close (credit note without full count)', () => {
+    // Ops: no full onsite close (close 0) but return qty from supplier credit note.
     const raw = cleanFixture();
-    raw.tillRows.push({ name: 'Mystery Cocktail', variation: 'Regular', items_sold: 3 });
-    const report = runEventAudit(raw, { checkIds: ['plu_unmapped_sales'] });
-    expect(report.findings).toHaveLength(1);
-    expect(report.findings[0].productName).toBe('Mystery Cocktail');
-  });
-
-  it('flags unmapped modifiers that would understate PLU', () => {
-    const raw = cleanFixture();
-    raw.modifierRows = [{ modifier: 'Shot Upgrade', modifier_set: 'Extras', qty_sold: 4 }];
-    const report = runEventAudit(raw, { checkIds: ['modifier_plu_gap'] });
-    expect(report.findings).toHaveLength(1);
-    expect(report.findings[0].severity).toBe('warn');
-    expect(report.findings[0].actual).toBe('unmapped');
-  });
-
-  it('does not flag mapped modifiers once they feed PLU', () => {
-    const raw = cleanFixture();
-    raw.modifierRows = [{ modifier: 'Shot Upgrade', modifier_set: 'Extras', qty_sold: 4 }];
-    raw.recipes.push({
-      id: 'rm',
-      till_item: 'Shot Upgrade',
-      till_variation: 'Extras',
-      ingredients: [{ product_name: 'Test Lager', qty: 1, position: 0 }],
-    });
-    const report = runEventAudit(raw, { checkIds: ['modifier_plu_gap'] });
+    raw.closingRows[0].closing_cases = 0;
+    raw.closingRows[0].closing_singles = 0;
+    raw.closingRows[0].close_count = 0;
+    raw.closingRows[0].return_amount = 36;
+    raw.closingRows[0].carried_over = 0;
+    raw.supplierReturns = [{
+      product_id: 'p1',
+      supplier_id: 's1',
+      qty: 36,
+      singles: 0,
+    }];
+    const report = runEventAudit(raw, { checkIds: ['closing_identity'] });
+    expect(report.findings.filter((f) => f.id?.includes('return-over'))).toEqual([]);
     expect(report.findings).toEqual([]);
   });
 
@@ -193,14 +218,6 @@ describe('save / integrity checks', () => {
     expect(report.findings[0].severity).toBe('error');
   });
 
-  it('flags recipe_orphan for empty ingredient list', () => {
-    const raw = cleanFixture();
-    raw.recipes[0].ingredients = [];
-    const report = runEventAudit(raw, { checkIds: ['recipe_orphan'] });
-    expect(report.findings).toHaveLength(1);
-    expect(report.findings[0].severity).toBe('error');
-  });
-
   it('flags sync_queue_backlog', () => {
     const raw = cleanFixture();
     raw.syncQueueStats = { pending: 2, failed: 1, total: 3 };
@@ -208,14 +225,6 @@ describe('save / integrity checks', () => {
     expect(report.findings).toHaveLength(1);
     expect(report.findings[0].severity).toBe('error');
     expect(report.findings[0].actual).toBe(3);
-  });
-
-  it('flags closing_count_incomplete', () => {
-    const raw = cleanFixture();
-    raw.closingRows = [];
-    const report = runEventAudit(raw, { checkIds: ['closing_count_incomplete'] });
-    expect(report.findings).toHaveLength(1);
-    expect(report.findings[0].checkId).toBe('closing_count_incomplete');
   });
 
   it('flags stale_aggregate damaged mismatch', () => {

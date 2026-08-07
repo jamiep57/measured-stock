@@ -13,6 +13,7 @@ describe('admin router', () => {
     expect(parseRoute('/v5/admin/warehouses')).toEqual({ view: 'warehouses' });
     expect(parseRoute('/v5/admin/volume-pools')).toEqual({ view: 'volume-pools' });
     expect(parseRoute('/v5/admin/settings')).toEqual({ view: 'settings' });
+    expect(parseRoute('/v5/admin/users')).toEqual({ view: 'users' });
   });
 
   it('parses dev tools home and nested pages', () => {

@@ -8,9 +8,10 @@
 // event_products, …) the sync engine has been populating.
 //
 // Design goals:
-//   - Same transport style as app.js: raw PostgREST fetch with the anon
-//     key. RLS (migration 004) grants anon full CRUD on every v2 table,
-//     so no service-role key is needed in the browser.
+//   - Same transport style as app.js: raw PostgREST fetch.
+//     Prefer the signed-in user JWT (DB.setAccessToken); fall back to the
+//     anon key only when no session is set. After migration 062, anon is
+//     denied by RLS — callers must authenticate.
 //   - No build step / no ES modules — attaches a single global `window.DB`
 //     to match how app.js is loaded.
 //   - A small core (select/insert/upsert/update/remove/rpc) plus one
@@ -40,6 +41,16 @@
   };
 
   let cfg = { url: '', key: '' };
+  /** @type {string|null} Supabase user JWT when signed in; falls back to anon key. */
+  let accessToken = null;
+
+  function setAccessToken(token) {
+    accessToken = token ? String(token) : null;
+  }
+
+  function bearerToken() {
+    return accessToken || cfg.key;
+  }
 
   function init() {
     // Precedence: explicit global → app.js localStorage → builtin.
@@ -77,7 +88,7 @@
   function headers(extra) {
     return Object.assign({
       apikey: cfg.key,
-      Authorization: 'Bearer ' + cfg.key,
+      Authorization: 'Bearer ' + bearerToken(),
       'Content-Type': 'application/json',
     }, extra || {});
   }
@@ -169,7 +180,7 @@
       method: 'POST',
       headers: {
         apikey: cfg.key,
-        Authorization: 'Bearer ' + cfg.key,
+        Authorization: 'Bearer ' + bearerToken(),
         'Content-Type': file.type || 'application/octet-stream',
         'x-upsert': 'true',
         'Cache-Control': '3600',
@@ -690,7 +701,7 @@
 
   const DB = {
     // config
-    configure, isConfigured, init,
+    configure, isConfigured, init, setAccessToken,
     get config() { return Object.assign({}, cfg); },
     // core
     select, insert, upsert, update, remove, rpc,

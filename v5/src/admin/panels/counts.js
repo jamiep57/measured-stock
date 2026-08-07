@@ -16,6 +16,11 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
+import {
+  countsCellKeyFromInput,
+  countsFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 
 function servingBars(bars) {
   return (bars || [])
@@ -279,7 +284,25 @@ export function mountCountsPanel(route) {
     theadObserver: null,
     gridWrap: null,
     abort: false,
+    collab: null,
   };
+
+  function stopCollab() {
+    const session = ctx.collab;
+    ctx.collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    stopCollab();
+    ctx.collab = createGridCollabSession({
+      channelName: `collab:counts:${ctx.eventId}`,
+      root: panel,
+      inputSelector: '.cnt-inp',
+      cellKeyFromInput: countsCellKeyFromInput,
+      findCellEl: countsFindCellEl,
+    });
+  }
 
   function syncGridLayout() {
     const wrap = panel.querySelector('.dist-grid-wrap');
@@ -304,12 +327,14 @@ export function mountCountsPanel(route) {
     if (thead) thead.innerHTML = renderGridHead(ctx);
     if (tbody) tbody.innerHTML = renderGridBody(ctx);
     syncGridLayout();
+    ctx.collab?.repaint();
   }
 
   function paint() {
     ctx.searchQuery = getLastProductFilter().query || ctx.searchQuery;
 
     if (!ctx.activeSessionId) {
+      stopCollab();
       panel.innerHTML = `
         ${renderSessionBar(ctx)}
         <div class="empty-state"><p>Start a count session to enter stock by bar.</p></div>`;
@@ -318,6 +343,7 @@ export function mountCountsPanel(route) {
     }
 
     if (!ctx.eps.length || !ctx.bars.length) {
+      stopCollab();
       panel.innerHTML = `
         ${renderSessionBar(ctx)}
         <div class="empty-state"><p>Add products and bars in Event Setup first.</p></div>`;
@@ -338,6 +364,7 @@ export function mountCountsPanel(route) {
     panel.addEventListener('click', onPanelClick);
     panel.addEventListener('input', onPanelInput);
     bindGridLayoutSync();
+    startCollab();
   }
 
   function bindSessionBar() {
@@ -748,6 +775,7 @@ export function mountCountsPanel(route) {
 
   return () => {
     ctx.abort = true;
+    stopCollab();
     Object.values(ctx.saveTimers).forEach(clearTimeout);
     ctx.theadObserver?.disconnect();
     ctx.gridWrap?.removeEventListener('scroll', syncGridLayout);

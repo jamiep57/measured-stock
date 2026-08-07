@@ -18,6 +18,11 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { loadingTableRow } from '../../components/loading-widget.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
+import { createGridCollabSession } from '../../lib/collab-presence.js';
+import {
+  productsCellKeyFromInput,
+  productsFindCellEl,
+} from '../../lib/grid-collab-keys.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
 
@@ -108,7 +113,7 @@ function epTh(label, extraClass = '', title = '') {
 
 function renderShell() {
   return `
-    <div class="ep-panel">
+    <div class="ep-panel" id="epPanel">
       <p class="ep-hint muted">Add products from your library and set ordered quantities. <strong>Counted in</strong> and unusable stock come from deliveries; <strong>opening</strong> = counted in − delivery damages.</p>
       <div class="dist-grid-wrap ep-table-wrap">
         <table class="dist-grid ep-grid" id="epTable">
@@ -138,6 +143,8 @@ export function mountProductsPanel(route) {
   const eventId = route.eventId;
   if (!eventId) return () => {};
 
+  const panel = $('epPanel') || $('epBody')?.closest('.ep-panel');
+  let collab = null;
   let event = null;
   let caseSizes = [];
   let library = [];
@@ -148,6 +155,23 @@ export function mountProductsPanel(route) {
   let damagedFromDeliveries = {};
   let productFilter = getLastProductFilter();
   let editingOrderedId = null;
+
+  function stopCollab() {
+    const session = collab;
+    collab = null;
+    session?.destroy();
+  }
+
+  function startCollab() {
+    if (!panel || collab) return;
+    collab = createGridCollabSession({
+      channelName: `collab:products:${eventId}`,
+      root: panel,
+      inputSelector: '.ep-ordered-input',
+      cellKeyFromInput: productsCellKeyFromInput,
+      findCellEl: productsFindCellEl,
+    });
+  }
 
   function filteredEps() {
     const eps = (event?.event_products || [])
@@ -185,6 +209,7 @@ export function mountProductsPanel(route) {
     table?.removeAttribute('hidden');
     body.innerHTML = renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, editingOrderedId) ||
       '<tr><td colspan="5" class="dist-empty">No products match your filter.</td></tr>';
+    collab?.repaint();
 
     if (editingOrderedId) {
       const inp = $(`epOrd-${editingOrderedId}`);
@@ -249,6 +274,7 @@ export function mountProductsPanel(route) {
     countedIn = countedInMap(deliveries, event, caseSizes);
     damagedFromDeliveries = damagedFromDeliveriesMap(deliveries);
     paintTable();
+    startCollab();
   }
 
   function openEditProduct(productId) {
@@ -346,6 +372,7 @@ export function mountProductsPanel(route) {
   });
 
   return () => {
+    stopCollab();
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   };
