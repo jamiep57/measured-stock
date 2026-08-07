@@ -3,7 +3,7 @@
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
-import { getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, productFromEvent } from '../../db.js';
+import { getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, loadRecipesFull, productFromEvent } from '../../db.js';
 import {
   findRecipe, recipeIsMapped, recipeOnEvent, recipeIngredients,
   productIdForName, normVariation,
@@ -749,7 +749,7 @@ export function mountSalesPanel(route) {
           position: i,
         })), { returning: false });
 
-        ctx.recipes = await DB.recipes.listFull();
+        ctx.recipes = await loadRecipesFull();
       }
     } finally {
       ctx.saving.delete(saveId);
@@ -952,7 +952,7 @@ export function mountSalesPanel(route) {
       loadEventFull(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
-      DB.recipes.listFull().catch(() => []),
+      loadRecipesFull(),
       loadCaseSizes(),
       loadLibraryProducts().catch(() => []),
     ]);
