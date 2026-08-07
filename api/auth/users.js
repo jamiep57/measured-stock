@@ -3,11 +3,13 @@ import {
   getProfileById,
   listProfiles,
   updateProfile,
-  generateSetupLink,
   createUserWithPassword,
+  findUserByEmail,
+  ensureProfile,
 } from '../../lib/supabase-auth-admin.js';
 import { sendAccountApprovedEmail } from '../../lib/postmark.js';
 import { appLoginUrl, appOnboardUrl } from '../../lib/app-url.js';
+import { createInviteToken } from '../../lib/invite-token.js';
 
 /** @param {import('http').IncomingMessage} req */
 function bearerToken(req) {
@@ -45,18 +47,51 @@ async function requireAdmin(req) {
 }
 
 function randomPassword() {
-  const bytes = new Uint8Array(18);
+  const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
- * Admin user management (no email server required).
- * GET  — list profiles
- * PATCH — { id, status?, role?, display_name? }
- * POST — { email, role?, mode?: 'link'|'password' }
- *        Default mode is password (temp password + login URL).
- *        mode=link returns an invite action link (needs correct Site URL).
+ * Ensure auth user + active profile, return app-owned onboard link.
+ */
+async function createAppInvite({ email, role, meta, secret, onboardUrl }) {
+  let userId = null;
+  try {
+    const created = await createUserWithPassword(email, randomPassword(), { data: meta || {} });
+    userId = created?.id || created?.user?.id || null;
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (!/already|exists|registered/i.test(msg)) throw err;
+    const existing = await findUserByEmail(email);
+    userId = existing?.id || null;
+    if (!userId) throw err;
+  }
+  if (!userId) throw new Error('create_failed');
+
+  await ensureProfile(userId, {
+    email,
+    display_name: email.split('@')[0],
+    role: role === 'admin' ? 'admin' : 'staff',
+    status: 'active',
+  });
+  await updateProfile(userId, {
+    role: role === 'admin' ? 'admin' : 'staff',
+    status: 'active',
+    email,
+  });
+
+  const token = await createInviteToken(secret, { userId, email, role });
+  return {
+    userId,
+    email,
+    setup_link: `${onboardUrl}?invite=${encodeURIComponent(token)}`,
+  };
+}
+
+/**
+ * Admin user management (no Supabase verify URLs).
+ * GET / PATCH / POST { email, role?, mode?: 'link'|'password' }
  */
 /** @param {import('http').IncomingMessage} req @param {import('http').ServerResponse} res */
 export default async function handler(req, res) {
@@ -116,7 +151,6 @@ export default async function handler(req, res) {
         return;
       }
 
-      // Optional: only when Postmark is configured later
       if (
         before?.status !== 'active' &&
         updated.status === 'active' &&
@@ -149,14 +183,14 @@ export default async function handler(req, res) {
         return;
       }
       const role = body.role === 'admin' ? 'admin' : 'staff';
-      // Default: invite link → /onboard signup form. mode=password still available.
       const mode = body.mode === 'password' ? 'password' : 'link';
       const loginUrl = appLoginUrl(req);
       const onboardUrl = appOnboardUrl(req);
       const meta = { invited_by: auth.profile.email || auth.user.id };
+      const secret = process.env.COOKIE_SECRET?.trim();
 
       if (mode === 'password') {
-        const password = String(body.password || '').trim() || randomPassword();
+        const password = String(body.password || '').trim() || randomPassword().slice(0, 24);
         if (password.length < 8) {
           res.status(400).json({ error: 'password_too_short' });
           return;
@@ -173,30 +207,31 @@ export default async function handler(req, res) {
           email,
           temporary_password: password,
           login_url: loginUrl,
-          hint: 'Share the login URL and temporary password privately. No email was sent.',
         });
         return;
       }
 
-      // Invite action link → /onboard (user picks their own password)
-      const generated = await generateSetupLink(email, {
-        redirectTo: onboardUrl,
-        data: meta,
-      });
-      const userId = generated.user?.id;
-      if (userId) {
-        await updateProfile(userId, { role, status: 'active', email });
+      if (!secret) {
+        res.status(503).json({ error: 'not_configured', message: 'COOKIE_SECRET required for invites' });
+        return;
       }
+
+      const invited = await createAppInvite({
+        email,
+        role,
+        meta,
+        secret,
+        onboardUrl,
+      });
 
       res.status(200).json({
         ok: true,
         mode: 'link',
-        user: generated.user,
-        email,
-        setup_link: generated.setup_link,
+        email: invited.email,
+        setup_link: invited.setup_link,
         onboard_url: onboardUrl,
         login_url: loginUrl,
-        hint: 'Share this link. They choose a password on the signup form; no email was sent.',
+        hint: 'Share this Measured Stock link. They set their own password — no Supabase URL.',
       });
       return;
     }

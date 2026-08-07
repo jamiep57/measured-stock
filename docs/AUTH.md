@@ -68,8 +68,10 @@ SELECT public.promote_profile_admin('you@example.com');
 **Admin → Users → Add user → Create invite link**
 
 - Creates an **active** account
-- Shows a **copyable invite link** (no email sent)
-- Recipient opens the link → `/onboard` signup form (name + password) → into the app
+- Shows a **copyable Measured Stock link** (no email, no `supabase.co` URL):
+  `https://measured-stock.vercel.app/onboard?invite=inv1.…`
+- Recipient opens the link → name + password → into the app
+- Old Supabase `…/auth/v1/verify?…` links no longer work for onboarding — create a fresh invite
 
 ## Later: Postmark (optional)
 

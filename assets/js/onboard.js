@@ -1,5 +1,6 @@
 /**
- * onboard.js — invitee sets name + password after opening an admin invite link.
+ * onboard.js — invitee sets name + password via app-owned invite link.
+ * Expected URL: /onboard?invite=inv1.…
  */
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.2/+esm';
 
@@ -32,8 +33,7 @@ const supabase = createClient(cfg.url, cfg.key, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: 'pkce',
+    detectSessionInUrl: false,
   },
 });
 
@@ -43,6 +43,9 @@ const invalidView = document.getElementById('invalidView');
 const submitBtn = document.getElementById('submitBtn');
 const emailInput = document.getElementById('email');
 const nameInput = document.getElementById('name');
+
+const params = new URLSearchParams(window.location.search);
+const invite = params.get('invite') || '';
 
 function setMsg(text, kind = '') {
   if (!msg) return;
@@ -54,42 +57,6 @@ function showInvalid(detail) {
   form.hidden = true;
   invalidView.hidden = false;
   setMsg(detail || 'Invite invalid.', 'error');
-}
-
-async function establishEdgeSession(accessToken, displayName) {
-  const res = await fetch('/api/auth/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      access_token: accessToken,
-      display_name: displayName,
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (res.status === 403 && data.error === 'pending') {
-    throw new Error('Your account is still awaiting admin approval.');
-  }
-  if (!res.ok) {
-    throw new Error(data.message || data.error || `session ${res.status}`);
-  }
-  return data;
-}
-
-async function resolveInviteSession() {
-  // Invite verify redirects here with tokens in the URL; supabase-js picks them up.
-  const { data: { session }, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  if (session) return session;
-
-  // Some flows land with ?code= — exchange if present
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  if (code) {
-    const { data, error: exErr } = await supabase.auth.exchangeCodeForSession(code);
-    if (exErr) throw exErr;
-    return data.session;
-  }
-  return null;
 }
 
 form?.addEventListener('submit', async (e) => {
@@ -115,40 +82,38 @@ form?.addEventListener('submit', async (e) => {
   setMsg('Saving your account…');
 
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      showInvalid('Your invite session expired. Ask for a new link.');
-      return;
+    const acceptRes = await fetch('/api/auth/accept-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invite, password, display_name }),
+    });
+    const accepted = await acceptRes.json().catch(() => ({}));
+    if (!acceptRes.ok) {
+      throw new Error(accepted.message || accepted.error || 'Could not finish setup');
     }
 
-    const { error: updErr } = await supabase.auth.updateUser({
+    setMsg('Signing you in…');
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: accepted.email,
       password,
-      data: { full_name: display_name, name: display_name },
     });
-    if (updErr) throw updErr;
+    if (error) throw error;
 
-    // Best-effort profile name update (RLS allows own display_name)
-    try {
-      await fetch(
-        `${cfg.url}/rest/v1/profiles?id=eq.${encodeURIComponent(session.user.id)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            apikey: cfg.key,
-            Authorization: `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify({ display_name }),
-        }
-      );
-    } catch { /* ignore */ }
+    const sessionRes = await fetch('/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access_token: data.session.access_token,
+        display_name,
+      }),
+    });
+    const sessionData = await sessionRes.json().catch(() => ({}));
+    if (!sessionRes.ok) {
+      throw new Error(sessionData.message || sessionData.error || 'session failed');
+    }
 
-    const { data: refreshed } = await supabase.auth.getSession();
-    const token = refreshed?.session?.access_token || session.access_token;
-    const result = await establishEdgeSession(token, display_name);
     setMsg('All set — opening the app…', 'ok');
-    window.location.href = result.redirect || '/v5/admin';
+    window.location.href = sessionData.redirect || '/v5/admin';
   } catch (err) {
     setMsg(String(err.message || err), 'error');
     submitBtn.disabled = false;
@@ -156,28 +121,30 @@ form?.addEventListener('submit', async (e) => {
 });
 
 (async () => {
+  // Old Supabase verify links land with #access_token — explain and point to new flow
+  if (window.location.hash.includes('access_token')) {
+    showInvalid(
+      'This is an old invite link. Ask an admin for a new invite from Users — it will look like measured-stock.vercel.app/onboard?invite=…'
+    );
+    return;
+  }
+
+  if (!invite) {
+    showInvalid('Missing invite. Ask an admin for a new link.');
+    return;
+  }
+
   try {
-    const session = await resolveInviteSession();
-    if (!session?.user) {
-      showInvalid();
+    const res = await fetch(`/api/auth/accept-invite?invite=${encodeURIComponent(invite)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showInvalid(data.message || 'Invite link is invalid or expired.');
       return;
     }
-
-    const email = session.user.email || '';
-    emailInput.value = email;
-    const metaName =
-      session.user.user_metadata?.full_name ||
-      session.user.user_metadata?.name ||
-      (email ? email.split('@')[0] : '');
-    if (metaName) nameInput.value = String(metaName).slice(0, 40);
-
-    setMsg('Choose a password to finish setting up your account.');
+    emailInput.value = data.email || '';
+    nameInput.value = (data.email || '').split('@')[0].slice(0, 40);
+    setMsg('Choose a name and password to finish setting up your account.');
     form.hidden = false;
-
-    // Clean tokens from the address bar without dropping the session
-    if (window.location.hash || window.location.search.includes('code=')) {
-      history.replaceState({}, '', '/onboard');
-    }
   } catch (err) {
     showInvalid(String(err.message || err));
   }
