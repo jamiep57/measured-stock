@@ -33,7 +33,6 @@ import {
 } from '../../lib/grid-collab-keys.js';
 import {
   KIT_MOVEMENT_LABELS,
-  KIT_SOURCE_LABELS,
   balancesByProduct,
   validateEventStock,
   affectsWarehouse,
@@ -147,7 +146,6 @@ function renderShell() {
       <div class="kit-pack-toolbar" id="kitPackToolbar">
         <div class="kit-pack-toolbar-inner">
           <div class="kit-pack-toolbar-controls" id="kitPackToolbarControls"></div>
-          <div class="kit-pack-add" id="kitPackAddSearch"></div>
           <div class="kit-pack-stats muted" id="kitPackStats"></div>
         </div>
       </div>
@@ -315,7 +313,7 @@ function renderPackList(items, availMap, balanceMap, query, productId, sourceFil
   if (!filtered.length) {
     return `<div class="catalog-list-empty">${items?.length
       ? 'No kit items match your filters.'
-      : 'No kit on this event yet. Start typing a product above to add lines.'}</div>`;
+      : 'No kit on this event yet. Add lines via scan or a stock movement.'}</div>`;
   }
 
   const { grouped, keys } = groupItems(filtered);
@@ -469,7 +467,6 @@ export function mountKitPanel(route) {
 
   const controlsEl = $('kitPackToolbarControls');
   const statsEl = $('kitPackStats');
-  const addSearchEl = $('kitPackAddSearch');
   const itemsWrap = $('kitItemsWrap');
   const movWrap = $('kitMovementsWrap');
   const movCountEl = $('kitMovementsCount');
@@ -488,7 +485,6 @@ export function mountKitPanel(route) {
   let sourceFilter = 'all';
   let productFilter = getLastProductFilter();
   let saveTimers = new Map();
-  let addingProduct = false;
 
   const seeded = getTableFilterValues('kit');
   if (seeded) {
@@ -532,23 +528,6 @@ export function mountKitPanel(route) {
       inputSelector: '.kit-pack-inp',
       cellKeyFromInput: kitCellKeyFromInput,
       findCellEl: kitFindCellEl,
-    });
-  }
-
-  function availableKitProducts() {
-    const onEvent = new Set(items.map((i) => i.product_id));
-    return kitProducts.filter((p) => !onEvent.has(p.id));
-  }
-
-  function mountAddSearch() {
-    if (!addSearchEl) return;
-    const available = availableKitProducts();
-    mountProductSearch(addSearchEl, {
-      products: available,
-      placeholder: 'Start typing a product…',
-      onSelect: ({ productId }) => {
-        addItem(productId).catch((err) => toast(err.message || 'Add failed', true));
-      },
     });
   }
 
@@ -788,48 +767,6 @@ export function mountKitPanel(route) {
     }
     setTableFilterContext('kit', { warehouses });
     paint();
-    mountAddSearch();
-  }
-
-  async function addItem(productId) {
-    if (!productId || addingProduct) return;
-    if (!kitProducts.length) {
-      toast('Add kit items in Kit library first.', true);
-      return;
-    }
-    const existing = items.find((i) => i.product_id === productId);
-    if (existing) {
-      toast('Already on this kit list.');
-      itemsWrap.querySelector(`[data-item-id="${existing.id}"]`)
-        ?.scrollIntoView({ block: 'nearest' });
-      mountAddSearch();
-      return;
-    }
-    if (!kitProducts.some((p) => p.id === productId)) {
-      toast('Pick a kit library item.', true);
-      return;
-    }
-
-    addingProduct = true;
-    const DB = getDB();
-    try {
-      await DB.insert('event_kit_items', {
-        event_id: eventId,
-        product_id: productId,
-        qty_planned: 1,
-        qty_packed: 0,
-        source: 'own',
-      });
-      await refresh();
-      toast(`Added as ${KIT_SOURCE_LABELS.own}`);
-      requestAnimationFrame(() => {
-        itemsWrap.querySelector(`[data-pid="${productId}"]`)
-          ?.scrollIntoView({ block: 'nearest' });
-        addSearchEl?.querySelector('.product-search-input')?.focus();
-      });
-    } finally {
-      addingProduct = false;
-    }
   }
 
   function stopScanMode() {

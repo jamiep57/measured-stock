@@ -7654,37 +7654,6 @@ label.collab-cell--peer {
 .kit-pack-filters {
   flex-shrink: 0;
 }
-.kit-pack-add {
-  flex: 1 1 220px;
-  min-width: 180px;
-  max-width: 360px;
-}
-.kit-pack-add .product-search {
-  width: 100%;
-}
-.kit-pack-add .product-search-input {
-  min-height: 34px;
-  height: 34px;
-  padding: 0 10px;
-  font-size: 13px;
-  color: var(--foreground);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-sizing: border-box;
-  -webkit-appearance: none;
-  appearance: none;
-}
-.kit-pack-add .product-search-input:hover {
-  border-color: color-mix(in srgb, var(--border) 70%, var(--foreground));
-}
-.kit-pack-add .product-search-input:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--foreground) 30%, var(--border));
-}
-.kit-pack-add .product-search-list {
-  z-index: 60;
-}
 .kit-pack-stats {
   display: inline-flex;
   flex-wrap: wrap;

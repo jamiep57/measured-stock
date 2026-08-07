@@ -131,6 +131,7 @@ async function render(route) {
   }
   syncBugFabVisibility();
   requestAnimationFrame(() => {
+    if (gen !== renderGen) return;
     content.classList.add('admin-content--enter');
   });
 }
