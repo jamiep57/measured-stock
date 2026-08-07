@@ -3,7 +3,7 @@
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
-import { getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, loadRecipesFull, productFromEvent } from '../../db.js';
+import { getDB, loadEventLite, loadCaseSizes, loadLibraryProducts, loadRecipesFull, productFromEvent } from '../../db.js';
 import {
   findRecipe, recipeIsMapped, recipeOnEvent, recipeIngredients,
   productIdForName, normVariation,
@@ -949,7 +949,7 @@ export function mountSalesPanel(route) {
   async function reload() {
     const DB = getDB();
     const [event, tillImport, modImport, recipes, caseSizes, libraryProducts] = await Promise.all([
-      loadEventFull(ctx.eventId),
+      loadEventLite(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
       loadRecipesFull(),

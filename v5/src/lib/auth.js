@@ -159,12 +159,15 @@ export async function ensureAppAuth(opts = {}) {
 export async function signOutApp() {
   const sb = getAuthClient();
   try {
-    await sb?.auth.signOut();
+    await Promise.race([
+      sb?.auth.signOut() || Promise.resolve(),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ]);
   } catch { /* ignore */ }
   try {
     // Local Vite has no /api — don't block redirect on a hanging request.
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), 2000) : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 1500) : null;
     await fetch('/api/logout', { method: 'POST', signal: ctrl?.signal }).catch(() => {});
     if (timer) clearTimeout(timer);
   } catch { /* ignore */ }

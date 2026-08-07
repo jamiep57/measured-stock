@@ -7,7 +7,7 @@ import {
 } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import {
-  getDB, loadEventFull, loadCaseSizes, loadCategories, productFromEvent,
+  getDB, loadEventLite, loadCaseSizes, loadCategories, productFromEvent,
 } from '../../db.js';
 import {
   formToStored, storedToForm, hasQuantity, totalUnitsForProduct,
@@ -627,7 +627,7 @@ export function mountWastagePanel(route) {
   async function load() {
     try {
       [event, categories, caseSizes] = await Promise.all([
-        loadEventFull(route.eventId),
+        loadEventLite(route.eventId),
         loadCategories(),
         loadCaseSizes(),
       ]);

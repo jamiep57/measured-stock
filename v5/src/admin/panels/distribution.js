@@ -3,7 +3,7 @@ import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
-import { getDB, loadEventFull, loadCaseSizes } from '../../db.js';
+import { getDB, loadEventLite, loadCaseSizes } from '../../db.js';
 import {
   barServesProduct,
   hasBarMenu,
@@ -438,7 +438,7 @@ export function mountDistributionPanel(route, state) {
   async function reload() {
     const DB = getDB();
     const [event, distRows, deliveries, caseSizes] = await Promise.all([
-      loadEventFull(ctx.eventId),
+      loadEventLite(ctx.eventId),
       DB.distribution.forEvent(ctx.eventId),
       DB.deliveries.forEvent(ctx.eventId).catch(() => []),
       loadCaseSizes(),

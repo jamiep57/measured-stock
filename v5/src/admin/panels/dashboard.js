@@ -3,7 +3,7 @@
  */
 
 import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
-import { getDB, loadEventFull, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
+import { getDB, loadEventLite, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
 import { computeStockProjection } from '../../lib/stock-projection.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import {
@@ -159,7 +159,7 @@ export function mountDashboardPanel(route) {
   async function reload() {
     const DB = getDB();
     const [event, tillImport, modImport, recipes, caseSizes, deliveries, wastageBatches] = await Promise.all([
-      loadEventFull(ctx.eventId),
+      loadEventLite(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
       loadRecipesFull(),

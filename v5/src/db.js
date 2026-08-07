@@ -51,10 +51,12 @@ const RECIPE_MUTATION_TABLES = new Set([
   'recipe_ingredients',
 ]);
 
-/** @type {Map<string, { at: number, value: any }>} */
+/** @type {Map<string, { at: number, value: any, mode: 'full' | 'lite' }>} */
 const eventCache = new Map();
 /** @type {Map<string, Promise<any>>} */
-const eventInflight = new Map();
+const eventInflightFull = new Map();
+/** @type {Map<string, Promise<any>>} */
+const eventInflightLite = new Map();
 let eventCacheGen = 0;
 
 /** @type {{ at: number, value: any } | null} */
@@ -96,11 +98,13 @@ export function invalidateEventCache(eventId) {
   if (eventId) {
     const id = String(eventId);
     eventCache.delete(id);
-    eventInflight.delete(id);
+    eventInflightFull.delete(id);
+    eventInflightLite.delete(id);
     return;
   }
   eventCache.clear();
-  eventInflight.clear();
+  eventInflightFull.clear();
+  eventInflightLite.clear();
 }
 
 export function invalidateRefCaches() {
@@ -201,6 +205,12 @@ const PRODUCT_SELECT =
   'category:categories(id,name,colour_key,kind),' +
   'product_suppliers(id,supplier_id,sku,pack_size,units_per_case,case_price,unit_price,is_preferred,purchase_case_size_id,supplier:suppliers(id,name))';
 
+/** Same product fields without nested offers — much smaller payloads for most panels. */
+const PRODUCT_SELECT_LITE =
+  'id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit,product_kind,' +
+  'case_price,unit_price,supplier_id,sku,abv,pool_name,pool_servings_per_unit,pool_servings_text,' +
+  'category:categories(id,name,colour_key,kind)';
+
 const KIT_PRODUCT_SELECT =
   'id,name,sku,barcode,stock_unit,units_per_case,product_kind,category_id,notes,archived,is_container,' +
   'image_url,unit_price,case_price,' +
@@ -247,8 +257,9 @@ export async function loadEventsList() {
   return (events || []).filter((e) => !e.legacy_id || blobIds.has(e.legacy_id));
 }
 
-async function fetchEventFull(eventId) {
+async function fetchEvent(eventId, mode) {
   const DB = getDB();
+  const productSelect = mode === 'full' ? PRODUCT_SELECT : PRODUCT_SELECT_LITE;
   try {
     const row = await DB.select(
       'events',
@@ -257,7 +268,7 @@ async function fetchEventFull(eventId) {
       ',bars:bars(*)' +
       ',recipients:recipients(*)' +
       ',bar_products:bar_products(*)' +
-      ',event_products:event_products(*,product:products(' + PRODUCT_SELECT + '))'
+      ',event_products:event_products(*,product:products(' + productSelect + '))'
     );
     return (row && row[0]) || null;
   } catch (err) {
@@ -274,6 +285,7 @@ async function fetchEventFull(eventId) {
 }
 
 /**
+ * Full event embed including product supplier offers (recon / closing / reports / deliveries).
  * @param {string} eventId
  * @param {{ force?: boolean }} [opts]
  */
@@ -283,23 +295,64 @@ export async function loadEventFull(eventId, opts = {}) {
   if (opts.force) invalidateEventCache(id);
 
   const hit = eventCache.get(id);
-  if (!opts.force && cacheFresh(hit, EVENT_CACHE_TTL_MS)) return hit.value;
+  if (!opts.force && cacheFresh(hit, EVENT_CACHE_TTL_MS) && hit.mode === 'full') {
+    return hit.value;
+  }
 
-  const pending = eventInflight.get(id);
+  const pending = eventInflightFull.get(id);
   if (pending) return pending;
 
   const gen = eventCacheGen;
-  const request = fetchEventFull(id)
+  const request = fetchEvent(id, 'full')
     .then((value) => {
       if (gen === eventCacheGen) {
-        eventCache.set(id, { at: Date.now(), value });
+        eventCache.set(id, { at: Date.now(), value, mode: 'full' });
       }
       return value;
     })
     .finally(() => {
-      if (eventInflight.get(id) === request) eventInflight.delete(id);
+      if (eventInflightFull.get(id) === request) eventInflightFull.delete(id);
     });
-  eventInflight.set(id, request);
+  eventInflightFull.set(id, request);
+  return request;
+}
+
+/**
+ * Lighter event embed without nested product_suppliers — preferred for most panels.
+ * Returns a cached full payload when available (superset).
+ * @param {string} eventId
+ * @param {{ force?: boolean }} [opts]
+ */
+export async function loadEventLite(eventId, opts = {}) {
+  const id = String(eventId || '');
+  if (!id) return null;
+  if (opts.force) invalidateEventCache(id);
+
+  const hit = eventCache.get(id);
+  if (!opts.force && cacheFresh(hit, EVENT_CACHE_TTL_MS)) return hit.value;
+
+  // Prefer an in-flight full fetch over starting a parallel lite request.
+  const pendingFull = eventInflightFull.get(id);
+  if (pendingFull) return pendingFull;
+
+  const pendingLite = eventInflightLite.get(id);
+  if (pendingLite) return pendingLite;
+
+  const gen = eventCacheGen;
+  const request = fetchEvent(id, 'lite')
+    .then((value) => {
+      if (gen === eventCacheGen) {
+        const existing = eventCache.get(id);
+        if (!(existing && existing.mode === 'full' && cacheFresh(existing, EVENT_CACHE_TTL_MS))) {
+          eventCache.set(id, { at: Date.now(), value, mode: 'lite' });
+        }
+      }
+      return value;
+    })
+    .finally(() => {
+      if (eventInflightLite.get(id) === request) eventInflightLite.delete(id);
+    });
+  eventInflightLite.set(id, request);
   return request;
 }
 
@@ -519,7 +572,8 @@ export async function loadEventKit(eventId) {
       'kit_movements',
       '?event_id=eq.' + enc(eventId) +
       '&select=*,lines:kit_movement_lines(*,product:products(' + productSelect + '),warehouse:warehouses(id,name),supplier:suppliers(id,name))' +
-      '&order=moved_at.desc',
+      '&order=moved_at.desc' +
+      '&limit=40',
     );
   }
   let items;

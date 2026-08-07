@@ -1,7 +1,7 @@
 import './styles/v5.css';
 import './styles/kit-count.css';
 import { $, toast, syncChromeSizes } from './lib/util.js';
-import { loadCaseSizes, loadEventsList, loadEventFull, loadSuppliers } from './db.js';
+import { loadCaseSizes, loadEventsList, loadEventLite, loadSuppliers } from './db.js';
 import { getDB } from './db.js';
 import {
   flushQueue,
@@ -509,7 +509,7 @@ async function onEventChange(id) {
   if (id) {
     try {
       const [ev, suppliers] = await Promise.all([
-        loadEventFull(id),
+        loadEventLite(id),
         state.suppliers.length ? Promise.resolve(state.suppliers) : loadSuppliers(),
       ]);
       state.event = ev;
@@ -598,7 +598,7 @@ async function boot() {
       // Prefill selection highlight on the gate; user still confirms by tapping.
       state.eventId = remembered;
       try {
-        state.event = await loadEventFull(remembered);
+        state.event = await loadEventLite(remembered);
       } catch {
         state.event = null;
         state.eventId = '';

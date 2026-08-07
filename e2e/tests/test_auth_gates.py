@@ -68,8 +68,8 @@ def test_auth_logout_returns_to_login(admin_page):
           }
         }"""
     )
-    admin_page.locator("#topbarLogout").click(force=True)
-    admin_page.wait_for_url(re.compile(r".*/login"), timeout=20000)
+    with admin_page.expect_navigation(url=re.compile(r".*/login"), timeout=20000):
+        admin_page.locator("#topbarLogout").evaluate("el => el.click()")
     expect(admin_page.locator("#emailForm")).to_be_visible(timeout=10000)
 
 

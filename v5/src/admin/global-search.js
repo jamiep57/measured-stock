@@ -5,7 +5,7 @@
 
 import { $, isBoneYard, escapeHtml } from '../lib/util.js';
 import {
-  loadEventFull, loadLibraryProducts, loadKitLibraryProducts, loadEventKit,
+  loadEventLite, loadLibraryProducts, loadKitLibraryProducts, loadEventKit,
 } from '../db.js';
 import { mountProductSearch } from '../components/product-search.js';
 import { initTableFilterTopbar } from './table-filter.js';
@@ -114,7 +114,7 @@ export function initGlobalSearch() {
       };
     }
     if (route.view === 'event' && route.eventId) {
-      const event = await loadEventFull(route.eventId);
+      const event = await loadEventLite(route.eventId);
       return {
         products: (event?.event_products || []).filter((ep) => ep.product?.name),
         bars: (event?.bars || [])
@@ -143,7 +143,7 @@ export function initGlobalSearch() {
         let products = [];
         let bars = [];
         if (!container.hidden) {
-          // loadEventFull / library reads hit shared TTL caches — cheap on panel switches.
+          // loadEventLite / library reads hit shared TTL caches — cheap on panel switches.
           ({ products, bars } = await loadPageContext(route));
           if (gen !== syncGeneration) return;
         }

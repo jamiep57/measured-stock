@@ -4,7 +4,7 @@
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
-import { getDB, loadEventFull, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
+import { getDB, loadEventLite, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
 import { computeStockProjection } from '../../lib/stock-projection.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import { initIcons } from '../../lib/icons.js';
@@ -101,7 +101,7 @@ export function mountProjectionsPanel(route) {
   async function reload() {
     const DB = getDB();
     const [event, tillImport, recipes, caseSizes, deliveries, wastageBatches] = await Promise.all([
-      loadEventFull(ctx.eventId),
+      loadEventLite(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       loadRecipesFull(),
       loadCaseSizes(),

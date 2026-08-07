@@ -7,7 +7,7 @@ import {
 } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import {
-  getDB, loadEventFull, loadCaseSizes, loadCategories, productFromEvent,
+  getDB, loadEventLite, loadCaseSizes, loadCategories, productFromEvent,
 } from '../../db.js';
 import {
   formToStored, storedToForm, hasQuantity, parseQty, totalUnitsForProduct,
@@ -952,7 +952,7 @@ export function mountTransfersPanel(route) {
   async function load() {
     try {
       [event, categories, caseSizes, warehouses] = await Promise.all([
-        loadEventFull(route.eventId),
+        loadEventLite(route.eventId),
         loadCategories(),
         loadCaseSizes(),
         loadWarehouses(),

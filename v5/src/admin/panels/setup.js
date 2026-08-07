@@ -4,7 +4,7 @@
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
-import { getDB, loadEventFull } from '../../db.js';
+import { getDB, loadEventLite } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { syncSidebar } from '../sidebar.js';
 import { parseRoute } from '../router.js';
@@ -238,7 +238,7 @@ export function mountSetupPanel(route, state = { events: [] }) {
   }
 
   async function refresh() {
-    event = await loadEventFull(eventId);
+    event = await loadEventLite(eventId);
     if (!event) throw new Error('Event not found');
     paintEventFields(event);
     renderBarPills(event.bars || [], openBarForm);

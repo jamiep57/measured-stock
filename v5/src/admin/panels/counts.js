@@ -4,7 +4,7 @@
 
 import { $, escapeHtml, toast, fmtDateTime, isBoneYard } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
-import { getDB, loadEventFull, loadCaseSizes } from '../../db.js';
+import { getDB, loadEventLite, loadCaseSizes } from '../../db.js';
 import { barServesProduct, hasBarMenu } from '../../bar-products.js';
 import {
   formToCountStored, countStoredToForm, hasQuantity, inputAttrsPrimary, inputAttrsForSecondary, parseQty,
@@ -696,7 +696,7 @@ export function mountCountsPanel(route) {
   async function reload() {
     const DB = getDB();
     const [event, caseSizes, sessions] = await Promise.all([
-      loadEventFull(ctx.eventId),
+      loadEventLite(ctx.eventId),
       loadCaseSizes(),
       DB.stockCounts.forEvent(ctx.eventId),
     ]);
