@@ -14,7 +14,7 @@ import {
 import { parseQty } from '../../stock-entry.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 
 function fmtGbp(n) {
@@ -80,9 +80,15 @@ function renderListItems(suppliers, selectedId, query, sort = 'name') {
     });
 
   if (!list.length) {
-    return `<div class="catalog-list-empty">${suppliers?.length
-      ? 'No suppliers match your search.'
-      : 'No suppliers yet. Add your first one.'}</div>`;
+    return emptyState({
+      iconHtml: icon(suppliers?.length ? 'funnel' : 'truck', { size: 22 }),
+      title: suppliers?.length ? 'No matching suppliers' : 'No suppliers yet',
+      copy: suppliers?.length
+        ? 'No suppliers match your search.'
+        : 'Add your first supplier to get started.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   return list.map((s) => {
@@ -137,7 +143,13 @@ function renderDetail(s, products) {
           </tbody>
         </table>
       </div>`
-    : '<div class="catalog-list-empty">No products linked to this supplier yet.</div>';
+    : emptyState({
+      iconHtml: icon('package', { size: 22 }),
+      title: 'No linked products',
+      copy: 'No products linked to this supplier yet.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
 
   return `
     <div class="catalog-detail-head">

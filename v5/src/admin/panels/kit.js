@@ -69,7 +69,7 @@ import {
   scanCodeCandidates,
 } from '../../lib/kit-scan-session.js';
 import { parseQty } from '../../stock-entry.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 
 function round1(n) {
@@ -311,9 +311,15 @@ function renderPackList(items, availMap, balanceMap, query, productId, sourceFil
   const filtered = filterItems(items, availMap, balanceMap, query, productId, sourceFilter, contentsMap);
 
   if (!filtered.length) {
-    return `<div class="catalog-list-empty">${items?.length
-      ? 'No kit items match your filters.'
-      : 'No kit on this event yet. Add lines via scan or a stock movement.'}</div>`;
+    return emptyState({
+      iconHtml: icon(items?.length ? 'funnel' : 'package', { size: 22 }),
+      title: items?.length ? 'No matching kit items' : 'No kit on this event yet',
+      copy: items?.length
+        ? 'No kit items match your filters.'
+        : 'Add lines via scan or a stock movement.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   const { grouped, keys } = groupItems(filtered);
@@ -426,7 +432,13 @@ function movementMeta(m) {
 
 function renderMovements(movements) {
   if (!(movements || []).length) {
-    return '<div class="catalog-list-empty">No sends, returns, or hire yet.</div>';
+    return emptyState({
+      iconHtml: icon('arrow-left-right', { size: 22 }),
+      title: 'No movements yet',
+      copy: 'No sends, returns, or hire yet.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   return `

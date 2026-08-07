@@ -17,7 +17,7 @@ import {
 import { mountProductSearch } from '../../components/product-search.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 
 const WH_STORAGE_KEY = 'v5_warehouse';
@@ -124,9 +124,15 @@ function renderListItems(warehouses, selectedId, query, sort = 'name') {
     });
 
   if (!list.length) {
-    return `<div class="catalog-list-empty">${warehouses?.length
-      ? 'No warehouses match your search.'
-      : 'No warehouses yet. Add your first one.'}</div>`;
+    return emptyState({
+      iconHtml: icon(warehouses?.length ? 'funnel' : 'warehouse', { size: 22 }),
+      title: warehouses?.length ? 'No matching warehouses' : 'No warehouses yet',
+      copy: warehouses?.length
+        ? 'No warehouses match your search.'
+        : 'Add your first warehouse to get started.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   return list.map((w) => {
@@ -156,12 +162,15 @@ function renderStockTable(stockRows, caseSizes, kind) {
     });
 
   if (!stock.length) {
-    return `
-      <div class="catalog-list-empty">
-        ${isKit
-          ? 'No kit in this warehouse yet. Count kit back from an event, or count out later once stock is held here.'
-          : 'No stock in this warehouse yet. Transfer stock in from an event or another warehouse.'}
-      </div>`;
+    return emptyState({
+      iconHtml: icon('package', { size: 22 }),
+      title: isKit ? 'No kit in this warehouse yet' : 'No stock in this warehouse yet',
+      copy: isKit
+        ? 'Count kit back from an event, or count out later once stock is held here.'
+        : 'Transfer stock in from an event or another warehouse.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   return `
@@ -200,7 +209,13 @@ function renderStockTable(stockRows, caseSizes, kind) {
 function renderTransferLog(transfers, warehouseId, warehouses, events, caseSizes) {
   const xfers = transfers || [];
   if (!xfers.length) {
-    return '<div class="catalog-list-empty">No warehouse transfers yet.</div>';
+    return emptyState({
+      iconHtml: icon('arrow-left-right', { size: 22 }),
+      title: 'No warehouse transfers yet',
+      copy: 'Transfers between warehouses will show up here.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   return `

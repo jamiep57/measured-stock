@@ -17,7 +17,7 @@ import {
 } from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 import {
   normPoolName,
@@ -81,9 +81,15 @@ function renderListItems(pools, selectedKey, query, caseSizes, sort = 'name') {
     });
 
   if (!list.length) {
-    return `<div class="catalog-list-empty">${pools?.length
-      ? 'No pools match your search.'
-      : 'No volume pools yet. Link Sprite with 7up (or similar) so stock tracks as one pool.'}</div>`;
+    return emptyState({
+      iconHtml: icon(pools?.length ? 'funnel' : 'layers', { size: 22 }),
+      title: pools?.length ? 'No matching pools' : 'No volume pools yet',
+      copy: pools?.length
+        ? 'No pools match your search.'
+        : 'Link Sprite with 7up (or similar) so stock tracks as one pool.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   return list.map((pool) => {
@@ -99,7 +105,13 @@ function renderListItems(pools, selectedKey, query, caseSizes, sort = 'name') {
 function renderMemberRows(pool, caseSizes) {
   const rows = pool?.members || [];
   if (!rows.length) {
-    return '<div class="catalog-list-empty">No products in this pool yet. Add substitutes below.</div>';
+    return emptyState({
+      iconHtml: icon('package', { size: 22 }),
+      title: 'No products in this pool yet',
+      copy: 'Add substitutes below.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
   }
 
   return `
