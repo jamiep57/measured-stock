@@ -7,7 +7,7 @@ import { formToStored, storedToForm, hasQuantity } from './stock-entry.js';
 import { entryMode } from './pack-metrics.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountProductSearch } from './components/product-search.js';
-import { confirmDialog } from 'components/modal.js';
+import { confirmDialog } from './components/modal.js';
 
 const WASTAGE_REASONS = [
   'Breakage / spillage',

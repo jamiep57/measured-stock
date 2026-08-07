@@ -8,8 +8,9 @@ import { formToStored, storedToForm, hasQuantity } from './stock-entry.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountProductSearch } from './components/product-search.js';
 import { mountSearchSelect } from './components/search-select.js';
+import { confirmDialog } from './components/modal.js';
+import { emptyState, errorState, bindEmptyRetry } from './components/empty-state.js';
 import {
-import { confirmDialog } from 'components/modal.js';
   parseSourceValue,
   transferSourceFromSaved,
   transferDestValueFromSaved,
@@ -56,12 +57,11 @@ export async function loadTransfersView() {
   if (!el) return;
 
   if (!ctx?.eventId) {
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-calendar-blank"></i></span>
-        <p class="empty-title">Choose an event</p>
-        <p class="empty-copy">Select an event in the top bar to log transfers.</p>
-      </div>`;
+    el.innerHTML = emptyState({
+      icon: 'calendar-blank',
+      title: 'Choose an event',
+      copy: 'Select an event in the top bar to log transfers.',
+    });
     return;
   }
 
@@ -74,12 +74,11 @@ export async function loadTransfersView() {
     transfers = rows || [];
     warehouses = wh || [];
   } catch (err) {
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-warning-circle"></i></span>
-        <p class="empty-title">Couldn’t load transfers</p>
-        <p class="empty-copy">${escapeHtml(err.message)}</p>
-      </div>`;
+    el.innerHTML = errorState({
+      title: 'Couldn’t load transfers',
+      copy: err.message || 'Check your connection and try again.',
+    });
+    bindEmptyRetry(el, () => loadTransfersView());
     return;
   }
 
@@ -98,12 +97,15 @@ function renderTransferList() {
   const list = $('xferList');
   if (!list) return;
   if (!transfers.length) {
-    list.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-arrows-left-right"></i></span>
-        <p class="empty-title">No transfers yet</p>
-        <p class="empty-copy">Tap + to log the first transfer for this event.</p>
-      </div>`;
+    list.innerHTML = emptyState({
+      icon: 'arrows-left-right',
+      title: 'No transfers yet',
+      copy: 'Move stock between bars or from a warehouse.',
+      ctaHtml: '<button type="button" class="btn btn-primary empty-retry-btn" data-empty-cta="transfer">Log transfer</button>',
+    });
+    bindEmptyRetry(list, () => startNewTransfer());
+    // bindEmptyRetry looks for data-empty-retry; wire CTA manually
+    list.querySelector('[data-empty-cta="transfer"]')?.addEventListener('click', () => startNewTransfer());
     return;
   }
 

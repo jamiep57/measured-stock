@@ -417,9 +417,10 @@ function renderToolbarItem(item) {
   const classes = ['topbar-tool'];
   if (item.label) classes.push('topbar-tool--label');
   if (item.primary) classes.push('topbar-tool--primary');
+  const iconOpts = { size: 16, strokeWidth: 2 };
   const inner = item.label
-    ? `${item.icon ? icon(item.icon, { size: 16, strokeWidth: 2.5 }) : ''}<span>${item.label}</span>`
-    : icon(item.icon, { size: 16 });
+    ? `${item.icon ? icon(item.icon, iconOpts) : ''}<span>${item.label}</span>`
+    : icon(item.icon, iconOpts);
 
   return `<button type="button" class="${classes.join(' ')}"
     data-toolbar-action="${item.id}"

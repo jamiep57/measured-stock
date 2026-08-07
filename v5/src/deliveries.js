@@ -6,7 +6,8 @@ import { flushQueue } from './sync-queue.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountSupplierSearch } from './components/supplier-search.js';
 import { mountProductSearch } from './components/product-search.js';
-import { confirmDialog } from 'components/modal.js';
+import { confirmDialog } from './components/modal.js';
+import { emptyState, errorState, bindEmptyRetry } from './components/empty-state.js';
 
 const DELIVERY_BUCKET = 'delivery-photos';
 
@@ -26,24 +27,22 @@ export function initDeliveries(context) {
 export async function loadDeliveriesView() {
   const el = $('view-deliveries');
   if (!ctx.eventId) {
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-calendar-blank"></i></span>
-        <p class="empty-title">Choose an event</p>
-        <p class="empty-copy">Select an event in the top bar to log deliveries.</p>
-      </div>`;
+    el.innerHTML = emptyState({
+      icon: 'calendar-blank',
+      title: 'Choose an event',
+      copy: 'Select an event in the top bar to log deliveries.',
+    });
     return;
   }
 
   try {
     deliveries = await getDB().deliveries.forEvent(ctx.eventId);
   } catch (err) {
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-warning-circle"></i></span>
-        <p class="empty-title">Couldn’t load deliveries</p>
-        <p class="empty-copy">${escapeHtml(err.message)}</p>
-      </div>`;
+    el.innerHTML = errorState({
+      title: 'Couldn’t load deliveries',
+      copy: err.message || 'Check your connection and try again.',
+    });
+    bindEmptyRetry(el, () => loadDeliveriesView());
     return;
   }
 
@@ -62,12 +61,13 @@ function renderDeliveryList() {
   const list = $('delList');
   if (!list) return;
   if (!deliveries.length) {
-    list.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-shipping-container"></i></span>
-        <p class="empty-title">No deliveries yet</p>
-        <p class="empty-copy">Tap + to log the first delivery for this event.</p>
-      </div>`;
+    list.innerHTML = emptyState({
+      icon: 'shipping-container',
+      title: 'No deliveries yet',
+      copy: 'Log supplier deliveries as they arrive on site.',
+      ctaHtml: '<button type="button" class="btn btn-primary empty-retry-btn" data-empty-cta="delivery">Log delivery</button>',
+    });
+    list.querySelector('[data-empty-cta="delivery"]')?.addEventListener('click', () => startNewDelivery());
     return;
   }
   list.innerHTML = `
