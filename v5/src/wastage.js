@@ -10,6 +10,8 @@ import { mountProductSearch } from './components/product-search.js';
 import { confirmDialog } from './components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from './components/empty-state.js';
 import { scheduleDestructive } from './lib/action-undo.js';
+import { loadingWidget } from './components/loading-widget.js';
+import { reportError } from './lib/client-errors.js';
 
 const WASTAGE_REASONS = [
   'Breakage / spillage',
@@ -53,9 +55,12 @@ export async function loadWastageView() {
     return;
   }
 
+  el.innerHTML = loadingWidget('Loading wastage…');
+
   try {
     batches = await getDB().wastage.forEvent(ctx.eventId);
   } catch (err) {
+    reportError(err, { source: 'loadWastageView', silent: true });
     el.innerHTML = errorState({
       title: 'Couldn’t load wastage',
       copy: err.message || 'Check your connection and try again.',

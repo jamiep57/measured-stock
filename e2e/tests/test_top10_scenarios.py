@@ -37,7 +37,7 @@ def test_01_admin_login_via_email_form(page):
 def test_02_create_event_via_ui(admin_page, db, tracker):
     """Create an event from the home sheet; fixture cleans it up."""
     name = f"{E2E_PREFIX} UI Event {new_run_id()}"
-    goto_admin_path(admin_page, "/v5/admin")
+    goto_admin_path(admin_page, "/")
     expect(admin_page.locator("#homeNewEvent")).to_be_visible(timeout=20000)
     expect(admin_page.locator(".home-page, .home-toolbar").first).to_be_visible(timeout=10000)
     # mountHomePanel attaches the click listener after first paint — retry briefly.
@@ -56,7 +56,7 @@ def test_02_create_event_via_ui(admin_page, db, tracker):
     admin_page.locator("#homeEventVenue").fill("E2E UI Venue")
     admin_page.locator("#homeEventSave").click()
 
-    admin_page.wait_for_url(re.compile(r"/v5/admin/events/[^/]+/setup"), timeout=20000)
+    admin_page.wait_for_url(re.compile(r"/events/[^/]+/setup"), timeout=20000)
     expect(admin_page.locator("#setupName")).to_have_value(name, timeout=15000)
 
     # Track for cleanup (created outside seed fixture)
@@ -90,7 +90,7 @@ def test_03_setup_add_bar(admin_page, seed_minimal, tracker):
 def test_04_library_create_product(admin_page, db, tracker):
     """Create a library product via New product toolbar action."""
     product_name = f"{E2E_PREFIX} UI Product {new_run_id()}"
-    goto_admin_path(admin_page, "/v5/admin/library")
+    goto_admin_path(admin_page, "/library")
     expect(admin_page.locator(".lib-panel").first).to_be_visible(timeout=20000)
 
     click_toolbar(admin_page, "new-product")
@@ -221,6 +221,6 @@ def test_10_recon_shows_product(admin_page, seed):
 # ---------------------------------------------------------------------------
 
 def test_seeded_event_appears_on_home(admin_page, seed):
-    goto_admin_path(admin_page, "/v5/admin")
+    goto_admin_path(admin_page, "/")
     card = admin_page.locator(".event-card").filter(has_text=seed.event_name)
     expect(card.first).to_be_visible(timeout=20000)

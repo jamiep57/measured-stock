@@ -1,6 +1,6 @@
 /**
- * Kit phone companion — /v5/scan/?s=<sessionId>
- * Bare /v5/scan redirects into Measured Kit tab.
+ * Kit phone companion — /scan/?s=<sessionId>
+ * Bare /scan redirects into Measured Kit tab.
  */
 
 import { BrowserMultiFormatReader, BarcodeFormat } from '@zxing/browser';
@@ -35,7 +35,7 @@ function redirectToMeasuredKit() {
   params.set('tab', 'kit');
   const c = containerIdFromUrl();
   if (c) params.set('c', c);
-  location.replace(`/v5/?${params.toString()}`);
+  location.replace(`/app/?${params.toString()}`);
 }
 
 function setFeedback(msg, kind = '') {
@@ -363,7 +363,7 @@ main().catch((err) => {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/v5/sw.js', { scope: '/v5/' }).catch((err) => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/app/' }).catch((err) => {
       console.warn('SW registration failed', err);
     });
   });

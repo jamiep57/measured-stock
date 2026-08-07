@@ -11,7 +11,7 @@ from helpers.db import cloud_config_for_browser
 
 
 def test_auth_unauthenticated_admin_redirects_to_login(guest_page):
-    guest_page.goto(f"{base_url()}/v5/admin", wait_until="domcontentloaded")
+    guest_page.goto(f"{base_url()}/", wait_until="domcontentloaded")
     guest_page.wait_for_url(re.compile(r".*/login"), timeout=20000)
     # Preserve deep-link so login can bounce back.
     assert "next=" in guest_page.url or "/login" in guest_page.url
@@ -19,7 +19,7 @@ def test_auth_unauthenticated_admin_redirects_to_login(guest_page):
 
 
 def test_auth_unauthenticated_event_deep_link_keeps_next(guest_page, seed_minimal):
-    path = f"/v5/admin/events/{seed_minimal.event_id}/setup"
+    path = f"/events/{seed_minimal.event_id}/setup"
     guest_page.goto(f"{base_url()}{path}", wait_until="domcontentloaded")
     guest_page.wait_for_url(re.compile(r".*/login"), timeout=20000)
     # next should encode the event path (URL-encoded or raw).
@@ -66,7 +66,7 @@ def test_auth_login_next_returns_to_requested_panel(guest_page, seed_minimal):
     """After login from a deep-link bounce, admin loads (next may or may not restore)."""
     import os
 
-    path = f"/v5/admin/events/{seed_minimal.event_id}/dashboard"
+    path = f"/events/{seed_minimal.event_id}/dashboard"
     guest_page.goto(f"{base_url()}{path}", wait_until="domcontentloaded")
     guest_page.wait_for_url(re.compile(r".*/login"), timeout=20000)
     email = (os.getenv("E2E_EMAIL") or "").strip()
@@ -82,7 +82,7 @@ def test_auth_login_next_returns_to_requested_panel(guest_page, seed_minimal):
     guest_page.locator("#email").fill(email)
     guest_page.locator("#password").fill(password)
     guest_page.locator("#emailBtn").click()
-    guest_page.wait_for_url(re.compile(r".*/v5/"), timeout=30000)
+    guest_page.wait_for_url(re.compile(r"https?://[^/]+/(?:$|\?|events/)"), timeout=30000)
     expect(guest_page.locator("#adminApp, .admin-app, #homeNewEvent")).to_be_visible(timeout=20000)
     # Prefer restored next; otherwise navigate and prove access.
     if seed_minimal.event_id not in guest_page.url:

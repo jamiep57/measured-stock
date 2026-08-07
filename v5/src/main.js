@@ -6,8 +6,6 @@ import { getDB } from './db.js';
 import {
   flushQueue,
   bindOnlineFlush,
-  getQueueStats,
-  setSyncStatusListener,
 } from './sync-queue.js';
 import { initSheet } from './components/sheet.js';
 import { initCounts, loadCountsView, flushPendingCounts, onCountsTabVisible, startNewCount } from './counts.js';
@@ -22,6 +20,8 @@ import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
 import { initAppMenu, closeAppDrawer } from './app-menu.js';
 import { ensureAppAuth } from './lib/auth.js';
+import { initClientErrorReporting } from './lib/client-errors.js';
+import { initSyncStatus } from './components/sync-status.js';
 
 const TABS = new Set(['counts', 'kit', 'deliveries', 'transfers', 'wastage']);
 const DEFAULT_TAB = 'counts';
@@ -210,47 +210,23 @@ function syncOfflineBanner() {
   banner.hidden = !offline;
 }
 
+/** @type {{ refresh: () => Promise<void>, destroy: () => void } | null} */
+let syncStatusApi = null;
+
 async function refreshSyncBadge() {
-  const el = $('syncBadge');
-  if (!el) return;
-  try {
-    const stats = await getQueueStats();
-    if (!stats.total) {
-      el.hidden = true;
-      el.textContent = '';
-      el.classList.remove('sync-badge--failed');
-      return;
-    }
-    el.hidden = false;
-    el.classList.toggle('sync-badge--failed', stats.failed > 0);
-    if (stats.failed > 0) {
-      el.textContent = stats.failed === 1
-        ? '1 sync failed'
-        : `${stats.failed} syncs failed`;
-    } else {
-      el.textContent = stats.pending === 1
-        ? '1 pending sync'
-        : `${stats.pending} pending syncs`;
-    }
-  } catch {
-    el.hidden = true;
+  if (syncStatusApi) {
+    await syncStatusApi.refresh();
+    return;
   }
+  syncOfflineBanner();
 }
 
 function initOfflineBanner() {
-  syncOfflineBanner();
-  window.addEventListener('online', () => {
-    syncOfflineBanner();
-    flushAll().finally(() => refreshSyncBadge());
-  });
-  window.addEventListener('offline', syncOfflineBanner);
+  /* use initSyncStatus */
 }
 
 function initSyncBadge() {
-  setSyncStatusListener(() => {
-    refreshSyncBadge().catch(() => {});
-  });
-  refreshSyncBadge().catch(() => {});
+  /* use initSyncStatus */
 }
 
 function initPullToRefresh() {
@@ -548,6 +524,7 @@ async function onEventChange(id) {
 }
 
 async function boot() {
+  initClientErrorReporting();
   try {
     await loadDbScript();
   } catch {
@@ -576,8 +553,12 @@ async function boot() {
 
   bindOnlineFlush(flushAll);
   setupMeasuredPwaInstall();
-  initOfflineBanner();
-  initSyncBadge();
+  syncStatusApi = initSyncStatus({
+    bannerId: 'offlineBanner',
+    badgeId: 'syncBadge',
+    lastSyncId: 'lastSyncLabel',
+    onOnline: () => flushAll(),
+  });
   initPullToRefresh();
 
   document.querySelectorAll('.navbtn').forEach((btn) => {
@@ -648,7 +629,7 @@ async function boot() {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/v5/sw.js', { scope: '/v5/' }).catch((err) => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/app/' }).catch((err) => {
       console.warn('SW registration failed', err);
     });
   });

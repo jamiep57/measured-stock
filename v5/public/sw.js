@@ -1,22 +1,22 @@
 /**
- * V5 service worker — cache shell + CDN chrome; never cache Supabase.
+ * Measured staff PWA service worker — cache shell + CDN chrome; never cache Supabase.
  */
-const VERSION = 'v5-60-prod-complete';
-const SHELL = `v5-shell-${VERSION}`;
+const VERSION = 'app-61-root-cutover';
+const SHELL = `app-shell-${VERSION}`;
 
 const SHELL_URLS = [
-  '/v5/',
-  '/v5/index.html',
-  '/v5/scan',
-  '/v5/scan.html',
-  '/v5/manifest.webmanifest',
+  '/app/',
+  '/app.html',
+  '/scan',
+  '/scan.html',
+  '/manifest.webmanifest',
   '/assets/js/db.js',
   '/assets/img/favicon.png',
-  '/v5/apple-touch-icon.png',
-  '/v5/kit-count-icon.png',
-  '/v5/kit-count-icon-192.png',
-  '/v5/kit-count-icon-512.png',
-  '/v5/kit-count-icon-maskable-512.png',
+  '/apple-touch-icon.png',
+  '/kit-count-icon.png',
+  '/kit-count-icon-192.png',
+  '/kit-count-icon-512.png',
+  '/kit-count-icon-maskable-512.png',
   'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap',
   'https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css',
   'https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css',
@@ -26,6 +26,18 @@ function isCdnHost(hostname) {
   return hostname === 'fonts.googleapis.com'
     || hostname === 'fonts.gstatic.com'
     || hostname === 'unpkg.com';
+}
+
+function isAppPath(pathname) {
+  return pathname === '/app'
+    || pathname === '/app/'
+    || pathname.startsWith('/app/')
+    || pathname === '/app.html'
+    || pathname === '/scan'
+    || pathname === '/scan/'
+    || pathname.startsWith('/scan/')
+    || pathname === '/scan.html'
+    || pathname.startsWith('/static/');
 }
 
 self.addEventListener('install', (event) => {
@@ -39,7 +51,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k.startsWith('v5-shell-') && k !== SHELL).map((k) => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter((k) => (k.startsWith('app-shell-') || k.startsWith('v5-shell-')) && k !== SHELL)
+          .map((k) => caches.delete(k))
+      )
     ).then(() => self.clients.claim())
   );
 });
@@ -50,7 +66,6 @@ self.addEventListener('fetch', (event) => {
   if (url.hostname.includes('supabase.co')) return;
   if (url.pathname.startsWith('/api/')) return;
 
-  // Fonts / icon CSS: cache-first so airplane mode keeps chrome.
   if (isCdnHost(url.hostname)) {
     event.respondWith(
       caches.open(SHELL).then(async (cache) => {
@@ -71,11 +86,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.startsWith('/v5')) {
-    // Always prefer network for app shell + hashed bundles so hero/UI fixes ship.
+  if (isAppPath(url.pathname)) {
     event.respondWith(
       fetch(event.request).then((res) => {
-        const isHashedAsset = /\/v5\/assets\/.+-[A-Za-z0-9_-]{6,}\.(js|css)$/.test(url.pathname);
+        const isHashedAsset = /\/static\/.+-[A-Za-z0-9_-]{6,}\.(js|css)$/.test(url.pathname);
         if (res.ok && res.type === 'basic' && !isHashedAsset) {
           caches.open(SHELL).then((c) => c.put(event.request, res.clone()));
         }
@@ -83,11 +97,11 @@ self.addEventListener('fetch', (event) => {
       }).catch(async () => {
         const cached = await caches.match(event.request);
         if (cached) return cached;
-        if (url.pathname.startsWith('/v5/scan')) {
-          return (await caches.match('/v5/scan.html'))
-            || (await caches.match('/v5/scan'));
+        if (url.pathname.startsWith('/scan')) {
+          return (await caches.match('/scan.html'))
+            || (await caches.match('/scan'));
         }
-        return caches.match('/v5/');
+        return caches.match('/app/') || caches.match('/app.html');
       })
     );
     return;

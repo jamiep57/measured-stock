@@ -1001,7 +1001,7 @@ export function mountReconPanel(route) {
         return;
       }
     }
-    if (!await confirmDialog({ title: 'Confirm', message: `Mark "${ctx.event.name || 'this event'}" as financially reconciled?`, confirmLabel: 'Confirm', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: `Mark "${ctx.event.name || 'this event'}" as financially reconciled?`, confirmLabel: 'Confirm', danger: true }))) return;
     try {
       const DB = getDB();
       await DB.events.update(ctx.eventId, { status: 'reconciled' });

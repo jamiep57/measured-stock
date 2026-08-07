@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<!--
+  Measured — staff mobile PWA
+  Deliveries · Transfers · Wastage · Counts · Kit
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" media="(max-width: 767px)" content="#1a1d24">
+  <meta name="theme-color" media="(min-width: 768px)" content="#fafafa">
+  <meta name="theme-color" content="#1a1d24">
+  <title>Measured</title>
+  <!-- iOS standalone: viewport can lie short of the physical screen; measure before paint -->
+  <script>
+    (function () {
+      function standalone() {
+        return window.navigator.standalone === true
+          || window.matchMedia('(display-mode: standalone)').matches;
+      }
+      function syncGap() {
+        var gap = 0;
+        if (standalone()) {
+          gap = Math.max(0, Math.round(window.screen.height - window.innerHeight));
+        }
+        document.documentElement.style.setProperty('--ios-bottom-gap', gap + 'px');
+      }
+      syncGap();
+      window.addEventListener('resize', syncGap);
+      window.addEventListener('orientationchange', function () {
+        setTimeout(syncGap, 50);
+        setTimeout(syncGap, 300);
+      });
+    })();
+  </script>
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/kit-count-icon-192.png">
+  <link rel="icon" type="image/png" href="/kit-count-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Measured">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+</head>
+<body>
+  <div class="offline-banner" id="offlineBanner" hidden role="status">
+    You’re offline — changes will sync when you’re back online.
+  </div>
+  <div class="sync-badge" id="syncBadge" hidden role="status" aria-live="polite"></div>
+  <div class="last-sync-label" id="lastSyncLabel" hidden></div>
+  <div class="app" id="app">
+    <div class="event-gate" id="eventGate" hidden inert></div>
+
+    <header class="topbar">
+      <div class="topbar-row">
+        <div class="topbar-side topbar-side--left">
+          <button class="topbar-avatar topbar-avatar--menu" id="appMenuBtn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="appDrawer">
+            <i class="ph ph-list" aria-hidden="true"></i>
+          </button>
+          <button class="topbar-avatar topbar-avatar--back" id="cntBackTop" type="button" hidden aria-label="Back">
+            <i class="ph ph-arrow-left"></i>
+          </button>
+        </div>
+
+        <div class="topbar-center" id="eventSelectWrap">
+          <button type="button" class="topbar-event" id="eventPickerBtn" aria-label="Change location">
+            <span class="topbar-event-label" id="eventPickerLabel">Select location</span>
+            <i class="ph ph-caret-down topbar-event-caret" aria-hidden="true"></i>
+          </button>
+          <select id="eventPick" class="topbar-event-native" hidden aria-hidden="true" tabindex="-1"></select>
+        </div>
+
+        <div class="topbar-side topbar-side--right" aria-hidden="true"></div>
+      </div>
+    </header>
+
+    <main class="main" id="main">
+      <div class="ptr" id="pullRefresh" hidden aria-hidden="true">
+        <i class="ph ph-arrow-clockwise" aria-hidden="true"></i>
+        <span class="ptr-label">Pull to refresh</span>
+      </div>
+      <section class="view active" id="view-counts"></section>
+      <section class="view" id="view-kit" hidden inert></section>
+      <section class="view" id="view-deliveries" hidden inert></section>
+      <section class="view" id="view-transfers" hidden inert></section>
+      <section class="view" id="view-wastage" hidden inert></section>
+    </main>
+
+    <div class="count-save-bar" id="cntSaveBar" hidden>
+      <button class="btn btn-primary btn-block btn-lg" type="button" id="cntSaveBtn">
+        <i class="ph-bold ph-floppy-disk"></i> Save count
+      </button>
+    </div>
+  </div>
+
+  <!-- Viewport-fixed (not inside .app) so iOS can't leave a gap under a nested absolute bar -->
+  <nav class="bottomnav" id="bottomNav">
+    <div class="bottomnav-inner">
+      <button class="navbtn" type="button" data-tab="deliveries"><i class="ph ph-shipping-container"></i><span>Deliveries</span></button>
+      <button class="navbtn" type="button" data-tab="transfers"><i class="ph ph-arrows-left-right"></i><span>Transfers</span></button>
+      <button class="navbtn active" type="button" data-tab="counts"><i class="ph ph-clipboard-text"></i><span>Counts</span></button>
+      <button class="navbtn" type="button" data-tab="wastage"><i class="ph ph-trash"></i><span>Wastage</span></button>
+      <button class="navbtn" type="button" data-tab="kit"><i class="ph ph-package"></i><span>Kit</span></button>
+    </div>
+  </nav>
+
+  <div class="compose-fab" id="composeFab" hidden>
+    <div class="compose-fab-backdrop" id="composeFabBackdrop" hidden></div>
+    <div class="compose-fab-menu" id="composeFabMenu" hidden role="menu" aria-label="Add">
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="delivery" aria-label="Log delivery">
+        <i class="ph ph-shipping-container" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Delivery</span>
+      </button>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="transfer" aria-label="Log transfer">
+        <i class="ph ph-arrows-left-right" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Transfer</span>
+      </button>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="wastage" aria-label="Log wastage">
+        <i class="ph ph-trash" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Wastage</span>
+      </button>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="count" aria-label="New count">
+        <i class="ph ph-clipboard-text" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Count</span>
+      </button>
+      <button type="button" class="compose-fab-item" role="menuitem" data-compose="kit" aria-label="Count kit">
+        <i class="ph ph-package" aria-hidden="true"></i>
+        <span class="compose-fab-item-label">Kit</span>
+      </button>
+    </div>
+    <button type="button" class="compose-fab-btn" id="composeFabBtn" aria-label="Add" aria-haspopup="menu" aria-expanded="false">
+      <i class="ph-bold ph-plus"></i>
+    </button>
+  </div>
+
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-head">
+      <button class="icon-btn" type="button" id="sheetClose" aria-label="Close"><i class="ph ph-x"></i></button>
+      <div class="sheet-title" id="sheetTitle"></div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+    <div class="sheet-foot" id="sheetFoot"></div>
+  </div>
+
+  <div class="app-drawer" id="appDrawer" hidden>
+    <div class="app-drawer-backdrop" id="appDrawerBackdrop"></div>
+    <aside class="app-drawer-panel" role="dialog" aria-modal="true" aria-label="Menu">
+      <div class="app-drawer-head">
+        <div class="app-drawer-brand">Measured</div>
+        <button class="icon-btn" type="button" id="appDrawerClose" aria-label="Close menu">
+          <i class="ph ph-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <nav class="app-drawer-nav" aria-label="App menu">
+        <button type="button" class="app-drawer-item" data-app-menu="settings">
+          <i class="ph ph-gear" aria-hidden="true"></i>
+          <span>Settings</span>
+        </button>
+        <button type="button" class="app-drawer-item" data-app-menu="bugs">
+          <i class="ph ph-bug" aria-hidden="true"></i>
+          <span>Bug reports</span>
+        </button>
+        <button type="button" class="app-drawer-item" data-app-menu="logout">
+          <i class="ph ph-sign-out" aria-hidden="true"></i>
+          <span>Sign out</span>
+        </button>
+      </nav>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

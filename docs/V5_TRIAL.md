@@ -8,14 +8,14 @@ Apply migrations on Supabase **before** trialling V5 on production data:
 
 ## Trial rules
 
-- Staff use **V5 only** (`/v5`) for counts and deliveries on the trial event
+- Staff use **V5 only** (`/app`) for counts and deliveries on the trial event
 - Admin setup stays on V4 (`/`) until V5.2
 - Configure per-bar product menus in v2 **Distribution** (+/× on each bar column) — V5 counts only show products assigned to the selected bar
 - Do not edit the same spirit/wine count rows in V4 mobile during the trial
 
 ## Smoke test
 
-1. Open `/v5`, select event, create count session
+1. Open `/app`, select event, create count session
 2. Enter spirits: Bottles + Partial (e.g. `24` + `0.5`) — reload page, values unchanged (WYSIWYG)
 3. Enter wine: Bottles + Partial (e.g. `0.5`)
 4. Enter beer: Cases + Singles (loose cans only)
@@ -32,7 +32,7 @@ Run [`migrations/044_v5_spirits_wine_bottle_stock.sql`](../migrations/044_v5_spi
 cd v5
 npm install
 npm run dev
-# open http://localhost:5173/v5/
+# open http://localhost:5173/app/
 ```
 
 ```bash

@@ -16,6 +16,10 @@ import { loadingTableRow } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
+import {
   buildClosingRow,
   closingCountToForm,
   closingPatchFromDraft,
@@ -265,6 +269,14 @@ export function mountClosingPanel(route) {
     searchQuery: getLastProductFilter().query || '',
   };
 
+  const seeded = getTableFilterValues('closing');
+  if (seeded) {
+    ctx.statusFilter = seeded.statusFilter || '';
+    ctx.categoryFilter = seeded.categoryFilter || '';
+    ctx.supplierFilter = seeded.supplierFilter || '';
+    ctx.sortKey = seeded.sortKey || 'name';
+  }
+
   function confirmOverSorReturn({ productName, returnAmount, maxReturnable, sorPct }) {
     return new Promise((resolve) => {
       let settled = false;
@@ -356,114 +368,11 @@ export function mountClosingPanel(route) {
     });
   }
 
-  function categoryOptions(rows) {
-    return [...new Set((rows || []).map((r) => r.category || 'Uncategorised'))]
-      .sort((a, b) => a.localeCompare(b));
-  }
-
-  function supplierOptions(rows) {
-    const byId = new Map();
-    let hasNone = false;
-    (rows || []).forEach((r) => {
-      if (!r.supplierId && !r.supplierName) {
-        hasNone = true;
-        return;
-      }
-      const key = r.supplierId || r.supplierName;
-      if (!byId.has(key)) {
-        byId.set(key, r.supplierName || 'Supplier');
-      }
-    });
-    const list = [...byId.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    if (hasNone) list.push({ id: '__none__', name: 'No supplier' });
-    return list;
-  }
-
-  function paintToolbar(sourceRows) {
+  function paintToolbar() {
     const toolbar = $('clToolbar');
     if (!toolbar) return;
-    if (!sourceRows.length) {
-      toolbar.hidden = true;
-      toolbar.innerHTML = '';
-      return;
-    }
-    toolbar.hidden = false;
-
-    const cats = categoryOptions(sourceRows);
-    if (ctx.categoryFilter && !cats.includes(ctx.categoryFilter)) {
-      ctx.categoryFilter = '';
-    }
-    const suppliers = supplierOptions(sourceRows);
-    if (
-      ctx.supplierFilter
-      && !suppliers.some((s) => s.id === ctx.supplierFilter)
-    ) {
-      ctx.supplierFilter = '';
-    }
-
-    const status = ctx.statusFilter || '';
-    const sort = ctx.sortKey || 'name';
-    const seg = (value, label) => {
-      const on = status === value;
-      return `<button type="button" class="projections-filter-btn${on ? ' is-active' : ''}"
-        data-cl-filter="${escapeHtml(value)}" role="tab" aria-selected="${on}">${label}</button>`;
-    };
-
-    toolbar.innerHTML = `
-      <div class="projections-filter" role="tablist" aria-label="Closing status">
-        ${seg('', 'All')}
-        ${seg('uncounted', 'Uncounted')}
-        ${seg('counted', 'Counted')}
-        ${seg('returning', 'Returning')}
-        ${seg('carried', 'Carried over')}
-        ${seg('over_sor', 'Over SOR')}
-      </div>
-      <select class="admin-select sales-toolbar-select" id="clCatFilter" aria-label="Category">
-        <option value="">All categories</option>
-        ${cats.map((g) => `<option value="${escapeHtml(g)}"${g === ctx.categoryFilter ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('')}
-      </select>
-      <select class="admin-select sales-toolbar-select" id="clSupplierFilter" aria-label="Supplier">
-        <option value="">All suppliers</option>
-        ${suppliers.map((s) => `<option value="${escapeHtml(s.id)}"${s.id === ctx.supplierFilter ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
-      </select>
-      <select class="admin-select sales-toolbar-select" id="clSort" aria-label="Sort by">
-        <option value="name"${sort === 'name' ? ' selected' : ''}>Name A–Z</option>
-        <option value="invoice"${sort === 'invoice' ? ' selected' : ''}>Invoice ↓</option>
-        <option value="closing"${sort === 'closing' ? ' selected' : ''}>Closing ↓</option>
-        <option value="return"${sort === 'return' ? ' selected' : ''}>Return ↓</option>
-        <option value="carried"${sort === 'carried' ? ' selected' : ''}>Carried ↓</option>
-        <option value="sor"${sort === 'sor' ? ' selected' : ''}>SOR % ↓</option>
-      </select>`;
-
-    toolbar.querySelectorAll('[data-cl-filter]').forEach((btn) => {
-      btn.onclick = () => {
-        ctx.statusFilter = btn.dataset.clFilter || '';
-        renderTable();
-      };
-    });
-    const catSel = toolbar.querySelector('#clCatFilter');
-    if (catSel) {
-      catSel.onchange = () => {
-        ctx.categoryFilter = catSel.value || '';
-        renderTable();
-      };
-    }
-    const supSel = toolbar.querySelector('#clSupplierFilter');
-    if (supSel) {
-      supSel.onchange = () => {
-        ctx.supplierFilter = supSel.value || '';
-        renderTable();
-      };
-    }
-    const sortSel = toolbar.querySelector('#clSort');
-    if (sortSel) {
-      sortSel.onchange = () => {
-        ctx.sortKey = sortSel.value || 'name';
-        renderTable();
-      };
-    }
+    toolbar.hidden = true;
+    toolbar.innerHTML = '';
   }
 
   function syncGridLayout() {
@@ -492,7 +401,7 @@ export function mountClosingPanel(route) {
     if (!body) return;
 
     const sourceRows = allRows();
-    paintToolbar(sourceRows);
+    paintToolbar();
     const rows = filterClosingRows(sourceRows, {
       statusFilter: ctx.statusFilter,
       categoryFilter: ctx.categoryFilter,
@@ -1349,6 +1258,17 @@ export function mountClosingPanel(route) {
     }
   };
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'closing') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    ctx.statusFilter = values.statusFilter || '';
+    ctx.categoryFilter = values.categoryFilter || '';
+    ctx.supplierFilter = values.supplierFilter || '';
+    ctx.sortKey = values.sortKey || 'name';
+    renderTable();
+  };
+
   function onClick(e) {
     const btn = e.target.closest('[data-cl-action]');
     if (!btn || btn.disabled) return;
@@ -1373,6 +1293,7 @@ export function mountClosingPanel(route) {
   panel.addEventListener('click', onClick);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   window.addEventListener('resize', onResize);
   window.addEventListener('pagehide', onPageHide);
 
@@ -1422,6 +1343,7 @@ export function mountClosingPanel(route) {
     panel.removeEventListener('click', onClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
     window.removeEventListener('resize', onResize);
     window.removeEventListener('pagehide', onPageHide);
   };

@@ -43,3 +43,14 @@ node_modules/
 
 # Local backup dumps
 backup/
+
+# Root Vite deploy artifacts (copied by scripts/copy-v5-dist.mjs)
+/admin.html
+/app.html
+/scan.html
+/static/
+/sw.js
+/manifest.webmanifest
+/kit-count.webmanifest
+/apple-touch-icon.png
+/kit-count-*.png

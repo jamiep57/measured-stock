@@ -13,6 +13,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
+  <div class="admin-offline-banner" id="adminOfflineBanner" hidden role="status">
+    You’re offline — changes will sync when you’re back online.
+  </div>
   <div class="admin-app" id="adminApp">
     <aside class="admin-sidebar" id="adminSidebar">
       <div class="sidebar-brand">
@@ -46,9 +49,9 @@
                   <a class="nav-link nav-link-row-main" data-route="dashboard" data-event><i data-lucide="gauge"></i> Dashboard</a>
                   <a class="nav-link-cog" data-route="setup" data-event href="#" title="Event setup" aria-label="Event setup"><i data-lucide="settings"></i></a>
                 </div>
-                <a class="nav-link" href="/v5/admin/library" data-route="library"><i data-lucide="library"></i> Library</a>
-                <a class="nav-link" href="/v5/admin/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers</a>
-                <a class="nav-link" href="/v5/admin/warehouses" data-route="warehouses"><i data-lucide="warehouse"></i> Warehouses</a>
+                <a class="nav-link" href="/library" data-route="library"><i data-lucide="library"></i> Library</a>
+                <a class="nav-link" href="/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers</a>
+                <a class="nav-link" href="/warehouses" data-route="warehouses"><i data-lucide="warehouse"></i> Warehouses</a>
               </nav>
             </div>
           </div>
@@ -78,7 +81,7 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventKit">
-                <a class="nav-link" href="/v5/admin/kit-library" data-route="kit-library"><i data-lucide="boxes"></i> Kit library</a>
+                <a class="nav-link" href="/kit-library" data-route="kit-library"><i data-lucide="boxes"></i> Kit library</a>
                 <a class="nav-link" id="sidebarEventKitLink" data-route="kit" data-event hidden><i data-lucide="package"></i> Kit</a>
               </nav>
             </div>
@@ -92,7 +95,7 @@
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventSales">
                 <a class="nav-link" data-route="sales" data-event><i data-lucide="store"></i> Square &amp; modifiers</a>
-                <a class="nav-link" href="/v5/admin/volume-pools" data-route="volume-pools"><i data-lucide="layers"></i> Volume pools</a>
+                <a class="nav-link" href="/volume-pools" data-route="volume-pools"><i data-lucide="layers"></i> Volume pools</a>
               </nav>
             </div>
           </div>
@@ -152,6 +155,10 @@
               </button>
               <div class="topbar-search" id="topbarSearch"></div>
             </div>
+            <div class="topbar-sync" id="adminSyncStatus">
+              <span class="sync-badge sync-badge--admin" id="adminSyncBadge" hidden role="status" aria-live="polite"></span>
+              <span class="admin-last-sync" id="adminLastSync" hidden></span>
+            </div>
             <div class="topbar-profile-wrap" id="topbarProfileWrap">
               <button type="button" class="topbar-profile" id="topbarProfileBtn"
                 aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileMenu"
@@ -164,7 +171,7 @@
                   <button type="button" class="topbar-menu-item" role="menuitem" data-profile-action="profile">
                     Profile
                   </button>
-                  <a class="topbar-menu-item" role="menuitem" href="/v5/admin/settings/users"
+                  <a class="topbar-menu-item" role="menuitem" href="/settings/users"
                     data-profile-action="settings" data-route="settings">
                     Workspace settings
                   </a>

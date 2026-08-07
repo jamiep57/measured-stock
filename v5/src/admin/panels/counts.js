@@ -18,6 +18,8 @@ import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js'
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import { confirmDialog } from '../../components/modal.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 import {
   countsCellKeyFromInput,
   countsFindCellEl,
@@ -338,7 +340,12 @@ export function mountCountsPanel(route) {
       stopCollab();
       panel.innerHTML = `
         ${renderSessionBar(ctx)}
-        <div class="empty-state"><p>Start a count session to enter stock by bar.</p></div>`;
+        ${emptyState({
+          iconHtml: icon('clipboard-list', { size: 22 }),
+          title: 'No count session selected',
+          copy: 'Start a count session to enter stock by bar.',
+          variant: 'admin',
+        })}`;
       bindSessionBar();
       return;
     }
@@ -347,7 +354,12 @@ export function mountCountsPanel(route) {
       stopCollab();
       panel.innerHTML = `
         ${renderSessionBar(ctx)}
-        <div class="empty-state"><p>Add products and bars in Event Setup first.</p></div>`;
+        ${emptyState({
+          iconHtml: icon('list', { size: 22 }),
+          title: 'Add products and bars first',
+          copy: 'Set up products and bars in Event setup before counting.',
+          variant: 'admin',
+        })}`;
       bindSessionBar();
       return;
     }
@@ -615,7 +627,7 @@ export function mountCountsPanel(route) {
   }
 
   async function deleteSession(id) {
-    if (!await confirmDialog({ title: 'Confirm', message: 'Delete this count session and all its lines?', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this count session and all its lines?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       const DB = getDB();
       await DB.stockCounts.clearLines(id);
@@ -771,7 +783,13 @@ export function mountCountsPanel(route) {
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
 
   reload().catch((err) => {
-    panel.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message || 'Failed to load')}</p></div>`;
+    reportError(err, { source: 'admin.counts.reload', silent: true });
+    panel.innerHTML = errorState({
+      title: 'Couldn’t load counts',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    bindEmptyRetry(panel, () => reload());
   });
 
   return () => {

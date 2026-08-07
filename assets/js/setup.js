@@ -101,7 +101,7 @@ form?.addEventListener('submit', async (e) => {
     if (error) {
       // Cookie may already be set — still send them to admin
       setMsg('Account created. Continue to the app.', 'ok');
-      window.location.href = data.redirect || '/v5/admin';
+      window.location.href = data.redirect || '/'
       return;
     }
 
@@ -117,7 +117,7 @@ form?.addEventListener('submit', async (e) => {
       }).catch(() => {});
     }
 
-    window.location.href = data.redirect || '/v5/admin';
+    window.location.href = data.redirect || '/'
   } catch (err) {
     setMsg(String(err.message || err), 'error');
     submitBtn.disabled = false;

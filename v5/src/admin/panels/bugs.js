@@ -9,6 +9,7 @@ import { openBugSheet, closeBugSheet, isBugSheetOpen } from '../../components/bu
 import { icon } from '../../lib/icons.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { confirmDialog } from '../../components/modal.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 
 export const BUG_REPORT_SAVED = 'bug-report-saved';
 
@@ -223,7 +224,7 @@ export function openBugReportForm(opts = {}) {
 
   async function deleteBug() {
     if (!b?.id) return;
-    if (!await confirmDialog({ title: 'Confirm', message: 'Delete this report? This cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this report? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await getDB().bugs.remove(b.id);
       closeBugSheet();
@@ -407,7 +408,7 @@ export function renderBugsShell() {
             <button type="button" data-bug-type="feature">Features</button>
           </div>
         </div>
-        <div id="bugList"><div class="bug-list-empty">Loading…</div></div>
+        <div id="bugList"><div class="bug-list-empty">${loadingWidget('Loading reports…')}</div></div>
       </div>
     </div>`;
 }

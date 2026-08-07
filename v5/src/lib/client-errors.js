@@ -3,6 +3,8 @@
  * Stores recent errors in sessionStorage and optionally POSTs to /api if configured.
  */
 
+import { toast } from './util.js';
+
 const STORE_KEY = 'v5_client_errors';
 const MAX_STORED = 30;
 
@@ -53,6 +55,25 @@ export function reportClientError(entry) {
   }
 
   return row;
+}
+
+/**
+ * User-facing error: toast + buffer/beacon for ops.
+ * @param {unknown} err
+ * @param {{ userMessage?: string, source?: string, silent?: boolean }} [opts]
+ */
+export function reportError(err, opts = {}) {
+  const message = (err && typeof err === 'object' && 'message' in err && err.message)
+    ? String(err.message)
+    : String(err || 'Something went wrong');
+  const userMessage = opts.userMessage || message;
+  reportClientError({
+    message,
+    stack: err && typeof err === 'object' && 'stack' in err ? String(err.stack || '') : undefined,
+    source: opts.source || 'reportError',
+  });
+  if (!opts.silent) toast(userMessage, true);
+  return userMessage;
 }
 
 export function getRecentClientErrors() {

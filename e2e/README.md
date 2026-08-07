@@ -65,7 +65,7 @@ cd v5
 npm run dev
 ```
 
-Admin: `https://localhost:5173/v5/admin`
+Admin: `https://localhost:5173`
 
 ## Run tests (from Cursor)
 

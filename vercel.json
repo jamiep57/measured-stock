@@ -1,13 +1,48 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "cd v5 && npm install && npm run build && rm -f index.html admin.html && cp -R dist/. . && rm -rf dist",
+  "buildCommand": "cd v5 && npm install && npm run build && node ../scripts/copy-v5-dist.mjs",
   "outputDirectory": ".",
   "redirects": [
     {
-      "source": "/",
-      "destination": "/v2.html",
-      "permanent": false
+      "source": "/v5",
+      "destination": "/app",
+      "permanent": true
+    },
+    {
+      "source": "/v5/",
+      "destination": "/app/",
+      "permanent": true
+    },
+    {
+      "source": "/v5/admin",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/v5/admin.html",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/v5/admin/:path*",
+      "destination": "/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/v5/scan",
+      "destination": "/scan",
+      "permanent": true
+    },
+    {
+      "source": "/v5/scan/",
+      "destination": "/scan/",
+      "permanent": true
+    },
+    {
+      "source": "/v5/index.html",
+      "destination": "/app",
+      "permanent": true
     }
   ],
   "rewrites": [
@@ -32,72 +67,187 @@
       "destination": "/index.html"
     },
     {
-      "source": "/v5/admin",
-      "destination": "/v5/admin.html"
+      "source": "/app",
+      "destination": "/app.html"
     },
     {
-      "source": "/v5/admin/:path*",
-      "destination": "/v5/admin.html"
+      "source": "/app/",
+      "destination": "/app.html"
     },
     {
-      "source": "/v5/scan",
-      "destination": "/v5/scan.html"
+      "source": "/scan",
+      "destination": "/scan.html"
     },
     {
-      "source": "/v5/scan/",
-      "destination": "/v5/scan.html"
+      "source": "/scan/",
+      "destination": "/scan.html"
+    },
+    {
+      "source": "/",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/library",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/kit-library",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/suppliers",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/warehouses",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/volume-pools",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/users",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/case-sizes",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/bugs",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/dev",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/dev/:path*",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/settings",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/settings/:path*",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/events",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/events/:path*",
+      "destination": "/admin.html"
     }
   ],
   "headers": [
     {
       "source": "/v2.html",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
       "source": "/",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
-      "source": "/v5/index.html",
+      "source": "/admin.html",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
-      "source": "/v5",
+      "source": "/app",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
-      "source": "/v5/scan.html",
+      "source": "/app.html",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     },
     {
-      "source": "/v5/kit-count.webmanifest",
+      "source": "/scan.html",
       "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json" },
-        { "key": "Cache-Control", "value": "no-cache" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/kit-count.webmanifest",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
       ]
     },
     {
       "source": "/assets/js/sw.js",
       "headers": [
-        { "key": "Service-Worker-Allowed", "value": "/" },
-        { "key": "Cache-Control", "value": "no-cache" }
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
       ]
     },
     {
-      "source": "/v5/sw.js",
+      "source": "/sw.js",
       "headers": [
-        { "key": "Service-Worker-Allowed", "value": "/v5/" },
-        { "key": "Cache-Control", "value": "no-cache" }
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
       ]
     }
   ],

@@ -30,9 +30,12 @@ import {
 import { qrImageUrl, resolvePhoneOrigin } from '../../lib/kit-scan-session.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+  patchTableFilterState,
+} from '../table-filter.js';
 
-const STOCK_FILTER_KEY = 'v5_kit_lib_stock_filter';
-const SHOW_ARCHIVED_KEY = 'v5_kit_lib_show_archived';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 
 const CATEGORY_COLOURS = [
@@ -169,32 +172,8 @@ function renderShell() {
     </div>`;
 }
 
-function renderToolbar(categories, filterCat, stockFilter, showArchived, countLabel) {
-  const cats = (categories || [])
-    .slice()
-    .sort((a, b) => (a.sort_order - b.sort_order) || (a.name || '').localeCompare(b.name || ''));
-  const catOpts = cats.map((c) =>
-    `<option value="${escapeHtml(c.name)}"${c.name === filterCat ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
-  const stockFilters = [
-    { id: 'all', label: 'All' },
-    { id: 'in-stock', label: 'With stock' },
-    { id: 'zero', label: 'Zero stock' },
-  ];
-  return `
-    <select class="admin-select lib-filter" id="kitLibCategory" aria-label="Filter by category">
-      <option value="">All categories</option>
-      ${catOpts}
-    </select>
-    <div class="kit-lib-stock-filters rcn-seg" role="group" aria-label="Filter by stock">
-      ${stockFilters.map((f) => `
-        <button type="button" class="rcn-seg-btn${stockFilter === f.id ? ' is-active' : ''}"
-          data-kit-stock-filter="${f.id}">${escapeHtml(f.label)}</button>`).join('')}
-    </div>
-    <label class="kit-lib-archived-toggle">
-      <input type="checkbox" id="kitLibShowArchived"${showArchived ? ' checked' : ''}>
-      <span>Show archived</span>
-    </label>
-    <span class="lib-count muted" id="kitLibCount">${escapeHtml(countLabel)}</span>`;
+function renderToolbar(countLabel) {
+  return `<span class="lib-count muted" id="kitLibCount">${escapeHtml(countLabel)}</span>`;
 }
 
 function sortWithinGroups(list, sortKey, sortDir) {
@@ -352,13 +331,14 @@ export function mountKitLibraryPanel() {
   let productFilter = getLastProductFilter();
   let autoPhotoRunning = false;
 
-  try {
-    const stored = localStorage.getItem(STOCK_FILTER_KEY);
-    if (stored === 'all' || stored === 'in-stock' || stored === 'zero') stockFilter = stored;
-  } catch { /* ignore */ }
-  try {
-    showArchived = localStorage.getItem(SHOW_ARCHIVED_KEY) === '1';
-  } catch { /* ignore */ }
+  const seeded = getTableFilterValues('kit-library');
+  if (seeded) {
+    filterCat = seeded.categoryFilter || '';
+    stockFilter = seeded.stockFilter || 'all';
+    showArchived = Boolean(seeded.showArchived);
+    sortKey = seeded.sortKey || 'name';
+    sortDir = seeded.sortDir === 'desc' ? -1 : 1;
+  }
 
   function enrichedProducts() {
     return products.map((p) => ({
@@ -1006,7 +986,7 @@ export function mountKitLibraryPanel() {
 
     if (p) {
       $('kitLibDelete').onclick = async () => {
-        if (!await confirmDialog({ title: 'Confirm', message: `Delete “${p.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return;
+        if (!(await confirmDialog({ title: 'Confirm', message: `Delete “${p.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true }))) return;
         try {
           await getDB().products.deleteFull(p.id);
           closeSheet();
@@ -1071,9 +1051,9 @@ export function mountKitLibraryPanel() {
         return;
       }
       const estMin = Math.max(1, Math.ceil((targets.length * 1.4) / 60));
-      if (!await confirmDialog({ title: 'Confirm', message: `Process ${targets.length} item${targets.length === 1 ? '' : 's'}`
+      if (!(await confirmDialog({ title: 'Confirm', message: `Process ${targets.length} item${targets.length === 1 ? '' : 's'}`
         + (skipExisting ? ' (missing photos only)' : ' (including replace existing)')
-        + `?\n\nAbout ${estMin} min.`, confirmLabel: 'Confirm', danger: true })) return;
+        + `?\n\nAbout ${estMin} min.`, confirmLabel: 'Confirm', danger: true }))) return;
       startAutoPhotoRun(targets, { skipExisting });
     };
   }
@@ -1372,7 +1352,7 @@ export function mountKitLibraryPanel() {
           toast(`Move or reassign ${linked} item${linked === 1 ? '' : 's'} before deleting.`, true);
           return;
         }
-        if (!await confirmDialog({ title: 'Confirm', message: `Delete category “${c.name}”?`, confirmLabel: 'Delete', danger: true })) return;
+        if (!(await confirmDialog({ title: 'Confirm', message: `Delete category “${c.name}”?`, confirmLabel: 'Delete', danger: true }))) return;
         try {
           await getDB().categories.remove(c.id);
           closeSheet();

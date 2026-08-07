@@ -113,7 +113,7 @@ form?.addEventListener('submit', async (e) => {
     }
 
     setMsg('All set — opening the app…', 'ok');
-    window.location.href = sessionData.redirect || '/v5/admin';
+    window.location.href = sessionData.redirect || '/';
   } catch (err) {
     setMsg(String(err.message || err), 'error');
     submitBtn.disabled = false;

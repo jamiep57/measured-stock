@@ -388,7 +388,7 @@ export function mountSetupPanel(route, state = { events: [] }) {
     };
     if (bar) {
       $('setupBarDelete').onclick = async () => {
-        if (!await confirmDialog({ title: 'Confirm', message: `Delete “${bar.name}” from this event?`, confirmLabel: 'Delete', danger: true })) return;
+        if (!(await confirmDialog({ title: 'Confirm', message: `Delete “${bar.name}” from this event?`, confirmLabel: 'Delete', danger: true }))) return;
         try {
           await getDB().bars.remove(bar.id);
           closeSheet();
@@ -467,7 +467,7 @@ export function mountSetupPanel(route, state = { events: [] }) {
     };
     if (r) {
       $('setupRecipDelete').onclick = async () => {
-        if (!await confirmDialog({ title: 'Confirm', message: `Delete “${r.name}” from this event?`, confirmLabel: 'Delete', danger: true })) return;
+        if (!(await confirmDialog({ title: 'Confirm', message: `Delete “${r.name}” from this event?`, confirmLabel: 'Delete', danger: true }))) return;
         try {
           await getDB().recipients.remove(r.id);
           closeSheet();

@@ -16,8 +16,9 @@ import {
   getDB, loadEventKit, loadKitLibraryProducts, loadSuppliers,
 } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
-import { openModal, closeModal, confirmDialog} from '../../components/modal.js';
+import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { mountProductSearch } from '../../components/product-search.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
@@ -148,7 +149,7 @@ function renderShell() {
       </div>
       <div class="kit-scan-banner" id="kitScanBanner" hidden></div>
       <div class="kit-pack-wrap admin-surface" id="kitItemsWrap">
-        <div class="catalog-list-empty muted">Loading kit…</div>
+        <div class="catalog-list-empty">${loadingWidget('Loading kit…')}</div>
       </div>
       <details class="kit-movements-details admin-surface">
         <summary class="kit-movements-summary">
@@ -789,7 +790,7 @@ export function mountKitPanel(route) {
       toast('Clear Packed qty before removing this line.', true);
       return;
     }
-    if (!await confirmDialog({ title: 'Confirm', message: `Remove “${it.product?.name || 'item'}” from the kit list?`, confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: `Remove “${it.product?.name || 'item'}” from the kit list?`, confirmLabel: 'Delete', danger: true }))) return;
     const DB = getDB();
     await DB.remove('event_kit_items', 'id=eq.' + DB._.enc(itemId));
     await refresh();

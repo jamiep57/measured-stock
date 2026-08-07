@@ -13,7 +13,7 @@ import {
   renderQuickActions,
 } from '../../lib/dashboard-insights.js';
 import { icon, initIcons } from '../../lib/icons.js';
-import { loadingWidget, skeletonList } from '../../components/loading-widget.js';
+import { skeletonList } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { hrefForRoute } from '../router.js';
 

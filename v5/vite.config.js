@@ -7,6 +7,9 @@ import fs from 'fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
+const ADMIN_ROUTE_RE =
+  /^\/(?:library|kit-library|suppliers|warehouses|volume-pools|users|case-sizes|bugs|dev(?:\/.*)?|settings(?:\/.*)?|events(?:\/.*)?)?$/;
+
 /** Serve /assets from repo root during `vite dev`. */
 function serveRootAssets() {
   return {
@@ -26,7 +29,7 @@ function serveRootAssets() {
       };
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0] || '';
-        if (url === '/__dev-lan' || url === '/v5/__dev-lan') {
+        if (url === '/__dev-lan') {
           sendLanOrigins(req, res);
           return;
         }
@@ -54,23 +57,21 @@ function serveRootAssets() {
             return;
           }
         }
-        if (url.startsWith('/v5/admin/') && !path.extname(url)) {
-          req.url = '/v5/admin.html';
+        if (url === '/' || (ADMIN_ROUTE_RE.test(url) && !path.extname(url))) {
+          req.url = '/admin.html';
         }
-        if ((url === '/v5/scan' || url === '/v5/scan/') && !path.extname(url)) {
-          req.url = '/v5/scan.html';
+        if ((url === '/app' || url === '/app/') && !path.extname(url)) {
+          req.url = '/app.html';
+        }
+        if ((url === '/scan' || url === '/scan/') && !path.extname(url)) {
+          req.url = '/scan.html';
         }
         next();
       });
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0] || '';
-        const assetPath = url.startsWith('/v5/assets/')
-          ? url.slice('/v5'.length)
-          : url.startsWith('/assets/')
-            ? url
-            : null;
-        if (!assetPath) return next();
-        const filePath = path.join(repoRoot, assetPath.slice(1));
+        if (!url.startsWith('/assets/')) return next();
+        const filePath = path.join(repoRoot, url.slice(1));
         if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return next();
         const ext = path.extname(filePath).toLowerCase();
         const types = {
@@ -91,15 +92,16 @@ function serveRootAssets() {
 }
 
 export default defineConfig({
-  base: '/v5/',
+  base: '/',
   root: __dirname,
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    assetsDir: 'static',
     rollupOptions: {
       input: {
-        mobile: path.resolve(__dirname, 'index.html'),
         admin: path.resolve(__dirname, 'admin.html'),
+        app: path.resolve(__dirname, 'app.html'),
         scan: path.resolve(__dirname, 'scan.html'),
       },
     },

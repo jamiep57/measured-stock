@@ -4,6 +4,7 @@
 
 import { $, toast } from '../lib/util.js';
 import { icon, initIcons } from '../lib/icons.js';
+import { hasTableFilter } from './table-filter.js';
 
 export const ADMIN_TOOLBAR_ACTION = 'admin-toolbar-action';
 
@@ -465,8 +466,7 @@ export function initTopbarToolbar() {
         ? eventStrips
         : (globalStrips !== undefined && globalStrips !== null ? globalStrips : null);
       const strips = Array.isArray(configured) ? configured : null;
-      const showFilter = route.view === 'event'
-        && (route.panel === 'distribution' || route.panel === 'recon');
+      const showFilter = hasTableFilter(route);
       const showStrips = !!(strips && strips.length);
       const showToolbar = showStrips || showFilter || configured !== null;
 

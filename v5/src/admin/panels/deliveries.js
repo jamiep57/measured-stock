@@ -18,6 +18,8 @@ import { mountSupplierSearch } from '../../components/supplier-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { confirmDialog } from '../../components/modal.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 const DELIVERY_BUCKET = 'delivery-photos';
 
@@ -122,7 +124,13 @@ function renderCardExtras(d) {
 
 function renderList(deliveries, event, caseSizes) {
   if (!deliveries.length) {
-    return '<div class="del-empty">No deliveries yet. Log the first delivery to record stock in.</div>';
+    return emptyState({
+      iconHtml: icon('container', { size: 22 }),
+      title: 'No deliveries yet',
+      copy: 'Log the first delivery to record stock in.',
+      variant: 'admin',
+      ctaHtml: `<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-empty-cta="log-delivery">Log delivery</button>`,
+    });
   }
 
   return deliveries.map((d) => {
@@ -800,7 +808,7 @@ export function mountDeliveriesPanel(route) {
   }
 
   async function deleteDelivery(id) {
-    if (!await confirmDialog({ title: 'Confirm', message: 'Delete this delivery?', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this delivery?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       const DB = getDB();
       await DB.deliveries.clearLines(id);
@@ -834,6 +842,7 @@ export function mountDeliveriesPanel(route) {
   function paintList() {
     listEl.innerHTML = renderList(deliveries, event, caseSizes);
     wireList();
+    listEl.querySelector('[data-empty-cta="log-delivery"]')?.addEventListener('click', () => openDeliveryForm());
     applyProductFilter(getLastProductFilter());
   }
 
@@ -854,7 +863,13 @@ export function mountDeliveriesPanel(route) {
       ]);
       await refreshList();
     } catch (err) {
-      listEl.innerHTML = `<div class="del-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+      reportError(err, { source: 'admin.deliveries.load', silent: true });
+      listEl.innerHTML = errorState({
+        title: 'Couldn’t load deliveries',
+        copy: err.message || 'Failed to load',
+        variant: 'admin',
+      });
+      bindEmptyRetry(listEl, () => load());
     }
   }
 

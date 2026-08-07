@@ -476,7 +476,7 @@ export function openProductFormSheet(opts) {
   const dangerBtn = $('libDanger');
   if (dangerBtn && eventContext?.onRemoveFromEvent) {
     dangerBtn.onclick = async () => {
-      if (!await confirmDialog({ title: 'Confirm', message: `Remove “${p?.name || 'this product'}” from this event?`, confirmLabel: 'Delete', danger: true })) return;
+      if (!(await confirmDialog({ title: 'Confirm', message: `Remove “${p?.name || 'this product'}” from this event?`, confirmLabel: 'Delete', danger: true }))) return;
       try {
         await eventContext.onRemoveFromEvent();
         closeSheet();
@@ -487,7 +487,7 @@ export function openProductFormSheet(opts) {
     };
   } else if (dangerBtn && allowDelete && p && onDeleted) {
     dangerBtn.onclick = async () => {
-      if (!await confirmDialog({ title: 'Confirm', message: `Delete “${p.name || 'this product'}” from your product library? This removes it from every event and cannot be undone.`, confirmLabel: 'Delete', danger: true })) {
+      if (!(await confirmDialog({ title: 'Confirm', message: `Delete “${p.name || 'this product'}” from your product library? This removes it from every event and cannot be undone.`, confirmLabel: 'Delete', danger: true }))) {
         return;
       }
       try {

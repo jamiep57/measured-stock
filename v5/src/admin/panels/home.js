@@ -24,7 +24,7 @@ export function renderHomeShell(events) {
   const cards = list.length
     ? `<div class="event-grid">
         ${list.map((e) => `
-          <a class="event-card" href="/v5/admin/events/${e.id}/dashboard">
+          <a class="event-card" href="/events/${e.id}/dashboard">
             <div class="event-card-name">${escapeHtml(e.name)}</div>
             <div class="event-card-meta">${escapeHtml(e.status || 'Event')} · Open dashboard →</div>
           </a>`).join('')}

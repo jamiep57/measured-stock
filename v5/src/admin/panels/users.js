@@ -8,6 +8,7 @@ import { authFetch, getCachedProfile } from '../../lib/auth.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { icon } from '../../lib/icons.js';
 import { confirmDialog } from '../../components/modal.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 
 /** @type {Array<Record<string, unknown>>} */
 let cachedProfiles = [];
@@ -54,7 +55,7 @@ export function renderUsersSection() {
         <div id="usersSetupResult" class="users-setup-result" hidden></div>
       </div>
       <div class="settings-list users-list" id="usersList" role="list">
-        <div class="settings-list-empty muted">Loading…</div>
+        <div class="settings-list-empty">${loadingWidget('Loading users…')}</div>
       </div>
     </div>
   `;

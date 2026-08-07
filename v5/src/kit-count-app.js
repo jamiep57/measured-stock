@@ -1,6 +1,6 @@
 /**
  * Mobile kit container counting UI.
- * Open /v5/scan (no session) or /v5/scan/?c=<containerProductId>
+ * Open /scan (no session) or /scan/?c=<containerProductId>
  */
 
 import { BrowserMultiFormatReader, BarcodeFormat } from '@zxing/browser';
@@ -128,7 +128,7 @@ function setUrlContainer(id, { embedded = false } = {}) {
   const url = new URL(location.href);
   url.searchParams.delete('s');
   url.searchParams.delete('session');
-  if (embedded || url.pathname.replace(/\/$/, '') === '/v5') {
+  if (embedded || url.pathname.replace(/\/$/, '') === '/app') {
     url.searchParams.set('tab', 'kit');
   }
   if (id) url.searchParams.set('c', id);

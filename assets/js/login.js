@@ -88,7 +88,7 @@ async function establishEdgeSession(accessToken) {
       return { pending: true };
     }
     if (res.status === 404 || res.status === 405) {
-      return { ok: true, redirect: '/v5/admin', local: true };
+      return { ok: true, redirect: '/', local: true };
     }
     if (!res.ok) {
       throw new Error(data.error || `session ${res.status}`);
@@ -96,7 +96,7 @@ async function establishEdgeSession(accessToken) {
     return data;
   } catch (err) {
     if (String(err.message || '').includes('Failed to fetch') || err.name === 'TypeError') {
-      return { ok: true, redirect: '/v5/admin', local: true };
+      return { ok: true, redirect: '/', local: true };
     }
     throw err;
   }
@@ -139,12 +139,12 @@ async function finishSignIn(session) {
         setMsg('Your account is disabled. Contact an admin.', 'error');
         return;
       }
-      const next = profile.role === 'staff' ? '/v5/' : '/v5/admin';
+      const next = profile.role === 'staff' ? '/app/' : '/';
       window.location.href = next;
       return;
     }
 
-    const next = result.redirect || '/v5/admin';
+    const next = result.redirect || '/';
     window.location.href = next;
   } catch (err) {
     setMsg(String(err.message || err), 'error');

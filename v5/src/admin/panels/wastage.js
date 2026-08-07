@@ -18,6 +18,9 @@ import { mountProductSearch } from '../../components/product-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { confirmDialog } from '../../components/modal.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 
 const WASTAGE_REASONS = [
   'Breakage / spillage',
@@ -115,7 +118,7 @@ function renderShell() {
     <div class="admin-page wst-panel">
       <div class="wst-stats" id="wstStats" hidden></div>
       <div class="del-list" id="wstList">
-        <div class="del-loading muted">Loading wastage…</div>
+        <div class="del-loading">${loadingWidget('Loading wastage…')}</div>
       </div>
     </div>`;
 }
@@ -141,7 +144,13 @@ function renderStats(batches, event, caseSizes) {
 
 function renderList(batches, event, caseSizes) {
   if (!batches.length) {
-    return '<div class="del-empty">No wastage logged yet. Log the first entry to record write-offs.</div>';
+    return emptyState({
+      iconHtml: icon('trash', { size: 22 }),
+      title: 'No wastage yet',
+      copy: 'Log the first entry to record write-offs.',
+      variant: 'admin',
+      ctaHtml: `<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-empty-cta="log-wastage">Log wastage</button>`,
+    });
   }
 
   return batches.map((b) => {
@@ -515,7 +524,7 @@ export function mountWastagePanel(route) {
   }
 
   async function deleteWastage(id) {
-    if (!await confirmDialog({ title: 'Confirm', message: 'Delete this wastage entry?', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this wastage entry?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       const DB = getDB();
       await DB.wastage.clearLines(id);
@@ -549,6 +558,7 @@ export function mountWastagePanel(route) {
     }
     listEl.innerHTML = renderList(batches, event, caseSizes);
     wireList();
+    listEl.querySelector('[data-empty-cta="log-wastage"]')?.addEventListener('click', () => openWastageForm());
     applyProductFilter(getLastProductFilter());
   }
 
@@ -567,7 +577,13 @@ export function mountWastagePanel(route) {
       ]);
       await refreshList();
     } catch (err) {
-      listEl.innerHTML = `<div class="del-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+      listEl.innerHTML = errorState({
+        title: 'Couldn’t load wastage',
+        copy: err.message || 'Failed to load',
+        variant: 'admin',
+      });
+      bindEmptyRetry(listEl, () => load());
+      reportError(err, { source: 'admin.wastage.load', silent: true });
     }
   }
 

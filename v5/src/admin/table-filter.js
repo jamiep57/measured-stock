@@ -1,575 +1,152 @@
 /**
- * Admin table filter — combined tabbed panel for distribution & future tables.
+ * Admin table filter — registry-driven topbar Filter / Sort / Columns panel.
  */
 
 import { $ } from '../lib/util.js';
 import {
   mountCombinedTableFilterPanel,
-  tableFilterIsActive,
 } from '../components/table-filter-panel.js';
-import {
-  RECON_COLS,
-  loadReconColVisibility,
-  saveReconColVisibility,
-} from '../lib/recon.js';
+import { ALL_FILTER_CONFIGS } from './filter-configs.js';
 
 export const ADMIN_TABLE_FILTER = 'admin-table-filter';
 export const ADMIN_DIST_CONTROLS = ADMIN_TABLE_FILTER;
 
-const FIXED_COLUMNS = [
-  { key: 'pack', label: 'Pack' },
-  { key: 'opening', label: 'Opening' },
-  { key: 'lta', label: 'Left to allocate' },
-  { key: 'bone-yard', label: 'Bone Yard' },
-];
-
-const DEFAULT_DIST = {
-  sort: 'category',
-  categories: [],
-  hiddenColumns: [],
-};
+const configs = new Map();
+const stateByKey = new Map();
 
 let routeKey = '';
 let panelApi = null;
 let activeConfig = null;
+let liveContext = {};
 let topbarApi = null;
 let activeTab = 'filter';
-let distState = { ...DEFAULT_DIST, hiddenColumns: [] };
-let reconColVis = loadReconColVisibility();
-let reconState = { categories: [], showHidden: false };
-let categories = [];
-let reconCategoryOptions = [];
-let bars = [];
+let registered = false;
 
-function fixedColumnKeys() {
-  return FIXED_COLUMNS.map((c) => c.key);
+function ensureRegistered() {
+  if (registered) return;
+  registered = true;
+  ALL_FILTER_CONFIGS.forEach((cfg) => registerTableFilterConfig(cfg));
 }
 
-function barColumnKeys() {
-  return bars.map((b) => `bar:${b.id}`);
+export function registerTableFilterConfig(config) {
+  if (!config?.id || typeof config.match !== 'function') {
+    console.warn('Invalid table filter config', config);
+    return;
+  }
+  configs.set(config.id, config);
 }
 
-function visibleFixedColumns() {
-  return fixedColumnKeys().filter((k) => !distState.hiddenColumns.includes(k));
+export function getTableFilterConfig(route) {
+  ensureRegistered();
+  for (const cfg of configs.values()) {
+    if (cfg.match(route)) return cfg;
+  }
+  return null;
 }
 
-function visibleBarColumns() {
-  return barColumnKeys().filter((k) => !distState.hiddenColumns.includes(k));
+export function hasTableFilter(route) {
+  return Boolean(getTableFilterConfig(route));
 }
 
-function filterPanelValues() {
+function getOrCreateState(config, key) {
+  if (stateByKey.has(key)) return stateByKey.get(key);
+  const state = config.createState
+    ? config.createState()
+    : { ...(config.defaults?.() || {}) };
+  stateByKey.set(key, state);
+  return state;
+}
+
+function controllerApi(config) {
   return {
-    categories: [...distState.categories],
-    visibleFixedColumns: visibleFixedColumns(),
+    getState() {
+      return stateByKey.get(routeKey) || config.defaults?.() || {};
+    },
+    setState(next) {
+      stateByKey.set(routeKey, next);
+      config.onStateChange?.(next);
+    },
+    getContext() {
+      return liveContext;
+    },
+    getActiveTab() {
+      return activeTab;
+    },
+    emit() {
+      emitFilter();
+    },
+    remount() {
+      const dropdown = $('topbarTableFilterPanel');
+      if (dropdown && !dropdown.hidden) remountPanel(dropdown);
+    },
+    syncUi() {
+      updateTopbarButton();
+      const dropdown = $('topbarTableFilterPanel');
+      if (dropdown && !dropdown.hidden) remountPanel(dropdown);
+      else panelApi?.repaint?.();
+    },
   };
-}
-
-function filterPanelDefaults() {
-  return {
-    categories: [],
-    visibleFixedColumns: fixedColumnKeys(),
-  };
-}
-
-function sortPanelValues() {
-  return { sort: distState.sort };
-}
-
-function sortPanelDefaults() {
-  return { sort: 'category' };
-}
-
-function barsPanelValues() {
-  return { visibleBars: visibleBarColumns() };
-}
-
-function barsPanelDefaults() {
-  return { visibleBars: barColumnKeys() };
-}
-
-export function getDistControls() {
-  return {
-    categories: [...distState.categories],
-    sort: distState.sort,
-    hiddenColumns: [...distState.hiddenColumns],
-  };
-}
-
-export function getReconColVisibility() {
-  return { ...reconColVis };
-}
-
-export function getReconControls() {
-  return {
-    colVis: getReconColVisibility(),
-    categories: [...reconState.categories],
-    showHidden: reconState.showHidden,
-  };
-}
-
-function visibleReconColumns() {
-  return RECON_COLS.filter((c) => reconColVis[c.id] !== false).map((c) => c.id);
-}
-
-function reconFilterPanelValues() {
-  return {
-    categories: [...reconState.categories],
-    showHidden: reconState.showHidden ? 'hidden' : 'active',
-  };
-}
-
-function reconFilterPanelDefaults() {
-  return {
-    categories: [],
-    showHidden: 'active',
-  };
-}
-
-function reconColumnsPanelValues() {
-  return { visibleColumns: visibleReconColumns() };
-}
-
-function reconColumnsPanelDefaults() {
-  return { visibleColumns: RECON_COLS.map((c) => c.id) };
-}
-
-function setReconColumnVisibility(visibleKeys) {
-  const next = {};
-  RECON_COLS.forEach((c) => {
-    next[c.id] = visibleKeys.includes(c.id);
-  });
-  // Keep at least Product visible
-  if (next.item === false) next.item = true;
-  reconColVis = next;
-  saveReconColVisibility(reconColVis);
-}
-
-function resetReconState() {
-  reconState = { categories: [], showHidden: false };
-  reconColVis = loadReconColVisibility();
 }
 
 function emitFilter() {
-  const id = activeConfig?.id || null;
-  let values = null;
-  if (id === 'distribution') values = getDistControls();
-  else if (id === 'recon') values = getReconControls();
+  const config = activeConfig;
+  if (!config) {
+    document.dispatchEvent(new CustomEvent(ADMIN_TABLE_FILTER, {
+      detail: { panel: null, values: null },
+    }));
+    return;
+  }
+  const api = controllerApi(config);
+  const values = config.toValues
+    ? config.toValues(api.getState(), liveContext)
+    : { ...api.getState() };
   document.dispatchEvent(new CustomEvent(ADMIN_TABLE_FILTER, {
-    detail: { panel: id, values },
+    detail: { panel: config.id, values },
   }));
 }
 
-function buildSortSections() {
-  return [{
-    id: 'sort',
-    label: 'Order',
-    type: 'radio',
-    options: [
-      { value: 'category', label: 'Category, then name' },
-      { value: 'name', label: 'Product A–Z' },
-      { value: 'name-desc', label: 'Product Z–A' },
-      { value: 'lta-desc', label: 'Most left to allocate' },
-      { value: 'lta-asc', label: 'Least left to allocate' },
-    ],
-  }];
-}
-
-function buildFilterSections() {
-  const sections = [];
-
-  if (categories.length) {
-    sections.push({
-      id: 'categories',
-      label: 'Category',
-      type: 'checkbox',
-      showCount: true,
-      scroll: true,
-      options: categories.map((cat) => ({ value: cat, label: cat })),
-    });
-  }
-
-  sections.push({
-    id: 'visibleFixedColumns',
-    label: 'Columns',
-    type: 'checkbox',
-    showCount: true,
-    hideCountWhenFull: true,
-    options: FIXED_COLUMNS.map((c) => ({ value: c.key, label: c.label })),
-  });
-
-  return sections;
-}
-
-function buildBarsSections() {
-  return [{
-    id: 'visibleBars',
-    label: 'Show on grid',
-    type: 'checkbox',
-    showCount: true,
-    hideCountWhenFull: true,
-    scroll: true,
-    options: bars.map((b) => ({
-      value: `bar:${b.id}`,
-      label: b.name || 'Bar',
-    })),
-  }];
-}
-
-function extractCategories(products) {
-  const set = new Set();
-  (products || []).forEach((item) => {
-    const cat = item.product?.category?.name || item.category?.name;
-    set.add(cat || 'Uncategorised');
-  });
-  return [...set].sort((a, b) => a.localeCompare(b));
-}
-
-function extractReconCategories(products) {
-  const map = new Map();
-  (products || []).forEach((item) => {
-    const cat = item.product?.category || item.category;
-    if (cat?.id) map.set(cat.id, cat.name || 'Uncategorised');
-  });
-  return [...map.entries()]
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function resetDistState() {
-  distState = { ...DEFAULT_DIST, hiddenColumns: [] };
-}
-
-function setFixedColumnVisibility(visibleKeys) {
-  const hiddenBars = distState.hiddenColumns.filter((k) => k.startsWith('bar:'));
-  const hiddenFixed = fixedColumnKeys().filter((k) => !visibleKeys.includes(k));
-  distState.hiddenColumns = [...hiddenFixed, ...hiddenBars];
-}
-
-function setBarColumnVisibility(visibleKeys) {
-  const hiddenFixed = distState.hiddenColumns.filter((k) => !k.startsWith('bar:'));
-  const hiddenBars = barColumnKeys().filter((k) => !visibleKeys.includes(k));
-  distState.hiddenColumns = [...hiddenFixed, ...hiddenBars];
-}
-
-function applyFilterChange(sectionId, value) {
-  if (sectionId === 'categories') distState.categories = value;
-  else if (sectionId === 'visibleFixedColumns') setFixedColumnVisibility(value);
-}
-
-function buildReconFilterSections() {
-  const sections = [];
-
-  if (reconCategoryOptions.length) {
-    sections.push({
-      id: 'categories',
-      label: 'Category',
-      type: 'checkbox',
-      showCount: true,
-      scroll: true,
-      options: reconCategoryOptions.map((c) => ({ value: c.id, label: c.name })),
-    });
-  }
-
-  sections.push({
-    id: 'showHidden',
-    label: 'Products',
-    type: 'radio',
-    options: [
-      { value: 'active', label: 'Included in recon' },
-      { value: 'hidden', label: 'Excluded from recon' },
-    ],
-  });
-
-  return sections;
-}
-
-function buildReconActiveItems() {
-  const items = [];
-  const onFilterTab = activeTab === 'filter';
-  const onColumnsTab = activeTab === 'columns';
-
-  if (!onFilterTab) {
-    reconState.categories.forEach((id) => {
-      const cat = reconCategoryOptions.find((c) => c.id === id);
-      items.push({ id: `categories:${id}`, label: cat?.name || id });
-    });
-    if (reconState.showHidden) {
-      items.push({ id: 'showHidden', label: 'Excluded from recon' });
-    }
-  }
-
-  if (!onColumnsTab) {
-    RECON_COLS.forEach((c) => {
-      if (reconColVis[c.id] === false) {
-        items.push({ id: `visibleColumns:${c.id}`, label: c.label });
-      }
-    });
-  }
-
-  return items;
+function buildTabs() {
+  if (!activeConfig) return [];
+  return activeConfig.buildTabs(controllerApi(activeConfig)) || [];
 }
 
 function buildActiveItems() {
-  if (activeConfig?.id === 'recon') return buildReconActiveItems();
-
-  const items = [];
-  const onFilterTab = activeTab === 'filter';
-  const onSortTab = activeTab === 'sort';
-  const onBarsTab = activeTab === 'bars';
-
-  // Skip chips already editable in the open tab — keeps the footer readable.
-  if (!onFilterTab) {
-    distState.categories.forEach((cat) => {
-      items.push({ id: `categories:${cat}`, label: cat });
-    });
-
-    fixedColumnKeys()
-      .filter((k) => distState.hiddenColumns.includes(k))
-      .forEach((key) => {
-        const col = FIXED_COLUMNS.find((c) => c.key === key);
-        items.push({ id: `visibleFixedColumns:${key}`, label: col?.label || key });
-      });
-  }
-
-  if (!onSortTab && distState.sort !== DEFAULT_DIST.sort) {
-    const opt = buildSortSections()[0].options.find((o) => o.value === distState.sort);
-    items.push({ id: 'sort', label: opt?.label || distState.sort });
-  }
-
-  if (!onBarsTab) {
-    barColumnKeys()
-      .filter((k) => distState.hiddenColumns.includes(k))
-      .forEach((key) => {
-        const bar = bars.find((b) => `bar:${b.id}` === key);
-        items.push({ id: `visibleBars:${key}`, label: bar?.name || 'Bar' });
-      });
-  }
-
-  return items;
-}
-
-function syncPanelValues() {
-  if (activeConfig?.id === 'recon') {
-    panelApi?.updateTab('filter', reconFilterPanelValues());
-    panelApi?.updateTab('columns', reconColumnsPanelValues());
-    return;
-  }
-  panelApi?.updateTab('filter', filterPanelValues());
-  panelApi?.updateTab('sort', sortPanelValues());
-  if (bars.length) panelApi?.updateTab('bars', barsPanelValues());
+  if (!activeConfig?.buildActiveItems) return [];
+  return activeConfig.buildActiveItems(controllerApi(activeConfig)) || [];
 }
 
 function removeActiveItem(id) {
-  if (activeConfig?.id === 'recon') {
-    if (id.startsWith('categories:')) {
-      const catId = id.slice('categories:'.length);
-      reconState.categories = reconState.categories.filter((c) => c !== catId);
-    } else if (id === 'showHidden') {
-      reconState.showHidden = false;
-    } else if (id.startsWith('visibleColumns:')) {
-      const key = id.slice('visibleColumns:'.length);
-      reconColVis = { ...reconColVis, [key]: true };
-      saveReconColVisibility(reconColVis);
-    } else {
-      return;
-    }
-    syncPanelValues();
-    updateTopbarButton();
-    panelApi?.repaint();
-    emitFilter();
-    return;
-  }
-
-  if (id === 'sort') {
-    distState.sort = DEFAULT_DIST.sort;
-  } else if (id.startsWith('categories:')) {
-    const cat = id.slice('categories:'.length);
-    distState.categories = distState.categories.filter((c) => c !== cat);
-  } else if (id.startsWith('visibleFixedColumns:')) {
-    const key = id.slice('visibleFixedColumns:'.length);
-    distState.hiddenColumns = distState.hiddenColumns.filter((k) => k !== key);
-  } else if (id.startsWith('visibleBars:')) {
-    const key = id.slice('visibleBars:'.length);
-    distState.hiddenColumns = distState.hiddenColumns.filter((k) => k !== key);
-  } else {
-    return;
-  }
-
-  syncPanelValues();
+  if (!activeConfig?.removeActiveItem) return;
+  const ok = activeConfig.removeActiveItem(controllerApi(activeConfig), id);
+  if (ok === false) return;
   updateTopbarButton();
-  panelApi?.repaint();
+  const dropdown = $('topbarTableFilterPanel');
+  if (dropdown && !dropdown.hidden) remountPanel(dropdown);
   emitFilter();
 }
 
-function buildReconTabs() {
-  const tabs = [{
-    id: 'filter',
-    label: 'Filter',
-    icon: 'funnel',
-    sections: buildReconFilterSections(),
-    values: reconFilterPanelValues(),
-    onChange(sectionId, value) {
-      if (sectionId === 'categories') reconState.categories = value;
-      else if (sectionId === 'showHidden') reconState.showHidden = value === 'hidden';
-      updateTopbarButton();
-      panelApi.updateTab('filter', reconFilterPanelValues());
-      emitFilter();
-    },
-    onReset() {
-      reconState.categories = [];
-      reconState.showHidden = false;
-      panelApi.repaint();
-      updateTopbarButton();
-      emitFilter();
-    },
-  }, {
-    id: 'columns',
-    label: 'Columns',
-    icon: 'columns',
-    sections: [{
-      id: 'visibleColumns',
-      label: 'Visible columns',
-      type: 'checkbox',
-      showCount: true,
-      hideCountWhenFull: true,
-      scroll: true,
-      options: RECON_COLS.map((c) => ({
-        value: c.id,
-        label: c.label,
-        disabled: c.id === 'item',
-      })),
-    }],
-    values: reconColumnsPanelValues(),
-    onChange(_sectionId, value) {
-      setReconColumnVisibility(value);
-      updateTopbarButton();
-      panelApi.updateTab('columns', reconColumnsPanelValues());
-      emitFilter();
-    },
-    onReset() {
-      setReconColumnVisibility(RECON_COLS.map((c) => c.id));
-      panelApi.repaint();
-      updateTopbarButton();
-      emitFilter();
-    },
-  }];
-
-  return tabs;
-}
-
-function buildTabs() {
-  if (activeConfig?.id === 'recon') return buildReconTabs();
-
-  const tabs = [{
-    id: 'filter',
-    label: 'Filter',
-    icon: 'funnel',
-    sections: buildFilterSections(),
-    values: filterPanelValues(),
-    onChange(sectionId, value) {
-      applyFilterChange(sectionId, value);
-      updateTopbarButton();
-      panelApi.updateTab('filter', filterPanelValues());
-      emitFilter();
-    },
-    onReset() {
-      distState.categories = [];
-      setFixedColumnVisibility(fixedColumnKeys());
-      panelApi.repaint();
-      updateTopbarButton();
-      emitFilter();
-    },
-  }, {
-    id: 'sort',
-    label: 'Sort',
-    icon: 'list-sort-descending',
-    sections: buildSortSections(),
-    values: sortPanelValues(),
-    onChange(sectionId, value) {
-      if (sectionId === 'sort') distState.sort = value;
-      updateTopbarButton();
-      panelApi.updateTab('sort', sortPanelValues());
-      emitFilter();
-    },
-    onReset() {
-      distState.sort = DEFAULT_DIST.sort;
-      panelApi.repaint();
-      updateTopbarButton();
-      emitFilter();
-    },
-  }];
-
-  if (bars.length) {
-    tabs.push({
-      id: 'bars',
-      label: 'Bars',
-      icon: 'columns',
-      sections: buildBarsSections(),
-      values: barsPanelValues(),
-      onChange(_sectionId, value) {
-        setBarColumnVisibility(value);
-        updateTopbarButton();
-        panelApi.updateTab('bars', barsPanelValues());
-        emitFilter();
-      },
-      onReset() {
-        setBarColumnVisibility(barColumnKeys());
-        panelApi.repaint();
-        updateTopbarButton();
-        emitFilter();
-      },
-    });
-  }
-
-  return tabs;
-}
-
 function isPanelActive() {
-  if (activeConfig?.id === 'recon') {
-    const filterActive = tableFilterIsActive(
-      reconFilterPanelValues(),
-      reconFilterPanelDefaults(),
-      buildReconFilterSections(),
-    );
-    const columnsActive = tableFilterIsActive(
-      reconColumnsPanelValues(),
-      reconColumnsPanelDefaults(),
-      [{
-        id: 'visibleColumns',
-        type: 'checkbox',
-        options: RECON_COLS.map((c) => ({ value: c.id })),
-      }],
-    );
-    return Boolean(filterActive || columnsActive);
-  }
-  const filterActive = tableFilterIsActive(
-    filterPanelValues(),
-    filterPanelDefaults(),
-    buildFilterSections(),
-  );
-  const sortActive = tableFilterIsActive(
-    sortPanelValues(),
-    sortPanelDefaults(),
-    buildSortSections(),
-  );
-  const barsActive = distState.hiddenColumns.some((k) => k.startsWith('bar:'));
-  return filterActive || sortActive || barsActive;
+  if (!activeConfig) return false;
+  if (activeConfig.isActive) return Boolean(activeConfig.isActive(controllerApi(activeConfig)));
+  return false;
 }
 
 function updateTopbarButton() {
   $('topbarTableFilterBtn')?.classList.toggle('topbar-tool--active', isPanelActive());
 }
 
+function defaultTabForPanel() {
+  const tabs = buildTabs();
+  return tabs[0]?.id || 'filter';
+}
+
 function remountPanel(container) {
-  if (activeConfig?.id === 'recon') {
-    const allowed = new Set(buildReconTabs().map((t) => t.id));
-    if (!activeTab || !allowed.has(activeTab)) activeTab = defaultTabForPanel();
-  } else if (!activeTab || (activeTab === 'bars' && !bars.length) || activeTab === 'columns') {
-    activeTab = 'filter';
-  }
+  const tabs = buildTabs();
+  const allowed = new Set(tabs.map((t) => t.id));
+  if (!activeTab || !allowed.has(activeTab)) activeTab = defaultTabForPanel();
 
   panelApi = mountCombinedTableFilterPanel(container, {
-    tabs: buildTabs(),
+    tabs,
     activeTab,
     onTabChange(id) {
       activeTab = id;
@@ -603,10 +180,6 @@ function clickIsInsideTopbarFilter(e, btn, dropdown) {
     )));
 }
 
-function defaultTabForPanel() {
-  return 'filter';
-}
-
 function focusFilterTab() {
   const dropdown = $('topbarTableFilterPanel');
   if (!dropdown || dropdown.hidden) return;
@@ -623,12 +196,76 @@ function onFilterButtonClick(e) {
     openPanel();
     return;
   }
-  // Panel open — always show primary tab; never close (outside click closes).
   focusFilterTab();
+}
+
+/** Push dynamic options from a mounted panel (groups, warehouses, recipients…). */
+export function setTableFilterContext(panelId, patch = {}) {
+  if (!activeConfig || activeConfig.id !== panelId) return;
+  liveContext = {
+    ...liveContext,
+    ...patch,
+    filterContext: { ...(liveContext.filterContext || {}), ...patch },
+  };
+  if (activeConfig.pruneState) {
+    const state = stateByKey.get(routeKey);
+    if (state) stateByKey.set(routeKey, activeConfig.pruneState(state, liveContext));
+  }
+  updateTopbarButton();
+  const dropdown = $('topbarTableFilterPanel');
+  if (dropdown && !dropdown.hidden) remountPanel(dropdown);
+}
+
+/** Imperatively patch filter state (e.g. column-header sort sync). */
+export function patchTableFilterState(panelId, patch) {
+  if (!activeConfig || activeConfig.id !== panelId) return;
+  const cur = stateByKey.get(routeKey) || activeConfig.defaults?.() || {};
+  const next = typeof patch === 'function' ? patch(cur) : { ...cur, ...patch };
+  stateByKey.set(routeKey, next);
+  activeConfig.onStateChange?.(next);
+  updateTopbarButton();
+  const dropdown = $('topbarTableFilterPanel');
+  if (dropdown && !dropdown.hidden) remountPanel(dropdown);
+  emitFilter();
+}
+
+export function getTableFilterValues(panelId) {
+  const config = configs.get(panelId) || (activeConfig?.id === panelId ? activeConfig : null);
+  if (!config) return null;
+  const key = routeKey;
+  const state = (activeConfig?.id === panelId && stateByKey.has(key))
+    ? stateByKey.get(key)
+    : null;
+  if (!state) return config.toValues?.(config.defaults?.() || {}, {}) ?? config.defaults?.() ?? null;
+  return config.toValues?.(state, liveContext) ?? state;
+}
+
+export function getDistControls() {
+  return getTableFilterValues('distribution') || {
+    categories: [],
+    sort: 'category',
+    hiddenColumns: [],
+  };
+}
+
+export function getReconControls() {
+  return getTableFilterValues('recon') || {
+    statusFilter: '',
+    categories: [],
+    showHidden: false,
+    sort: 'category',
+    colVis: {},
+  };
+}
+
+export function getReconColVisibility() {
+  const values = getReconControls();
+  return { ...(values.colVis || {}) };
 }
 
 export function initTableFilterTopbar() {
   if (topbarApi) return topbarApi;
+  ensureRegistered();
 
   const btn = $('topbarTableFilterBtn');
   const dropdown = $('topbarTableFilterPanel');
@@ -644,43 +281,32 @@ export function initTableFilterTopbar() {
 
   topbarApi = {
     syncRoute(route, context = {}) {
-      let nextKey = '';
-      let panelId = null;
-      if (route.view === 'event' && route.panel === 'distribution') {
-        nextKey = `dist:${route.eventId}`;
-        panelId = 'distribution';
-      } else if (route.view === 'event' && route.panel === 'recon') {
-        nextKey = `recon:${route.eventId}`;
-        panelId = 'recon';
-      }
-      const show = Boolean(nextKey);
-
-      if (!show) {
+      ensureRegistered();
+      const config = getTableFilterConfig(route);
+      if (!config) {
         closePanel();
         activeConfig = null;
         panelApi = null;
+        routeKey = '';
+        liveContext = {};
         return;
       }
 
-      activeConfig = { id: panelId };
-
+      const nextKey = config.routeKey(route);
       const routeChanged = nextKey !== routeKey;
-      if (routeChanged) {
-        routeKey = nextKey;
-        if (panelId === 'distribution') resetDistState();
-        if (panelId === 'recon') resetReconState();
+      activeConfig = config;
+      routeKey = nextKey;
+
+      let state = getOrCreateState(config, nextKey);
+      liveContext = config.getContext
+        ? config.getContext(route, context)
+        : { products: context.products || [], bars: context.bars || [] };
+
+      if (config.pruneState) {
+        state = config.pruneState(state, liveContext);
+        stateByKey.set(nextKey, state);
       }
 
-      if (panelId === 'recon') {
-        reconCategoryOptions = extractReconCategories(context.products);
-        reconState.categories = reconState.categories.filter((id) =>
-          reconCategoryOptions.some((c) => c.id === id));
-        categories = [];
-      } else {
-        categories = extractCategories(context.products);
-        reconCategoryOptions = [];
-      }
-      bars = context.bars || [];
       if (routeChanged) activeTab = defaultTabForPanel();
       updateTopbarButton();
       emitFilter();
@@ -689,11 +315,16 @@ export function initTableFilterTopbar() {
     },
 
     reset() {
-      if (activeConfig?.id === 'recon') resetReconState();
-      else resetDistState();
+      if (!activeConfig) return;
+      const fresh = activeConfig.createState
+        ? activeConfig.createState()
+        : { ...(activeConfig.defaults?.() || {}) };
+      stateByKey.set(routeKey, fresh);
       activeTab = defaultTabForPanel();
       updateTopbarButton();
       emitFilter();
+      const dropdownEl = $('topbarTableFilterPanel');
+      if (dropdownEl && !dropdownEl.hidden) remountPanel(dropdownEl);
     },
   };
 
@@ -703,8 +334,4 @@ export function initTableFilterTopbar() {
 /** @deprecated */
 export function initTopbarControls() {
   return initTableFilterTopbar();
-}
-
-export function registerTableFilterConfig(config) {
-  activeConfig = config;
 }

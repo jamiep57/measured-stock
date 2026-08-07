@@ -128,7 +128,7 @@ export default async function handler(req, res) {
       ok: true,
       email,
       display_name: displayName,
-      redirect: '/v5/admin',
+      redirect: '/',
       hint: 'Your admin account is ready. Sign in with this email and password if asked.',
     });
   } catch (err) {

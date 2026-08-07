@@ -12,6 +12,9 @@ import { mountProductSearch } from '../../components/product-search.js';
 import { mountFractionInput } from '../../components/fraction-input.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { confirmDialog } from '../../components/modal.js';
+import { loadingWidget } from '../../components/loading-widget.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 import {
   normPoolName,
   servingsPerCase,
@@ -49,7 +52,7 @@ function renderShell() {
               placeholder="Search volume pools…" autocomplete="off" aria-label="Search volume pools">
           </div>
           <div class="catalog-list" id="vpList">
-            <div class="catalog-list-empty muted">Loading volume pools…</div>
+            <div class="catalog-list-empty">${loadingWidget('Loading volume pools…')}</div>
           </div>
         </aside>
         <section class="catalog-detail admin-surface" id="vpDetail">
@@ -361,7 +364,7 @@ export function mountVolumePoolsPanel() {
   async function removeMember(productId) {
     const product = products.find((p) => p.id === productId);
     if (!product) return;
-    if (!await confirmDialog({ title: 'Confirm', message: `Remove “${product.name}” from this volume pool?`, confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: `Remove “${product.name}” from this volume pool?`, confirmLabel: 'Delete', danger: true }))) return;
     try {
       await setProductPool(productId, null, null);
       await refresh();
@@ -487,7 +490,7 @@ export function mountVolumePoolsPanel() {
   let pendingCreateId = null;
 
   async function deletePool(name) {
-    if (!await confirmDialog({ title: 'Confirm', message: `Delete volume pool “${name}”? Products stay in the library but are unlinked.`, confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: `Delete volume pool “${name}”? Products stay in the library but are unlinked.`, confirmLabel: 'Delete', danger: true }))) return;
     try {
       await clearPool(name);
       if (selectedKey === normPoolName(name)) selectedKey = null;
@@ -583,7 +586,13 @@ export function mountVolumePoolsPanel() {
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
 
   refresh().catch((err) => {
-    listEl.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    listEl.innerHTML = errorState({
+      title: 'Couldn’t load volume pools',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    bindEmptyRetry(listEl, () => refresh());
+    reportError(err, { source: 'admin.volumePools.load', silent: true });
   });
 
   return () => {

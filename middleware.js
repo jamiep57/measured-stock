@@ -7,17 +7,23 @@ import { COOKIE_NAME, getAuthCookie, verifyAuthToken } from './lib/cookie.js';
 
 // Paths a "staff" session may reach. Everything else is admin-only.
 function isStaffAllowed(pathname) {
-  if (pathname.startsWith('/v5/admin')) return false;
   return (
-    pathname === '/v5' ||
-    pathname === '/v5/' ||
-    pathname.startsWith('/v5/') ||
+    pathname === '/app' ||
+    pathname === '/app/' ||
+    pathname === '/app.html' ||
+    pathname.startsWith('/app/') ||
+    pathname === '/scan' ||
+    pathname === '/scan/' ||
+    pathname === '/scan.html' ||
+    pathname.startsWith('/scan/') ||
     pathname === '/mobile' ||
     pathname === '/mobile.html' ||
     pathname.startsWith('/mobile/') ||
     pathname.startsWith('/assets/') ||
+    pathname.startsWith('/static/') ||
     pathname === '/favicon.ico' ||
     pathname === '/api/logout' ||
+    pathname === '/api/client-error' ||
     pathname === '/login' ||
     pathname === '/login.html'
   );
@@ -56,7 +62,7 @@ export default async function middleware(request) {
     if (session.role === 'admin' || isStaffAllowed(url.pathname)) {
       return;
     }
-    return Response.redirect(new URL('/v5/', request.url), 302);
+    return Response.redirect(new URL('/app/', request.url), 302);
   }
 
   const next = encodeURIComponent(url.pathname + url.search);
@@ -71,6 +77,6 @@ export const config = {
   //   /api/sync-catchup       — cron (CRON_SECRET inside handler)
   //   static assets           — css/js/images/fonts
   matcher: [
-    '/((?!login(?:\\.html)?$|setup(?:\\.html)?$|onboard(?:\\.html)?$|api/auth(?:/|$)|api/logout$|api/unlock$|api/sync-catchup|assets/js/(?:login|setup|onboard)\\.js$|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
+    '/((?!login(?:\\.html)?$|setup(?:\\.html)?$|onboard(?:\\.html)?$|api/auth(?:/|$)|api/logout$|api/unlock$|api/sync-catchup|api/client-error$|assets/js/(?:login|setup|onboard)\\.js$|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
   ],
 };

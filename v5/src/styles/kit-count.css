@@ -1,5 +1,5 @@
 /**
- * Kit count UI — embedded in Measured /v5/ Kit tab (dark theme).
+ * Kit count UI — embedded in Measured /app/ Kit tab (dark theme).
  */
 .kc-root {
   /* Alias only differently named tokens — never --x: var(--x), which invalidates the var. */

@@ -151,7 +151,9 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
     Default: inject a Supabase session from E2E_EMAIL/E2E_PASSWORD (fast, stable).
     Set use_ui_login=True to exercise the /login email form.
     """
-    url = f"{base_url()}/v5/admin"
+    import time
+
+    url = f"{base_url()}/"
 
     if use_ui_login:
         email = (os.getenv("E2E_EMAIL") or "").strip()
@@ -159,34 +161,48 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
         if not email or not password:
             raise RuntimeError("E2E_EMAIL and E2E_PASSWORD required for UI login")
 
-        page.goto(f"{base_url()}/login", wait_until="domcontentloaded")
-        page.locator("#emailForm").wait_for(state="visible", timeout=15000)
-        # Prefer waiting for login.js; fall through if method=post already protects GET leaks.
-        try:
-            page.wait_for_function(
-                """() => {
-                  const form = document.getElementById('emailForm');
-                  return !!(form && form.getAttribute('data-ready') === '1');
-                }""",
-                timeout=10000,
-            )
-        except Exception:
-            page.wait_for_load_state("networkidle")
-        page.locator("#email").fill(email)
-        page.locator("#password").fill(password)
-        page.locator("#emailBtn").click()
-        page.wait_for_url(re.compile(r".*/v5/admin"), timeout=30000)
-        page.wait_for_selector("#adminApp, #homeNewEvent, .admin-app", timeout=20000)
-        return
+        last_err = None
+        for attempt in range(3):
+            try:
+                page.goto(f"{base_url()}/login", wait_until="domcontentloaded")
+                page.locator("#emailForm").wait_for(state="visible", timeout=15000)
+                try:
+                    page.wait_for_function(
+                        """() => {
+                          const form = document.getElementById('emailForm');
+                          return !!(form && form.getAttribute('data-ready') === '1');
+                        }""",
+                        timeout=10000,
+                    )
+                except Exception:
+                    page.wait_for_load_state("networkidle")
+                page.locator("#email").fill(email)
+                page.locator("#password").fill(password)
+                page.locator("#emailBtn").click()
+                page.wait_for_url(re.compile(r"https?://[^/]+/?$"), timeout=30000)
+                page.wait_for_selector("#adminApp, #homeNewEvent, .admin-app", timeout=20000)
+                return
+            except Exception as err:
+                last_err = err
+                time.sleep(1.0 + attempt)
+        raise last_err
 
-    session = sign_in_via_api()
-    inject_supabase_session(page, session)
-    page.goto(url, wait_until="domcontentloaded")
-    page.wait_for_selector("#adminApp, #homeNewEvent, .admin-app", timeout=20000)
+    last_err = None
+    for attempt in range(3):
+        try:
+            session = sign_in_via_api()
+            inject_supabase_session(page, session)
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_selector("#adminApp, #homeNewEvent, .admin-app", timeout=20000)
+            return
+        except Exception as err:
+            last_err = err
+            time.sleep(1.0 + attempt)
+    raise last_err
 
 
 def goto_admin_path(page: "Page", path: str) -> None:
-    """Navigate within admin after unlock. path like /v5/admin/library."""
+    """Navigate within admin after unlock. path like /library."""
     from playwright.sync_api import Error as PlaywrightError
 
     if not path.startswith("/"):
@@ -202,10 +218,10 @@ def goto_admin_path(page: "Page", path: str) -> None:
     page.wait_for_selector("#adminContent", timeout=20000)
     # Confirm we actually landed on the requested path (or a known rewrite of it).
     # Audit bookmarks under /events/:id/audit rewrite to /dev/audit.
-    expected = path.rstrip("/")
+    expected = path.rstrip("/") or "/"
     alt = None
     if "/audit" in expected and "/events/" in expected:
-        alt = "/v5/admin/dev/audit"
+        alt = "/dev/audit"
     page.wait_for_function(
         """([expected, alt]) => {
           const path = location.pathname.replace(/\\/+$/, '') || '/';
@@ -226,4 +242,4 @@ def goto_admin_path(page: "Page", path: str) -> None:
 
 
 def goto_event_panel(page: "Page", event_id: str, panel: str) -> None:
-    goto_admin_path(page, f"/v5/admin/events/{event_id}/{panel}")
+    goto_admin_path(page, f"/events/{event_id}/{panel}")

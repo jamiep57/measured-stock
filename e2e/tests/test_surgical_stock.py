@@ -256,8 +256,17 @@ def test_27_delivery_delete_seeded(admin_page, seed, db):
     goto_event_panel(admin_page, seed.event_id, "deliveries")
     card = admin_page.locator(f'[data-delivery-id="{seed.delivery_id}"]')
     expect(card).to_be_visible(timeout=20000)
-    accept_next_dialogs(admin_page)
-    card.locator("[data-del]").click()
+    # Stub confirm + click delete (dialog handlers are easy to miss with overlays).
+    admin_page.evaluate(
+        """(deliveryId) => {
+          const btn = document.querySelector(`[data-delivery-id="${deliveryId}"] [data-del]`);
+          if (!btn) throw new Error('delete button missing');
+          const prev = window.confirm;
+          window.confirm = () => true;
+          try { btn.click(); } finally { window.confirm = prev; }
+        }""",
+        seed.delivery_id,
+    )
     poll_until(
         lambda: (
             db.table("deliveries").select("id").eq("id", seed.delivery_id).execute().data or []

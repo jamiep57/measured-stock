@@ -9,6 +9,9 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
 import { confirmDialog } from '../../components/modal.js';
+import { loadingWidget } from '../../components/loading-widget.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 function fmtGbp(n) {
   if (n == null || !Number.isFinite(Number(n))) return '';
@@ -52,7 +55,7 @@ function renderShell() {
               placeholder="Search suppliers…" autocomplete="off" aria-label="Search suppliers">
           </div>
           <div class="catalog-list" id="supList">
-            <div class="catalog-list-empty muted">Loading suppliers…</div>
+            <div class="catalog-list-empty">${loadingWidget('Loading suppliers…')}</div>
           </div>
         </aside>
         <section class="catalog-detail admin-surface" id="supDetail">
@@ -273,7 +276,7 @@ export function mountSuppliersPanel() {
   }
 
   async function deleteSupplier(id) {
-    if (!await confirmDialog({ title: 'Confirm', message: 'Delete this supplier? This cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this supplier? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
     if (isSupplierLinked(id, products)) {
       toast('Can\'t delete — products are still linked to this supplier. Reassign them first.', true);
       return;
@@ -366,7 +369,13 @@ export function mountSuppliersPanel() {
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
 
   refresh().catch((err) => {
-    listEl.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    listEl.innerHTML = errorState({
+      title: 'Couldn’t load suppliers',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    bindEmptyRetry(listEl, () => refresh());
+    reportError(err, { source: 'admin.suppliers.load', silent: true });
   });
 
   return () => {

@@ -16,6 +16,10 @@ import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
 import { syncAppPresence } from '../lib/app-presence.js';
 import { ensureAppAuth, signOutApp, getCachedProfile } from '../lib/auth.js';
 import { openOwnProfileEditor } from './panels/users.js';
+import { initClientErrorReporting } from '../lib/client-errors.js';
+import { initSyncStatus } from '../components/sync-status.js';
+import { flushQueue } from '../sync-queue.js';
+import { getDB } from '../db.js';
 
 const state = {
   events: [],
@@ -49,19 +53,12 @@ async function render(route) {
   if (route.view === 'audit' && route.eventId) {
     setEventId(route.eventId);
   }
-  // Canonical audit URL is /v5/admin/dev/audit (legacy event URLs still parse).
-  if (route.view === 'audit') {
-    const canonical = '/v5/admin/dev/audit';
-    if (location.pathname.replace(/\/+$/, '') !== canonical) {
-      navigate({ view: 'audit' }, { replace: true });
-      route = parseRoute();
-    }
-  }
 
-  // Canonical settings URLs are /v5/admin/settings/:section (legacy /users, /case-sizes, bare /settings).
-  if (route.view === 'settings') {
+  // Canonicalize URL (legacy /v5/admin/*, /users, event audit aliases, etc.).
+  if (route.view !== 'not-found') {
     const canonical = hrefForRoute(route);
-    if (location.pathname.replace(/\/+$/, '') !== canonical) {
+    const current = location.pathname.replace(/\/+$/, '') || '/';
+    if (current !== canonical) {
       navigate(route, { replace: true });
       route = parseRoute();
     }
@@ -101,7 +98,7 @@ async function render(route) {
   content.classList.remove('admin-content--enter');
   content.innerHTML = await renderPanel(route, state);
   await globalSearch?.syncRoute(route);
-  cleanupPanel = mountPanel(route, state);
+  cleanupPanel = await mountPanel(route, state);
   syncBugFabVisibility();
   requestAnimationFrame(() => {
     content.classList.add('admin-content--enter');
@@ -236,6 +233,7 @@ function wireProfileMenu() {
 }
 
 async function boot() {
+  initClientErrorReporting();
   try {
     await loadDbScript();
   } catch {
@@ -248,6 +246,18 @@ async function boot() {
 
   wireProfileMenu();
   syncProfileMenuLabel();
+  initSyncStatus({
+    bannerId: 'adminOfflineBanner',
+    badgeId: 'adminSyncBadge',
+    lastSyncId: 'adminLastSync',
+    onOnline: async () => {
+      try {
+        await flushQueue(getDB());
+      } catch (err) {
+        console.warn('admin flush', err);
+      }
+    },
+  });
 
   initSheet();
   initBugSheet();

@@ -149,7 +149,7 @@ export async function ensureAppAuth(opts = {}) {
   }
 
   if (opts.requireAdmin && cachedProfile?.role !== 'admin') {
-    window.location.href = '/v5/';
+    window.location.href = '/app/';
     return null;
   }
 

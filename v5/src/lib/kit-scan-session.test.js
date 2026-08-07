@@ -137,9 +137,9 @@ describe('kit-scan-session', () => {
   });
 
   it('builds scan page and QR urls', () => {
-    expect(scanPageUrl('sess-1', 'https://example.com')).toBe('https://example.com/v5/scan/?s=sess-1');
-    expect(qrImageUrl('https://example.com/v5/scan/?s=x', 120)).toContain('size=120x120');
-    expect(qrImageUrl('https://example.com/v5/scan/?s=x', 120)).toContain(encodeURIComponent('https://example.com/v5/scan/?s=x'));
+    expect(scanPageUrl('sess-1', 'https://example.com')).toBe('https://example.com/scan/?s=sess-1');
+    expect(qrImageUrl('https://example.com/scan/?s=x', 120)).toContain('size=120x120');
+    expect(qrImageUrl('https://example.com/scan/?s=x', 120)).toContain(encodeURIComponent('https://example.com/scan/?s=x'));
   });
 
   it('rewrites localhost origins to LAN hosts', () => {

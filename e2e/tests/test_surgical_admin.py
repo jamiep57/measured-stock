@@ -26,23 +26,23 @@ def test_30_reports_panel_loads(admin_page, seed):
 
 
 def test_31_kit_library_panel_loads(admin_page):
-    goto_admin_path(admin_page, "/v5/admin/kit-library")
+    goto_admin_path(admin_page, "/kit-library")
     expect(admin_page.locator(".kit-lib-panel, #kitLibTable").first).to_be_visible(timeout=25000)
 
 
 def test_32_warehouses_panel_loads(admin_page):
-    goto_admin_path(admin_page, "/v5/admin/warehouses")
+    goto_admin_path(admin_page, "/warehouses")
     expect(admin_page.locator(".wh-panel, #whList").first).to_be_visible(timeout=25000)
 
 
 def test_33_volume_pools_panel_loads(admin_page):
-    goto_admin_path(admin_page, "/v5/admin/volume-pools")
+    goto_admin_path(admin_page, "/volume-pools")
     expect(admin_page.locator(".vp-panel, #vpList").first).to_be_visible(timeout=25000)
 
 
 def test_34_settings_users_panel_loads(admin_page):
     """Users settings mounts; local Vite may 404 /api/auth/users — still assert shell."""
-    goto_admin_path(admin_page, "/v5/admin/settings/users")
+    goto_admin_path(admin_page, "/settings/users")
     expect(admin_page.locator(".users-section")).to_be_visible(timeout=25000)
     # Either the table/list renders, or the API error is shown (no Vercel API locally).
     expect(
@@ -118,28 +118,28 @@ def test_43_setup_status_change_persists(admin_page, seed_minimal, db):
 
 
 def test_35_settings_categories_and_case_sizes(admin_page):
-    goto_admin_path(admin_page, "/v5/admin/settings/categories")
+    goto_admin_path(admin_page, "/settings/categories")
     expect(admin_page.locator("#settingsCategories")).to_be_visible(timeout=20000)
-    goto_admin_path(admin_page, "/v5/admin/settings/case-sizes")
+    goto_admin_path(admin_page, "/settings/case-sizes")
     expect(admin_page.locator("#settingsCaseSizes")).to_be_visible(timeout=20000)
 
 
 def test_36_legacy_users_route_rewrites_to_settings(admin_page):
-    goto_admin_path(admin_page, "/v5/admin/users")
-    expect(admin_page).to_have_url(re.compile(r"/v5/admin/settings/users"), timeout=15000)
+    goto_admin_path(admin_page, "/users")
+    expect(admin_page).to_have_url(re.compile(r"/settings/users"), timeout=15000)
     expect(admin_page.locator(".users-section, #usersTable").first).to_be_visible(timeout=15000)
 
 
 def test_37_event_audit_alias_rewrites_to_dev(admin_page, seed):
-    goto_admin_path(admin_page, f"/v5/admin/events/{seed.event_id}/audit")
-    expect(admin_page).to_have_url(re.compile(r"/v5/admin/dev/audit"), timeout=15000)
+    goto_admin_path(admin_page, f"/events/{seed.event_id}/audit")
+    expect(admin_page).to_have_url(re.compile(r"/dev/audit"), timeout=15000)
     expect(admin_page.locator("#auditPanel")).to_be_visible(timeout=25000)
 
 
 def test_38_route_aliases_opening_and_summary(admin_page, seed):
-    goto_admin_path(admin_page, f"/v5/admin/events/{seed.event_id}/opening")
+    goto_admin_path(admin_page, f"/events/{seed.event_id}/opening")
     expect(admin_page.locator("#epPanel")).to_be_visible(timeout=25000)
-    goto_admin_path(admin_page, f"/v5/admin/events/{seed.event_id}/summary")
+    goto_admin_path(admin_page, f"/events/{seed.event_id}/summary")
     expect(admin_page.locator("#reportsPanel")).to_be_visible(timeout=25000)
 
 
@@ -165,7 +165,7 @@ def test_39_panel_nav_stress_no_blank_content(admin_page, seed):
 
 def test_40_suppliers_create_via_ui(admin_page, db, tracker):
     name = f"{E2E_PREFIX} UI Supplier {new_run_id()}"
-    goto_admin_path(admin_page, "/v5/admin/suppliers")
+    goto_admin_path(admin_page, "/suppliers")
     expect(admin_page.locator(".sup-panel")).to_be_visible(timeout=20000)
     open_toolbar_sheet(admin_page, "new-supplier", "#supName")
     admin_page.locator("#supName").fill(name)
@@ -197,7 +197,7 @@ def test_40_suppliers_create_via_ui(admin_page, db, tracker):
 
 
 def test_42_library_search_seeded_product(admin_page, seed):
-    goto_admin_path(admin_page, "/v5/admin/library")
+    goto_admin_path(admin_page, "/library")
     expect(admin_page.locator(".lib-panel")).to_be_visible(timeout=20000)
     # Global topbar product search drives library filtering.
     inp = admin_page.locator("#topbarSearch .product-search-input").first

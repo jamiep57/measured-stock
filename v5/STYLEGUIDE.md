@@ -6,9 +6,9 @@ Reference for building admin panels consistently.
 
 | Pattern | Live page | Copy for |
 |---|---|---|
-| Floating shell + sidebar | `/v5/admin` (Events home) | Layout, nav, cards, page surfaces |
-| List panel + drawer | `/v5/admin/events/:id/deliveries` | Topbar CTA, list cards, `sheet--admin-full` forms |
-| Data grid | `/v5/admin/events/:id/distribution` | Sticky matrix, filter panel, product search integration |
+| Floating shell + sidebar | `/` (Events home) | Layout, nav, cards, page surfaces |
+| List panel + drawer | `/events/:id/deliveries` | Topbar CTA, list cards, `sheet--admin-full` forms |
+| Data grid | `/events/:id/distribution` | Sticky matrix, filter panel, product search integration |
 
 **Live reference:** run `npm run dev` in `v5/` and open any of the pages above.
 
@@ -173,7 +173,7 @@ Floating card, fixed left, full height minus gaps.
 | **Primary nav** | `#sidebarPrimary` — Events (home) link |
 | **Catalog** | `#sidebarGlobal` — Library, Suppliers, Case sizes (collapsible) |
 | **Event sections** | Setup / Stock / Sales & recon — shown when `route.view === 'event'` |
-| **Footer** | Link to mobile bar app (`/v5`) |
+| **Footer** | Link to mobile bar app (`/app`) |
 
 **Nav link states:**
 
@@ -440,6 +440,10 @@ Distribution allocation inputs: `.dist-pill-input` — borderless, centered, `in
 |---|---|---|
 | Toast | `$('toast')` / `toast()` in `lib/util.js` | Short confirmations; `--radius-lg` + shell shadow in admin |
 | Sheet | `src/components/sheet.js` | Admin drawer: `variant: 'admin-full'` |
+| Modal / confirm | `src/components/modal.js` → `openModal`, `confirmDialog` | Centered dialogs; use `confirmDialog` instead of `window.confirm` |
+| Empty / error / 404 | `src/components/empty-state.js` | `emptyState`, `errorState` (+ Retry), `notFoundState` — admin `variant: 'admin'`, mobile `panel` |
+| Loading | `src/components/loading-widget.js` | `loadingWidget`, `loadingTableRow`, `skeletonList`, `skeletonTableRows` |
+| Sync status | `src/components/sync-status.js` | Offline banner + pending/failed badge + last synced |
 
 Toolbar skeleton actions should toast “coming soon” until implemented (`topbar-toolbar.js`).
 
@@ -547,6 +551,7 @@ v5/
 
 | Date | Notes |
 |---|---|
+| 2026-08 | Production polish: empty/error/404 widgets, confirmDialog, sync status, skeletons, lazy panels, reportError |
 | 2026-06 | Initial guide from Distribution panel |
 | 2026-06-27 | Floating shell redesign: sidebar workspace switcher, collapsible sections, main `.admin-shell`, page surfaces, pill search, primary topbar CTAs, admin drawer (`sheet--admin-full`), Deliveries as list/drawer reference |
 

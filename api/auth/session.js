@@ -116,7 +116,7 @@ export default async function handler(req, res) {
   res.status(200).json({
     ok: true,
     role,
-    redirect: role === 'staff' ? '/v5/' : '/v5/admin',
+    redirect: role === 'staff' ? '/app/' : '/',
     profile: {
       id: profile.id,
       email: profile.email,

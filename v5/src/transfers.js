@@ -10,6 +10,9 @@ import { mountProductSearch } from './components/product-search.js';
 import { mountSearchSelect } from './components/search-select.js';
 import { confirmDialog } from './components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from './components/empty-state.js';
+import { loadingWidget } from './components/loading-widget.js';
+import { scheduleDestructive } from './lib/action-undo.js';
+import { reportError } from './lib/client-errors.js';
 import {
   parseSourceValue,
   transferSourceFromSaved,
@@ -65,6 +68,8 @@ export async function loadTransfersView() {
     return;
   }
 
+  el.innerHTML = loadingWidget('Loading transfers…');
+
   try {
     const DB = getDB();
     const [rows, wh] = await Promise.all([
@@ -74,6 +79,7 @@ export async function loadTransfersView() {
     transfers = rows || [];
     warehouses = wh || [];
   } catch (err) {
+    reportError(err, { source: 'loadTransfersView', silent: true });
     el.innerHTML = errorState({
       title: 'Couldn’t load transfers',
       copy: err.message || 'Check your connection and try again.',
@@ -575,32 +581,42 @@ async function deleteTransfer(id) {
   if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this transfer? Warehouse stock will be restored where applicable.', confirmLabel: 'Delete', danger: true }))) return;
   const t = transfers.find((x) => x.id === id);
   const lines = t?.lines || [];
-  try {
-    const DB = getDB();
-    if (t?.from_warehouse_id) {
-      await Promise.all(lines.map(async (l) => {
-        await adjustWarehouseStock(
-          t.from_warehouse_id,
-          l.product_id,
-          lineCasesFromDb(l, ctx.event, ctx.caseSizes || []),
-        );
-      }));
-    }
-    if (t?.to_warehouse_id) {
-      await Promise.all(lines.map(async (l) => {
-        await adjustWarehouseStock(
-          t.to_warehouse_id,
-          l.product_id,
-          -lineCasesFromDb(l, ctx.event, ctx.caseSizes || []),
-        );
-      }));
-    }
-    await DB.transfers.clearLines(id);
-    await DB.transfers.remove(id);
+  const idx = transfers.findIndex((x) => x.id === id);
+  if (idx >= 0) {
     transfers = transfers.filter((x) => x.id !== id);
-    await loadTransfersView();
-    toast('Transfer deleted');
-  } catch (err) {
-    toast(err.message || 'Delete failed', true);
+    renderTransferList();
   }
+  scheduleDestructive({
+    message: 'Transfer deleted',
+    delayMs: 6000,
+    commit: async () => {
+      const DB = getDB();
+      if (t?.from_warehouse_id) {
+        await Promise.all(lines.map(async (l) => {
+          await adjustWarehouseStock(
+            t.from_warehouse_id,
+            l.product_id,
+            lineCasesFromDb(l, ctx.event, ctx.caseSizes || []),
+          );
+        }));
+      }
+      if (t?.to_warehouse_id) {
+        await Promise.all(lines.map(async (l) => {
+          await adjustWarehouseStock(
+            t.to_warehouse_id,
+            l.product_id,
+            -lineCasesFromDb(l, ctx.event, ctx.caseSizes || []),
+          );
+        }));
+      }
+      await DB.transfers.clearLines(id);
+      await DB.transfers.remove(id);
+    },
+    onUndo: () => {
+      if (t && idx >= 0) {
+        transfers = [...transfers.slice(0, idx), t, ...transfers.slice(idx)];
+        renderTransferList();
+      }
+    },
+  });
 }

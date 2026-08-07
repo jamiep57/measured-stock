@@ -10,11 +10,16 @@ import {
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
 import { productSupplierSearchText } from '../../components/product-search.js';
-import { loadingTableRow } from '../../components/loading-widget.js';
+import { skeletonTableRows } from '../../components/loading-widget.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+  patchTableFilterState,
+} from '../table-filter.js';
 import {
   MERGE_FIELD_DEFS,
   buildMergeFieldsPayload,
@@ -54,6 +59,14 @@ function preferredSupplier(p) {
   return p.supplier?.name || '';
 }
 
+function preferredSupplierId(p) {
+  const offers = p.product_suppliers || [];
+  const pref = offers.find((o) => o.is_preferred) || offers[0];
+  if (pref?.supplier_id) return pref.supplier_id;
+  if (pref?.supplier?.id) return pref.supplier.id;
+  return p.supplier?.id || '';
+}
+
 function supplierCellHtml(p) {
   const name = preferredSupplier(p);
   const extra = Math.max(0, (p.product_suppliers?.length || 0) - 1);
@@ -91,12 +104,6 @@ function renderShell() {
   return `
     <div class="admin-page lib-panel">
       <div class="lib-toolbar">
-        <select class="admin-select lib-filter" id="libCategory" aria-label="Filter by category">
-          <option value="">All categories</option>
-        </select>
-        <select class="admin-select lib-filter" id="libSupplier" aria-label="Filter by supplier">
-          <option value="">All suppliers</option>
-        </select>
         <span class="lib-count muted" id="libCount"></span>
         <div class="lib-merge-bar" id="libMergeBar" hidden>
           <span class="lib-merge-count" id="libMergeCount">0 selected</span>
@@ -125,7 +132,7 @@ function renderShell() {
             </tr>
           </thead>
           <tbody id="libBody">
-            ${loadingTableRow(10, 'Loading products…')}
+            ${skeletonTableRows(10, { rows: 8 })}
           </tbody>
         </table>
         <div class="lib-empty" id="libEmpty" hidden>No products match.</div>
@@ -189,8 +196,6 @@ export function mountLibraryPanel() {
   const bodyEl = $('libBody');
   const emptyEl = $('libEmpty');
   const countEl = $('libCount');
-  const catSel = $('libCategory');
-  const supSel = $('libSupplier');
   const tableEl = $('libTable');
   const mergeBar = $('libMergeBar');
   if (!bodyEl) return () => {};
@@ -207,6 +212,14 @@ export function mountLibraryPanel() {
   let mergeMode = false;
   const selected = new Set();
 
+  const seeded = getTableFilterValues('library');
+  if (seeded) {
+    filterCat = seeded.categoryFilter || '';
+    filterSup = seeded.supplierFilter || '';
+    sortKey = seeded.sortKey || 'name';
+    sortDir = seeded.sortDir === 'desc' ? -1 : 1;
+  }
+
   let mergeChosen = [];
   let mergeKeepId = null;
   let mergeFieldSource = {};
@@ -220,7 +233,14 @@ export function mountLibraryPanel() {
     const pid = productFilter.productId;
     return products.filter((p) => {
       if (filterCat && p.category?.name !== filterCat) return false;
-      if (filterSup && preferredSupplier(p) !== filterSup) return false;
+      if (filterSup) {
+        const sid = preferredSupplierId(p);
+        if (filterSup === '__none__') {
+          if (sid || preferredSupplier(p)) return false;
+        } else if (sid !== filterSup) {
+          return false;
+        }
+      }
       if (pid) return p.id === pid;
       if (!q) return true;
       return productHaystack(p, caseSizes).includes(q);
@@ -304,23 +324,12 @@ export function mountLibraryPanel() {
     }
   }
 
-  function populateFilters() {
-    const cats = [...new Set(products.map((p) => p.category?.name).filter(Boolean))].sort();
-    const sups = [...new Set(products.map((p) => preferredSupplier(p)).filter(Boolean))].sort();
-    if (catSel) {
-      const cur = catSel.value;
-      catSel.innerHTML = '<option value="">All categories</option>' +
-        cats.map((c) => `<option>${escapeHtml(c)}</option>`).join('');
-      catSel.value = cats.includes(cur) ? cur : '';
-      filterCat = catSel.value;
-    }
-    if (supSel) {
-      const cur = supSel.value;
-      supSel.innerHTML = '<option value="">All suppliers</option>' +
-        sups.map((s) => `<option>${escapeHtml(s)}</option>`).join('');
-      supSel.value = sups.includes(cur) ? cur : '';
-      filterSup = supSel.value;
-    }
+  function applyTableFilterValues(values) {
+    if (!values) return;
+    filterCat = values.categoryFilter || '';
+    filterSup = values.supplierFilter || '';
+    sortKey = values.sortKey || 'name';
+    sortDir = values.sortDir === 'desc' ? -1 : 1;
   }
 
   function openProductForm(editId) {
@@ -477,29 +486,20 @@ export function mountLibraryPanel() {
       loadSuppliers(),
       loadCaseSizes(),
     ]);
-    populateFilters();
     paintTable();
   }
-
-  catSel?.addEventListener('change', () => {
-    filterCat = catSel.value;
-    paintTable();
-  });
-  supSel?.addEventListener('change', () => {
-    filterSup = supSel.value;
-    paintTable();
-  });
 
   tableEl?.querySelector('thead')?.addEventListener('click', (e) => {
     const th = e.target.closest('th[data-sort]');
     if (!th) return;
     const key = th.dataset.sort;
-    if (sortKey === key) sortDir *= -1;
-    else {
-      sortKey = key;
-      sortDir = 1;
-    }
+    const nextDir = sortKey === key
+      ? (sortDir === 1 ? 'desc' : 'asc')
+      : 'asc';
+    sortKey = key;
+    sortDir = nextDir === 'desc' ? -1 : 1;
     paintTable();
+    patchTableFilterState('library', { sort: key, sortDir: nextDir });
   });
 
   $('libMergeCancel')?.addEventListener('click', () => setMergeMode(false));
@@ -532,8 +532,15 @@ export function mountLibraryPanel() {
     }
   };
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'library') return;
+    applyTableFilterValues(e.detail?.values);
+    paintTable();
+  };
+
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
     bodyEl.innerHTML = `<tr><td colspan="10" class="del-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
@@ -542,5 +549,6 @@ export function mountLibraryPanel() {
   return () => {
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

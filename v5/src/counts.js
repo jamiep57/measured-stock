@@ -14,6 +14,9 @@ import { openSheet, closeSheet } from './components/sheet.js';
 import { mountSearchSelect } from './components/search-select.js';
 import { confirmDialog } from './components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from './components/empty-state.js';
+import { loadingWidget } from './components/loading-widget.js';
+import { scheduleDestructive } from './lib/action-undo.js';
+import { reportError } from './lib/client-errors.js';
 
 let ctx = null;
 let counts = [];
@@ -77,9 +80,14 @@ export async function loadCountsView() {
     return;
   }
 
+  if (!activeCountId) {
+    el.innerHTML = loadingWidget('Loading counts…');
+  }
+
   try {
     counts = await getDB().stockCounts.forEvent(ctx.eventId);
   } catch (err) {
+    reportError(err, { source: 'loadCountsView', silent: true });
     el.innerHTML = errorState({
       title: 'Couldn’t load counts',
       copy: err.message || 'Check your connection and try again.',
@@ -214,19 +222,36 @@ async function createCountSession() {
 
 async function deleteCount(id) {
   if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this count session?', confirmLabel: 'Delete', danger: true }))) return;
-  try {
-    await getDB().stockCounts.clearLines(id);
-    await getDB().remove('stock_counts', 'id=eq.' + getDB()._.enc(id));
+  const removed = counts.find((c) => c.id === id);
+  const idx = counts.findIndex((c) => c.id === id);
+  const wasActive = activeCountId === id;
+  if (idx >= 0) {
     counts = counts.filter((c) => c.id !== id);
-    if (activeCountId === id) {
+    if (wasActive) {
       activeCountId = null;
       activeLines = [];
     }
     loadCountsView();
-    toast('Count deleted');
-  } catch (err) {
-    toast(err.message || 'Delete failed', true);
   }
+  scheduleDestructive({
+    message: 'Count deleted',
+    delayMs: 6000,
+    commit: async () => {
+      await getDB().stockCounts.clearLines(id);
+      await getDB().remove('stock_counts', 'id=eq.' + getDB()._.enc(id));
+    },
+    onUndo: () => {
+      if (removed && idx >= 0) {
+        counts = [...counts.slice(0, idx), removed, ...counts.slice(idx)];
+        if (wasActive) {
+          activeCountId = id;
+          activateCount(id).catch(() => loadCountsView());
+        } else {
+          loadCountsView();
+        }
+      }
+    },
+  });
 }
 
 async function activateCount(id) {

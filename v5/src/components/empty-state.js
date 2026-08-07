@@ -106,7 +106,7 @@ export function notFoundState(opts = {}) {
   const {
     title = 'Page not found',
     copy = 'That URL doesn’t match a page in this app.',
-    homeHref = '/v5/admin',
+    homeHref = '/',
     homeLabel = 'Back to events',
     secondaryHref = '',
     secondaryLabel = '',

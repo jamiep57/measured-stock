@@ -19,6 +19,9 @@ import { mountProductSearch } from '../../components/product-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { confirmDialog } from '../../components/modal.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 
 async function loadWarehouses() {
   try {
@@ -237,14 +240,20 @@ function renderShell() {
   return `
     <div class="admin-page xfer-panel">
       <div class="del-list" id="xferList">
-        <div class="del-loading muted">Loading transfers…</div>
+        <div class="del-loading">${loadingWidget('Loading transfers…')}</div>
       </div>
     </div>`;
 }
 
 function renderList(transfers, event, warehouses, caseSizes) {
   if (!transfers.length) {
-    return '<div class="del-empty">No transfers logged yet. Log the first transfer to move stock between locations.</div>';
+    return emptyState({
+      iconHtml: icon('arrow-left-right', { size: 22 }),
+      title: 'No transfers yet',
+      copy: 'Log the first transfer to move stock between locations.',
+      variant: 'admin',
+      ctaHtml: `<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-empty-cta="log-transfer">Log transfer</button>`,
+    });
   }
 
   return transfers.map((t) => {
@@ -824,7 +833,7 @@ export function mountTransfersPanel(route) {
   }
 
   async function deleteTransfer(id) {
-    if (!await confirmDialog({ title: 'Confirm', message: 'Delete this transfer? Warehouse stock will be restored where applicable.', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this transfer? Warehouse stock will be restored where applicable.', confirmLabel: 'Delete', danger: true }))) return;
     const t = transfers.find((x) => x.id === id);
     const lines = t?.lines || [];
     try {
@@ -878,6 +887,7 @@ export function mountTransfersPanel(route) {
   function paintList() {
     listEl.innerHTML = renderList(transfers, event, warehouses, caseSizes);
     wireList();
+    listEl.querySelector('[data-empty-cta="log-transfer"]')?.addEventListener('click', () => openTransferForm());
     applyProductFilter(getLastProductFilter());
   }
 
@@ -897,7 +907,13 @@ export function mountTransfersPanel(route) {
       ]);
       await refreshList();
     } catch (err) {
-      listEl.innerHTML = `<div class="del-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+      listEl.innerHTML = errorState({
+        title: 'Couldn’t load transfers',
+        copy: err.message || 'Failed to load',
+        variant: 'admin',
+      });
+      bindEmptyRetry(listEl, () => load());
+      reportError(err, { source: 'admin.transfers.load', silent: true });
     }
   }
 

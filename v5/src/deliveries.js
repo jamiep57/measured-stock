@@ -8,6 +8,9 @@ import { mountSupplierSearch } from './components/supplier-search.js';
 import { mountProductSearch } from './components/product-search.js';
 import { confirmDialog } from './components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from './components/empty-state.js';
+import { loadingWidget } from './components/loading-widget.js';
+import { scheduleDestructive } from './lib/action-undo.js';
+import { reportError } from './lib/client-errors.js';
 
 const DELIVERY_BUCKET = 'delivery-photos';
 
@@ -35,9 +38,12 @@ export async function loadDeliveriesView() {
     return;
   }
 
+  el.innerHTML = loadingWidget('Loading deliveries…');
+
   try {
     deliveries = await getDB().deliveries.forEvent(ctx.eventId);
   } catch (err) {
+    reportError(err, { source: 'loadDeliveriesView', silent: true });
     el.innerHTML = errorState({
       title: 'Couldn’t load deliveries',
       copy: err.message || 'Check your connection and try again.',
@@ -613,16 +619,27 @@ async function uploadPhotosAsync(deliveryId) {
 
 async function deleteDelivery(id) {
   if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this delivery?', confirmLabel: 'Delete', danger: true }))) return;
-  try {
-    const DB = getDB();
-    await DB.deliveries.clearLines(id);
-    await DB.deliveries.remove(id);
+  const removed = deliveries.find((d) => d.id === id);
+  const idx = deliveries.findIndex((d) => d.id === id);
+  if (idx >= 0) {
     deliveries = deliveries.filter((d) => d.id !== id);
-    loadDeliveriesView();
-    toast('Delivery deleted');
-  } catch (err) {
-    toast(err.message || 'Delete failed', true);
+    renderDeliveryList();
   }
+  scheduleDestructive({
+    message: 'Delivery deleted',
+    delayMs: 6000,
+    commit: async () => {
+      const DB = getDB();
+      await DB.deliveries.clearLines(id);
+      await DB.deliveries.remove(id);
+    },
+    onUndo: () => {
+      if (removed && idx >= 0) {
+        deliveries = [...deliveries.slice(0, idx), removed, ...deliveries.slice(idx)];
+        renderDeliveryList();
+      }
+    },
+  });
 }
 
 export async function flushPendingDeliveries() {

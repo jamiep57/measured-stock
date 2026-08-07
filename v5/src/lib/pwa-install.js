@@ -75,7 +75,7 @@ function mountBanner({ text, primaryLabel, onPrimary }) {
   }
 }
 
-/** Call once on Measured /v5/ boot. */
+/** Call once on Measured /app/ boot. */
 export function setupMeasuredPwaInstall() {
   if (isStandalone()) return;
   if (localStorage.getItem(DISMISS_KEY) === '1') return;

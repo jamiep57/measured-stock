@@ -58,7 +58,7 @@ def test_14_sales_panel_loads(admin_page, seed):
 
 def test_15_suppliers_list_shows_seeded(admin_page, seed):
     """Suppliers catalog lists the fixture supplier (searchable)."""
-    goto_admin_path(admin_page, "/v5/admin/suppliers")
+    goto_admin_path(admin_page, "/suppliers")
     expect(admin_page.locator(".sup-panel")).to_be_visible(timeout=20000)
     # Seed creates "[E2E] Supplier {run_id}"
     supplier_name = f"{E2E_PREFIX} Supplier {seed.run_id}"
@@ -84,7 +84,7 @@ def test_16_setup_edit_event_name(admin_page, seed_minimal, db):
 
 def test_17_audit_panel_loads(admin_page, seed):
     # Audit lives under /dev; event audit URLs rewrite there.
-    goto_admin_path(admin_page, "/v5/admin/dev/audit")
+    goto_admin_path(admin_page, "/dev/audit")
     # Ensure the seeded event is the active workspace for the audit panel.
     admin_page.evaluate(
         """(eventId) => {

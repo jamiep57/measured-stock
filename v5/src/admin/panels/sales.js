@@ -18,6 +18,11 @@ import { readModifierFile } from '../../lib/modifier-import.js';
 import { readTillFile } from '../../lib/till-import.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+  setTableFilterContext,
+} from '../table-filter.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import { confirmDialog } from '../../components/modal.js';
 import {
@@ -331,6 +336,13 @@ export function mountSalesPanel(route) {
     collab: null,
   };
 
+  const seeded = getTableFilterValues('sales');
+  if (seeded) {
+    ctx.mapFilter = seeded.mapFilter || '';
+    ctx.categoryFilter = seeded.categoryFilter || '';
+    ctx.sortKey = seeded.sortKey || 'name';
+  }
+
   let tillFileInput = null;
   let modFileInput = null;
 
@@ -408,6 +420,21 @@ export function mountSalesPanel(route) {
       </div>`;
   }
 
+  function syncSalesFilterContext() {
+    const isItems = ctx.tab === 'items';
+    const sourceRows = isItems ? ctx.tillRows : ctx.modRows;
+    const groups = isItems
+      ? uniqueGroupLabels(sourceRows, 'category')
+      : uniqueGroupLabels(sourceRows, 'modifier_set');
+    if (ctx.categoryFilter && !groups.includes(ctx.categoryFilter)) {
+      ctx.categoryFilter = '';
+    }
+    setTableFilterContext('sales', {
+      groups,
+      groupLabel: isItems ? 'Category' : 'Modifier set',
+    });
+  }
+
   function paintTabs() {
     return `
       <div class="sales-tabs" role="tablist">
@@ -416,75 +443,6 @@ export function mountSalesPanel(route) {
         <button type="button" class="sales-tab${ctx.tab === 'modifiers' ? ' sales-tab--active' : ''}" data-tab="modifiers" role="tab"
           aria-selected="${ctx.tab === 'modifiers'}">Modifiers${ctx.modRows.length ? ` (${ctx.modRows.length})` : ''}</button>
       </div>`;
-  }
-
-  function paintToolbar() {
-    const isItems = ctx.tab === 'items';
-    const sourceRows = isItems ? ctx.tillRows : ctx.modRows;
-    if (!sourceRows.length) return '';
-
-    const groups = isItems
-      ? uniqueGroupLabels(sourceRows, 'category')
-      : uniqueGroupLabels(sourceRows, 'modifier_set');
-    if (ctx.categoryFilter && !groups.includes(ctx.categoryFilter)) {
-      ctx.categoryFilter = '';
-    }
-    const groupLabel = isItems ? 'Category' : 'Modifier set';
-    const filter = ctx.mapFilter || '';
-    const sort = ctx.sortKey || 'name';
-
-    const seg = (value, label) => {
-      const on = filter === value;
-      return `<button type="button" class="projections-filter-btn${on ? ' is-active' : ''}"
-        data-map-filter="${escapeHtml(value)}" role="tab" aria-selected="${on}">${label}</button>`;
-    };
-
-    return `
-      <div class="sales-toolbar">
-        <div class="projections-filter" role="tablist" aria-label="Mapping status">
-          ${seg('', 'All')}
-          ${seg('unmapped', 'Need mapping')}
-          ${seg('mapped', 'Mapped')}
-          ${seg('warn', 'Stock warn')}
-        </div>
-        <select class="admin-select sales-toolbar-select" id="salesCatFilter" aria-label="${escapeHtml(groupLabel)}">
-          <option value="">All ${isItems ? 'categories' : 'modifier sets'}</option>
-          ${groups.map((g) => `<option value="${escapeHtml(g)}"${g === ctx.categoryFilter ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('')}
-        </select>
-        <select class="admin-select sales-toolbar-select" id="salesSort" aria-label="Sort by">
-          <option value="name"${sort === 'name' ? ' selected' : ''}>Name A–Z</option>
-          <option value="qty"${sort === 'qty' ? ' selected' : ''}>Qty sold ↓</option>
-          <option value="status"${sort === 'status' ? ' selected' : ''}>Need mapping first</option>
-        </select>
-      </div>`;
-  }
-
-  function bindToolbar() {
-    panel.querySelectorAll('[data-map-filter]').forEach((btn) => {
-      btn.onclick = () => {
-        ctx.mapFilter = btn.dataset.mapFilter || '';
-        paintBodyOnly();
-        panel.querySelectorAll('[data-map-filter]').forEach((b) => {
-          const on = (b.dataset.mapFilter || '') === ctx.mapFilter;
-          b.classList.toggle('is-active', on);
-          b.setAttribute('aria-selected', on ? 'true' : 'false');
-        });
-      };
-    });
-    const catSel = panel.querySelector('#salesCatFilter');
-    if (catSel) {
-      catSel.onchange = () => {
-        ctx.categoryFilter = catSel.value || '';
-        paintBodyOnly();
-      };
-    }
-    const sortSel = panel.querySelector('#salesSort');
-    if (sortSel) {
-      sortSel.onchange = () => {
-        ctx.sortKey = sortSel.value || 'name';
-        paintBodyOnly();
-      };
-    }
   }
 
   function recipeKeysFromEl(recipeEl) {
@@ -829,7 +787,6 @@ export function mountSalesPanel(route) {
     panel.innerHTML = `
       ${paintTabs()}
       ${stats}
-      ${rows.length ? paintToolbar() : ''}
       ${rows.length
     ? gridShell({
       nameCol: isItems ? 'Till item' : 'Modifier',
@@ -847,9 +804,9 @@ export function mountSalesPanel(route) {
         paint();
       };
     });
-    bindToolbar();
     bindRecipeControls();
     syncTheadHeight();
+    syncSalesFilterContext();
     if (rows.length) startCollab();
     else stopCollab();
   }
@@ -926,7 +883,7 @@ export function mountSalesPanel(route) {
 
   async function clearTillImport() {
     if (!ctx.tillImport) return;
-    if (!await confirmDialog({ title: 'Confirm', message: 'Remove the imported item sales for this event? Recipes are kept.', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Remove the imported item sales for this event? Recipes are kept.', confirmLabel: 'Delete', danger: true }))) return;
     const DB = getDB();
     await DB.tillImports.removeWhere(`event_id=eq.${DB._.enc(ctx.eventId)}`);
     ctx.tillImport = null;
@@ -937,7 +894,7 @@ export function mountSalesPanel(route) {
 
   async function clearModImport() {
     if (!ctx.modImport) return;
-    if (!await confirmDialog({ title: 'Confirm', message: 'Remove the imported modifier sales for this event? Recipes are kept.', confirmLabel: 'Delete', danger: true })) return;
+    if (!(await confirmDialog({ title: 'Confirm', message: 'Remove the imported modifier sales for this event? Recipes are kept.', confirmLabel: 'Delete', danger: true }))) return;
     const DB = getDB();
     await DB.modifierImports.removeWhere(`event_id=eq.${DB._.enc(ctx.eventId)}`);
     ctx.modImport = null;
@@ -1039,8 +996,19 @@ export function mountSalesPanel(route) {
     if (e.detail) e.detail.handled = true;
   };
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'sales') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    ctx.mapFilter = values.mapFilter || '';
+    ctx.categoryFilter = values.categoryFilter || '';
+    ctx.sortKey = values.sortKey || 'name';
+    paintBodyOnly();
+  };
+
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   panel.addEventListener('keydown', onRecipeTabNav);
 
   reload().catch((err) => {
@@ -1052,6 +1020,7 @@ export function mountSalesPanel(route) {
     stopCollab();
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
     panel.removeEventListener('keydown', onRecipeTabNav);
     tillFileInput?.remove();
     modFileInput?.remove();

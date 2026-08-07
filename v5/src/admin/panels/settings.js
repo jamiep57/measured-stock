@@ -476,17 +476,17 @@ export function mountSettingsPanel(section = 'users') {
         try {
           const stockRows = await DB.warehouseStock.forWarehouse(w.id);
           const hasStock = (stockRows || []).some((s) => (Number(s.qty_on_hand) || 0) > 0);
-          if (hasStock && !await confirmDialog({ title: 'Confirm', message: 'This warehouse still holds stock. Delete anyway?', confirmLabel: 'Delete', danger: true })) return;
+          if (hasStock && !(await confirmDialog({ title: 'Confirm', message: 'This warehouse still holds stock. Delete anyway?', confirmLabel: 'Delete', danger: true }))) return;
 
           const xferRows = await DB.select(
             'transfers',
             '?or=(from_warehouse_id.eq.' + enc(w.id) + ',to_warehouse_id.eq.' + enc(w.id) + ')&select=id'
           );
           const xferCount = (xferRows || []).length;
-          if (xferCount && !await confirmDialog({ title: 'Confirm', message: `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
-            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.', confirmLabel: 'Delete', danger: true })) return;
+          if (xferCount && !(await confirmDialog({ title: 'Confirm', message: `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
+            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.', confirmLabel: 'Delete', danger: true }))) return;
 
-          if (!hasStock && !xferCount && !await confirmDialog({ title: 'Confirm', message: `Delete “${w.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return;
+          if (!hasStock && !xferCount && !(await confirmDialog({ title: 'Confirm', message: `Delete “${w.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true }))) return;
 
           await DB.warehouses.remove(w.id);
           closeSheet();
@@ -578,7 +578,7 @@ export function mountSettingsPanel(section = 'users') {
           toast('Can\'t delete — products still use this category. Reassign them first.', true);
           return;
         }
-        if (!await confirmDialog({ title: 'Confirm', message: `Delete “${c.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return;
+        if (!(await confirmDialog({ title: 'Confirm', message: `Delete “${c.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true }))) return;
         try {
           await getDB().categories.remove(c.id);
           closeSheet();
@@ -791,7 +791,7 @@ export function mountSettingsPanel(section = 'users') {
           toast('Can\'t delete — products still use this case size. Reassign them first.', true);
           return;
         }
-        if (!await confirmDialog({ title: 'Confirm', message: 'Delete this case size? This cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
+        if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this case size? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
         try {
           await getDB().caseSizes.remove(cs.id);
           closeSheet();

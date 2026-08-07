@@ -131,19 +131,17 @@ export function initGlobalSearch() {
       }
 
       container.hidden = hideSearchForRoute(route);
-      if (container.hidden) {
-        topbarControls.syncRoute(route, { products: [], bars: [] });
-        topbarToolbar.syncRoute(route);
-        return;
-      }
+      // Always sync filter/toolbar — including pages that hide product search.
       try {
-        const { products, bars } = await loadPageContext(route);
-        mount(products, route);
+        const { products, bars } = container.hidden
+          ? { products: [], bars: [] }
+          : await loadPageContext(route);
+        if (!container.hidden) mount(products, route);
         topbarControls.syncRoute(route, { products, bars });
         topbarToolbar.syncRoute(route);
       } catch (err) {
         console.warn('global search load failed', err);
-        mount([], route);
+        if (!container.hidden) mount([], route);
         topbarControls.syncRoute(route, { products: [], bars: [] });
         topbarToolbar.syncRoute(route);
       }

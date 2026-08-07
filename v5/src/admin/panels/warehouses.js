@@ -12,6 +12,7 @@ import { round1 } from '../../lib/opening-stock.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { confirmDialog } from '../../components/modal.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 
 const WH_STORAGE_KEY = 'v5_warehouse';
 
@@ -93,7 +94,7 @@ function renderShell() {
               placeholder="Search warehouses…" autocomplete="off" aria-label="Search warehouses">
           </div>
           <div class="catalog-list" id="whList">
-            <div class="catalog-list-empty muted">Loading warehouses…</div>
+            <div class="catalog-list-empty">${loadingWidget('Loading warehouses…')}</div>
           </div>
         </aside>
         <section class="catalog-detail admin-surface" id="whDetail">
@@ -366,7 +367,7 @@ export function mountWarehousesPanel() {
     detailBody.hidden = false;
 
     if (detailLoading) {
-      detailBody.innerHTML = '<div class="catalog-list-empty muted">Loading stock…</div>';
+      detailBody.innerHTML = `<div class="catalog-list-empty">${loadingWidget('Loading stock…')}</div>`;
       return;
     }
 
@@ -614,17 +615,17 @@ export function mountWarehousesPanel() {
         try {
           const hasStock = (stockRows || []).some((s) =>
             s.warehouse_id === w.id && (Number(s.qty_on_hand) || 0) > 0);
-          if (hasStock && !await confirmDialog({ title: 'Confirm', message: 'This warehouse still holds stock. Delete anyway?', confirmLabel: 'Delete', danger: true })) return;
+          if (hasStock && !(await confirmDialog({ title: 'Confirm', message: 'This warehouse still holds stock. Delete anyway?', confirmLabel: 'Delete', danger: true }))) return;
 
           const xferRows = await DB.select(
             'transfers',
             '?or=(from_warehouse_id.eq.' + enc(w.id) + ',to_warehouse_id.eq.' + enc(w.id) + ')&select=id',
           );
           const xferCount = (xferRows || []).length;
-          if (xferCount && !await confirmDialog({ title: 'Confirm', message: `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
-            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.', confirmLabel: 'Delete', danger: true })) return;
+          if (xferCount && !(await confirmDialog({ title: 'Confirm', message: `This warehouse is referenced by ${xferCount} transfer${xferCount === 1 ? '' : 's'}. ` +
+            'Delete anyway? Transfer records will be kept but no longer linked to this warehouse.', confirmLabel: 'Delete', danger: true }))) return;
 
-          if (!hasStock && !xferCount && !await confirmDialog({ title: 'Confirm', message: `Delete “${w.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return;
+          if (!hasStock && !xferCount && !(await confirmDialog({ title: 'Confirm', message: `Delete “${w.name}”? This cannot be undone.`, confirmLabel: 'Delete', danger: true }))) return;
 
           await DB.warehouses.remove(w.id);
           closeSheet();

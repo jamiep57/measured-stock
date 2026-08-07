@@ -126,7 +126,7 @@ function notFoundPage() {
   return notFoundState({
     title: 'Page not found',
     copy: 'That URL doesn’t match a V5 admin page. Check the link or pick an event from the sidebar.',
-    homeHref: '/v5/admin',
+    homeHref: '/',
     homeLabel: 'Back to events',
     surface: 'admin',
   });

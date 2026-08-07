@@ -235,7 +235,7 @@ export function pendingCheckInTotal(pending) {
  */
 export function scanPageUrl(sessionId, origin) {
   const base = String(origin || (typeof location !== 'undefined' ? location.origin : '')).replace(/\/$/, '');
-  return `${base}/v5/scan/?s=${encodeURIComponent(sessionId)}`;
+  return `${base}/scan/?s=${encodeURIComponent(sessionId)}`;
 }
 
 /** localStorage key for a manually chosen phone-reachable origin (LAN IP). */
@@ -295,7 +295,7 @@ export function setStoredPhoneOrigin(origin) {
  */
 export async function fetchDevLanOrigins() {
   if (typeof fetch === 'undefined') return [];
-  const paths = ['/v5/__dev-lan', '/__dev-lan'];
+  const paths = ['/__dev-lan'];
   for (const p of paths) {
     try {
       const res = await fetch(p, { cache: 'no-store' });

@@ -4,8 +4,8 @@ V5 is two apps sharing one data layer and one design system:
 
 | App | URL | Users | Purpose |
 |---|---|---|---|
-| **Mobile** | `/v5`, `/v5/counts`, … | Staff PIN | Counts + deliveries on site |
-| **Admin** | `/v5/admin`, … | Admin PIN | Event setup, distribution, recon, Square |
+| **Mobile** | `/app`, … | Staff PIN | Counts + deliveries on site |
+| **Admin** | `/`, … | Admin PIN | Event setup, distribution, recon, Square |
 
 V4 (`v2.html` at `/`) remains until admin panels reach parity, then admins cut over.
 
@@ -126,26 +126,26 @@ Real URLs (History API), not hash-only:
 
 ```
 /v5/admin                              Event library / landing
-/v5/admin/library                      Global product catalogue
-/v5/admin/suppliers                    Supplier list
-/v5/admin/case-sizes                   Pack definitions
-/v5/admin/bugs                         Bug & feature reports
+/library                      Global product catalogue
+/suppliers                    Supplier list
+/case-sizes                   Pack definitions
+/bugs                         Bug & feature reports
 
-/v5/admin/events/:eventId              Event dashboard (see below)
-/v5/admin/events/:eventId/setup        Bars, dates, suppliers, recipients
-/v5/admin/events/:eventId/products     Event catalogue
-/v5/admin/events/:eventId/opening      Opening stock
-/v5/admin/events/:eventId/distribution Bar menus + allocations
-/v5/admin/events/:eventId/deliveries
-/v5/admin/events/:eventId/counts       Read-only sessions (staff enter on mobile)
-/v5/admin/events/:eventId/stock-levels Live stock view
-/v5/admin/events/:eventId/transfers
-/v5/admin/events/:eventId/wastage
-/v5/admin/events/:eventId/closing
-/v5/admin/events/:eventId/recon        Financial recon
-/v5/admin/events/:eventId/audit        Forensic audit (math + save integrity)
-/v5/admin/events/:eventId/sales        Square + Modifiers (single page)
-/v5/admin/events/:eventId/summary
+/events/:eventId              Event dashboard (see below)
+/events/:eventId/setup        Bars, dates, suppliers, recipients
+/events/:eventId/products     Event catalogue
+/events/:eventId/opening      Opening stock
+/events/:eventId/distribution Bar menus + allocations
+/events/:eventId/deliveries
+/events/:eventId/counts       Read-only sessions (staff enter on mobile)
+/events/:eventId/stock-levels Live stock view
+/events/:eventId/transfers
+/events/:eventId/wastage
+/events/:eventId/closing
+/events/:eventId/recon        Financial recon
+/events/:eventId/audit        Forensic audit (math + save integrity)
+/events/:eventId/sales        Square + Modifiers (single page)
+/events/:eventId/summary
 ```
 
 ### Event dashboard (new)
@@ -198,7 +198,7 @@ delivery_lines           → should record which offer/supplier was used (enhanc
 ### Phase 1 — Admin shell
 
 - [x] `admin.html`, router, sidebar, event context
-- [x] Middleware: staff blocked from `/v5/admin`
+- [x] Middleware: staff blocked from `/`
 - [x] Vercel SPA fallback for admin routes (`vercel.json`)
 - [x] `ProductSearch` component
 - [ ] Extract `src/shared/` from mobile modules (optional cleanup)
@@ -224,7 +224,7 @@ delivery_lines           → should record which offer/supplier was used (enhanc
 
 ### Phase 5 — Cutover
 
-- [ ] Redirect `/` → `/v5/admin` for admins
+- [ ] Redirect `/` → `/` for admins
 - [ ] Retire `v2.html` panel-by-panel
 - [x] Create-event flow in V5 (admin home)
 
@@ -254,8 +254,8 @@ npm run dev
 
 | URL | App |
 |---|---|
-| http://localhost:5173/v5/ | Mobile |
-| http://localhost:5173/v5/admin.html | Admin (dev); routes like `/v5/admin/events/…` |
+| http://localhost:5173/app/ | Mobile |
+| http://localhost:5173/app/admin.html | Admin (dev); routes like `/events/…` |
 
 ```bash
 npm test          # unit tests (pack-metrics, stock-entry, bar-products)
