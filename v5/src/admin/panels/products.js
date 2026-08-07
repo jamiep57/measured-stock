@@ -29,7 +29,7 @@ import {
   getTableFilterValues,
 } from '../table-filter.js';
 import { parseQty } from '../../stock-entry.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -163,7 +163,15 @@ function renderShell() {
             ${loadingTableRow(5, 'Loading products…')}
           </tbody>
         </table>
-        <div class="dist-empty ep-empty" id="epEmpty" hidden>No products on this event yet. Use <strong>Add product</strong> in the toolbar.</div>
+        <div class="dist-empty ep-empty" id="epEmpty" hidden>
+          ${emptyState({
+            icon: 'package',
+            title: 'No products on this event yet',
+            copy: 'Use Add product in the toolbar to get started.',
+            variant: 'admin',
+            className: 'empty--inline',
+          })}
+        </div>
       </div>
     </div>`;
 }

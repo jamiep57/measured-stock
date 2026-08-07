@@ -10,7 +10,7 @@ import {
 } from '../../db.js';
 import { contentsByContainer } from '../../lib/kit-stock.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
-import { openModal, closeModal, confirmDialog} from '../../components/modal.js';
+import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { loadingTableRow } from '../../components/loading-widget.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import {
@@ -37,6 +37,7 @@ import {
 } from '../table-filter.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 
 const CATEGORY_COLOURS = [
@@ -1636,6 +1637,7 @@ export function mountKitLibraryPanel() {
       copy: err.message || 'Failed to load',
       variant: 'admin',
     })}</td></tr>`;
+    bindEmptyRetry(bodyEl, () => refresh());
   });
 
   return () => {

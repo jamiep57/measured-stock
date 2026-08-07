@@ -9,8 +9,23 @@ import { refreshFieldUndoButtons } from '../lib/field-undo.js';
 
 export const ADMIN_TOOLBAR_ACTION = 'admin-toolbar-action';
 
-/** @typedef {{ id: string, icon?: string, title: string, label?: string, primary?: boolean, disabled?: boolean }} ToolbarItem */
+/** @typedef {{ id: string, icon?: string, title?: string, label?: string, primary?: boolean, disabled?: boolean, kind?: 'button' | 'text' }} ToolbarItem */
 /** @typedef {{ id: string, label: string, items: ToolbarItem[] }} ToolbarStrip */
+
+/** @type {{ syncRoute: (route: object) => void, setStrips: (strips: ToolbarStrip[] | null) => void }} */
+let toolbarController = {
+  syncRoute() {},
+  setStrips() {},
+};
+
+/**
+ * Temporarily replace the current panel’s topbar strips (e.g. library merge mode).
+ * Pass null to restore the route’s default strips.
+ * @param {ToolbarStrip[] | null} strips
+ */
+export function setTopbarToolbarStrips(strips) {
+  toolbarController.setStrips(strips);
+}
 
 /** Per-panel strips (left of filter/search on distribution). */
 export const PANEL_TOOLBAR = {
@@ -416,18 +431,22 @@ export const PANEL_TOOLBAR = {
 };
 
 function renderToolbarItem(item) {
+  if (item.kind === 'text') {
+    return `<span class="topbar-tool-meta muted" data-toolbar-meta="${item.id}">${item.label || ''}</span>`;
+  }
   const classes = ['topbar-tool'];
   if (item.label) classes.push('topbar-tool--label');
   if (item.primary) classes.push('topbar-tool--primary');
   const iconOpts = { size: 16, strokeWidth: 2 };
+  const title = item.title || item.label || item.id;
   const inner = item.label
     ? `${item.icon ? icon(item.icon, iconOpts) : ''}<span>${item.label}</span>`
     : icon(item.icon, iconOpts);
 
   return `<button type="button" class="${classes.join(' ')}"
     data-toolbar-action="${item.id}"
-    title="${item.title}"
-    aria-label="${item.title}"
+    title="${title}"
+    aria-label="${title}"
     ${item.disabled ? 'disabled' : ''}>
     ${inner}
   </button>`;
@@ -447,11 +466,32 @@ function onToolbarAction(actionId) {
   }
 }
 
+function stripsForRoute(route) {
+  if (!route) return null;
+  const globalStrips = PANEL_TOOLBAR[route.view];
+  const eventStrips = route.view === 'event' ? PANEL_TOOLBAR[route.panel] : null;
+  const configured = eventStrips !== undefined && eventStrips !== null
+    ? eventStrips
+    : (globalStrips !== undefined && globalStrips !== null ? globalStrips : null);
+  return {
+    configured,
+    strips: Array.isArray(configured) ? configured : null,
+  };
+}
+
 export function initTopbarToolbar() {
   const tools = $('topbarTools');
   const stripsEl = $('topbarToolbarStrips');
   const filterStrip = $('topbarFilterStrip');
-  if (!tools || !stripsEl || !filterStrip) return { syncRoute: () => {} };
+  if (!tools || !stripsEl || !filterStrip) {
+    toolbarController = { syncRoute() {}, setStrips() {} };
+    return { syncRoute: () => {} };
+  }
+
+  /** @type {object | null} */
+  let lastRoute = null;
+  /** @type {ToolbarStrip[] | null} */
+  let stripOverride = null;
 
   stripsEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-toolbar-action]');
@@ -459,30 +499,39 @@ export function initTopbarToolbar() {
     onToolbarAction(btn.dataset.toolbarAction);
   });
 
-  return {
-    syncRoute(route) {
-      const globalStrips = PANEL_TOOLBAR[route.view];
-      const eventStrips = route.view === 'event' ? PANEL_TOOLBAR[route.panel] : null;
-      const configured = eventStrips !== undefined && eventStrips !== null
-        ? eventStrips
-        : (globalStrips !== undefined && globalStrips !== null ? globalStrips : null);
-      const strips = Array.isArray(configured) ? configured : null;
-      const showFilter = hasTableFilter(route);
-      const showStrips = !!(strips && strips.length);
-      const showToolbar = showStrips || showFilter || configured !== null;
+  function paint(route = lastRoute) {
+    const { configured, strips: defaultStrips } = stripsForRoute(route) || { configured: null, strips: null };
+    const strips = stripOverride || defaultStrips;
+    const showFilter = route ? hasTableFilter(route) : false;
+    const showStrips = !!(strips && strips.length);
+    const showToolbar = showStrips || showFilter || configured !== null || !!stripOverride;
 
-      tools.hidden = !showToolbar;
-      stripsEl.hidden = !showStrips;
-      filterStrip.hidden = !showFilter;
+    tools.hidden = !showToolbar;
+    stripsEl.hidden = !showStrips;
+    filterStrip.hidden = !showFilter;
 
-      if (showStrips) {
-        stripsEl.innerHTML = strips.map(renderStrip).join('');
-        initIcons(stripsEl);
-      } else {
-        stripsEl.innerHTML = '';
-      }
-      initIcons($('topbarEditStrip'));
-      refreshFieldUndoButtons();
-    },
-  };
+    if (showStrips) {
+      stripsEl.innerHTML = strips.map(renderStrip).join('');
+      initIcons(stripsEl);
+    } else {
+      stripsEl.innerHTML = '';
+    }
+    initIcons($('topbarEditStrip'));
+    refreshFieldUndoButtons();
+  }
+
+  function syncRoute(route) {
+    lastRoute = route;
+    stripOverride = null;
+    paint(route);
+  }
+
+  function setStrips(strips) {
+    stripOverride = Array.isArray(strips) ? strips : null;
+    paint(lastRoute);
+  }
+
+  toolbarController = { syncRoute, setStrips };
+
+  return { syncRoute };
 }

@@ -11,7 +11,7 @@ import { navigate, hrefForRoute } from '../router.js';
 import { renderUsersSection, mountUsersPanel } from './users.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 
 const SETTINGS_NAV = [
@@ -241,9 +241,15 @@ export function mountSettingsPanel(section = 'users') {
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     if (!sorted.length) {
-      whWrap.innerHTML = `<div class="settings-list-empty muted">${warehouses.length
-        ? 'No warehouses match your search.'
-        : 'No warehouses yet. Add your first one.'}</div>`;
+      whWrap.innerHTML = emptyState({
+        icon: 'warehouse',
+        title: warehouses.length ? 'No matching warehouses' : 'No warehouses yet',
+        copy: warehouses.length
+          ? 'No warehouses match your search.'
+          : 'Add your first warehouse to get started.',
+        variant: 'admin',
+        className: 'empty--inline',
+      });
       return;
     }
 
@@ -276,9 +282,15 @@ export function mountSettingsPanel(section = 'users') {
         (a.sort_order - b.sort_order) || (a.name || '').localeCompare(b.name || ''));
 
     if (!sorted.length) {
-      catWrap.innerHTML = `<div class="settings-list-empty muted">${categories.length
-        ? 'No categories match your search.'
-        : 'No categories yet. Add your first one.'}</div>`;
+      catWrap.innerHTML = emptyState({
+        icon: 'tag',
+        title: categories.length ? 'No matching categories' : 'No categories yet',
+        copy: categories.length
+          ? 'No categories match your search.'
+          : 'Add your first category to get started.',
+        variant: 'admin',
+        className: 'empty--inline',
+      });
       return;
     }
 
@@ -330,9 +342,15 @@ export function mountSettingsPanel(section = 'users') {
         (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''));
 
     if (!sorted.length) {
-      csWrap.innerHTML = `<div class="settings-list-empty muted">${caseSizes.length
-        ? 'No case sizes match your search.'
-        : 'No case sizes yet. Add your first one.'}</div>`;
+      csWrap.innerHTML = emptyState({
+        icon: 'cube',
+        title: caseSizes.length ? 'No matching case sizes' : 'No case sizes yet',
+        copy: caseSizes.length
+          ? 'No case sizes match your search.'
+          : 'Add your first case size to get started.',
+        variant: 'admin',
+        className: 'empty--inline',
+      });
       return;
     }
 

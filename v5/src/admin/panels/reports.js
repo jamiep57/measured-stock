@@ -24,8 +24,14 @@ import {
   reportsCellKeyFromInput,
   reportsFindCellEl,
 } from '../../lib/grid-collab-keys.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+  setTableFilterContext,
+} from '../table-filter.js';
+
 function fmtQty(n) {
   if (!Number.isFinite(n)) return '—';
   const r = Math.round(n * 100) / 100;
@@ -337,7 +343,12 @@ export function mountReportsPanel(route) {
 
   function renderSupplierTable(report) {
     if (!report.supplierRows.length) {
-      return '<div class="del-empty">No supplier deliveries match these filters.</div>';
+      return emptyState({
+        iconHtml: icon('search', { size: 22 }),
+        title: 'No matches',
+        copy: 'No supplier deliveries match these filters.',
+        variant: 'admin',
+      });
     }
     return `
       <div class="dash-table-wrap">
@@ -376,7 +387,12 @@ export function mountReportsPanel(route) {
 
   function renderDeliveryTable(report) {
     if (!report.deliveryRows.length) {
-      return '<div class="del-empty">No supplier deliveries match these filters.</div>';
+      return emptyState({
+        iconHtml: icon('search', { size: 22 }),
+        title: 'No matches',
+        copy: 'No supplier deliveries match these filters.',
+        variant: 'admin',
+      });
     }
     return `
       <div class="dash-table-wrap">
@@ -444,7 +460,12 @@ export function mountReportsPanel(route) {
   function renderClientDetail(report) {
     const r = report.recipientRows?.[0];
     if (!r) {
-      return `<div class="del-empty">No transfers for this client in the selected date range.</div>`;
+      return emptyState({
+        iconHtml: icon('search', { size: 22 }),
+        title: 'No matches',
+        copy: 'No transfers for this client in the selected date range.',
+        variant: 'admin',
+      });
     }
 
     return `
@@ -688,7 +709,12 @@ export function mountReportsPanel(route) {
           <input type="date" id="rptDateTo" class="admin-input reports-date" value="${escapeHtml(ctx.dateTo)}">
         </label>`;
       if (!recipients.length) {
-        body = `<div class="del-empty">No internal transfers to clients yet. Log a transfer to a recipient (Artist Liaison, Production, etc.) on the Transfers page.</div>`;
+        body = emptyState({
+          iconHtml: icon('arrow-left-right', { size: 22 }),
+          title: 'No client transfers yet',
+          copy: 'Log a transfer to a recipient (Artist Liaison, Production, etc.) on the Transfers page.',
+          variant: 'admin',
+        });
       } else {
         body = `
         ${renderClientStats(report)}

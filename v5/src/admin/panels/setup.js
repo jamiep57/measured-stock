@@ -10,6 +10,8 @@ import { syncSidebar } from '../sidebar.js';
 import { parseRoute } from '../router.js';
 import { parseQty } from '../../stock-entry.js';
 import { confirmDialog } from '../../components/modal.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 const STATUS_OPTS = [
   { value: 'draft', label: 'Draft' },
@@ -483,9 +485,33 @@ export function mountSetupPanel(route, state = { events: [] }) {
   wireAutosave();
   wireEventImage();
 
-  refresh().catch((err) => {
-    toast(err.message || 'Failed to load event setup', true);
-  });
+  async function boot() {
+    try {
+      await refresh();
+    } catch (err) {
+      reportError(err, { source: 'admin.setup.load', silent: true });
+      let panel = document.querySelector('.setup-panel');
+      if (!panel) {
+        toast(err.message || 'Failed to load event setup', true);
+        return;
+      }
+      panel.innerHTML = errorState({
+        title: 'Couldn’t load event setup',
+        copy: err.message || 'Failed to load event setup',
+        variant: 'admin',
+      });
+      bindEmptyRetry(panel, async () => {
+        panel.outerHTML = renderShell();
+        panel = document.querySelector('.setup-panel');
+        if (!panel) return;
+        wireAutosave();
+        wireEventImage();
+        await boot();
+      });
+    }
+  }
+
+  boot();
 
   return () => {};
 }

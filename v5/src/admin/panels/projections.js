@@ -10,6 +10,7 @@ import { initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+
 export function renderProjectionsShell() {
   return `
     <div class="admin-page projections-page" id="projectionsPanel">

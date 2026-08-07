@@ -44,8 +44,9 @@ import {
   mergeClosingRemoteRow,
   shouldApplyRemoteClosingEdit,
 } from '../../lib/closing-live.js';
-import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+
 const COL_COUNT = 12; // product (pack in meta) + 9 data cols + return + actions
 const LOCAL_ECHO_MS = 1500;
 const AUTOSAVE_MS = 180;
@@ -236,7 +237,13 @@ export function renderClosingShell() {
           </tbody>
         </table>
         <div class="dist-empty cl-empty" id="clEmpty" hidden>
-          Add products to this event before entering closing stock.
+          ${emptyState({
+            icon: 'clipboard-text',
+            title: 'No products to close',
+            copy: 'Add products to this event before entering closing stock.',
+            variant: 'admin',
+            className: 'empty--inline',
+          })}
         </div>
       </div>
     </div>`;
@@ -1305,7 +1312,7 @@ export function mountClosingPanel(route) {
     ctx.theadObserver.observe(thead);
   }
 
-  (async () => {
+  (async function initialLoad() {
     try {
       const DB = getDB();
       const [event, caseSizes, suppliers, closing, supplierReturns] = await Promise.all([
@@ -1333,6 +1340,7 @@ export function mountClosingPanel(route) {
           copy: err.message || 'Failed to load closing stock',
           variant: 'admin',
         })}</td></tr>`;
+        bindEmptyRetry(body, () => initialLoad());
       }
       toast(err.message || 'Failed to load closing stock', true);
     }

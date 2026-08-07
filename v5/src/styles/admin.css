@@ -685,6 +685,13 @@ body:has(.admin-app) .toast.err {
   box-shadow: none;
 }
 
+.topbar-tool-meta {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
 .topbar-search {
   flex: 0 1 280px;
   min-width: 180px;
@@ -3288,20 +3295,7 @@ body.admin-drawer-open {
   max-width: 220px;
 }
 .lib-count {
-  margin-left: auto;
   font-size: 12px;
-}
-.lib-merge-bar {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-.lib-merge-count {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted-foreground);
 }
 .lib-table .lib-sel-col {
   display: none;
@@ -4074,13 +4068,6 @@ body.admin-drawer-open {
   width: 100%;
   max-width: none;
   padding-bottom: 0;
-}
-.ep-hint {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-  flex-shrink: 0;
-  max-width: 72ch;
 }
 .ep-panel .ep-table-wrap {
   flex: 1;

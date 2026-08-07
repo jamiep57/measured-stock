@@ -72,6 +72,7 @@ import {
 import { parseQty } from '../../stock-entry.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+
 function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
 }

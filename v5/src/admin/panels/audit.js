@@ -9,6 +9,8 @@ import {
 } from '../../db.js';
 import { getQueueStats } from '../../sync-queue.js';
 import { loadingWidget } from '../../components/loading-widget.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
   ADMIN_TABLE_FILTER,
@@ -266,13 +268,13 @@ export function mountAuditPanel(route) {
       else toast('Audit clean — no errors');
     } catch (err) {
       if (ctx.abort) return;
-      root.innerHTML = `
-        <div class="admin-surface">
-          <h2>Audit failed</h2>
-          <p class="muted">${escapeHtml(err?.message || String(err))}</p>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="auditRetry">Retry</button>
-        </div>`;
-      $('auditRetry')?.addEventListener('click', () => { runAudit(); });
+      reportError(err, { source: 'admin.audit.run', silent: true });
+      root.innerHTML = errorState({
+        title: 'Audit failed',
+        copy: err?.message || String(err),
+        variant: 'admin',
+      });
+      bindEmptyRetry(root, () => { runAudit(); });
     }
   }
 

@@ -268,34 +268,41 @@ Filter/sort/columns use the shared **table filter panel** (below), not the strip
 
 ## 6. Table filter panel
 
-Reusable tabbed filter dropdown for data tables.
+Reusable tabbed filter dropdown for **all** data pages. Product text search stays in the topbar search field; structured filters/sort/columns live here.
 
 | File | Role |
 |---|---|
-| `src/components/table-filter-panel.js` | UI component (tabs, sections, active chips) |
+| `src/components/table-filter-panel.js` | UI (tabs, section types, active chips) |
 | `src/styles/table-filter-panel.css` | Panel styles |
-| `src/admin/table-filter.js` | Distribution wiring + `ADMIN_TABLE_FILTER` event |
+| `src/admin/table-filter.js` | Registry controller + `ADMIN_TABLE_FILTER` event |
+| `src/admin/filter-configs.js` | Per-page declarative configs |
+| `src/admin/filter-helpers.js` | Shared option extractors + chip helpers |
 
-### Distribution tabs
+### Section types
 
-| Tab | Contents |
+| Type | Use |
 |---|---|
-| **Filter** | Category checkboxes, fixed column visibility |
-| **Sort** | Product order (name, category, LTA) |
-| **Bars** | Bar column show/hide |
+| `checkbox` | Multi-select lists |
+| `searchable-checkbox` | Long multi-selects with inline search |
+| `radio` | Single choice (sort order, binary modes) |
+| `segment` | Compact status chips |
+| `date-range` | From / to dates |
+| `text` | Free-text filter (pages without product search) |
 
-Dropdown uses `--radius-lg` and `--shell-shadow`.
+### Tabs
 
-### Active filters footer
-
-Applied filters appear **above Reset** as removable rows (×). Aggregates across all tabs.
+Pages declare only the tabs they need (Filter / Sort / Columns / Bars). Active filters appear **above Reset** as removable chips (`sectionId` or `sectionId:value`).
 
 ### Panel integration checklist
 
-1. Listen for `ADMIN_TABLE_FILTER` in your panel
-2. Register config via `table-filter.js` / `initTableFilterTopbar().syncRoute()`
-3. Use `tableFilterIsActive()` pattern for topbar dot state
-4. Mark filterable rows with `[data-pid]` for product search integration
+1. Add a config to `filter-configs.js` (or `registerTableFilterConfig`) with `match`, `routeKey`, `defaults`, `buildTabs`, `toValues`
+2. Listen for `ADMIN_TABLE_FILTER` where `detail.panel === yourId` and apply `detail.values`
+3. Seed on mount with `getTableFilterValues(id)` when useful
+4. Push dynamic options via `setTableFilterContext(id, patch)` (groups, warehouses, recipients…)
+5. Keep column-header sort in sync with `patchTableFilterState(id, { sort, sortDir })`
+6. Mark product rows with `[data-pid]` for product search — do **not** build in-panel filter bars on data pages
+
+Dropdown uses `--radius-lg` and `--shell-shadow`. Topbar filter strip visibility comes from `hasTableFilter(route)`.
 
 ---
 
@@ -507,7 +514,7 @@ Sticky grid: header `3–5`, category rows `3–4`, product column `2`.
 - Add new icon libraries or per-panel search inputs
 - Wrap primary CTAs in bordered `.topbar-toolbar` strips (use `primary: true` item alone in strip)
 - Put product search in the sidebar (topbar only)
-- Build accordion-heavy filter UIs — use tabbed compact sections (Filter / Sort / …)
+- Build accordion-heavy filter UIs or in-panel filter toolbars on data pages — use the topbar table filter panel (Filter / Sort / …)
 - Inline one-off colours — extend tokens if a semantic colour is needed app-wide
 
 ---
@@ -525,7 +532,9 @@ v5/
       router.js          Routes + nav active state
       global-search.js   Topbar ProductSearch
       topbar-toolbar.js  Icon strips + primary CTAs
-      table-filter.js    Filter panel wiring
+      table-filter.js    Filter panel registry controller
+      filter-configs.js  Per-page filter/sort schemas
+      filter-helpers.js  Category/supplier extractors
       dist-columns.js    Grid sticky/visibility math
       panels/
         distribution.js  Grid reference panel
@@ -551,6 +560,7 @@ v5/
 
 | Date | Notes |
 |---|---|
+| 2026-08 | Table filter platform: registry configs on all data pages; section types (segment, searchable, date-range, text) |
 | 2026-08 | Production polish: empty/error/404 widgets, confirmDialog, sync status, skeletons, lazy panels, reportError |
 | 2026-06 | Initial guide from Distribution panel |
 | 2026-06-27 | Floating shell redesign: sidebar workspace switcher, collapsible sections, main `.admin-shell`, page surfaces, pill search, primary topbar CTAs, admin drawer (`sheet--admin-full`), Deliveries as list/drawer reference |

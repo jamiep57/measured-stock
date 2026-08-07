@@ -9,6 +9,8 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { icon } from '../../lib/icons.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 /** @type {Array<Record<string, unknown>>} */
 let cachedProfiles = [];
@@ -157,13 +159,26 @@ async function loadUsers() {
   const res = await authFetch('/api/auth/users');
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    list.innerHTML = `<div class="settings-list-empty muted">Failed to load users (${escapeHtml(data.error || String(res.status))})</div>`;
+    const err = new Error(data.error || `Failed to load users (${res.status})`);
+    reportError(err, { source: 'admin.users.load', silent: true });
+    list.innerHTML = errorState({
+      title: 'Couldn’t load users',
+      copy: err.message,
+      variant: 'admin',
+    });
+    bindEmptyRetry(list, () => loadUsers());
     return;
   }
   const selfId = getCachedProfile()?.id;
   cachedProfiles = data.profiles || [];
   if (!cachedProfiles.length) {
-    list.innerHTML = `<div class="settings-list-empty muted">No users yet. Add someone with a setup link.</div>`;
+    list.innerHTML = emptyState({
+      icon: 'users',
+      title: 'No users yet',
+      copy: 'Add someone with a setup link.',
+      variant: 'admin',
+      className: 'empty--inline',
+    });
     return;
   }
   list.innerHTML = cachedProfiles.map((p) => rowHtml(p, selfId)).join('');
@@ -409,6 +424,19 @@ export function mountUsersPanel() {
     }
   });
 
-  loadUsers().catch((err) => toast(err.message || 'Failed to load users', true));
+  loadUsers().catch((err) => {
+    reportError(err, { source: 'admin.users.load', silent: true });
+    const list = $('usersList');
+    if (list) {
+      list.innerHTML = errorState({
+        title: 'Couldn’t load users',
+        copy: err.message || 'Failed to load users',
+        variant: 'admin',
+      });
+      bindEmptyRetry(list, () => loadUsers());
+    } else {
+      toast(err.message || 'Failed to load users', true);
+    }
+  });
   return () => {};
 }

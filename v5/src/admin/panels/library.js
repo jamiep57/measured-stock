@@ -16,7 +16,7 @@ import { reportError } from '../../lib/client-errors.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
-import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { ADMIN_TOOLBAR_ACTION, setTopbarToolbarStrips } from '../topbar-toolbar.js';
 import {
   ADMIN_TABLE_FILTER,
   getTableFilterValues,
@@ -102,20 +102,47 @@ function productHaystack(p, caseSizes) {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
+function mergeToolbarStrips(selectedCount) {
+  return [
+    {
+      id: 'actions',
+      label: 'Merge',
+      items: [
+        {
+          id: 'merge-count',
+          kind: 'text',
+          label: `${selectedCount} selected`,
+        },
+        {
+          id: 'merge-auto-select',
+          icon: 'wand-sparkles',
+          label: 'Auto-select duplicates',
+          title: 'Select products that share a name or SKU',
+        },
+        {
+          id: 'merge-selected',
+          icon: 'merge',
+          label: 'Merge selected…',
+          title: 'Merge selected products into one',
+          primary: true,
+          disabled: selectedCount < 2,
+        },
+        {
+          id: 'merge-cancel',
+          icon: 'x',
+          label: 'Cancel',
+          title: 'Exit merge mode',
+        },
+      ],
+    },
+  ];
+}
+
 function renderShell() {
   return `
     <div class="admin-page lib-panel">
       <div class="lib-toolbar">
         <span class="lib-count muted" id="libCount"></span>
-        <div class="lib-merge-bar" id="libMergeBar" hidden>
-          <span class="lib-merge-count" id="libMergeCount">0 selected</span>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="libMergeAuto"
-            title="Select products that share a name or SKU">Auto-select duplicates</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="libMergeBtn" disabled>
-            Merge selected…
-          </button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="libMergeCancel">Cancel</button>
-        </div>
       </div>
       <div class="lib-table-wrap admin-surface">
         <table class="lib-table" id="libTable">
@@ -199,7 +226,6 @@ export function mountLibraryPanel() {
   const emptyEl = $('libEmpty');
   const countEl = $('libCount');
   const tableEl = $('libTable');
-  const mergeBar = $('libMergeBar');
   if (!bodyEl) return () => {};
 
   let products = [];
@@ -257,27 +283,33 @@ export function mountLibraryPanel() {
     });
   }
 
-  function updateMergeBar() {
-    const n = selected.size;
-    const countNode = $('libMergeCount');
-    const mergeBtn = $('libMergeBtn');
-    if (countNode) countNode.textContent = `${n} selected`;
-    if (mergeBtn) mergeBtn.disabled = n < 2;
+  function syncMergeToolbar() {
+    if (!mergeMode) {
+      setTopbarToolbarStrips(null);
+      return;
+    }
+    const meta = document.querySelector('[data-toolbar-meta="merge-count"]');
+    const mergeBtn = document.querySelector('[data-toolbar-action="merge-selected"]');
+    if (meta && mergeBtn) {
+      meta.textContent = `${selected.size} selected`;
+      mergeBtn.disabled = selected.size < 2;
+      return;
+    }
+    setTopbarToolbarStrips(mergeToolbarStrips(selected.size));
   }
 
   function setMergeMode(on) {
     mergeMode = on;
     selected.clear();
-    if (mergeBar) mergeBar.hidden = !mergeMode;
     tableEl?.classList.toggle('merge-mode', mergeMode);
-    updateMergeBar();
+    syncMergeToolbar();
     paintTable();
   }
 
   function toggleRowSel(id) {
     if (selected.has(id)) selected.delete(id);
     else selected.add(id);
-    updateMergeBar();
+    syncMergeToolbar();
     paintTable();
   }
 
@@ -285,7 +317,6 @@ export function mountLibraryPanel() {
     const rows = filteredProducts();
     if (countEl) {
       countEl.textContent = `${rows.length} of ${products.length} product${products.length !== 1 ? 's' : ''}`;
-      countEl.hidden = mergeMode;
     }
     if (!rows.length) {
       bodyEl.innerHTML = '';
@@ -307,7 +338,7 @@ export function mountLibraryPanel() {
           const id = input.dataset.sel;
           if (input.checked) selected.add(id);
           else selected.delete(id);
-          updateMergeBar();
+          syncMergeToolbar();
           input.closest('tr')?.classList.toggle('lib-selected', input.checked);
         };
         input.onclick = (e) => e.stopPropagation();
@@ -504,17 +535,15 @@ export function mountLibraryPanel() {
     patchTableFilterState('library', { sort: key, sortDir: nextDir });
   });
 
-  $('libMergeCancel')?.addEventListener('click', () => setMergeMode(false));
-  $('libMergeBtn')?.addEventListener('click', () => openMergeDialog());
-  $('libMergeAuto')?.addEventListener('click', () => {
+  function autoSelectDuplicates() {
     const ids = findDuplicateProductIds(filteredProducts());
     selected.clear();
     ids.forEach((id) => selected.add(id));
-    updateMergeBar();
+    syncMergeToolbar();
     paintTable();
     if (!ids.length) toast('No duplicate names or SKUs in the current list');
     else toast(`Selected ${ids.length} likely duplicate${ids.length === 1 ? '' : 's'}`);
-  });
+  }
 
   const onProductFilter = (e) => {
     productFilter = e.detail || {};
@@ -523,14 +552,31 @@ export function mountLibraryPanel() {
   };
 
   const onToolbarAction = (e) => {
-    if (e.detail?.action === 'new-product') {
+    const action = e.detail?.action;
+    if (action === 'new-product') {
       e.detail.handled = true;
       if (mergeMode) setMergeMode(false);
       openProductForm();
+      return;
     }
-    if (e.detail?.action === 'merge-products') {
+    if (action === 'merge-products') {
       e.detail.handled = true;
       setMergeMode(!mergeMode);
+      return;
+    }
+    if (action === 'merge-auto-select') {
+      e.detail.handled = true;
+      autoSelectDuplicates();
+      return;
+    }
+    if (action === 'merge-selected') {
+      e.detail.handled = true;
+      openMergeDialog();
+      return;
+    }
+    if (action === 'merge-cancel') {
+      e.detail.handled = true;
+      setMergeMode(false);
     }
   };
 
@@ -555,6 +601,7 @@ export function mountLibraryPanel() {
   });
 
   return () => {
+    setTopbarToolbarStrips(null);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
