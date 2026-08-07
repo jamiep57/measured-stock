@@ -597,6 +597,11 @@ body:has(.admin-app) .toast.err {
   flex: 1 1 14rem;
   font-size: 0.8rem;
 }
+.users-edit-divider {
+  height: 1px;
+  margin: 0.25rem 0 0.75rem;
+  background: var(--border, #e4e4e7);
+}
 
 .topbar-toolbar-strips {
   display: flex;

@@ -1,10 +1,14 @@
 /**
  * Admin — Users & access (Supabase Auth profiles).
- * No mail server required: create a copyable setup link or temp password.
+ * Invite, edit profile/role, reset passwords, disable, or delete.
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { authFetch, getCachedProfile } from '../../lib/auth.js';
+import { openSheet, closeSheet } from '../../components/sheet.js';
+
+/** @type {Array<Record<string, unknown>>} */
+let cachedProfiles = [];
 
 function statusBadge(status) {
   const s = String(status || '');
@@ -23,7 +27,7 @@ export function renderUsersSection() {
         <div class="settings-card-head-text">
           <h2 class="settings-card-title">Users</h2>
           <p class="settings-card-desc muted">
-            Invite teammates with an onboarding link, or activate pending users.
+            Invite teammates, manage roles and profiles, reset passwords, or remove access.
           </p>
         </div>
         <div class="settings-card-actions">
@@ -71,22 +75,11 @@ function rowHtml(p, selfId) {
   if (p.status === 'pending') {
     actions.push(`<button type="button" class="admin-drawer-btn" data-act="activate" data-id="${escapeHtml(p.id)}">Activate</button>`);
   }
-  if (p.status === 'active' && !isSelf) {
-    actions.push(`<button type="button" class="admin-drawer-btn" data-act="disable" data-id="${escapeHtml(p.id)}">Disable</button>`);
-  }
-  if (p.status === 'disabled') {
-    actions.push(`<button type="button" class="admin-drawer-btn" data-act="activate" data-id="${escapeHtml(p.id)}">Re-activate</button>`);
-  }
-  if (p.role === 'staff' && p.status === 'active') {
-    actions.push(`<button type="button" class="admin-drawer-btn" data-act="make-admin" data-id="${escapeHtml(p.id)}">Make admin</button>`);
-  }
-  if (p.role === 'admin' && p.status === 'active' && !isSelf) {
-    actions.push(`<button type="button" class="admin-drawer-btn" data-act="make-staff" data-id="${escapeHtml(p.id)}">Make staff</button>`);
-  }
+  actions.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-act="edit" data-id="${escapeHtml(p.id)}">${isSelf ? 'Edit' : 'Manage'}</button>`);
 
   return `
     <tr data-user-id="${escapeHtml(p.id)}">
-      <td>${escapeHtml(p.display_name || '—')}</td>
+      <td>${escapeHtml(p.display_name || '—')}${isSelf ? ' <span class="muted">(you)</span>' : ''}</td>
       <td>${escapeHtml(p.email || '—')}</td>
       <td>${escapeHtml(p.role || '—')}</td>
       <td>${statusBadge(p.status)}</td>
@@ -123,6 +116,40 @@ function showSetupResult(data) {
   });
 }
 
+function showTempPassword(password, loginUrl) {
+  const login = loginUrl || 'https://measured-stock.vercel.app/login';
+  openSheet({
+    title: 'Temporary password',
+    variant: 'admin-full',
+    bodyHtml: `
+      <div class="admin-drawer-form">
+        <p>Share this password privately. They can change it after signing in.</p>
+        <div class="admin-field">
+          <label class="admin-label" for="usersTempPassword">Password</label>
+          <div class="users-setup-link-row">
+            <input class="admin-input" type="text" readonly id="usersTempPassword" value="${escapeHtml(password)}" />
+            <button type="button" class="admin-drawer-btn" id="usersCopyPassword">Copy</button>
+          </div>
+        </div>
+        <p class="wst-form-hint muted">Sign-in: <a href="${escapeHtml(login)}">${escapeHtml(login)}</a></p>
+      </div>`,
+    footHtml: `
+      <div class="admin-drawer-foot">
+        <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="usersTempDone">Done</button>
+      </div>`,
+  });
+  $('usersTempDone').onclick = closeSheet;
+  $('usersCopyPassword')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      toast('Password copied');
+    } catch {
+      $('usersTempPassword')?.select();
+      toast('Select and copy the password', true);
+    }
+  });
+}
+
 async function loadUsers() {
   const tbody = $('usersTbody');
   if (!tbody) return;
@@ -133,12 +160,12 @@ async function loadUsers() {
     return;
   }
   const selfId = getCachedProfile()?.id;
-  const profiles = data.profiles || [];
-  if (!profiles.length) {
+  cachedProfiles = data.profiles || [];
+  if (!cachedProfiles.length) {
     tbody.innerHTML = `<tr><td colspan="5" class="muted">No users yet. Add someone with a setup link.</td></tr>`;
     return;
   }
-  tbody.innerHTML = profiles.map((p) => rowHtml(p, selfId)).join('');
+  tbody.innerHTML = cachedProfiles.map((p) => rowHtml(p, selfId)).join('');
 }
 
 async function patchUser(id, patch) {
@@ -148,7 +175,163 @@ async function patchUser(id, patch) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || data.error || 'Update failed');
-  return data.profile;
+  return data;
+}
+
+async function deleteUser(id) {
+  const res = await authFetch('/api/auth/users', {
+    method: 'DELETE',
+    body: JSON.stringify({ id }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || 'Delete failed');
+  return data;
+}
+
+function openUserEditor(userId) {
+  const profile = cachedProfiles.find((p) => p.id === userId);
+  if (!profile) {
+    toast('User not found', true);
+    return;
+  }
+  const selfId = getCachedProfile()?.id;
+  const isSelf = profile.id === selfId;
+
+  openSheet({
+    title: isSelf ? 'Edit your profile' : 'Manage user',
+    variant: 'admin-full',
+    bodyHtml: `
+      <div class="admin-drawer-form">
+        <div class="del-form-err" id="usersEditErr"></div>
+        <div class="admin-field">
+          <label class="admin-label" for="usersEditName">Display name</label>
+          <input class="admin-input" type="text" id="usersEditName" maxlength="40" placeholder="Name shown in the app" />
+        </div>
+        <div class="admin-field">
+          <label class="admin-label" for="usersEditEmail">Email</label>
+          <input class="admin-input" type="email" id="usersEditEmail" placeholder="name@company.com" />
+        </div>
+        <div class="admin-field">
+          <label class="admin-label" for="usersEditRole">Role</label>
+          <select class="admin-input" id="usersEditRole" ${isSelf ? 'disabled' : ''}>
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
+          </select>
+          ${isSelf ? '<p class="wst-form-hint muted">You cannot change your own role.</p>' : ''}
+        </div>
+        <div class="admin-field">
+          <label class="admin-label" for="usersEditStatus">Status</label>
+          <select class="admin-input" id="usersEditStatus" ${isSelf ? 'disabled' : ''}>
+            <option value="pending">Pending</option>
+            <option value="active">Active</option>
+            <option value="disabled">Disabled</option>
+          </select>
+          ${isSelf ? '<p class="wst-form-hint muted">You cannot disable your own account.</p>' : ''}
+        </div>
+        ${!isSelf ? `
+        <div class="users-edit-divider"></div>
+        <div class="admin-field">
+          <label class="admin-label" for="usersEditPassword">Reset password</label>
+          <div class="users-invite-row">
+            <input class="admin-input" type="text" id="usersEditPassword" placeholder="Leave blank to auto-generate" autocomplete="new-password" />
+            <button type="button" class="admin-drawer-btn" id="usersResetPassword">Reset</button>
+          </div>
+          <p class="wst-form-hint muted">Sets a temporary password you can copy and share privately.</p>
+        </div>` : ''}
+      </div>`,
+    footHtml: `
+      <div class="admin-drawer-foot admin-drawer-foot--split">
+        ${!isSelf ? '<button class="admin-drawer-btn admin-drawer-btn--danger" type="button" id="usersEditDelete">Delete user</button>' : '<span></span>'}
+        <div class="admin-drawer-foot-actions">
+          <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="usersEditCancel">Cancel</button>
+          <button class="admin-drawer-btn admin-drawer-btn--primary" type="button" id="usersEditSave">Save changes</button>
+        </div>
+      </div>`,
+  });
+
+  $('usersEditName').value = profile.display_name || '';
+  $('usersEditEmail').value = profile.email || '';
+  $('usersEditRole').value = profile.role === 'admin' ? 'admin' : 'staff';
+  $('usersEditStatus').value = ['pending', 'active', 'disabled'].includes(profile.status)
+    ? profile.status
+    : 'active';
+
+  $('usersEditCancel').onclick = closeSheet;
+
+  $('usersEditSave').onclick = async () => {
+    const errEl = $('usersEditErr');
+    const btn = $('usersEditSave');
+    const display_name = $('usersEditName')?.value?.trim() || '';
+    const email = $('usersEditEmail')?.value?.trim() || '';
+    if (!email || !email.includes('@')) {
+      if (errEl) errEl.textContent = 'Enter a valid email.';
+      return;
+    }
+    /** @type {Record<string, unknown>} */
+    const patch = { display_name, email };
+    if (!isSelf) {
+      patch.role = $('usersEditRole')?.value || 'staff';
+      patch.status = $('usersEditStatus')?.value || 'active';
+    }
+    btn.disabled = true;
+    if (errEl) errEl.textContent = '';
+    try {
+      await patchUser(profile.id, patch);
+      closeSheet();
+      toast('User updated');
+      await loadUsers();
+    } catch (err) {
+      if (errEl) errEl.textContent = err.message || 'Update failed';
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  $('usersResetPassword')?.addEventListener('click', async () => {
+    const errEl = $('usersEditErr');
+    const btn = $('usersResetPassword');
+    const custom = $('usersEditPassword')?.value?.trim() || '';
+    if (custom && custom.length < 8) {
+      if (errEl) errEl.textContent = 'Password must be at least 8 characters.';
+      return;
+    }
+    if (!confirm(`Reset password for ${profile.email || 'this user'}?`)) return;
+    btn.disabled = true;
+    if (errEl) errEl.textContent = '';
+    try {
+      const data = await patchUser(profile.id, {
+        reset_password: true,
+        ...(custom ? { password: custom } : {}),
+      });
+      closeSheet();
+      toast('Password reset');
+      if (data.temporary_password) {
+        showTempPassword(data.temporary_password, data.login_url);
+      }
+    } catch (err) {
+      if (errEl) errEl.textContent = err.message || 'Reset failed';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('usersEditDelete')?.addEventListener('click', async () => {
+    const errEl = $('usersEditErr');
+    const label = profile.email || profile.display_name || 'this user';
+    if (!confirm(`Permanently delete ${label}? This cannot be undone.`)) return;
+    const btn = $('usersEditDelete');
+    btn.disabled = true;
+    if (errEl) errEl.textContent = '';
+    try {
+      await deleteUser(profile.id);
+      closeSheet();
+      toast('User deleted');
+      await loadUsers();
+    } catch (err) {
+      if (errEl) errEl.textContent = err.message || 'Delete failed';
+      btn.disabled = false;
+    }
+  });
 }
 
 export function mountUsersPanel() {
@@ -186,12 +369,13 @@ export function mountUsersPanel() {
     const id = btn.dataset.id;
     const act = btn.dataset.act;
     try {
-      if (act === 'activate') await patchUser(id, { status: 'active' });
-      else if (act === 'disable') await patchUser(id, { status: 'disabled' });
-      else if (act === 'make-admin') await patchUser(id, { role: 'admin' });
-      else if (act === 'make-staff') await patchUser(id, { role: 'staff' });
-      toast('Updated');
-      await loadUsers();
+      if (act === 'activate') {
+        await patchUser(id, { status: 'active' });
+        toast('Activated');
+        await loadUsers();
+      } else if (act === 'edit') {
+        openUserEditor(id);
+      }
     } catch (err) {
       toast(err.message || 'Update failed', true);
     }
