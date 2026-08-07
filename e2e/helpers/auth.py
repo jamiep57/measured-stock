@@ -172,10 +172,42 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
 
 def goto_admin_path(page: "Page", path: str) -> None:
     """Navigate within admin after unlock. path like /v5/admin/library."""
+    from playwright.sync_api import Error as PlaywrightError
+
     if not path.startswith("/"):
         path = "/" + path
-    page.goto(f"{base_url()}{path}", wait_until="domcontentloaded")
+    url = f"{base_url()}{path}"
+    try:
+        page.goto(url, wait_until="domcontentloaded")
+    except PlaywrightError as err:
+        # SPA client navigations can abort the Playwright goto; page may still be fine.
+        if "ERR_ABORTED" not in str(err):
+            raise
     page.wait_for_selector("#adminApp, .admin-app", timeout=20000)
+    page.wait_for_selector("#adminContent", timeout=20000)
+    # Confirm we actually landed on the requested path (or a known rewrite of it).
+    # Audit bookmarks under /events/:id/audit rewrite to /dev/audit.
+    expected = path.rstrip("/")
+    alt = None
+    if "/audit" in expected and "/events/" in expected:
+        alt = "/v5/admin/dev/audit"
+    page.wait_for_function(
+        """([expected, alt]) => {
+          const path = location.pathname.replace(/\\/+$/, '') || '/';
+          if (path === expected || (alt && path === alt)) return true;
+          // Allow trailing segment soft matches after client rewrite.
+          return expected.endsWith(path) || path.endsWith(expected.split('/').pop() || '');
+        }""",
+        arg=[expected, alt],
+        timeout=20000,
+    )
+    page.wait_for_function(
+        """() => {
+          const el = document.getElementById('adminContent');
+          return !!(el && el.children.length > 0);
+        }""",
+        timeout=20000,
+    )
 
 
 def goto_event_panel(page: "Page", event_id: str, panel: str) -> None:

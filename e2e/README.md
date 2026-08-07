@@ -118,6 +118,18 @@ You can also ask the Cursor agent: “run the e2e tests” — it should use the
 | 9 | `test_09_closing_shows_product_row` | Closing stock |
 | 10 | `test_10_recon_shows_product` | Financial recon |
 
+## More scenarios (11–17)
+
+| # | Test | What it covers |
+|---|---|---|
+| 11 | `test_11_dashboard_loads` | Event dashboard |
+| 12 | `test_12_wastage_shows_seeded_batch` | Wastage list |
+| 13 | `test_13_counts_shows_seeded_session` | Stock counts |
+| 14 | `test_14_sales_panel_loads` | Sales panel |
+| 15 | `test_15_suppliers_list_shows_seeded` | Suppliers search |
+| 16 | `test_16_setup_edit_event_name` | Setup name autosave |
+| 17 | `test_17_audit_panel_loads` | Dev audit panel |
+
 ## Cleanup guarantees
 
 - Function fixtures `seed` / `seed_minimal` / `tracker` delete created IDs in `finally`
@@ -129,11 +141,15 @@ You can also ask the Cursor agent: “run the e2e tests” — it should use the
 
 ```
 e2e/
-  conftest.py              # fixtures, HTTPS ignore, cloud inject
+  conftest.py              # fixtures, HTTPS ignore, session inject
   helpers/db.py            # seed + cleanup
-  helpers/auth.py          # PIN unlock + navigation
+  helpers/auth.py          # login + navigation
+  helpers/pages.py         # toolbar helpers
   tests/test_top10_scenarios.py
+  tests/test_more_scenarios.py
+  tests/test_seed_cleanup.py
   .env.example
   requirements.txt
   pytest.ini
+  run.sh
 ```
