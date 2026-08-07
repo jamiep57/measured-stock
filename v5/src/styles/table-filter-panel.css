@@ -18,6 +18,11 @@
     0 8px 24px rgb(0 0 0 / 0.06);
 }
 
+/* Author display:flex overrides UA [hidden]{display:none} — empty panel was a 2px hairline */
+.tfp-dropdown[hidden] {
+  display: none !important;
+}
+
 .tfp-panel {
   display: flex;
   flex-direction: column;
