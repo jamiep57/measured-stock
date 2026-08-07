@@ -205,10 +205,9 @@ def test_09_closing_shows_product_row(admin_page, seed):
 def test_10_recon_shows_product(admin_page, seed):
     """Recon panel loads and includes the seeded product."""
     goto_event_panel(admin_page, seed.event_id, "recon")
-    expect(admin_page.locator("#rcnPanel, #rcnTable, #rcnBody").first).to_be_visible(
-        timeout=25000
-    )
-    expect(admin_page.get_by_text(seed.product_name, exact=False).first).to_be_visible(
+    expect(admin_page.locator("#rcnPanel")).to_be_visible(timeout=25000)
+    expect(admin_page.get_by_text("Loading recon…")).to_have_count(0, timeout=30000)
+    expect(admin_page.locator("#rcnBody").get_by_text(seed.product_name, exact=False)).to_be_visible(
         timeout=20000
     )
 

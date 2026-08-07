@@ -948,24 +948,18 @@ export function mountSalesPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, modImport, recipes, caseSizes, libraryProducts] = await Promise.all([
+    const [event, tillImport, modImport, recipes, caseSizes] = await Promise.all([
       loadEventLite(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
       loadRecipesFull(),
       loadCaseSizes(),
-      loadLibraryProducts().catch(() => []),
     ]);
     if (ctx.abort) return;
     ctx.event = event;
     ctx.eps = (event?.event_products || []).filter((ep) => ep.product?.name);
     ctx.caseSizes = caseSizes || [];
-    ctx.pools = groupProductsByPool(libraryProducts || []).map((pool) => ({
-      name: pool.name,
-      key: pool.key,
-      meta: `Volume pool · ${poolSummary(pool, ctx.caseSizes)}`,
-      searchText: pool.members.map((m) => m.name || '').join(' '),
-    }));
+    ctx.pools = [];
     ctx.tillImport = tillImport;
     ctx.tillRows = tillImport?.rows || [];
     ctx.modImport = modImport;
@@ -973,6 +967,22 @@ export function mountSalesPanel(route) {
     ctx.recipes = recipes || [];
     if (!ctx.tillRows.length && ctx.modRows.length) ctx.tab = 'modifiers';
     paint();
+
+    // Volume pools come from the library — defer so the mapping grid paints first.
+    try {
+      const libraryProducts = await loadLibraryProducts().catch(() => []);
+      if (ctx.abort) return;
+      ctx.pools = groupProductsByPool(libraryProducts || []).map((pool) => ({
+        name: pool.name,
+        key: pool.key,
+        meta: `Volume pool · ${poolSummary(pool, ctx.caseSizes)}`,
+        searchText: pool.members.map((m) => m.name || '').join(' '),
+      }));
+      if (ctx.tab === 'modifiers') paint();
+    } catch (err) {
+      if (ctx.abort) return;
+      reportError(err, { source: 'admin.sales.load.pools', silent: true });
+    }
   }
 
   const onToolbarAction = (e) => {

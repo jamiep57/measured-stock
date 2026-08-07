@@ -59,6 +59,7 @@ def test_41_recon_inline_edit_and_save(admin_page, seed, db):
     """Edit closing cases on recon (more reliable than invoice override) and save."""
     goto_event_panel(admin_page, seed.event_id, "recon")
     expect(admin_page.locator("#rcnPanel")).to_be_visible(timeout=25000)
+    expect(admin_page.get_by_text("Loading recon…")).to_have_count(0, timeout=30000)
     row = admin_page.locator(f'.recon-row[data-rcn-pid="{seed.product_id}"]')
     expect(row).to_be_visible(timeout=20000)
     cases = admin_page.locator(f"#rcn-cl-cases-{seed.product_id}")

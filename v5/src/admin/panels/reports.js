@@ -693,19 +693,28 @@ export function mountReportsPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, deliveries, transfers, caseSizes, suppliers] = await Promise.all([
+    const [event, caseSizes, suppliers] = await Promise.all([
       loadEventFull(ctx.eventId),
-      DB.deliveries.forEvent(ctx.eventId),
-      DB.transfers.forEvent(ctx.eventId),
       loadCaseSizes(),
       loadSuppliers(),
     ]);
     if (ctx.abort) return;
     ctx.event = event;
-    ctx.deliveries = deliveries || [];
-    ctx.transfers = transfers || [];
+    ctx.deliveries = [];
+    ctx.transfers = [];
     ctx.caseSizes = caseSizes || [];
     ctx.suppliers = (suppliers || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    pushFilterContext();
+    compute();
+    paint();
+
+    const [deliveries, transfers] = await Promise.all([
+      DB.deliveries.forEvent(ctx.eventId),
+      DB.transfers.forEvent(ctx.eventId),
+    ]);
+    if (ctx.abort) return;
+    ctx.deliveries = deliveries || [];
+    ctx.transfers = transfers || [];
     pushFilterContext();
     compute();
     paint();

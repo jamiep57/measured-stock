@@ -478,19 +478,28 @@ export function mountProductsPanel(route) {
   }
 
   async function refresh() {
-    [event, caseSizes, library, categories, suppliers, deliveries] = await Promise.all([
+    [event, caseSizes, categories, suppliers] = await Promise.all([
       loadEventLite(eventId),
       loadCaseSizes(),
-      loadLibraryProducts(),
       loadCategories(),
       loadSuppliers(),
+    ]);
+    if (abort) return;
+    library = library || [];
+    countedIn = {};
+    damagedFromDeliveries = {};
+    paintTable({ preserveFocus: true });
+    startCollab();
+
+    const [nextLibrary, deliveries] = await Promise.all([
+      loadLibraryProducts(),
       getDB().deliveries.forEvent(eventId).catch(() => []),
     ]);
     if (abort) return;
+    library = nextLibrary;
     countedIn = countedInMap(deliveries, event, caseSizes);
     damagedFromDeliveries = damagedFromDeliveriesMap(deliveries);
     paintTable({ preserveFocus: true });
-    startCollab();
   }
 
   function openEditProduct(productId) {
