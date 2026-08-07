@@ -219,9 +219,9 @@ body:has(.admin-app) .toast.err {
 .sidebar-workspace-item {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   padding: 8px 10px;
   border: none;
   border-radius: 6px;
@@ -240,15 +240,59 @@ body:has(.admin-app) .toast.err {
   background: color-mix(in srgb, var(--secondary) 70%, var(--foreground) 4%);
 }
 
+.sidebar-workspace-item-mark {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #dc2626 0%, #7c3aed 100%);
+  overflow: hidden;
+}
+
+.sidebar-workspace-item-mark img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+
+.sidebar-workspace-item-mark.has-event-image {
+  background: var(--secondary);
+}
+
+.sidebar-workspace-item-mark.has-event-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: none;
+}
+
+.sidebar-workspace-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .sidebar-workspace-item-name {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-workspace-item-sub {
   font-size: 11px;
   color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-scroll {
@@ -430,12 +474,14 @@ body:has(.admin-app) .toast.err {
 }
 
 .admin-shell {
+  /* Solid token — color-mix on sticky topbar can fail to paint and show shell white */
+  --admin-canvas: #fcfcfc;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   max-height: calc(100dvh - var(--sidebar-gap) * 2);
-  background: var(--card);
+  background: var(--admin-canvas);
   border: 1px solid var(--border);
   border-radius: var(--shell-radius);
   box-shadow: var(--shell-shadow);
@@ -452,8 +498,7 @@ body:has(.admin-app) .toast.err {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
-  /* Match content so the topbar/content edge doesn’t read as a hairline */
-  background: color-mix(in srgb, var(--background) 55%, var(--card));
+  background: var(--admin-canvas);
   border-bottom: none;
 }
 
@@ -960,7 +1005,7 @@ body:has(.admin-app) .toast.err {
   box-sizing: border-box;
   min-height: 0;
   overflow-y: auto;
-  background: color-mix(in srgb, var(--background) 55%, var(--card));
+  background: var(--admin-canvas);
 }
 .admin-content.admin-content--enter > *:first-child {
   animation: admin-page-in 0.22s ease;
@@ -987,7 +1032,7 @@ body:has(.admin-app) .toast.err {
   min-height: 0;
   overflow: hidden;
   padding: 16px 16px 0;
-  background: color-mix(in srgb, var(--background) 55%, var(--card));
+  background: var(--admin-canvas);
 }
 .admin-content:has(.ep-panel),
 .admin-content:has(.cl-panel) {
@@ -998,7 +1043,7 @@ body:has(.admin-app) .toast.err {
   min-height: 0;
   overflow: hidden;
   padding: 16px 16px 0;
-  background: color-mix(in srgb, var(--background) 55%, var(--card));
+  background: var(--admin-canvas);
 }
 .admin-content:has(.rcn-panel) {
   max-width: none;
@@ -1008,7 +1053,7 @@ body:has(.admin-app) .toast.err {
   min-height: 0;
   overflow: hidden;
   padding: 16px 16px 0;
-  background: color-mix(in srgb, var(--background) 55%, var(--card));
+  background: var(--admin-canvas);
 }
 
 /* Page layout */
