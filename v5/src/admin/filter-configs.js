@@ -534,7 +534,10 @@ function simpleEventConfig({
       if (state.category && context.categories && state.category && !context.categories.includes(state.category)) {
         next.category = '';
       }
-      if (state.supplierId && context.suppliers) {
+      if (Array.isArray(state.supplierId) && context.suppliers) {
+        const set = new Set(context.suppliers.map((s) => s.value));
+        next.supplierId = state.supplierId.filter((id) => set.has(id) || id === '__none__');
+      } else if (state.supplierId && context.suppliers) {
         if (!context.suppliers.some((s) => s.value === state.supplierId)) next.supplierId = '';
       }
       return next;
@@ -1138,7 +1141,7 @@ function viewConfig({
 
 export const libraryConfig = viewConfig({
   id: 'library',
-  defaults: () => ({ category: '', supplierId: '', sort: 'name', sortDir: 'asc' }),
+  defaults: () => ({ category: '', supplierId: [], sort: 'name', sortDir: 'asc' }),
   persist: { keys: ['sort', 'sortDir'], storageKey: 'v5LibraryTableFilter' },
   buildFilterSections(_state, context) {
     const sections = [];
@@ -1158,12 +1161,11 @@ export const libraryConfig = viewConfig({
       sections.push({
         id: 'supplierId',
         label: 'Supplier',
-        type: 'radio',
+        type: 'searchable-checkbox',
+        showCount: true,
         scroll: true,
-        options: [
-          { value: '', label: 'All suppliers' },
-          ...context.suppliers,
-        ],
+        searchPlaceholder: 'Search suppliers…',
+        options: context.suppliers,
       });
     }
     return sections;
@@ -1179,9 +1181,13 @@ export const libraryConfig = viewConfig({
     { value: 'unit_price', label: 'Unit price' },
   ],
   toValues(state) {
+    const suppliers = Array.isArray(state.supplierId)
+      ? state.supplierId
+      : (state.supplierId ? [state.supplierId] : []);
     return {
       categoryFilter: state.category || '',
-      supplierFilter: state.supplierId || '',
+      supplierFilter: suppliers[0] || '',
+      supplierFilters: suppliers,
       sortKey: state.sort || 'name',
       sortDir: state.sortDir || 'asc',
     };
