@@ -827,10 +827,7 @@ body:has(.admin-app) .toast.err {
   right: 6px;
 }
 
-/* Undo inherits the same outlined control; no extra chrome overrides */
-.admin-topbar .topbar-tools > .field-undo-btn[hidden] {
-  display: none !important;
-}
+/* Undo/redo sit in the edit strip; disabled when stacks are empty */
 
 /* Legacy aliases — remove when unused */
 .topbar-action-wrap { position: relative; }

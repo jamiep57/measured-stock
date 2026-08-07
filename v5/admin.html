@@ -137,6 +137,16 @@
           <div class="topbar-title" id="pageTitle">Events</div>
           <div class="topbar-end">
             <div class="topbar-tools" id="topbarTools" hidden>
+              <div class="topbar-toolbar" id="topbarEditStrip" role="group" aria-label="Edit">
+                <button type="button" class="topbar-tool field-undo-btn" id="topbarUndoBtn"
+                  disabled title="Undo last number change" aria-label="Undo last number change">
+                  <i data-lucide="undo-2" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="topbar-tool field-redo-btn" id="topbarRedoBtn"
+                  disabled title="Redo number change" aria-label="Redo number change">
+                  <i data-lucide="redo-2" aria-hidden="true"></i>
+                </button>
+              </div>
               <div class="topbar-toolbar-strips" id="topbarToolbarStrips" hidden></div>
               <div class="topbar-toolbar" id="topbarFilterStrip" hidden>
                 <div class="topbar-tool-wrap">
@@ -148,11 +158,6 @@
                   <div class="tfp-dropdown" id="topbarTableFilterPanel" hidden></div>
                 </div>
               </div>
-              <button type="button" class="topbar-tool topbar-tool--label field-undo-btn" id="topbarUndoBtn"
-                hidden disabled title="Undo last number change" aria-label="Undo last number change">
-                <i data-lucide="undo-2" aria-hidden="true"></i>
-                <span>Undo</span>
-              </button>
               <div class="topbar-search" id="topbarSearch"></div>
             </div>
             <div class="topbar-sync" id="adminSyncStatus">

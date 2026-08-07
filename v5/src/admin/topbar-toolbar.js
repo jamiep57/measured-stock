@@ -5,6 +5,7 @@
 import { $, toast } from '../lib/util.js';
 import { icon, initIcons } from '../lib/icons.js';
 import { hasTableFilter } from './table-filter.js';
+import { refreshFieldUndoButtons } from '../lib/field-undo.js';
 
 export const ADMIN_TOOLBAR_ACTION = 'admin-toolbar-action';
 
@@ -480,7 +481,8 @@ export function initTopbarToolbar() {
       } else {
         stripsEl.innerHTML = '';
       }
-      initIcons($('topbarUndoBtn'));
+      initIcons($('topbarEditStrip'));
+      refreshFieldUndoButtons();
     },
   };
 }
