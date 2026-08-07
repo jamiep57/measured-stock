@@ -135,12 +135,6 @@ function wireNav() {
     render(parseRoute());
   });
 
-  document.getElementById('topbarUsers')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    navigate({ view: 'settings', section: 'users' });
-    render(parseRoute());
-  });
-
   document.querySelector('.sidebar-nav-tools')?.addEventListener('click', (e) => {
     const a = e.target.closest('a[data-route]:not([data-event])');
     if (!a) return;
