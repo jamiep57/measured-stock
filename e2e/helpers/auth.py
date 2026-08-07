@@ -188,7 +188,7 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
                     }""",
                     timeout=30000,
                 )
-                page.wait_for_selector("#adminApp, #homeNewEvent, .admin-app", timeout=20000)
+                page.wait_for_selector("#homeNewEvent, .event-card, #adminContent .home-panel", timeout=30000)
                 return
             except Exception as err:
                 last_err = err
@@ -201,7 +201,16 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
             session = sign_in_via_api()
             inject_supabase_session(page, session)
             page.goto(url, wait_until="domcontentloaded")
-            page.wait_for_selector("#adminApp, #homeNewEvent, .admin-app", timeout=20000)
+            # #adminApp is static HTML — wait for boot to finish wiring the shell.
+            page.wait_for_selector("#homeNewEvent, .event-card, #adminContent .home-panel", timeout=30000)
+            page.wait_for_function(
+                """() => {
+                  const btn = document.getElementById('topbarProfileBtn');
+                  const menu = document.getElementById('topbarProfileMenu');
+                  return !!(btn && menu);
+                }""",
+                timeout=10000,
+            )
             return
         except Exception as err:
             last_err = err

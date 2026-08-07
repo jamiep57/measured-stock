@@ -157,22 +157,25 @@ export async function ensureAppAuth(opts = {}) {
 }
 
 export async function signOutApp() {
-  const sb = getAuthClient();
   try {
-    await Promise.race([
-      sb?.auth.signOut() || Promise.resolve(),
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
-  } catch { /* ignore */ }
-  try {
-    // Local Vite has no /api — don't block redirect on a hanging request.
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), 1200) : null;
-    await fetch('/api/logout', { method: 'POST', signal: ctrl?.signal }).catch(() => {});
-    if (timer) clearTimeout(timer);
-  } catch { /* ignore */ }
-  // Always leave the app, even if cleanup raced or hung.
-  window.location.assign('/login');
+    const sb = getAuthClient();
+    try {
+      await Promise.race([
+        sb?.auth.signOut() || Promise.resolve(),
+        new Promise((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch { /* ignore */ }
+    try {
+      // Local Vite has no /api — don't block redirect on a hanging request.
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 1200) : null;
+      await fetch('/api/logout', { method: 'POST', signal: ctrl?.signal }).catch(() => {});
+      if (timer) clearTimeout(timer);
+    } catch { /* ignore */ }
+  } finally {
+    // Always leave the app, even if cleanup raced or hung.
+    window.location.assign('/login');
+  }
 }
 
 /**

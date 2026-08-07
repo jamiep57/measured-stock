@@ -8,6 +8,7 @@ import { navigate, hrefForRoute } from './router.js';
 import { resolveActiveEventId } from './event-workspace.js';
 
 const SECTION_STORAGE_KEY = 'v5-admin-sidebar-sections';
+const DEFAULT_WORKSPACE_MARK = '/assets/img/logomark.png';
 
 function readSectionState() {
   try {
@@ -25,28 +26,39 @@ function writeSectionState(state) {
   }
 }
 
+function workspaceItemMark(imageUrl) {
+  const custom = Boolean(imageUrl);
+  return `<span class="sidebar-workspace-item-mark${custom ? ' has-event-image' : ''}" aria-hidden="true">
+      <img src="${escapeHtml(custom ? imageUrl : DEFAULT_WORKSPACE_MARK)}" alt="">
+    </span>`;
+}
+
 function renderWorkspaceMenu(events, rememberedEventId) {
   const menu = document.getElementById('sidebarWorkspaceMenu');
   if (!menu) return;
 
   const items = [
     `<button type="button" class="sidebar-workspace-item${!rememberedEventId ? ' is-active' : ''}" data-workspace="home">
-      <span class="sidebar-workspace-item-name">All events</span>
-      <span class="sidebar-workspace-item-sub">Measured Stock Admin</span>
+      ${workspaceItemMark(null)}
+      <span class="sidebar-workspace-item-text">
+        <span class="sidebar-workspace-item-name">All events</span>
+        <span class="sidebar-workspace-item-sub">Measured Stock Admin</span>
+      </span>
     </button>`,
     ...events.map((event) => {
       const active = rememberedEventId === event.id;
       return `<button type="button" class="sidebar-workspace-item${active ? ' is-active' : ''}" data-workspace="event" data-event-id="${escapeHtml(event.id)}">
-        <span class="sidebar-workspace-item-name">${escapeHtml(event.name)}</span>
-        <span class="sidebar-workspace-item-sub">${escapeHtml(event.status || 'Event')}</span>
+        ${workspaceItemMark(event.image_url || null)}
+        <span class="sidebar-workspace-item-text">
+          <span class="sidebar-workspace-item-name">${escapeHtml(event.name)}</span>
+          <span class="sidebar-workspace-item-sub">${escapeHtml(event.status || 'Event')}</span>
+        </span>
       </button>`;
     }),
   ];
 
   menu.innerHTML = items.join('');
 }
-
-const DEFAULT_WORKSPACE_MARK = '/assets/img/logomark.png';
 
 function setWorkspaceMark(imageUrl) {
   const mark = document.getElementById('sidebarWorkspaceMark');

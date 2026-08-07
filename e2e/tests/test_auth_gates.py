@@ -57,21 +57,11 @@ def test_auth_logout_returns_to_login(admin_page):
         "**/api/logout",
         lambda route: route.fulfill(status=200, content_type="application/json", body="{}"),
     )
-    admin_page.wait_for_selector("#topbarLogout, #topbarProfileBtn", timeout=15000)
-    # Open the account menu, then fire a bubbling click so the menu handler runs.
-    admin_page.evaluate(
-        """() => {
-          const btn = document.getElementById('topbarProfileBtn');
-          const menu = document.getElementById('topbarProfileMenu');
-          const logout = document.getElementById('topbarLogout');
-          if (btn && menu) {
-            menu.hidden = false;
-            btn.setAttribute('aria-expanded', 'true');
-          }
-          if (!logout) throw new Error('missing #topbarLogout');
-          logout.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        }"""
-    )
+    admin_page.wait_for_selector("#topbarProfileBtn", timeout=15000)
+    # Real UI path: open account menu, then Log out.
+    admin_page.locator("#topbarProfileBtn").click()
+    expect(admin_page.locator("#topbarLogout")).to_be_visible(timeout=5000)
+    admin_page.locator("#topbarLogout").click()
     admin_page.wait_for_function(
         "() => (location.pathname || '').includes('/login')",
         timeout=20000,

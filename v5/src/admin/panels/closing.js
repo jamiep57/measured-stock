@@ -30,12 +30,8 @@ import {
   groupClosingByCategory,
   returnAmountToForm,
 } from '../../lib/closing-stock.js';
-import { printClosingCountSheet } from '../../lib/count-sheets-print.js';
 import { closingRowFor, preferredSupplierId, roundN } from '../../lib/recon.js';
-import {
-  generatePalletStickerPDF,
-  splitPalletQtys,
-} from '../../lib/pallet-sticker-pdf.js';
+import { splitPalletQtys } from '../../lib/pallet-qty.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   closingCellKeyFromInput,
@@ -1152,6 +1148,7 @@ export function mountClosingPanel(route) {
         btn.textContent = 'Generating…';
       }
       try {
+        const { generatePalletStickerPDF } = await import('../../lib/pallet-sticker-pdf.js');
         await generatePalletStickerPDF(stickerCtx(pallets));
         closeSheet();
         toast(`Downloaded ${pallets.length} A4 pallet sticker${pallets.length === 1 ? '' : 's'}`);
@@ -1176,7 +1173,8 @@ export function mountClosingPanel(route) {
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }
 
-  function runPrintClosingSheet({ scope, barId }) {
+  async function runPrintClosingSheet({ scope, barId }) {
+    const { printClosingCountSheet } = await import('../../lib/count-sheets-print.js');
     const result = printClosingCountSheet({
       event: ctx.event,
       caseSizes: ctx.caseSizes,

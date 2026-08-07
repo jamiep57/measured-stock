@@ -221,21 +221,27 @@ function openProfileMenu() {
   btn.setAttribute('aria-expanded', 'true');
 }
 
+let profileMenuWired = false;
+
 function wireProfileMenu() {
   const wrap = document.getElementById('topbarProfileWrap');
   const btn = document.getElementById('topbarProfileBtn');
   const menu = document.getElementById('topbarProfileMenu');
   if (!wrap || !btn || !menu) return;
+  // Idempotent — boot/HMR can call more than once; don't stack listeners.
+  if (profileMenuWired) return;
+  profileMenuWired = true;
 
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (menu.hidden) openProfileMenu();
-    else closeProfileMenu();
-  });
-
-  menu.addEventListener('click', (e) => {
+  // Delegate from wrap so icon swaps / re-renders inside the button don't drop handlers.
+  wrap.addEventListener('click', (e) => {
+    if (e.target.closest('#topbarProfileBtn')) {
+      e.stopPropagation();
+      if (menu.hidden) openProfileMenu();
+      else closeProfileMenu();
+      return;
+    }
     const item = e.target.closest('[data-profile-action]');
-    if (!item) return;
+    if (!item || !menu.contains(item)) return;
     const action = item.getAttribute('data-profile-action');
     if (action === 'settings') {
       e.preventDefault();
@@ -253,7 +259,7 @@ function wireProfileMenu() {
     if (action === 'logout') {
       e.preventDefault();
       closeProfileMenu();
-      signOutApp();
+      void signOutApp();
     }
   });
 
@@ -284,7 +290,6 @@ async function boot() {
   const auth = await ensureAppAuth({ requireAdmin: true });
   if (!auth) return;
 
-  wireProfileMenu();
   syncProfileMenuLabel();
   initSyncStatus({
     bannerId: 'adminOfflineBanner',
@@ -302,6 +307,8 @@ async function boot() {
   initSheet();
   initBugSheet();
   initIcons();
+  // After icons — lucide can rewrite button guts; wire via wrap delegation.
+  wireProfileMenu();
   // Mount early so the report button survives later boot failures.
   mountBugReportFab();
   initSpreadsheetCells(document.body);
@@ -325,6 +332,8 @@ async function boot() {
   }
 
   syncBugOpenDot();
+  // Re-assert after first paint (topbar may mount late on some shells).
+  wireProfileMenu();
 
   document.addEventListener(ADMIN_EVENTS_CHANGED, async (e) => {
     try {

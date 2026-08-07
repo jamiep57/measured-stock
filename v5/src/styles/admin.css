@@ -4408,7 +4408,7 @@ body.admin-drawer-open {
   min-height: 0;
   overflow: hidden;
   padding: 16px 16px 0;
-  background: color-mix(in srgb, var(--background) 55%, var(--card));
+  background: var(--admin-canvas);
 }
 .sales-panel .mod-table-wrap,
 .mod-panel .mod-table-wrap {

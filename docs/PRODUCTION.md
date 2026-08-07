@@ -4,16 +4,16 @@ Operational checklist for the live deployment (Vercel + Supabase).
 
 ## Health signals
 
-- **Staff PWA** (`/app`): offline banner + pending sync badge + “Synced … ago”
-- **Admin** (`/`): sticky offline banner + topbar sync badge / last synced
+- **Staff PWA** (`/app`): offline banner + pending/failed sync badge (quiet when healthy)
+- **Admin** (`/`): sticky offline banner + topbar sync badge for pending/failed only
 - **Cron**: `/api/sync-catchup` daily 03:00 UTC (see `vercel.json`)
 - **Client errors**: browser `error` / `unhandledrejection` are buffered in `sessionStorage` and beaconed to `/api/client-error` when available
 
 ## Sync / offline
 
-1. Staff edits enqueue into IndexedDB (`measured-stock-v5` / `write_queue`).
+1. Staff edits enqueue into IndexedDB (`measured-stock-v5` / `write_queue`, v2 with `dedupeKey` index).
 2. Online flush runs on reconnect, on a 30s timer, and after pull-to-refresh.
-3. Failed writes (5+ retries) show as “N syncs failed” on the badge.
+3. Failed writes (5+ retries) show as “N syncs failed” on the badge; healthy queues stay silent.
 4. Forensic audit panel can inspect queue stats for an event.
 
 ## Backup / restore
