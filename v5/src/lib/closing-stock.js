@@ -185,17 +185,21 @@ export function filterClosingRows(rows, {
   statusFilter = '',
   categoryFilter = '',
   supplierFilter = '',
+  supplierFilters = null,
 } = {}) {
+  const supplierIds = Array.isArray(supplierFilters) && supplierFilters.length
+    ? supplierFilters
+    : (supplierFilter ? [supplierFilter] : []);
   return (rows || []).filter((r) => {
     if (categoryFilter && (r.category || 'Uncategorised') !== categoryFilter) return false;
-    if (supplierFilter) {
+    if (supplierIds.length) {
       const sid = r.supplierId || '';
       const sname = r.supplierName || '';
-      if (supplierFilter === '__none__') {
-        if (sid || sname) return false;
-      } else if (sid !== supplierFilter && sname !== supplierFilter) {
-        return false;
-      }
+      const match = supplierIds.some((filter) => {
+        if (filter === '__none__') return !sid && !sname;
+        return sid === filter || sname === filter;
+      });
+      if (!match) return false;
     }
     const status = statusFilter || '';
     if (status === 'uncounted') return !r.hasClosing;

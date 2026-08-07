@@ -646,7 +646,7 @@ export const closingConfig = simpleEventConfig({
   defaults: () => ({
     status: '',
     category: '',
-    supplierId: '',
+    supplierId: [],
     sort: 'name',
   }),
   persist: { keys: ['sort'], storageKey: 'v5ClosingTableFilter' },
@@ -683,21 +683,8 @@ export const closingConfig = simpleEventConfig({
         type: 'searchable-checkbox',
         showCount: true,
         scroll: true,
-        // single-select via checkbox list is awkward — use radio list scrollable
-        // Override: use radio with searchable feel via searchable-checkbox of one?
-        // Plan: searchable multi for multi; for single use radio in scroll
-      });
-      // Replace last with radio scroll
-      sections.pop();
-      sections.push({
-        id: 'supplierId',
-        label: 'Supplier',
-        type: 'radio',
-        scroll: true,
-        options: [
-          { value: '', label: 'All suppliers' },
-          ...context.suppliers,
-        ],
+        searchPlaceholder: 'Search suppliers…',
+        options: context.suppliers,
       });
     }
     return sections;
@@ -711,10 +698,14 @@ export const closingConfig = simpleEventConfig({
     { value: 'sor', label: 'SOR % ↓' },
   ],
   toValues(state) {
+    const suppliers = Array.isArray(state.supplierId)
+      ? state.supplierId
+      : (state.supplierId ? [state.supplierId] : []);
     return {
       statusFilter: state.status || '',
       categoryFilter: state.category || '',
-      supplierFilter: state.supplierId || '',
+      supplierFilter: suppliers[0] || '',
+      supplierFilters: suppliers,
       sortKey: state.sort || 'name',
     };
   },

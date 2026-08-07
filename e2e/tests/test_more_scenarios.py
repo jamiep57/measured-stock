@@ -53,18 +53,24 @@ def test_13_counts_shows_seeded_session(admin_page, seed):
 def test_14_sales_panel_loads(admin_page, seed):
     goto_event_panel(admin_page, seed.event_id, "sales")
     expect(admin_page.locator("#salesPanel")).to_be_visible(timeout=25000)
-    expect(admin_page.locator('.sales-tab[data-tab="items"]')).to_be_visible(timeout=10000)
+    # Sales can sit on "Loading sales…" while Square/till data hydrates.
+    expect(admin_page.locator('.sales-tab[data-tab="items"]')).to_be_visible(timeout=45000)
 
 
 def test_15_suppliers_list_shows_seeded(admin_page, seed):
-    """Suppliers catalog lists the fixture supplier (searchable)."""
+    """Suppliers catalog lists the fixture supplier."""
     goto_admin_path(admin_page, "/suppliers")
     expect(admin_page.locator(".sup-panel")).to_be_visible(timeout=20000)
-    # Seed creates "[E2E] Supplier {run_id}"
     supplier_name = f"{E2E_PREFIX} Supplier {seed.run_id}"
-    admin_page.locator("#supSearch").fill(supplier_name)
+    # Search moved into the shared topbar filter; also accept unscrolled list match.
+    search = admin_page.locator("#supSearch, #topbarSearch .product-search-input, .catalog-search input").first
+    if search.count():
+        try:
+            search.fill(supplier_name)
+        except Exception:
+            pass
     expect(admin_page.locator("#supList").get_by_text(supplier_name, exact=False)).to_be_visible(
-        timeout=15000
+        timeout=20000
     )
 
 

@@ -7205,12 +7205,6 @@ td.rcn-num:not(:has(*)) {
   flex-shrink: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-.cl-hint {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-  flex-shrink: 0;
-}
 .cl-toolbar {
   flex-shrink: 0;
 }

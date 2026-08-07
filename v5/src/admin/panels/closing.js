@@ -18,6 +18,7 @@ import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
   ADMIN_TABLE_FILTER,
   getTableFilterValues,
+  setTableFilterContext,
 } from '../table-filter.js';
 import {
   buildClosingRow,
@@ -219,15 +220,6 @@ export function renderClosingShell() {
   return `
     <div class="cl-panel" id="closingPanel">
       <div class="wst-stats cl-stats" id="clStats" hidden></div>
-      <p class="cl-hint muted">
-        Counts <strong>auto-save as you type</strong> and update live for anyone else on Closing.
-        Closing and return use each product’s stock unit
-        (cases / singles, bottles, or kegs). <strong>Max returnable</strong> = invoice × supplier SOR %.
-        Returns above that ask for confirmation. <strong>Carried over</strong> = close count − return amount.
-        Use <strong>Return to supplier</strong> to print pallet stickers for the return qty.
-        Cleared a number by mistake? Hit <strong>Undo</strong> (or ⌘Z / Ctrl+Z).
-        When someone else clicks a cell, you’ll see it highlighted with their name.
-      </p>
       <div class="sales-toolbar cl-toolbar" id="clToolbar" hidden></div>
       <div class="dist-grid-wrap cl-grid-wrap" id="clTableWrap">
         <table class="dist-grid cl-grid" id="clTable">
@@ -273,6 +265,7 @@ export function mountClosingPanel(route) {
     statusFilter: '',
     categoryFilter: '',
     supplierFilter: '',
+    supplierFilters: [],
     sortKey: 'name',
     searchQuery: getLastProductFilter().query || '',
   };
@@ -282,6 +275,9 @@ export function mountClosingPanel(route) {
     ctx.statusFilter = seeded.statusFilter || '';
     ctx.categoryFilter = seeded.categoryFilter || '';
     ctx.supplierFilter = seeded.supplierFilter || '';
+    ctx.supplierFilters = Array.isArray(seeded.supplierFilters)
+      ? [...seeded.supplierFilters]
+      : (seeded.supplierFilter ? [seeded.supplierFilter] : []);
     ctx.sortKey = seeded.sortKey || 'name';
   }
 
@@ -373,6 +369,7 @@ export function mountClosingPanel(route) {
       statusFilter: ctx.statusFilter,
       categoryFilter: ctx.categoryFilter,
       supplierFilter: ctx.supplierFilter,
+      supplierFilters: ctx.supplierFilters,
     });
   }
 
@@ -414,6 +411,7 @@ export function mountClosingPanel(route) {
       statusFilter: ctx.statusFilter,
       categoryFilter: ctx.categoryFilter,
       supplierFilter: ctx.supplierFilter,
+      supplierFilters: ctx.supplierFilters,
     });
     if (stats) {
       stats.hidden = !sourceRows.length;
@@ -1273,6 +1271,9 @@ export function mountClosingPanel(route) {
     ctx.statusFilter = values.statusFilter || '';
     ctx.categoryFilter = values.categoryFilter || '';
     ctx.supplierFilter = values.supplierFilter || '';
+    ctx.supplierFilters = Array.isArray(values.supplierFilters)
+      ? [...values.supplierFilters]
+      : (values.supplierFilter ? [values.supplierFilter] : []);
     ctx.sortKey = values.sortKey || 'name';
     renderTable();
   };
@@ -1328,6 +1329,11 @@ export function mountClosingPanel(route) {
       ctx.suppliers = suppliers || [];
       ctx.closingRows = closing || [];
       ctx.supplierReturns = supplierReturns || [];
+      setTableFilterContext('closing', {
+        suppliers: (ctx.suppliers || [])
+          .map((s) => ({ value: s.id, label: s.name || 'Supplier' }))
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      });
       renderTable();
       applyProductFilter(getLastProductFilter());
       startLive();

@@ -2,10 +2,148 @@
  * V5 data layer — extends window.DB with enriched event reads.
  */
 
+const EVENT_CACHE_TTL_MS = 45_000;
+const REF_CACHE_TTL_MS = 5 * 60_000;
+const RECIPES_CACHE_TTL_MS = 5 * 60_000;
+const LIBRARY_CACHE_TTL_MS = 60_000;
+
+const EVENT_MUTATION_TABLES = new Set([
+  'events',
+  'bars',
+  'recipients',
+  'bar_products',
+  'event_products',
+  'distribution',
+  'deliveries',
+  'delivery_lines',
+  'transfers',
+  'transfer_lines',
+  'wastage_batches',
+  'wastage_lines',
+  'stock_counts',
+  'stock_count_lines',
+  'closing_stock',
+  'supplier_return_lines',
+  'till_imports',
+  'till_sale_rows',
+  'modifier_imports',
+  'modifier_sale_rows',
+  'topup_sessions',
+  'topup_lines',
+  'event_kit_items',
+  'kit_movements',
+  'kit_movement_lines',
+]);
+
+const REF_MUTATION_TABLES = new Set([
+  'case_sizes',
+  'categories',
+  'suppliers',
+]);
+
+const LIBRARY_MUTATION_TABLES = new Set([
+  'products',
+  'product_suppliers',
+]);
+
+const RECIPE_MUTATION_TABLES = new Set([
+  'recipes',
+  'recipe_ingredients',
+]);
+
+/** @type {Map<string, { at: number, value: any }>} */
+const eventCache = new Map();
+/** @type {Map<string, Promise<any>>} */
+const eventInflight = new Map();
+
+/** @type {{ at: number, value: any } | null} */
+let caseSizesCache = null;
+/** @type {Promise<any> | null} */
+let caseSizesInflight = null;
+
+/** @type {{ at: number, value: any } | null} */
+let suppliersCache = null;
+/** @type {Promise<any> | null} */
+let suppliersInflight = null;
+
+/** @type {{ at: number, value: any } | null} */
+let categoriesCache = null;
+/** @type {Promise<any> | null} */
+let categoriesInflight = null;
+
+/** @type {{ at: number, value: any } | null} */
+let recipesCache = null;
+/** @type {Promise<any> | null} */
+let recipesInflight = null;
+
+/** @type {{ at: number, value: any } | null} */
+let libraryCache = null;
+/** @type {Promise<any> | null} */
+let libraryInflight = null;
+
+function cacheFresh(entry, ttl) {
+  return !!(entry && (Date.now() - entry.at) < ttl);
+}
+
+export function invalidateEventCache(eventId) {
+  if (eventId) {
+    const id = String(eventId);
+    eventCache.delete(id);
+    eventInflight.delete(id);
+    return;
+  }
+  eventCache.clear();
+  eventInflight.clear();
+}
+
+export function invalidateRefCaches() {
+  caseSizesCache = null;
+  caseSizesInflight = null;
+  suppliersCache = null;
+  suppliersInflight = null;
+  categoriesCache = null;
+  categoriesInflight = null;
+}
+
+export function invalidateRecipesCache() {
+  recipesCache = null;
+  recipesInflight = null;
+}
+
+export function invalidateLibraryCache() {
+  libraryCache = null;
+  libraryInflight = null;
+}
+
+function noteMutation(table) {
+  const name = String(table || '');
+  if (EVENT_MUTATION_TABLES.has(name)) invalidateEventCache();
+  if (REF_MUTATION_TABLES.has(name)) invalidateRefCaches();
+  if (LIBRARY_MUTATION_TABLES.has(name)) {
+    invalidateLibraryCache();
+    invalidateEventCache();
+  }
+  if (RECIPE_MUTATION_TABLES.has(name)) invalidateRecipesCache();
+}
+
+function ensureCacheInvalidationHooks(DB) {
+  if (DB.__v5CacheHooks) return;
+  DB.__v5CacheHooks = true;
+  for (const method of ['insert', 'update', 'upsert', 'remove']) {
+    const orig = DB[method].bind(DB);
+    DB[method] = async (table, ...args) => {
+      const result = await orig(table, ...args);
+      noteMutation(table);
+      return result;
+    };
+  }
+}
+
 function getDB() {
   if (typeof window === 'undefined' || !window.DB) {
     throw new Error('db.js not loaded — include /assets/js/db.js before V5 modules');
   }
+  ensureCacheInvalidationHooks(window.DB);
   return window.DB;
 }
 
@@ -25,12 +163,22 @@ const KIT_PRODUCT_SELECT_FALLBACK =
   'category:categories(id,name,colour_key,kind,sort_order)';
 
 export async function loadCaseSizes() {
-  const DB = getDB();
-  try {
-    return await DB.caseSizes.list();
-  } catch {
-    return [];
-  }
+  if (cacheFresh(caseSizesCache, REF_CACHE_TTL_MS)) return caseSizesCache.value;
+  if (caseSizesInflight) return caseSizesInflight;
+  caseSizesInflight = (async () => {
+    const DB = getDB();
+    try {
+      const rows = await DB.caseSizes.list();
+      caseSizesCache = { at: Date.now(), value: rows || [] };
+      return caseSizesCache.value;
+    } catch {
+      caseSizesCache = { at: Date.now(), value: [] };
+      return [];
+    } finally {
+      caseSizesInflight = null;
+    }
+  })();
+  return caseSizesInflight;
 }
 
 export async function loadEventsList() {
@@ -49,7 +197,7 @@ export async function loadEventsList() {
   return (events || []).filter((e) => !e.legacy_id || blobIds.has(e.legacy_id));
 }
 
-export async function loadEventFull(eventId) {
+async function fetchEventFull(eventId) {
   const DB = getDB();
   try {
     const row = await DB.select(
@@ -75,17 +223,95 @@ export async function loadEventFull(eventId) {
   }
 }
 
+/**
+ * @param {string} eventId
+ * @param {{ force?: boolean }} [opts]
+ */
+export async function loadEventFull(eventId, opts = {}) {
+  const id = String(eventId || '');
+  if (!id) return null;
+  if (opts.force) invalidateEventCache(id);
+
+  const hit = eventCache.get(id);
+  if (!opts.force && cacheFresh(hit, EVENT_CACHE_TTL_MS)) return hit.value;
+
+  const pending = eventInflight.get(id);
+  if (pending) return pending;
+
+  const request = fetchEventFull(id)
+    .then((value) => {
+      eventCache.set(id, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => {
+      eventInflight.delete(id);
+    });
+  eventInflight.set(id, request);
+  return request;
+}
+
+/** Product rows embedded on an event — enough for projection/recon matching. */
+export function productsFromEvent(event) {
+  const byId = new Map();
+  for (const ep of event?.event_products || []) {
+    const p = ep?.product;
+    if (!p?.id && !p?.name) continue;
+    const key = p.id || p.name;
+    if (!byId.has(key)) byId.set(key, p);
+  }
+  return [...byId.values()];
+}
+
 export async function loadSuppliers() {
-  return getDB().suppliers.list();
+  if (cacheFresh(suppliersCache, REF_CACHE_TTL_MS)) return suppliersCache.value;
+  if (suppliersInflight) return suppliersInflight;
+  suppliersInflight = (async () => {
+    try {
+      const rows = await getDB().suppliers.list();
+      suppliersCache = { at: Date.now(), value: rows || [] };
+      return suppliersCache.value;
+    } finally {
+      suppliersInflight = null;
+    }
+  })();
+  return suppliersInflight;
 }
 
 export async function loadCategories() {
-  try {
-    const rows = await getDB().categories.list();
-    return (rows || []).filter((c) => !c.kind || c.kind === 'stock');
-  } catch {
-    return [];
-  }
+  if (cacheFresh(categoriesCache, REF_CACHE_TTL_MS)) return categoriesCache.value;
+  if (categoriesInflight) return categoriesInflight;
+  categoriesInflight = (async () => {
+    try {
+      const rows = await getDB().categories.list();
+      const filtered = (rows || []).filter((c) => !c.kind || c.kind === 'stock');
+      categoriesCache = { at: Date.now(), value: filtered };
+      return filtered;
+    } catch {
+      categoriesCache = { at: Date.now(), value: [] };
+      return [];
+    } finally {
+      categoriesInflight = null;
+    }
+  })();
+  return categoriesInflight;
+}
+
+export async function loadRecipesFull() {
+  if (cacheFresh(recipesCache, RECIPES_CACHE_TTL_MS)) return recipesCache.value;
+  if (recipesInflight) return recipesInflight;
+  recipesInflight = (async () => {
+    try {
+      const rows = await getDB().recipes.listFull();
+      recipesCache = { at: Date.now(), value: rows || [] };
+      return recipesCache.value;
+    } catch {
+      recipesCache = { at: Date.now(), value: [] };
+      return [];
+    } finally {
+      recipesInflight = null;
+    }
+  })();
+  return recipesInflight;
 }
 
 export async function loadKitCategories() {
@@ -102,14 +328,25 @@ export async function loadKitCategories() {
 }
 
 export async function loadLibraryProducts() {
-  const DB = getDB();
-  try {
-    const rows = await DB.products.listFull();
-    return (rows || []).filter((p) => !p.product_kind || p.product_kind === 'stock');
-  } catch {
-    const rows = await DB.products.list();
-    return (rows || []).filter((p) => !p.product_kind || p.product_kind === 'stock');
-  }
+  if (cacheFresh(libraryCache, LIBRARY_CACHE_TTL_MS)) return libraryCache.value;
+  if (libraryInflight) return libraryInflight;
+  libraryInflight = (async () => {
+    const DB = getDB();
+    try {
+      let rows;
+      try {
+        rows = await DB.products.listFull();
+      } catch {
+        rows = await DB.products.list();
+      }
+      const filtered = (rows || []).filter((p) => !p.product_kind || p.product_kind === 'stock');
+      libraryCache = { at: Date.now(), value: filtered };
+      return filtered;
+    } finally {
+      libraryInflight = null;
+    }
+  })();
+  return libraryInflight;
 }
 
 function isNetworkFetchError(err) {

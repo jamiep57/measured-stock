@@ -227,7 +227,8 @@ def goto_admin_path(page: "Page", path: str) -> None:
         if "ERR_ABORTED" not in msg and "interrupted by another navigation" not in msg:
             raise
     page.wait_for_selector("#adminApp, .admin-app", timeout=20000)
-    page.wait_for_selector("#adminContent", timeout=20000)
+    # Content may be CSS-hidden briefly during route paint / drawer transitions.
+    page.wait_for_selector("#adminContent", state="attached", timeout=20000)
     # Confirm we actually landed on the requested path (or a known rewrite of it).
     # Audit bookmarks under /events/:id/audit rewrite to /dev/audit.
     expected = path.rstrip("/") or "/"

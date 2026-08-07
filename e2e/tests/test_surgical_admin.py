@@ -173,7 +173,7 @@ def test_40_suppliers_create_via_ui(admin_page, db, tracker):
     open_toolbar_sheet(admin_page, "new-supplier", "#supName")
     admin_page.locator("#supName").fill(name)
     # Leave SOR blank — num-math field has been flaky when filled oddly.
-    admin_page.locator("#supSave").click()
+    click_id(admin_page, "supSave")
     # Wait either toast or sheet close + list row.
     try:
         expect_toast(admin_page, "Supplier created", timeout=12000)
@@ -193,7 +193,6 @@ def test_40_suppliers_create_via_ui(admin_page, db, tracker):
         timeout_s=15,
     )
     tracker.track_supplier(rows[0]["id"])
-    admin_page.locator("#supSearch").fill(name)
     expect(admin_page.locator("#supList").get_by_text(name, exact=False)).to_be_visible(
         timeout=15000
     )

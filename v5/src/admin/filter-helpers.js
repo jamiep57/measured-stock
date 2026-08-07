@@ -27,9 +27,23 @@ export function extractSupplierOptions(products) {
   let hasNone = false;
   (products || []).forEach((item) => {
     const p = item.product || item;
-    const sup = p.supplier || item.supplier;
-    if (sup?.id) map.set(sup.id, sup.name || 'Supplier');
-    else hasNone = true;
+    let found = false;
+    const preferred = (p.product_suppliers || []).find((o) => o.is_preferred)
+      || (p.product_suppliers || [])[0];
+    const nested = preferred?.supplier || p.supplier || item.supplier;
+    const id = preferred?.supplier_id || nested?.id || p.supplier_id || item.supplier_id;
+    const name = nested?.name;
+    if (id) {
+      map.set(id, name || map.get(id) || 'Supplier');
+      found = true;
+    }
+    (p.product_suppliers || []).forEach((o) => {
+      const oid = o.supplier_id || o.supplier?.id;
+      if (!oid) return;
+      map.set(oid, o.supplier?.name || map.get(oid) || 'Supplier');
+      found = true;
+    });
+    if (!found) hasNone = true;
   });
   const list = [...map.entries()]
     .map(([id, name]) => ({ value: id, label: name }))
