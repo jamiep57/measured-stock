@@ -236,6 +236,7 @@ export function mountLibraryPanel() {
   let sortDir = 1;
   let filterCat = '';
   let filterSup = '';
+  let filterSups = [];
   let productFilter = getLastProductFilter();
   let mergeMode = false;
   const selected = new Set();
@@ -244,6 +245,9 @@ export function mountLibraryPanel() {
   if (seeded) {
     filterCat = seeded.categoryFilter || '';
     filterSup = seeded.supplierFilter || '';
+    filterSups = Array.isArray(seeded.supplierFilters)
+      ? [...seeded.supplierFilters]
+      : (seeded.supplierFilter ? [seeded.supplierFilter] : []);
     sortKey = seeded.sortKey || 'name';
     sortDir = seeded.sortDir === 'desc' ? -1 : 1;
   }
@@ -261,7 +265,14 @@ export function mountLibraryPanel() {
     const pid = productFilter.productId;
     return products.filter((p) => {
       if (filterCat && p.category?.name !== filterCat) return false;
-      if (filterSup) {
+      if (filterSupIds.length) {
+        const sid = preferredSupplierId(p);
+        const match = filterSupIds.some((filter) => {
+          if (filter === '__none__') return !sid && !preferredSupplier(p);
+          return sid === filter;
+        });
+        if (!match) return false;
+      } else if (filterSup) {
         const sid = preferredSupplierId(p);
         if (filterSup === '__none__') {
           if (sid || preferredSupplier(p)) return false;
@@ -361,6 +372,9 @@ export function mountLibraryPanel() {
     if (!values) return;
     filterCat = values.categoryFilter || '';
     filterSup = values.supplierFilter || '';
+    filterSupIds = Array.isArray(values.supplierFilters)
+      ? [...values.supplierFilters]
+      : (values.supplierFilter ? [values.supplierFilter] : []);
     sortKey = values.sortKey || 'name';
     sortDir = values.sortDir === 'desc' ? -1 : 1;
   }
