@@ -11,6 +11,7 @@ import {
   peerColor,
   flattenPresenceState,
   peerFocusKey,
+  mergePeerCarets,
 } from './collab-presence.js';
 import { normalizeDisplayName } from './session-identity.js';
 
@@ -108,5 +109,53 @@ describe('formatCollabPresence', () => {
 
   it('keeps formatClosingPresence alias', () => {
     expect(formatClosingPresence).toBe(formatCollabPresence);
+  });
+});
+
+describe('mergePeerCarets', () => {
+  it('lets broadcast move a peer off a presence cell', () => {
+    const map = mergePeerCarets(
+      [{ clientId: 'a', name: 'Fraser', focusKey: 'p1::cases', at: 1 }],
+      {
+        a: {
+          clientId: 'a',
+          name: 'Fraser',
+          cellKey: 'p2::singles',
+          color: '#2563eb',
+          at: 100,
+        },
+      },
+      'me',
+      { now: 100 },
+    );
+    expect(map['p1::cases']).toBeUndefined();
+    expect(map['p2::singles'].name).toBe('Fraser');
+  });
+
+  it('keeps an explicit broadcast clear from reviving via presence', () => {
+    const map = mergePeerCarets(
+      [{ clientId: 'a', name: 'Fraser', focusKey: 'p1::cases', at: 1 }],
+      { a: null },
+      'me',
+      { now: 100 },
+    );
+    expect(map).toEqual({});
+  });
+
+  it('drops stale broadcast carets', () => {
+    const map = mergePeerCarets(
+      [],
+      {
+        a: {
+          clientId: 'a',
+          name: 'Fraser',
+          cellKey: 'p1::cases',
+          at: 1,
+        },
+      },
+      'me',
+      { now: 20_000, staleMs: 8_000 },
+    );
+    expect(map).toEqual({});
   });
 });

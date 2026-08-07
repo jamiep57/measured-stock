@@ -1,6 +1,10 @@
 /**
  * App-wide admin presence — who’s in this event workspace.
- * Cell carets stay on per-panel collab channels; this only powers the sidebar strip.
+ * Cell carets stay on per-panel Broadcast channels; this only powers the sidebar strip.
+ *
+ * Presence updates are rare (join / panel change / slow heartbeat). High-frequency
+ * cell focus must NOT call track() — Supabase caps ~5 presence calls / 30s / client
+ * and shuts the channel when exceeded.
  */
 
 import { getClientId, getDisplayName } from './session-identity.js';
@@ -18,6 +22,8 @@ let channel = null;
 let channelKey = '';
 let liveReady = false;
 let presenceTimer = null;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
 /** @type {string} */
 let currentEventId = '';
 /** @type {string} */
@@ -57,6 +63,7 @@ async function track(patch = {}) {
       clientId: getClientId(),
       eventId: currentEventId,
       panel: currentPanel || null,
+      // focusKey is informational / slow — cell carets use Broadcast on the grid channel
       focusKey: currentFocusKey,
       at: Date.now(),
       ...patch,
@@ -64,12 +71,24 @@ async function track(patch = {}) {
   } catch { /* ignore */ }
 }
 
-async function stopChannel() {
-  liveReady = false;
+function clearPresenceTimer() {
   if (presenceTimer) {
     clearInterval(presenceTimer);
     presenceTimer = null;
   }
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+async function stopChannel() {
+  liveReady = false;
+  clearPresenceTimer();
+  clearReconnectTimer();
   const ch = channel;
   channel = null;
   channelKey = '';
@@ -80,6 +99,17 @@ async function stopChannel() {
   try {
     getRealtimeClient()?.removeChannel(ch);
   } catch { /* ignore */ }
+}
+
+function scheduleReconnect(eventId) {
+  if (!eventId || reconnectTimer) return;
+  const delay = Math.min(15_000, 1_000 * (2 ** Math.min(reconnectAttempt, 3)));
+  reconnectAttempt += 1;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (currentEventId !== eventId || channel) return;
+    startChannel(eventId);
+  }, delay);
 }
 
 function startChannel(eventId) {
@@ -97,7 +127,7 @@ function startChannel(eventId) {
   const selfId = getClientId();
   channel = rt.channel(key, {
     config: {
-      presence: { key: selfId },
+      presence: { key: selfId, enabled: true },
     },
   });
 
@@ -113,16 +143,25 @@ function startChannel(eventId) {
     if (channelKey !== key) return;
     if (status === 'SUBSCRIBED') {
       liveReady = true;
+      reconnectAttempt = 0;
       await track();
       refresh();
-      if (presenceTimer) clearInterval(presenceTimer);
+      clearPresenceTimer();
       presenceTimer = setInterval(() => { track(); }, PRESENCE_HEARTBEAT_MS);
       if (text && (text.textContent === 'Connecting…' || !text.textContent)) {
         text.textContent = 'Just you here';
       }
-    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
       liveReady = false;
+      clearPresenceTimer();
+      const ch = channel;
+      channel = null;
+      channelKey = '';
+      if (ch) {
+        try { getRealtimeClient()?.removeChannel(ch); } catch { /* ignore */ }
+      }
       if (text) text.textContent = 'Live sync unavailable';
+      if (currentEventId === eventId) scheduleReconnect(eventId);
     }
   });
 }
@@ -134,8 +173,10 @@ function startChannel(eventId) {
 export async function syncAppPresence({ eventId = '', panel = '' } = {}) {
   const nextEvent = String(eventId || '').trim();
   const nextPanel = String(panel || '').trim();
+  const panelChanged = nextPanel !== currentPanel;
   currentPanel = nextPanel;
-  currentFocusKey = null;
+  // Don't clear focus on every route tick — only when leaving the event.
+  if (!nextEvent) currentFocusKey = null;
 
   if (!nextEvent) {
     currentEventId = '';
@@ -151,14 +192,17 @@ export async function syncAppPresence({ eventId = '', panel = '' } = {}) {
     return;
   }
 
-  await track();
+  // Panel changes are rare enough for a presence refresh.
+  if (panelChanged) await track();
   updateUi(flattenPresenceState(channel?.presenceState() || {}));
 }
 
-/** Optional: grid focus so peers can later show where someone is editing. */
+/**
+ * Remember grid focus for optional sidebar metadata.
+ * Does NOT call track() — cell carets use Broadcast; presence stays rate-limit safe.
+ */
 export function setAppPresenceFocus(focusKey) {
   currentFocusKey = focusKey || null;
-  track();
 }
 
 export async function stopAppPresence() {
