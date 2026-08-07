@@ -109,7 +109,7 @@ async function render(route) {
     const html = await renderPanel(route, state);
     if (gen !== renderGen) return;
     content.innerHTML = html;
-    // Overlap topbar context load with panel mount — loadEventFull coalesces.
+    // Overlap topbar context load with panel mount — event loads coalesce.
     const searchReady = globalSearch?.syncRoute(route) ?? Promise.resolve();
     const [cleanup] = await Promise.all([
       mountPanel(route, state),

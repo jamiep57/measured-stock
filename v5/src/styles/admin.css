@@ -453,7 +453,7 @@ body:has(.admin-app) .toast.err {
   gap: 16px;
   padding: 14px 16px;
   background: var(--card);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-bottom: none;
 }
 
 .topbar-title {

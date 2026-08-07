@@ -2,7 +2,7 @@ import { openDB } from 'idb';
 
 const DB_NAME = 'measured-stock-v5';
 const STORE = 'write_queue';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 let flushPromise = null;
@@ -32,11 +32,19 @@ export function getLastSyncedAt() {
 function getDb() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion, _newVersion, transaction) {
         if (!db.objectStoreNames.contains(STORE)) {
           const store = db.createObjectStore(STORE, { keyPath: 'id' });
           store.createIndex('status', 'status');
           store.createIndex('createdAt', 'createdAt');
+          store.createIndex('dedupeKey', 'dedupeKey', { unique: false });
+          return;
+        }
+        if (oldVersion < 2) {
+          const store = transaction.objectStore(STORE);
+          if (!store.indexNames.contains('dedupeKey')) {
+            store.createIndex('dedupeKey', 'dedupeKey', { unique: false });
+          }
         }
       },
     });
@@ -58,12 +66,14 @@ export function setSyncStatusListener(fn) {
 
 export async function getQueueStats() {
   const db = await getDb();
-  const all = await db.getAll(STORE);
-  const pending = all.filter((r) => r.status === 'pending' || r.status === 'failed');
+  const [pendingRows, failedRows] = await Promise.all([
+    db.getAllFromIndex(STORE, 'status', 'pending'),
+    db.getAllFromIndex(STORE, 'status', 'failed'),
+  ]);
   return {
-    pending: pending.filter((r) => r.status === 'pending').length,
-    failed: pending.filter((r) => r.status === 'failed').length,
-    total: pending.length,
+    pending: pendingRows.length,
+    failed: failedRows.length,
+    total: pendingRows.length + failedRows.length,
   };
 }
 
@@ -77,11 +87,9 @@ export async function getQueueStats() {
 export async function enqueueWrite(item) {
   const db = await getDb();
   if (item.dedupeKey) {
-    const all = await db.getAll(STORE);
-    for (const row of all) {
-      if (row.dedupeKey === item.dedupeKey && row.status === 'pending') {
-        await db.delete(STORE, row.id);
-      }
+    const matches = await db.getAllFromIndex(STORE, 'dedupeKey', item.dedupeKey);
+    for (const row of matches) {
+      if (row.status === 'pending') await db.delete(STORE, row.id);
     }
   }
   const record = {
@@ -133,9 +141,11 @@ export async function flushQueue(DB) {
 
   flushPromise = (async () => {
     const db = await getDb();
-    const all = await db.getAll(STORE);
-    const pending = all
-      .filter((r) => r.status === 'pending' || r.status === 'failed')
+    const [pendingRows, failedRows] = await Promise.all([
+      db.getAllFromIndex(STORE, 'status', 'pending'),
+      db.getAllFromIndex(STORE, 'status', 'failed'),
+    ]);
+    const pending = [...pendingRows, ...failedRows]
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     let wrote = false;
@@ -182,9 +192,9 @@ export function bindOnlineFlush(flushFn) {
 
 export async function clearFailed() {
   const db = await getDb();
-  const all = await db.getAll(STORE);
-  for (const r of all) {
-    if (r.status === 'failed') await db.delete(STORE, r.id);
+  const failed = await db.getAllFromIndex(STORE, 'status', 'failed');
+  for (const r of failed) {
+    await db.delete(STORE, r.id);
   }
   notifyStatus();
 }

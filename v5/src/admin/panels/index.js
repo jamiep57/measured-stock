@@ -1,28 +1,12 @@
 /**
  * Admin panel registry — shells + mounts.
- * Heavy panels load on demand (sales, recon, reports, closing, audit, kit, distribution, products).
+ * Heavy panels load on demand to keep the admin boot graph small.
  */
 
 import { escapeHtml } from '../../lib/util.js';
 import { notFoundState } from '../../components/empty-state.js';
 import { resolveActiveEventId } from '../event-workspace.js';
 
-import {
-  renderDeliveriesShell,
-  mountDeliveriesPanel,
-} from './deliveries.js';
-import {
-  renderWastageShell,
-  mountWastagePanel,
-} from './wastage.js';
-import {
-  renderSetupShell,
-  mountSetupPanel,
-} from './setup.js';
-import {
-  renderTransfersShell,
-  mountTransfersPanel,
-} from './transfers.js';
 import {
   renderSuppliersShell,
   mountSuppliersPanel,
@@ -35,10 +19,6 @@ import {
   renderLibraryShell,
   mountLibraryPanel,
 } from './library.js';
-import {
-  renderCountsShell,
-  mountCountsPanel,
-} from './counts.js';
 import {
   renderDashboardShell,
   mountDashboardPanel,
@@ -63,6 +43,10 @@ import {
   renderDevShell,
   mountDevPanel,
 } from './dev.js';
+import {
+  renderSetupShell,
+  mountSetupPanel,
+} from './setup.js';
 
 /** Lazy-loaded heavy panels */
 const lazy = {
@@ -75,6 +59,10 @@ const lazy = {
   'kit-library': () => import('./kit-library.js'),
   distribution: () => import('./distribution.js'),
   products: () => import('./products.js'),
+  deliveries: () => import('./deliveries.js'),
+  transfers: () => import('./transfers.js'),
+  wastage: () => import('./wastage.js'),
+  counts: () => import('./counts.js'),
 };
 
 /** Warm event-workspace chunks so sidebar clicks feel instant. */
@@ -86,6 +74,10 @@ export function prefetchEventPanels() {
   void lazy.kit();
   void lazy.distribution();
   void lazy.products();
+  void lazy.deliveries();
+  void lazy.transfers();
+  void lazy.wastage();
+  void lazy.counts();
 }
 
 export const PANEL_TITLES = {
@@ -245,15 +237,18 @@ export async function renderPanel(route, state) {
     }
 
     if (panel === 'deliveries') {
-      return renderDeliveriesShell();
+      const m = await lazy.deliveries();
+      return m.renderDeliveriesShell();
     }
 
     if (panel === 'wastage') {
-      return renderWastageShell();
+      const m = await lazy.wastage();
+      return m.renderWastageShell();
     }
 
     if (panel === 'transfers') {
-      return renderTransfersShell();
+      const m = await lazy.transfers();
+      return m.renderTransfersShell();
     }
 
     if (panel === 'setup') {
@@ -271,7 +266,8 @@ export async function renderPanel(route, state) {
     }
 
     if (panel === 'counts') {
-      return renderCountsShell();
+      const m = await lazy.counts();
+      return m.renderCountsShell();
     }
 
     if (panel === 'kit') {
@@ -317,13 +313,16 @@ export async function mountPanel(route, state) {
     return m.mountDistributionPanel(route, state);
   }
   if (route.view === 'event' && route.panel === 'deliveries') {
-    return mountDeliveriesPanel(route);
+    const m = await lazy.deliveries();
+    return m.mountDeliveriesPanel(route);
   }
   if (route.view === 'event' && route.panel === 'wastage') {
-    return mountWastagePanel(route);
+    const m = await lazy.wastage();
+    return m.mountWastagePanel(route);
   }
   if (route.view === 'event' && route.panel === 'transfers') {
-    return mountTransfersPanel(route);
+    const m = await lazy.transfers();
+    return m.mountTransfersPanel(route);
   }
   if (route.view === 'event' && route.panel === 'setup') {
     return mountSetupPanel(route, state);
@@ -340,7 +339,8 @@ export async function mountPanel(route, state) {
     return m.mountSalesPanel(route);
   }
   if (route.view === 'event' && route.panel === 'counts') {
-    return mountCountsPanel(route);
+    const m = await lazy.counts();
+    return m.mountCountsPanel(route);
   }
   if (route.view === 'event' && route.panel === 'kit') {
     const m = await lazy.kit();
