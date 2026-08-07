@@ -537,10 +537,10 @@ body:has(.admin-app) .toast.err {
 
 /* Users panel */
 .users-invite {
-  margin-bottom: 1.25rem;
+  margin: 0 16px 12px;
   padding: 1rem;
   border: 1px solid var(--border, #e4e4e7);
-  border-radius: 4px;
+  border-radius: var(--radius, 8px);
   background: var(--muted-bg, #fafafa);
 }
 .users-invite-row {
@@ -550,94 +550,65 @@ body:has(.admin-app) .toast.err {
   margin-top: 0.5rem;
 }
 .users-invite-row .admin-input { flex: 1 1 12rem; }
-.users-table-wrap {
-  width: 100%;
+.users-list.settings-list {
+  padding-top: 8px;
 }
-.users-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 13px;
+.settings-row--user {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  cursor: pointer;
 }
-.users-table thead th {
-  padding: 10px 14px;
+.settings-row--user:hover {
+  background: var(--secondary);
+}
+.users-row-main {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
   text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.users-row-aside {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.users-role-pill {
+  display: inline-block;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
   color: var(--muted-foreground);
-  background: color-mix(in srgb, var(--secondary) 85%, var(--card));
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.users-table tbody td {
-  padding: 12px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  vertical-align: middle;
-  color: var(--foreground);
-}
-.users-table tbody tr:hover td {
-  background: color-mix(in srgb, var(--secondary) 45%, var(--card));
-}
-.users-table tbody tr:last-child td {
-  border-bottom: none;
-}
-.users-col-name {
-  width: 22%;
-}
-.users-col-email {
-  width: 38%;
-}
-.users-col-role {
-  width: 12%;
-}
-.users-col-status {
-  width: 12%;
-}
-.users-col-actions {
-  width: 16%;
-  text-align: right;
-}
-.users-name {
-  font-weight: 550;
+  padding: 2px 0;
+  min-width: 3.25rem;
 }
 .users-you {
   display: inline-block;
-  margin-left: 4px;
+  margin-left: 6px;
   padding: 1px 6px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  vertical-align: middle;
   border-radius: 4px;
+  color: var(--muted-foreground);
   background: var(--secondary, #f4f4f5);
-}
-.users-role {
-  text-transform: capitalize;
-  color: var(--muted-foreground);
-}
-.users-col-email {
-  color: var(--muted-foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.users-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  justify-content: flex-end;
-  align-items: center;
 }
 .users-badge {
   display: inline-block;
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 550;
   padding: 0.2rem 0.55rem;
   border-radius: 4px;
   border: 1px solid var(--border, #e4e4e7);
   text-transform: capitalize;
+  white-space: nowrap;
 }
 .users-badge--active {
   color: #15803d;
@@ -676,6 +647,21 @@ body:has(.admin-app) .toast.err {
   height: 1px;
   margin: 0.25rem 0 0.75rem;
   background: var(--border, #e4e4e7);
+}
+
+@media (max-width: 640px) {
+  .settings-row--user {
+    grid-template-columns: 12px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+  .users-row-aside {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .users-row-aside .settings-row-chev {
+    display: none;
+  }
 }
 
 .topbar-toolbar-strips {
@@ -3798,15 +3784,6 @@ body.admin-drawer-open {
 }
 .settings-section .users-invite {
   margin: 0 16px 12px;
-}
-.settings-section .admin-table-wrap {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 12px 16px 16px;
-}
-.settings-section .users-table-wrap {
-  padding-top: 12px;
 }
 .settings-card-head {
   display: flex;

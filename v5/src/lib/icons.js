@@ -51,6 +51,7 @@ import {
   Truck,
   Upload,
   Undo2,
+  User,
   WandSparkles,
   Warehouse,
   X,
@@ -107,6 +108,7 @@ const iconsByKebab = {
   'chevron-down': ChevronDown,
   'chevron-right': ChevronRight,
   'chevrons-up-down': ChevronsUpDown,
+  user: User,
 };
 
 function toCamelCase(name) {

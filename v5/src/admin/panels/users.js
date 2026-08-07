@@ -6,6 +6,7 @@
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { authFetch, getCachedProfile } from '../../lib/auth.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
+import { icon } from '../../lib/icons.js';
 
 /** @type {Array<Record<string, unknown>>} */
 let cachedProfiles = [];
@@ -31,7 +32,9 @@ export function renderUsersSection() {
           </p>
         </div>
         <div class="settings-card-actions">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="usersInviteBtn">Add user</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="usersInviteBtn">
+            ${icon('plus', { size: 14 })} Add user
+          </button>
         </div>
       </header>
       <div id="usersInviteForm" class="users-invite" hidden>
@@ -49,21 +52,8 @@ export function renderUsersSection() {
         </p>
         <div id="usersSetupResult" class="users-setup-result" hidden></div>
       </div>
-      <div class="admin-table-wrap users-table-wrap">
-        <table class="admin-table users-table" id="usersTable">
-          <thead>
-            <tr>
-              <th class="users-col-name">Name</th>
-              <th class="users-col-email">Email</th>
-              <th class="users-col-role">Role</th>
-              <th class="users-col-status">Status</th>
-              <th class="users-col-actions"></th>
-            </tr>
-          </thead>
-          <tbody id="usersTbody">
-            <tr><td colspan="5" class="muted">Loading…</td></tr>
-          </tbody>
-        </table>
+      <div class="settings-list users-list" id="usersList" role="list">
+        <div class="settings-list-empty muted">Loading…</div>
       </div>
     </div>
   `;
@@ -71,22 +61,29 @@ export function renderUsersSection() {
 
 function rowHtml(p, selfId) {
   const isSelf = p.id === selfId;
-  const actions = [];
-  if (p.status === 'pending') {
-    actions.push(`<button type="button" class="admin-drawer-btn" data-act="activate" data-id="${escapeHtml(p.id)}">Activate</button>`);
-  }
-  actions.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-act="edit" data-id="${escapeHtml(p.id)}">${isSelf ? 'Edit' : 'Manage'}</button>`);
+  const name = p.display_name || '—';
+  const email = p.email || '—';
+  const role = String(p.role || 'staff');
+  const pending = p.status === 'pending';
 
   return `
-    <tr data-user-id="${escapeHtml(p.id)}">
-      <td class="users-col-name">
-        <span class="users-name">${escapeHtml(p.display_name || '—')}</span>${isSelf ? ' <span class="users-you muted">you</span>' : ''}
-      </td>
-      <td class="users-col-email">${escapeHtml(p.email || '—')}</td>
-      <td class="users-col-role"><span class="users-role">${escapeHtml(p.role || '—')}</span></td>
-      <td class="users-col-status">${statusBadge(p.status)}</td>
-      <td class="users-col-actions users-actions">${actions.join(' ')}</td>
-    </tr>`;
+    <div class="settings-row settings-row--user" data-user-id="${escapeHtml(p.id)}" role="listitem">
+      <span class="settings-row-icon" aria-hidden="true">${icon('user', { size: 14 })}</span>
+      <button type="button" class="users-row-main" data-act="edit" data-id="${escapeHtml(p.id)}">
+        <span class="settings-row-main">
+          <span class="settings-row-name">
+            ${escapeHtml(name)}${isSelf ? ' <span class="users-you">you</span>' : ''}
+          </span>
+          <span class="settings-row-meta">${escapeHtml(email)}</span>
+        </span>
+      </button>
+      <span class="users-row-aside">
+        <span class="users-role-pill">${escapeHtml(role)}</span>
+        ${statusBadge(p.status)}
+        ${pending ? `<button type="button" class="admin-drawer-btn" data-act="activate" data-id="${escapeHtml(p.id)}">Activate</button>` : ''}
+        <span class="settings-row-chev" aria-hidden="true">${icon('chevron-right', { size: 16 })}</span>
+      </span>
+    </div>`;
 }
 
 function showSetupResult(data) {
@@ -153,21 +150,21 @@ function showTempPassword(password, loginUrl) {
 }
 
 async function loadUsers() {
-  const tbody = $('usersTbody');
-  if (!tbody) return;
+  const list = $('usersList');
+  if (!list) return;
   const res = await authFetch('/api/auth/users');
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">Failed to load users (${escapeHtml(data.error || String(res.status))})</td></tr>`;
+    list.innerHTML = `<div class="settings-list-empty muted">Failed to load users (${escapeHtml(data.error || String(res.status))})</div>`;
     return;
   }
   const selfId = getCachedProfile()?.id;
   cachedProfiles = data.profiles || [];
   if (!cachedProfiles.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">No users yet. Add someone with a setup link.</td></tr>`;
+    list.innerHTML = `<div class="settings-list-empty muted">No users yet. Add someone with a setup link.</div>`;
     return;
   }
-  tbody.innerHTML = cachedProfiles.map((p) => rowHtml(p, selfId)).join('');
+  list.innerHTML = cachedProfiles.map((p) => rowHtml(p, selfId)).join('');
 }
 
 async function patchUser(id, patch) {
@@ -365,13 +362,18 @@ export function mountUsersPanel() {
     }
   });
 
-  $('usersTbody')?.addEventListener('click', async (e) => {
+  $('usersList')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-act]');
-    if (!btn) return;
+    if (!btn) {
+      const row = e.target.closest('[data-user-id]');
+      if (row?.dataset.userId) openUserEditor(row.dataset.userId);
+      return;
+    }
     const id = btn.dataset.id;
     const act = btn.dataset.act;
     try {
       if (act === 'activate') {
+        e.stopPropagation();
         await patchUser(id, { status: 'active' });
         toast('Activated');
         await loadUsers();
