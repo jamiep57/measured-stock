@@ -285,18 +285,27 @@ function buildReconFilterSections() {
 
 function buildReconActiveItems() {
   const items = [];
-  reconState.categories.forEach((id) => {
-    const cat = reconCategoryOptions.find((c) => c.id === id);
-    items.push({ id: `categories:${id}`, label: cat?.name || id });
-  });
-  if (reconState.showHidden) {
-    items.push({ id: 'showHidden', label: 'Excluded from recon' });
-  }
-  RECON_COLS.forEach((c) => {
-    if (reconColVis[c.id] === false) {
-      items.push({ id: `visibleColumns:${c.id}`, label: c.label });
+  const onFilterTab = activeTab === 'filter';
+  const onColumnsTab = activeTab === 'columns';
+
+  if (!onFilterTab) {
+    reconState.categories.forEach((id) => {
+      const cat = reconCategoryOptions.find((c) => c.id === id);
+      items.push({ id: `categories:${id}`, label: cat?.name || id });
+    });
+    if (reconState.showHidden) {
+      items.push({ id: 'showHidden', label: 'Excluded from recon' });
     }
-  });
+  }
+
+  if (!onColumnsTab) {
+    RECON_COLS.forEach((c) => {
+      if (reconColVis[c.id] === false) {
+        items.push({ id: `visibleColumns:${c.id}`, label: c.label });
+      }
+    });
+  }
+
   return items;
 }
 
@@ -304,29 +313,37 @@ function buildActiveItems() {
   if (activeConfig?.id === 'recon') return buildReconActiveItems();
 
   const items = [];
+  const onFilterTab = activeTab === 'filter';
+  const onSortTab = activeTab === 'sort';
+  const onBarsTab = activeTab === 'bars';
 
-  distState.categories.forEach((cat) => {
-    items.push({ id: `categories:${cat}`, label: cat });
-  });
-
-  fixedColumnKeys()
-    .filter((k) => distState.hiddenColumns.includes(k))
-    .forEach((key) => {
-      const col = FIXED_COLUMNS.find((c) => c.key === key);
-      items.push({ id: `visibleFixedColumns:${key}`, label: col?.label || key });
+  // Skip chips already editable in the open tab — keeps the footer readable.
+  if (!onFilterTab) {
+    distState.categories.forEach((cat) => {
+      items.push({ id: `categories:${cat}`, label: cat });
     });
 
-  if (distState.sort !== DEFAULT_DIST.sort) {
+    fixedColumnKeys()
+      .filter((k) => distState.hiddenColumns.includes(k))
+      .forEach((key) => {
+        const col = FIXED_COLUMNS.find((c) => c.key === key);
+        items.push({ id: `visibleFixedColumns:${key}`, label: col?.label || key });
+      });
+  }
+
+  if (!onSortTab && distState.sort !== DEFAULT_DIST.sort) {
     const opt = buildSortSections()[0].options.find((o) => o.value === distState.sort);
     items.push({ id: 'sort', label: opt?.label || distState.sort });
   }
 
-  barColumnKeys()
-    .filter((k) => distState.hiddenColumns.includes(k))
-    .forEach((key) => {
-      const bar = bars.find((b) => `bar:${b.id}` === key);
-      items.push({ id: `visibleBars:${key}`, label: bar?.name || 'Bar' });
-    });
+  if (!onBarsTab) {
+    barColumnKeys()
+      .filter((k) => distState.hiddenColumns.includes(k))
+      .forEach((key) => {
+        const bar = bars.find((b) => `bar:${b.id}` === key);
+        items.push({ id: `visibleBars:${key}`, label: bar?.name || 'Bar' });
+      });
+  }
 
   return items;
 }

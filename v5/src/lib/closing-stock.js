@@ -10,6 +10,7 @@ import {
   resolveClosingCounts,
   roundN,
   supplierName,
+  supplierReturnCases,
 } from './recon.js';
 
 export { closingInvoiceQty, resolveClosingCounts };
@@ -93,6 +94,8 @@ export function buildClosingRow({
   suppliers = [],
   caseSizes = [],
   draft = null,
+  event = null,
+  supplierReturns = [],
 }) {
   const p = ep?.product || {};
   const pid = ep?.product_id;
@@ -108,15 +111,27 @@ export function buildClosingRow({
   const hasClosing = hasClosingCount(cl)
     || !!(draft && (draft.closingCases != null || draft.closingSingles != null));
 
+  // Same priority as recon: supplier_return_lines win over closing_stock.return_amount.
+  const fromReturnLines = supplierReturnCases(
+    supplierReturns,
+    pid,
+    event || { event_products: ep ? [ep] : [] },
+    caseSizes,
+  );
+  const storedReturn = fromReturnLines > 0
+    ? fromReturnLines
+    : (cl.return_amount != null ? Number(cl.return_amount) || 0 : 0);
+  const storedForm = returnAmountToForm(storedReturn);
+
   const returnCases = draft?.returnCases != null
     ? Number(draft.returnCases)
-    : parseQty(returnAmountToForm(cl.return_amount).cases);
+    : parseQty(storedForm.cases);
   const returnSingles = draft?.returnSingles != null
     ? Number(draft.returnSingles)
-    : parseQty(returnAmountToForm(cl.return_amount).singles);
+    : parseQty(storedForm.singles);
   const returnAmt = draft
     ? closeCountTotal(p, returnCases, returnSingles, caseSizes)
-    : (cl.return_amount != null ? Number(cl.return_amount) || 0 : closeCountTotal(p, returnCases, returnSingles, caseSizes));
+    : (storedReturn || closeCountTotal(p, returnCases, returnSingles, caseSizes));
 
   const carried = carriedOver(closeCount, returnAmt);
   const pack = productStockPack(p, caseSizes);
@@ -151,6 +166,7 @@ export function computeClosingRows({
   suppliers = [],
   caseSizes = [],
   drafts = {},
+  supplierReturns = [],
 }) {
   const eps = (event?.event_products || []).filter((ep) => ep.product?.name);
   return eps.map((ep) => buildClosingRow({
@@ -159,6 +175,8 @@ export function computeClosingRows({
     suppliers,
     caseSizes,
     draft: drafts[ep.product_id] || null,
+    event,
+    supplierReturns,
   }));
 }
 

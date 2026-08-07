@@ -76,9 +76,13 @@ function renderInlineInput(pid, fieldId, value) {
 }
 
 function rcnTh(col, label, extraClass = '', title = '') {
-  const tip = title || label;
-  return `<th class="rcn-th dist-col-header ${extraClass}" data-rcn-col="${col}" title="${escapeHtml(tip)}">
-    <div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(label)}</span></div>
+  const lines = Array.isArray(label) ? label : [label];
+  const tip = title || lines.join(' ');
+  const multiline = lines.length > 1;
+  const labelHtml = lines.map((line) => escapeHtml(line)).join('<br>');
+  const cls = [extraClass, multiline ? 'rcn-th--multiline' : ''].filter(Boolean).join(' ');
+  return `<th class="rcn-th dist-col-header ${cls}" data-rcn-col="${col}" title="${escapeHtml(tip)}">
+    <div class="dist-bar-head"><span class="dist-bar-name">${labelHtml}</span></div>
   </th>`;
 }
 
@@ -282,24 +286,24 @@ export function renderReconShell() {
           <thead>
             <tr class="rcn-head-row">
               ${rcnTh('item', 'Product', 'rcn-sticky rcn-col-item')}
-              ${rcnTh('case_price', 'Price', 'rcn-num--money')}
+              ${rcnTh('case_price', 'Price', 'rcn-num rcn-num--money')}
               ${rcnTh('supplier', 'Supplier', 'rcn-col-supplier')}
-              ${rcnTh('units_per_case', 'Units', 'rcn-meta', 'Units per case')}
-              ${rcnTh('delivered', 'Deliv.', 'rcn-group-start', 'Delivered')}
-              ${rcnTh('invoiced', 'Inv.', 'rcn-th--edit', 'Invoiced')}
-              ${rcnTh('closing_cases', 'Close C', 'rcn-th--edit', 'Closing cases')}
-              ${rcnTh('closing_units', 'Close S', 'rcn-th--edit', 'Closing singles')}
-              ${rcnTh('returned_to_supplier', 'Returns', 'rcn-group-start')}
-              ${rcnTh('transferred', 'Xfer', '', 'Transferred')}
-              ${rcnTh('wastage', 'Waste', '')}
-              ${rcnTh('consumption', 'Cons', 'rcn-group-start rcn-emphasis', 'Consumption')}
-              ${rcnTh('plu', 'PLU', 'rcn-emphasis')}
-              ${rcnTh('variance', 'Var', '', 'Variance')}
-              ${rcnTh('consumption_charge', 'Cons £', 'rcn-group-start rcn-num--money', 'Consumption charge')}
-              ${rcnTh('consumption_loose', 'Loose £', 'rcn-num--money rcn-emphasis', 'Closing singles ÷ units per case × price')}
-              ${rcnTh('plu_charge', 'PLU £', 'rcn-num--money')}
-              ${rcnTh('invoice_charge', 'Inv £', 'rcn-num--money', 'Invoice charge')}
-              ${rcnTh('budget_cost', 'Budget', 'rcn-num--money rcn-budget')}
+              ${rcnTh('units_per_case', 'Units', 'rcn-num rcn-meta', 'Units per case')}
+              ${rcnTh('delivered', 'Delivered', 'rcn-num rcn-group-start')}
+              ${rcnTh('invoiced', 'Invoice', 'rcn-th--edit', 'Invoiced')}
+              ${rcnTh('closing_cases', ['Close', 'Cases'], 'rcn-th--edit', 'Closing cases')}
+              ${rcnTh('closing_units', ['Close', 'Singles'], 'rcn-th--edit', 'Closing singles')}
+              ${rcnTh('returned_to_supplier', 'Returns', 'rcn-num rcn-group-start')}
+              ${rcnTh('transferred', 'Transfer', 'rcn-num')}
+              ${rcnTh('wastage', 'Waste', 'rcn-num')}
+              ${rcnTh('consumption', 'Cons', 'rcn-num rcn-group-start rcn-emphasis', 'Consumption')}
+              ${rcnTh('plu', 'PLU', 'rcn-num rcn-emphasis')}
+              ${rcnTh('variance', 'Var', 'rcn-num', 'Variance')}
+              ${rcnTh('consumption_charge', 'Cons £', 'rcn-num rcn-num--money rcn-group-start', 'Consumption charge')}
+              ${rcnTh('consumption_loose', 'Loose £', 'rcn-num rcn-num--money rcn-emphasis', 'Closing singles ÷ units per case × price')}
+              ${rcnTh('plu_charge', 'PLU £', 'rcn-num rcn-num--money')}
+              ${rcnTh('invoice_charge', 'Inv £', 'rcn-num rcn-num--money', 'Invoice charge')}
+              ${rcnTh('budget_cost', 'Budget', 'rcn-num rcn-num--money rcn-budget')}
             </tr>
           </thead>
           <tbody id="rcnBody">${loadingTableRow(RECON_COLS.length, 'Loading recon…')}</tbody>

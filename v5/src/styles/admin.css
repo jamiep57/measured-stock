@@ -5478,11 +5478,11 @@ body.admin-drawer-open {
 /* Financial recon */
 .rcn-panel {
   --rcn-item-w: 280px;
-  --rcn-meta-w: 52px;
-  --rcn-money-w: 80px;
-  --rcn-num-w: 64px;
+  --rcn-meta-w: 68px;
+  --rcn-money-w: 88px;
+  --rcn-num-w: 76px;
   --rcn-supplier-w: 108px;
-  --rcn-edit-w: 56px;
+  --rcn-edit-w: 76px;
   --rcn-thead-h: 36px;
   --rcn-group-border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   --dist-thead-h: var(--rcn-thead-h);
@@ -5653,6 +5653,10 @@ body.admin-drawer-open {
   hyphens: none;
   color: var(--muted-foreground);
 }
+.rcn-grid .rcn-th--multiline .dist-bar-name {
+  white-space: normal;
+  text-align: center;
+}
 .rcn-grid .rcn-col-item.rcn-th {
   padding-left: 14px !important;
   padding-right: 14px !important;
@@ -5729,16 +5733,33 @@ body.admin-drawer-open {
   width: var(--rcn-money-w);
   min-width: var(--rcn-money-w);
 }
+.rcn-grid .rcn-th.rcn-num,
+.rcn-grid .rcn-th.rcn-meta {
+  width: var(--rcn-num-w);
+  min-width: var(--rcn-num-w);
+}
+.rcn-grid .rcn-th.rcn-meta {
+  width: var(--rcn-meta-w);
+  min-width: var(--rcn-meta-w);
+}
+.rcn-grid .rcn-th.rcn-num--money {
+  width: var(--rcn-money-w);
+  min-width: var(--rcn-money-w);
+}
+.rcn-grid .rcn-th--edit {
+  width: var(--rcn-edit-w);
+  min-width: var(--rcn-edit-w);
+}
 .rcn-cell--edit {
   width: var(--rcn-edit-w);
   min-width: var(--rcn-edit-w);
   padding: 0 !important;
   text-align: center;
   vertical-align: stretch;
-  background: #f7f7f8 !important;
+  background: color-mix(in srgb, var(--secondary) 35%, var(--card)) !important;
 }
 .recon-row:hover .rcn-cell--edit {
-  background: #f3f3f5 !important;
+  background: color-mix(in srgb, var(--secondary) 55%, var(--card)) !important;
 }
 
 /* Product cell — matches topbar product search results */
@@ -5985,8 +6006,8 @@ td.rcn-num:not(:has(*)) {
   box-shadow: none;
 }
 .rcn-cell--edit:focus-within {
-  background: #f0f0f2 !important;
-  box-shadow: inset 0 0 0 1.5px var(--foreground);
+  background: var(--card) !important;
+  box-shadow: inset 0 0 0 1px var(--foreground);
 }
 
 /* Drawer-click cells */

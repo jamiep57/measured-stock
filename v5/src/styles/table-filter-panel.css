@@ -191,6 +191,7 @@
   flex-shrink: 0;
   padding: 6px 10px 10px;
   border-top: 1px dashed color-mix(in srgb, var(--border) 85%, transparent);
+  min-height: 0;
 }
 
 .tfp-active {
@@ -198,25 +199,27 @@
   margin: 0 0 6px;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 88px;
+  overflow-y: auto;
 }
 
 .tfp-active-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 2px 4px 2px 8px;
+  gap: 2px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 1px 2px 1px 8px;
   border-radius: var(--radius);
   background: var(--secondary);
 }
 
 .tfp-active-label {
-  flex: 1;
   min-width: 0;
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: 11px;
+  line-height: 1.25;
   color: var(--foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -228,8 +231,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: none;
   border-radius: var(--radius-sm);

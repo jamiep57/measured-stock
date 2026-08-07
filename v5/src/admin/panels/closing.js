@@ -26,7 +26,7 @@ import {
   returnAmountToForm,
 } from '../../lib/closing-stock.js';
 import { printClosingCountSheet } from '../../lib/count-sheets-print.js';
-import { closingRowFor, roundN } from '../../lib/recon.js';
+import { closingRowFor, preferredSupplierId, roundN } from '../../lib/recon.js';
 import {
   generatePalletStickerPDF,
   splitPalletQtys,
@@ -259,6 +259,7 @@ export function mountClosingPanel(route) {
     eventId: route.eventId,
     event: null,
     closingRows: [],
+    supplierReturns: [],
     suppliers: [],
     caseSizes: [],
     drafts: {},
@@ -325,9 +326,26 @@ export function mountClosingPanel(route) {
     const singlesEl = document.getElementById(`cl-singles-${pid}`);
     const retCasesEl = document.getElementById(`cl-return-cases-${pid}`);
     const retSinglesEl = document.getElementById(`cl-return-singles-${pid}`);
-    const cl = rowFor(ctx.closingRows, pid) || {};
-    const countBase = closingCountToForm(cl);
-    const returnBase = returnAmountToForm(cl.return_amount);
+    const ep = ctx.event?.event_products?.find((x) => x.product_id === pid);
+    const stored = ep
+      ? buildClosingRow({
+        ep,
+        closingRow: rowFor(ctx.closingRows, pid) || {},
+        suppliers: ctx.suppliers,
+        caseSizes: ctx.caseSizes,
+        event: ctx.event,
+        supplierReturns: ctx.supplierReturns,
+      })
+      : null;
+    const countBase = stored
+      ? { cases: String(stored.closingCases ?? 0), singles: String(stored.closingSingles ?? 0) }
+      : closingCountToForm(rowFor(ctx.closingRows, pid) || {});
+    const returnBase = stored
+      ? {
+        cases: Number(stored.returnCases) > 0 ? String(stored.returnCases) : '',
+        singles: Number(stored.returnSingles) > 0 ? String(stored.returnSingles) : '',
+      }
+      : returnAmountToForm(rowFor(ctx.closingRows, pid)?.return_amount);
     // Prefer live inputs when present (empty field = 0). Fall back to stored
     // values only if the row was re-rendered away mid-save.
     return {
@@ -345,6 +363,7 @@ export function mountClosingPanel(route) {
       suppliers: ctx.suppliers,
       caseSizes: ctx.caseSizes,
       drafts: ctx.drafts,
+      supplierReturns: ctx.supplierReturns,
     });
   }
 
@@ -551,6 +570,8 @@ export function mountClosingPanel(route) {
       suppliers: ctx.suppliers,
       caseSizes: ctx.caseSizes,
       draft,
+      event: ctx.event,
+      supplierReturns: ctx.supplierReturns,
     });
 
     let allowOverMaxReturnable = !!opts.allowOverMaxReturnable;
@@ -604,6 +625,28 @@ export function mountClosingPanel(route) {
       budget_override: cl.budget_override ?? null,
     });
     if (saved?.id) cl.id = saved.id;
+
+    // Keep supplier_return_lines in sync so Recon and Closing share one return figure.
+    const returnAmt = Number(patch.return_amount) || 0;
+    const sid = preferredSupplierId(ep.product);
+    try {
+      const returnRows = (returnAmt > 0 && sid)
+        ? [{
+          event_id: ctx.eventId,
+          product_id: pid,
+          supplier_id: sid,
+          qty: returnAmt,
+          singles: 0,
+        }]
+        : [];
+      await DB.supplierReturns.replaceForProduct(ctx.eventId, pid, returnRows);
+      ctx.supplierReturns = (ctx.supplierReturns || [])
+        .filter((r) => r.product_id !== pid)
+        .concat(returnRows);
+    } catch (retErr) {
+      console.warn('closing persist supplier returns', retErr);
+    }
+
     ctx.recentLocalWrites.set(pid, Date.now());
     delete ctx.drafts[pid];
 
@@ -612,6 +655,8 @@ export function mountClosingPanel(route) {
       closingRow: cl,
       suppliers: ctx.suppliers,
       caseSizes: ctx.caseSizes,
+      event: ctx.event,
+      supplierReturns: ctx.supplierReturns,
     });
     const carriedEl = document.getElementById(`cl-carried-${pid}`);
     const maxEl = document.getElementById(`cl-max-${pid}`);
@@ -641,6 +686,8 @@ export function mountClosingPanel(route) {
       suppliers: ctx.suppliers,
       caseSizes: ctx.caseSizes,
       draft,
+      event: ctx.event,
+      supplierReturns: ctx.supplierReturns,
     });
     const carriedEl = document.getElementById(`cl-carried-${pid}`);
     if (carriedEl) {
