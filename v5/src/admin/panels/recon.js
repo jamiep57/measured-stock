@@ -44,7 +44,12 @@ const STATUS_TITLES = {
   blue: 'None returned',
 };
 
-function groupByCategory(rows) {
+function groupByCategory(rows, sort = 'category') {
+  if (sort === 'name' || sort === 'name-desc') {
+    const list = [...rows].sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
+    if (sort === 'name-desc') list.reverse();
+    return { All: list };
+  }
   const grouped = {};
   rows.forEach((r) => {
     const cat = r.p?.category?.name || 'Uncategorised';
@@ -260,24 +265,6 @@ function applyColVisibility(root, colVis) {
 export function renderReconShell() {
   return `
     <div class="rcn-panel" id="rcnPanel">
-      <div class="rcn-toolbar" id="rcnFilterRow">
-        <div class="rcn-seg" role="tablist" aria-label="Status filter">
-          <button type="button" class="rcn-seg-btn is-active" data-rcn-filter="" role="tab" aria-selected="true">All</button>
-          <button type="button" class="rcn-seg-btn" data-rcn-filter="red" role="tab" aria-selected="false">
-            <span class="rcn-seg-dot rcn-seg-dot--red"></span> Action
-          </button>
-          <button type="button" class="rcn-seg-btn" data-rcn-filter="yellow" role="tab" aria-selected="false">
-            <span class="rcn-seg-dot rcn-seg-dot--yellow"></span> Review
-          </button>
-          <button type="button" class="rcn-seg-btn" data-rcn-filter="green" role="tab" aria-selected="false">
-            <span class="rcn-seg-dot rcn-seg-dot--green"></span> Done
-          </button>
-          <button type="button" class="rcn-seg-btn" data-rcn-filter="blue" role="tab" aria-selected="false">
-            <span class="rcn-seg-dot rcn-seg-dot--blue"></span> None returned
-          </button>
-          <button type="button" class="rcn-seg-btn" data-rcn-filter="none" role="tab" aria-selected="false">Unmarked</button>
-        </div>
-      </div>
       <div class="dist-grid-wrap rcn-table-wrap" id="rcnTableWrap">
         <table class="dist-grid rcn-grid" id="rcnTable">
           <thead>
@@ -339,6 +326,7 @@ export function mountReconPanel(route) {
     statusFilter: '',
     categoryFilter: [],
     showHidden: false,
+    sort: 'category',
     colVis: loadReconColVisibility(),
     drafts: {},
     saving: false,
@@ -438,13 +426,16 @@ export function mountReconPanel(route) {
       return;
     }
 
-    const grouped = groupByCategory(rows);
+    const grouped = groupByCategory(rows, ctx.sort || 'category');
     let html = '';
+    const flat = ctx.sort === 'name' || ctx.sort === 'name-desc';
     Object.keys(grouped).sort().forEach((cat) => {
-      html += `<tr class="dist-cat-row">
+      if (!flat) {
+        html += `<tr class="dist-cat-row">
         <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
         <td colspan="${RECON_COLS.length - 1}" class="dist-cat-scroll"></td>
       </tr>`;
+      }
       grouped[cat].forEach((r) => { html += renderRow(r); });
     });
     html += renderTotalRow(reconTotals(totalSource));
@@ -1048,17 +1039,6 @@ export function mountReconPanel(route) {
       openDrawer(editBtn.dataset.rcnEdit);
       return;
     }
-    const filterBtn = e.target.closest('[data-rcn-filter]');
-    if (filterBtn) {
-      ctx.statusFilter = filterBtn.dataset.rcnFilter || '';
-      panel.querySelectorAll('[data-rcn-filter]').forEach((b) => {
-        const on = (b.dataset.rcnFilter || '') === ctx.statusFilter;
-        b.classList.toggle('is-active', on);
-        b.setAttribute('aria-selected', on ? 'true' : 'false');
-      });
-      renderTable();
-      return;
-    }
   });
 
   panel.addEventListener('input', (e) => {
@@ -1105,6 +1085,14 @@ export function mountReconPanel(route) {
     }
     if (typeof values.showHidden === 'boolean' && values.showHidden !== ctx.showHidden) {
       ctx.showHidden = values.showHidden;
+      needsRender = true;
+    }
+    if (typeof values.statusFilter === 'string' && values.statusFilter !== ctx.statusFilter) {
+      ctx.statusFilter = values.statusFilter;
+      needsRender = true;
+    }
+    if (typeof values.sort === 'string' && values.sort !== ctx.sort) {
+      ctx.sort = values.sort;
       needsRender = true;
     }
     if (needsRender) renderTable();

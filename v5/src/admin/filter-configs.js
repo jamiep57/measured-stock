@@ -1019,37 +1019,37 @@ export const projectionsConfig = simpleEventConfig({
 });
 
 export const dashboardConfig = {
-  ...projectionsConfig,
-  id: 'dashboard',
-  match: eventMatch('dashboard'),
-  routeKey: (route) => `dashboard:${route.eventId}`,
-  defaults: () => ({ runoutFilter: 'all', sort: 'name', sortDir: 'asc' }),
-  persist: { keys: ['sort', 'sortDir'], storageKey: 'v5DashboardTableFilter' },
-  createState() {
-    return loadPersisted('v5DashboardTableFilter', {
-      runoutFilter: 'all', sort: 'name', sortDir: 'asc',
-    }, ['sort', 'sortDir']);
-  },
-  buildFilterSections() {
-    return [];
-  },
-};
-
-// Fix dashboard — simpleEventConfig baked match/id; redefine properly
-Object.assign(dashboardConfig, {
   id: 'dashboard',
   match: eventMatch('dashboard'),
   routeKey: (route) => `dashboard:${route.eventId}`,
   defaults: () => ({ sort: 'name', sortDir: 'asc' }),
+  persist: { keys: ['sort', 'sortDir'], storageKey: 'v5DashboardTableFilter' },
   createState() {
     return loadPersisted('v5DashboardTableFilter', { sort: 'name', sortDir: 'asc' }, ['sort', 'sortDir']);
   },
-  persist: { keys: ['sort', 'sortDir'], storageKey: 'v5DashboardTableFilter' },
+  getContext() { return {}; },
+  onStateChange(state) {
+    savePersisted('v5DashboardTableFilter', state, ['sort', 'sortDir']);
+  },
+  toValues(state) {
+    return {
+      sortKey: state.sort || 'name',
+      sortDir: state.sortDir || 'asc',
+    };
+  },
   buildTabs(api) {
     const state = api.getState();
     const h = makeControllerHelpers(api);
-    const sortOptions = projectionsConfig.sortOptions || [
+    const sortOptions = [
       { value: 'name', label: 'Name' },
+      { value: 'servingsSold', label: 'Servings sold' },
+      { value: 'baselineCases', label: 'Baseline cases' },
+      { value: 'projectedCases', label: 'Projected cases' },
+      { value: 'delivered', label: 'Delivered' },
+      { value: 'wastage', label: 'Wastage' },
+      { value: 'available', label: 'Available' },
+      { value: 'runOutRevenue', label: 'Run-out revenue' },
+      { value: 'pct', label: '% used' },
     ];
     return [{
       id: 'sort',
@@ -1074,17 +1074,20 @@ Object.assign(dashboardConfig, {
       },
     }];
   },
-  toValues(state) {
-    return {
-      sortKey: state.sort || 'name',
-      sortDir: state.sortDir || 'asc',
-    };
+  buildActiveItems(api) {
+    const state = api.getState();
+    if (api.getActiveTab() === 'sort' || state.sort === 'name') return [];
+    return [{ id: 'sort', label: state.sort }];
+  },
+  removeActiveItem(api, id) {
+    if (id !== 'sort') return false;
+    api.setState({ ...api.getState(), sort: 'name', sortDir: 'asc' });
+    return true;
   },
   isActive(api) {
-    const state = api.getState();
-    return state.sort !== 'name';
+    return api.getState().sort !== 'name';
   },
-});
+};
 
 function viewConfig({
   id, defaults, persist, buildFilterSections, sortOptions, toValues,
@@ -1156,7 +1159,7 @@ export const kitLibraryConfig = viewConfig({
   defaults: () => ({
     category: '',
     stockFilter: 'all',
-    showArchived: false,
+    showArchived: 'hide',
     sort: 'name',
     sortDir: 'asc',
   }),
@@ -1212,44 +1215,6 @@ export const kitLibraryConfig = viewConfig({
     };
   },
 });
-
-// Fix kit-library showArchived radio values mapping in buildTabs via custom createState
-kitLibraryConfig.createState = function createState() {
-  const raw = loadPersisted('v5KitLibraryTableFilter', {
-    category: '',
-    stockFilter: 'all',
-    showArchived: 'hide',
-    sort: 'name',
-    sortDir: 'asc',
-  }, ['sort', 'sortDir']);
-  return {
-    ...raw,
-    showArchived: raw.showArchived === true || raw.showArchived === 'show' ? 'show' : 'hide',
-  };
-};
-const kitLibBuild = kitLibraryConfig.buildTabs;
-kitLibraryConfig.buildTabs = function buildTabs(api) {
-  const tabs = kitLibBuild.call(this, api);
-  const filter = tabs.find((t) => t.id === 'filter');
-  if (!filter) return tabs;
-  const orig = filter.onChange;
-  filter.onChange = (sectionId, value) => {
-    if (sectionId === 'showArchived') {
-      api.setState({ ...api.getState(), showArchived: value });
-      api.syncUi();
-      api.emit();
-      return;
-    }
-    orig(sectionId, value);
-  };
-  filter.values = {
-    ...filter.values,
-    showArchived: api.getState().showArchived === 'show' || api.getState().showArchived === true
-      ? 'show'
-      : 'hide',
-  };
-  return tabs;
-};
 
 export const suppliersConfig = viewConfig({
   id: 'suppliers',
