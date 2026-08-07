@@ -236,7 +236,7 @@ export function mountLibraryPanel() {
   let sortDir = 1;
   let filterCat = '';
   let filterSup = '';
-  let filterSups = [];
+  let filterSupIds = [];
   let productFilter = getLastProductFilter();
   let mergeMode = false;
   const selected = new Set();
@@ -245,7 +245,7 @@ export function mountLibraryPanel() {
   if (seeded) {
     filterCat = seeded.categoryFilter || '';
     filterSup = seeded.supplierFilter || '';
-    filterSups = Array.isArray(seeded.supplierFilters)
+    filterSupIds = Array.isArray(seeded.supplierFilters)
       ? [...seeded.supplierFilters]
       : (seeded.supplierFilter ? [seeded.supplierFilter] : []);
     sortKey = seeded.sortKey || 'name';
@@ -265,9 +265,9 @@ export function mountLibraryPanel() {
     const pid = productFilter.productId;
     return products.filter((p) => {
       if (filterCat && p.category?.name !== filterCat) return false;
-      if (filterSupIds.length) {
+      if (filterSups.length) {
         const sid = preferredSupplierId(p);
-        const match = filterSupIds.some((filter) => {
+        const match = filterSups.some((filter) => {
           if (filter === '__none__') return !sid && !preferredSupplier(p);
           return sid === filter;
         });
