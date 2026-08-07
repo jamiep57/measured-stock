@@ -3,7 +3,7 @@ import { $, toast } from '../lib/util.js';
 import { initIcons } from '../lib/icons.js';
 import { loadDbScript } from '../lib/load-db.js';
 import { loadEventsList } from '../db.js';
-import { parseRoute, navigate, startRouter, linkSidebar } from './router.js';
+import { parseRoute, navigate, startRouter, linkSidebar, hrefForRoute } from './router.js';
 import { initSidebar, syncSidebar } from './sidebar.js';
 import { readRememberedEventId, writeRememberedEventId } from './event-workspace.js';
 import { initSheet } from '../components/sheet.js';
@@ -53,6 +53,15 @@ async function render(route) {
     const canonical = '/v5/admin/dev/audit';
     if (location.pathname.replace(/\/+$/, '') !== canonical) {
       navigate({ view: 'audit' }, { replace: true });
+      route = parseRoute();
+    }
+  }
+
+  // Canonical settings URLs are /v5/admin/settings/:section (legacy /users, /case-sizes, bare /settings).
+  if (route.view === 'settings') {
+    const canonical = hrefForRoute(route);
+    if (location.pathname.replace(/\/+$/, '') !== canonical) {
+      navigate(route, { replace: true });
       route = parseRoute();
     }
   }
@@ -136,7 +145,9 @@ function wireNav() {
     const a = e.target.closest('a[data-route]:not([data-event])');
     if (!a) return;
     e.preventDefault();
-    navigate({ view: a.dataset.route });
+    const view = a.dataset.route;
+    if (view === 'settings') navigate({ view: 'settings', section: a.dataset.section || 'users' });
+    else navigate({ view });
     render(parseRoute());
   });
 
@@ -146,7 +157,9 @@ function wireNav() {
       const globalLink = e.target.closest('a[data-route]:not([data-event])');
       if (globalLink) {
         e.preventDefault();
-        navigate({ view: globalLink.dataset.route });
+        const view = globalLink.dataset.route;
+        if (view === 'settings') navigate({ view: 'settings', section: globalLink.dataset.section || 'users' });
+        else navigate({ view });
         render(parseRoute());
         return;
       }

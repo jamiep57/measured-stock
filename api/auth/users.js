@@ -7,7 +7,7 @@ import {
   createUserWithPassword,
 } from '../../lib/supabase-auth-admin.js';
 import { sendAccountApprovedEmail } from '../../lib/postmark.js';
-import { appLoginUrl } from '../../lib/app-url.js';
+import { appLoginUrl, appOnboardUrl } from '../../lib/app-url.js';
 
 /** @param {import('http').IncomingMessage} req */
 function bearerToken(req) {
@@ -149,9 +149,10 @@ export default async function handler(req, res) {
         return;
       }
       const role = body.role === 'admin' ? 'admin' : 'staff';
-      // Default to password — invite verify links break when Site URL is localhost.
-      const mode = body.mode === 'link' ? 'link' : 'password';
-      const redirectTo = appLoginUrl(req);
+      // Default: invite link → /onboard signup form. mode=password still available.
+      const mode = body.mode === 'password' ? 'password' : 'link';
+      const loginUrl = appLoginUrl(req);
+      const onboardUrl = appOnboardUrl(req);
       const meta = { invited_by: auth.profile.email || auth.user.id };
 
       if (mode === 'password') {
@@ -171,15 +172,15 @@ export default async function handler(req, res) {
           user: created,
           email,
           temporary_password: password,
-          login_url: redirectTo,
+          login_url: loginUrl,
           hint: 'Share the login URL and temporary password privately. No email was sent.',
         });
         return;
       }
 
-      // Default: setup link (no email sent)
+      // Invite action link → /onboard (user picks their own password)
       const generated = await generateSetupLink(email, {
-        redirectTo,
+        redirectTo: onboardUrl,
         data: meta,
       });
       const userId = generated.user?.id;
@@ -193,8 +194,9 @@ export default async function handler(req, res) {
         user: generated.user,
         email,
         setup_link: generated.setup_link,
-        login_url: redirectTo,
-        hint: 'Copy and share this link. The recipient sets a password; no email was sent.',
+        onboard_url: onboardUrl,
+        login_url: loginUrl,
+        hint: 'Share this link. They choose a password on the signup form; no email was sent.',
       });
       return;
     }

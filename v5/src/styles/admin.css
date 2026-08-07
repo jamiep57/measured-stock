@@ -3648,23 +3648,82 @@ body.admin-drawer-open {
 }
 
 /* Workspace settings */
+.settings-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.settings-shell-head {
+  flex-shrink: 0;
+  padding: 18px 20px 0;
+}
+.settings-shell-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--foreground);
+}
 .settings-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 0.9fr) minmax(240px, 0.9fr) minmax(320px, 1.5fr);
-  gap: 12px;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 0;
   flex: 1;
   min-height: 0;
   align-items: stretch;
 }
-.settings-card {
+.settings-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px 16px 16px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  min-height: 0;
+}
+.settings-subnav-link {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.settings-subnav-link:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.settings-subnav-link.is-active {
+  background: var(--secondary);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.settings-pane {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0;
+  min-width: 0;
   overflow: hidden;
 }
-.settings-card--warehouses {
-  min-width: 0;
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.settings-section .users-invite {
+  margin: 0 16px 12px;
+}
+.settings-section .admin-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 16px 16px;
 }
 .settings-card-head {
   display: flex;
@@ -3894,25 +3953,25 @@ body.admin-drawer-open {
 .cat-badge--softs { background: #f0fdfa; color: #0f766e; border-color: #99f6e4; }
 .cat-badge--spirits { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
 
-@media (max-width: 1100px) {
-  .settings-layout {
-    grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.6fr);
-  }
-  .settings-card--warehouses {
-    grid-column: 1 / -1;
-  }
-}
-
 @media (max-width: 960px) {
   .settings-layout {
     grid-template-columns: 1fr;
-    overflow-y: auto;
+    grid-template-rows: auto minmax(0, 1fr);
   }
-  .settings-card--warehouses {
-    grid-column: auto;
+  .settings-subnav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 12px 16px 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
   }
-  .settings-card {
-    min-height: 320px;
+  .settings-subnav-link {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
   .settings-cs-cols,
   .settings-row--cs {
