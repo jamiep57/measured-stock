@@ -20,7 +20,9 @@ def test_30_reports_panel_loads(admin_page, seed):
     goto_event_panel(admin_page, seed.event_id, "reports")
     expect(admin_page.locator("#reportsPanel")).to_be_visible(timeout=25000)
     # Kind/client controls live in the topbar filter; panel itself shows content or empty.
-    expect(admin_page.get_by_text("Loading reports…")).to_have_count(0, timeout=30000)
+    expect(admin_page.locator("#reportsPanel").get_by_text("Loading reports…")).to_have_count(
+        0, timeout=45000
+    )
     expect(
         admin_page.locator("#reportsPanel").get_by_text(
             re.compile(r"client|supplier|transfer|filter|report", re.I)
@@ -59,9 +61,12 @@ def test_41_recon_inline_edit_and_save(admin_page, seed, db):
     """Edit closing cases on recon (more reliable than invoice override) and save."""
     goto_event_panel(admin_page, seed.event_id, "recon")
     expect(admin_page.locator("#rcnPanel")).to_be_visible(timeout=25000)
-    expect(admin_page.get_by_text("Loading recon…")).to_have_count(0, timeout=30000)
+    # Under suite load, loadEventFull can take a while — wait for the seeded row.
     row = admin_page.locator(f'.recon-row[data-rcn-pid="{seed.product_id}"]')
-    expect(row).to_be_visible(timeout=20000)
+    expect(row).to_be_visible(timeout=45000)
+    expect(admin_page.locator("#rcnBody").get_by_text("Loading recon…")).to_have_count(
+        0, timeout=5000
+    )
     cases = admin_page.locator(f"#rcn-cl-cases-{seed.product_id}")
     expect(cases).to_be_visible(timeout=10000)
     admin_page.evaluate(

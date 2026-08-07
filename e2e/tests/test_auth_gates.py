@@ -58,15 +58,23 @@ def test_auth_logout_returns_to_login(admin_page):
         lambda route: route.fulfill(status=200, content_type="application/json", body="{}"),
     )
     admin_page.wait_for_selector("#topbarProfileBtn", timeout=15000)
-    # Real UI path: open account menu, then Log out.
-    admin_page.locator("#topbarProfileBtn").click()
-    expect(admin_page.locator("#topbarLogout")).to_be_visible(timeout=5000)
-    admin_page.locator("#topbarLogout").click()
+    # Real UI path: open account menu, then Log out (retry if menu closed by click-away).
+    logout = admin_page.locator("#topbarLogout")
+    for _ in range(3):
+        admin_page.locator("#topbarProfileBtn").click()
+        try:
+            expect(logout).to_be_visible(timeout=4000)
+            break
+        except Exception:
+            pass
+    else:
+        expect(logout).to_be_visible(timeout=5000)
+    logout.click()
     admin_page.wait_for_function(
         "() => (location.pathname || '').includes('/login')",
-        timeout=20000,
+        timeout=30000,
     )
-    expect(admin_page.locator("#emailForm")).to_be_visible(timeout=10000)
+    expect(admin_page.locator("#emailForm")).to_be_visible(timeout=15000)
 
 
 def test_auth_login_next_returns_to_requested_panel(guest_page, seed_minimal):

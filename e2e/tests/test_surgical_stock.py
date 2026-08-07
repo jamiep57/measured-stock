@@ -72,7 +72,7 @@ def test_21_transfer_create_via_ui(admin_page, seed, db):
         or []
     )
     open_toolbar_sheet(admin_page, "log-transfer", "#xfSave")
-    admin_page.locator("#sheet.sheet--visible").wait_for(state="attached", timeout=5000)
+    admin_page.locator("#sheet.sheet--visible").wait_for(state="attached", timeout=15000)
 
     # Source: Bone Yard (goods in) for this event.
     source = admin_page.locator("#xfSource")

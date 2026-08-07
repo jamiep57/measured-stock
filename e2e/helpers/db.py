@@ -230,6 +230,10 @@ def seed_world(db: Client, *, full: bool = True) -> SeededWorld:
         .data
     )
     world.product_id = product[0]["id"]
+    # Confirm the product row is readable before event_products (avoids rare FK races).
+    assert (
+        db.table("products").select("id").eq("id", world.product_id).limit(1).execute().data
+    ), f"seeded product {world.product_id} missing immediately after insert"
 
     # Preferred offer row (multi-supplier model)
     try:
@@ -514,35 +518,74 @@ def cleanup_world(db: Client, world: SeededWorld) -> None:
 
 
 def sweep_orphaned_e2e(db: Client) -> dict[str, int]:
-    """Session-end safety net: remove any leftover [E2E] rows."""
+    """Session-end safety net: remove any leftover [E2E] rows.
+
+    Never raises — leftover FK references or concurrent UI deletes should not
+    fail the suite. Order: events → E2E-named products → products still pointing
+    at E2E suppliers → suppliers → categories.
+    """
     counts = {"events": 0, "products": 0, "suppliers": 0, "categories": 0}
 
     events = (
         db.table("events").select("id").ilike("name", f"{E2E_PREFIX}%").execute().data or []
     )
     for row in events:
-        db.table("events").delete().eq("id", row["id"]).execute()
-        counts["events"] += 1
+        try:
+            db.table("events").delete().eq("id", row["id"]).execute()
+            counts["events"] += 1
+        except Exception:
+            pass
 
     products = (
         db.table("products").select("id").ilike("name", f"{E2E_PREFIX}%").execute().data or []
     )
     for row in products:
-        _delete_product(db, row["id"])
-        counts["products"] += 1
+        try:
+            _delete_product(db, row["id"])
+            counts["products"] += 1
+        except Exception:
+            pass
 
     suppliers = (
         db.table("suppliers").select("id").ilike("name", f"{E2E_PREFIX}%").execute().data or []
     )
-    for row in suppliers:
-        db.table("suppliers").delete().eq("id", row["id"]).execute()
-        counts["suppliers"] += 1
+    supplier_ids = [row["id"] for row in suppliers if row.get("id")]
+    # Clear products that still reference E2E suppliers (name may not match prefix).
+    for supplier_id in supplier_ids:
+        try:
+            linked = (
+                db.table("products").select("id").eq("supplier_id", supplier_id).execute().data
+                or []
+            )
+        except Exception:
+            linked = []
+        for prow in linked:
+            try:
+                _delete_product(db, prow["id"])
+                counts["products"] += 1
+            except Exception:
+                try:
+                    db.table("products").update({"supplier_id": None}).eq(
+                        "id", prow["id"]
+                    ).execute()
+                except Exception:
+                    pass
+
+    for supplier_id in supplier_ids:
+        try:
+            db.table("suppliers").delete().eq("id", supplier_id).execute()
+            counts["suppliers"] += 1
+        except Exception:
+            pass
 
     categories = (
         db.table("categories").select("id").ilike("name", f"{E2E_PREFIX}%").execute().data or []
     )
     for row in categories:
-        db.table("categories").delete().eq("id", row["id"]).execute()
-        counts["categories"] += 1
+        try:
+            db.table("categories").delete().eq("id", row["id"]).execute()
+            counts["categories"] += 1
+        except Exception:
+            pass
 
     return counts
