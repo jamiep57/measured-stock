@@ -5,7 +5,7 @@
 import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
 import { initIcons } from '../../lib/icons.js';
 import {
-  getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, loadSuppliers,
+  getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, loadSuppliers, loadRecipesFull,
 } from '../../db.js';
 import { getQueueStats } from '../../sync-queue.js';
 import { loadingWidget } from '../../components/loading-widget.js';
@@ -225,7 +225,7 @@ export function mountAuditPanel(route) {
         DB.closing.forEvent(ctx.eventId),
         DB.tillImports.forEvent(ctx.eventId).catch(() => null),
         DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
-        DB.recipes.listFull().catch(() => []),
+        loadRecipesFull(),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
         DB.transfers.forEvent(ctx.eventId).catch(() => []),
         DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
