@@ -158,37 +158,63 @@ export function mountDashboardPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, modImport, recipes, caseSizes, deliveries, wastageBatches] = await Promise.all([
+    const [event, caseSizes] = await Promise.all([
       loadEventLite(ctx.eventId),
-      DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-      DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
-      loadRecipesFull(),
       loadCaseSizes(),
-      DB.deliveries.forEvent(ctx.eventId).catch(() => []),
-      DB.wastage.forEvent(ctx.eventId).catch(() => []),
     ]);
     if (ctx.abort) return;
 
     ctx.event = event;
     ctx.eps = (event?.event_products || []).filter((ep) => ep.product?.name);
     ctx.bars = (event?.bars || []).filter((b) => !isBoneYard(b));
-    ctx.tillImport = tillImport;
-    ctx.tillRows = tillImport?.rows || [];
-    ctx.modImport = modImport;
-    ctx.modRows = modImport?.rows || [];
-    ctx.recipes = recipes || [];
     ctx.products = productsFromEvent(event);
     ctx.caseSizes = caseSizes || [];
+    ctx.tillImport = null;
+    ctx.tillRows = [];
+    ctx.modImport = null;
+    ctx.modRows = [];
+    ctx.recipes = [];
     ctx.projection = computeStockProjection({
       event,
-      tillRows: ctx.tillRows,
-      recipes: ctx.recipes,
+      tillRows: [],
+      recipes: [],
       products: ctx.products,
       caseSizes: ctx.caseSizes,
-      deliveries: deliveries || [],
-      wastageBatches: wastageBatches || [],
+      deliveries: [],
+      wastageBatches: [],
     });
     paint();
+
+    try {
+      const [tillImport, modImport, recipes, deliveries, wastageBatches] = await Promise.all([
+        DB.tillImports.forEvent(ctx.eventId).catch(() => null),
+        DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
+        loadRecipesFull(),
+        DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+        DB.wastage.forEvent(ctx.eventId).catch(() => []),
+      ]);
+      if (ctx.abort) return;
+
+      ctx.tillImport = tillImport;
+      ctx.tillRows = tillImport?.rows || [];
+      ctx.modImport = modImport;
+      ctx.modRows = modImport?.rows || [];
+      ctx.recipes = recipes || [];
+      ctx.projection = computeStockProjection({
+        event,
+        tillRows: ctx.tillRows,
+        recipes: ctx.recipes,
+        products: ctx.products,
+        caseSizes: ctx.caseSizes,
+        deliveries: deliveries || [],
+        wastageBatches: wastageBatches || [],
+      });
+      paint();
+    } catch (err) {
+      if (ctx.abort) return;
+      reportError(err, { source: 'admin.dashboard.load.secondary', silent: true });
+      toast(err.message || 'Projection details failed to load', true);
+    }
   }
 
   const onTableFilter = (e) => {
