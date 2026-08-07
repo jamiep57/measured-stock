@@ -7,7 +7,7 @@ import {
 } from '../../lib/util.js';
 import { initIcons } from '../../lib/icons.js';
 import {
-  getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, loadSuppliers,
+  getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, productsFromEvent,
 } from '../../db.js';
 import { parseQty, storedToForm, totalUnitsForProduct } from '../../stock-entry.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
@@ -1114,16 +1114,15 @@ export function mountReconPanel(route) {
 
   async function load() {
     const DB = getDB();
-    const [event, caseSizes, products, suppliers, closing, tillImport, modImport, recipes, wastage, transfers, supplierReturns, deliveries] =
+    const [event, caseSizes, suppliers, closing, tillImport, modImport, recipes, wastage, transfers, supplierReturns, deliveries] =
       await Promise.all([
         loadEventFull(ctx.eventId),
         loadCaseSizes(),
-        loadLibraryProducts(),
         loadSuppliers(),
         DB.closing.forEvent(ctx.eventId),
         DB.tillImports.forEvent(ctx.eventId).catch(() => null),
         DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
-        DB.recipes.listFull().catch(() => []),
+        loadRecipesFull(),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
         DB.transfers.forEvent(ctx.eventId).catch(() => []),
         DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
@@ -1132,7 +1131,7 @@ export function mountReconPanel(route) {
     if (ctx.abort) return;
     ctx.event = event;
     ctx.caseSizes = caseSizes;
-    ctx.products = products;
+    ctx.products = productsFromEvent(event);
     ctx.suppliers = suppliers;
     ctx.closingRows = closing || [];
     ctx.tillRows = tillImport?.rows || [];

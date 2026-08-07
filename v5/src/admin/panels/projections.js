@@ -4,7 +4,7 @@
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
-import { getDB, loadEventFull, loadLibraryProducts, loadCaseSizes } from '../../db.js';
+import { getDB, loadEventFull, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
 import { computeStockProjection } from '../../lib/stock-projection.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import { initIcons } from '../../lib/icons.js';
@@ -100,11 +100,10 @@ export function mountProjectionsPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, recipes, products, caseSizes, deliveries, wastageBatches] = await Promise.all([
+    const [event, tillImport, recipes, caseSizes, deliveries, wastageBatches] = await Promise.all([
       loadEventFull(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-      DB.recipes.listFull().catch(() => []),
-      loadLibraryProducts(),
+      loadRecipesFull(),
       loadCaseSizes(),
       DB.deliveries.forEvent(ctx.eventId).catch(() => []),
       DB.wastage.forEvent(ctx.eventId).catch(() => []),
@@ -115,7 +114,7 @@ export function mountProjectionsPanel(route) {
       event,
       tillRows: tillImport?.rows || [],
       recipes: recipes || [],
-      products: products || [],
+      products: productsFromEvent(event),
       caseSizes: caseSizes || [],
       deliveries: deliveries || [],
       wastageBatches: wastageBatches || [],
