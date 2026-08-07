@@ -45,6 +45,7 @@ node_modules/
 backup/
 
 # Root Vite deploy artifacts (copied by scripts/copy-v5-dist.mjs)
+/index.html
 /admin.html
 /app.html
 /scan.html

@@ -1,9 +1,9 @@
 /**
  * Copy Vite build output from v5/dist to the repo root for Vercel.
- * Never overwrites legacy index.html (V1 at /legacy).
  *
- * On Vercel only, replace source shells under v5/ with redirect stubs so
- * clean-URLs cannot keep serving /v5/admin from v5/admin.html.
+ * - Publishes admin/app/scan shells + /static assets at the repo root
+ * - Writes admin.html as index.html so `/` serves V5 (filesystem wins over rewrites)
+ * - On Vercel only, stubs v5/*.html so clean-URLs cannot keep serving /v5/admin
  */
 import fs from 'fs';
 import path from 'path';
@@ -20,8 +20,9 @@ if (!fs.existsSync(dist)) {
 }
 
 for (const name of fs.readdirSync(dist)) {
+  // Never publish Vite's index.html name as site root — we map admin → index below.
   if (name === 'index.html') {
-    console.warn('skipping dist/index.html to protect legacy /index.html');
+    console.warn('skipping dist/index.html (admin is published as /index.html)');
     continue;
   }
   const src = path.join(dist, name);
@@ -29,6 +30,14 @@ for (const name of fs.readdirSync(dist)) {
   fs.rmSync(dest, { recursive: true, force: true });
   fs.cpSync(src, dest, { recursive: true });
 }
+
+const adminHtml = path.join(repoRoot, 'admin.html');
+if (!fs.existsSync(adminHtml)) {
+  console.error('Missing admin.html after dist copy');
+  process.exit(1);
+}
+fs.copyFileSync(adminHtml, path.join(repoRoot, 'index.html'));
+console.log('Published admin.html as /index.html for site root');
 
 function redirectStub(to) {
   const safe = String(to).replace(/"/g, '&quot;');

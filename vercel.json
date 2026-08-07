@@ -64,7 +64,7 @@
     },
     {
       "source": "/legacy",
-      "destination": "/index.html"
+      "destination": "/legacy.html"
     },
     {
       "source": "/app",
