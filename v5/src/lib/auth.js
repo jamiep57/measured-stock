@@ -161,17 +161,18 @@ export async function signOutApp() {
   try {
     await Promise.race([
       sb?.auth.signOut() || Promise.resolve(),
-      new Promise((resolve) => setTimeout(resolve, 2500)),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
     ]);
   } catch { /* ignore */ }
   try {
     // Local Vite has no /api — don't block redirect on a hanging request.
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), 1500) : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 1200) : null;
     await fetch('/api/logout', { method: 'POST', signal: ctrl?.signal }).catch(() => {});
     if (timer) clearTimeout(timer);
   } catch { /* ignore */ }
-  window.location.href = '/login';
+  // Always leave the app, even if cleanup raced or hung.
+  window.location.assign('/login');
 }
 
 /**

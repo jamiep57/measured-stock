@@ -13,7 +13,7 @@ from playwright.sync_api import expect
 
 from helpers.auth import goto_admin_path, goto_event_panel
 from helpers.db import E2E_PREFIX, new_run_id
-from helpers.pages import click_toolbar
+from helpers.pages import click_toolbar, pick_search_item
 
 
 # ---------------------------------------------------------------------------
@@ -131,13 +131,10 @@ def test_05_add_product_to_event(admin_page, seed_minimal):
     expect(admin_page.locator("#epEmpty")).to_be_visible(timeout=15000)
 
     click_toolbar(admin_page, "add-event-product")
-    search = admin_page.get_by_placeholder("Search library to add…")
-    expect(search).to_be_visible(timeout=10000)
-    search.fill("")
-    search.press_sequentially(db_product, delay=20)
-    item = admin_page.locator(".product-search-item").filter(has_text=db_product)
-    expect(item.first).to_be_visible(timeout=15000)
-    item.first.click()
+    # openAddProduct now awaits library hydration; wait for search field.
+    search = admin_page.locator("#epAddSearch .product-search-input, #epAddSearch input").first
+    expect(search).to_be_visible(timeout=15000)
+    pick_search_item(admin_page, db_product, scope=admin_page.locator("#epAddSearch"))
     expect(
         admin_page.locator("#epBody").get_by_text(db_product, exact=False)
     ).to_be_visible(timeout=15000)

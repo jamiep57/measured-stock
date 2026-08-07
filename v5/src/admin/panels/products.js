@@ -533,7 +533,16 @@ export function mountProductsPanel(route) {
     });
   }
 
-  function openAddProduct() {
+  async function openAddProduct() {
+    // Toolbar can fire before refresh() finishes hydrating the library.
+    if (!library.length) {
+      try {
+        await refresh();
+      } catch (err) {
+        toast(err.message || 'Products are still loading', true);
+        return;
+      }
+    }
     const onEvent = new Set((event?.event_products || []).map((ep) => ep.product_id));
     const available = library.filter((p) => !onEvent.has(p.id));
 
@@ -584,7 +593,7 @@ export function mountProductsPanel(route) {
   const onToolbarAction = (e) => {
     if (e.detail?.action === 'add-event-product') {
       e.detail.handled = true;
-      openAddProduct();
+      openAddProduct().catch((err) => toast(err.message || 'Could not open add product', true));
     }
   };
 

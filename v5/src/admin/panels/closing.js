@@ -51,7 +51,7 @@ import { reportError } from '../../lib/client-errors.js';
 const COL_COUNT = 12; // product (pack in meta) + 9 data cols + return + actions
 const LOCAL_ECHO_MS = 1500;
 const AUTOSAVE_MS = 180;
-const VALUE_BROADCAST_MS = 40;
+const VALUE_BROADCAST_MS = 150;
 
 async function adjustWarehouseStock(warehouseId, productId, delta) {
   const DB = getDB();
