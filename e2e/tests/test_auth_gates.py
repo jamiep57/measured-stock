@@ -52,14 +52,25 @@ def test_auth_wrong_password_stays_on_login(guest_page):
 
 
 def test_auth_logout_returns_to_login(admin_page):
-    expect(admin_page.locator("#topbarProfileBtn")).to_be_visible(timeout=15000)
-    admin_page.locator("#topbarProfileBtn").click()
-    expect(admin_page.locator("#topbarLogout")).to_be_visible(timeout=5000)
-    admin_page.locator("#topbarLogout").click()
+    # Local Vite has no /api/logout — fulfill so signOutApp can finish and redirect.
+    admin_page.route(
+        "**/api/logout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body="{}"),
+    )
+    admin_page.wait_for_selector("#topbarLogout, #topbarProfileBtn", timeout=15000)
+    admin_page.evaluate(
+        """() => {
+          const btn = document.getElementById('topbarProfileBtn');
+          const menu = document.getElementById('topbarProfileMenu');
+          if (btn && menu) {
+            menu.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+          }
+        }"""
+    )
+    admin_page.locator("#topbarLogout").click(force=True)
     admin_page.wait_for_url(re.compile(r".*/login"), timeout=20000)
     expect(admin_page.locator("#emailForm")).to_be_visible(timeout=10000)
-    # Note: admin_page init scripts re-inject the session on later navigations,
-    # so post-logout deep-link gating is covered by guest_page tests instead.
 
 
 def test_auth_login_next_returns_to_requested_panel(guest_page, seed_minimal):

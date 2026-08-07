@@ -10,6 +10,9 @@ import { parseQty } from '../../stock-entry.js';
 import { navigate, hrefForRoute } from '../router.js';
 import { renderUsersSection, mountUsersPanel } from './users.js';
 import { confirmDialog } from '../../components/modal.js';
+import { loadingWidget } from '../../components/loading-widget.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 const SETTINGS_NAV = [
   { id: 'users', label: 'Users' },
@@ -100,7 +103,7 @@ function renderWarehousesSection() {
           placeholder="Search warehouses…" autocomplete="off" aria-label="Search warehouses">
       </div>
       <div class="settings-list" id="settingsWarehouses" role="list">
-        <div class="settings-list-empty muted">Loading…</div>
+        <div class="settings-list-empty">${loadingWidget('Loading warehouses…')}</div>
       </div>
     </section>`;
 }
@@ -130,7 +133,7 @@ function renderCategoriesSection() {
           placeholder="Search categories…" autocomplete="off" aria-label="Search categories">
       </div>
       <div class="settings-list" id="settingsCategories" role="list">
-        <div class="settings-list-empty muted">Loading…</div>
+        <div class="settings-list-empty">${loadingWidget('Loading categories…')}</div>
       </div>
     </section>`;
 }
@@ -154,7 +157,7 @@ function renderCaseSizesSection() {
           placeholder="Search case sizes…" autocomplete="off" aria-label="Search case sizes">
       </div>
       <div class="settings-list settings-list--case" id="settingsCaseSizes" role="list">
-        <div class="settings-list-empty muted">Loading…</div>
+        <div class="settings-list-empty">${loadingWidget('Loading case sizes…')}</div>
       </div>
     </section>`;
 }
@@ -825,10 +828,17 @@ export function mountSettingsPanel(section = 'users') {
   });
 
   refresh().catch((err) => {
-    const msg = `<div class="settings-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    reportError(err, { source: 'admin.settings.refresh', silent: true });
+    const msg = errorState({
+      title: 'Couldn’t load settings',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    const retryTarget = whWrap || catWrap || csWrap;
     if (whWrap) whWrap.innerHTML = msg;
     if (catWrap) catWrap.innerHTML = msg;
     if (csWrap) csWrap.innerHTML = msg;
+    if (retryTarget) bindEmptyRetry(retryTarget, () => refresh());
   });
 
   return () => {};

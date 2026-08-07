@@ -253,20 +253,13 @@ def test_26_setup_add_recipient(admin_page, seed_minimal):
 
 def test_27_delivery_delete_seeded(admin_page, seed, db):
     """Delete the seeded delivery via UI confirm and assert DB gone."""
+    from helpers.pages import confirm_dialog_ok
+
     goto_event_panel(admin_page, seed.event_id, "deliveries")
     card = admin_page.locator(f'[data-delivery-id="{seed.delivery_id}"]')
     expect(card).to_be_visible(timeout=20000)
-    # Stub confirm + click delete (dialog handlers are easy to miss with overlays).
-    admin_page.evaluate(
-        """(deliveryId) => {
-          const btn = document.querySelector(`[data-delivery-id="${deliveryId}"] [data-del]`);
-          if (!btn) throw new Error('delete button missing');
-          const prev = window.confirm;
-          window.confirm = () => true;
-          try { btn.click(); } finally { window.confirm = prev; }
-        }""",
-        seed.delivery_id,
-    )
+    card.locator("[data-del]").click()
+    confirm_dialog_ok(admin_page)
     poll_until(
         lambda: (
             db.table("deliveries").select("id").eq("id", seed.delivery_id).execute().data or []

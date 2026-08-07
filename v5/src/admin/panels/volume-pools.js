@@ -11,6 +11,10 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { mountFractionInput } from '../../components/fraction-input.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
@@ -47,10 +51,6 @@ function renderShell() {
     <div class="admin-page vp-panel">
       <div class="catalog-layout">
         <aside class="catalog-list-card admin-surface">
-          <div class="catalog-list-head">
-            <input type="search" class="admin-input" id="vpSearch"
-              placeholder="Search volume pools…" autocomplete="off" aria-label="Search volume pools">
-          </div>
           <div class="catalog-list" id="vpList">
             <div class="catalog-list-empty">${loadingWidget('Loading volume pools…')}</div>
           </div>
@@ -66,13 +66,19 @@ function renderShell() {
     </div>`;
 }
 
-function renderListItems(pools, selectedKey, query, caseSizes) {
+function renderListItems(pools, selectedKey, query, caseSizes, sort = 'name') {
   const q = (query || '').trim().toLowerCase();
-  const list = (pools || []).filter((pool) => {
-    if (!q) return true;
-    const memberHay = pool.members.map((p) => p.name || '').join(' ');
-    return `${pool.name} ${memberHay}`.toLowerCase().includes(q);
-  });
+  const list = (pools || [])
+    .filter((pool) => {
+      if (!q) return true;
+      const memberHay = pool.members.map((p) => p.name || '').join(' ');
+      return `${pool.name} ${memberHay}`.toLowerCase().includes(q);
+    })
+    .slice()
+    .sort((a, b) => {
+      const cmp = (a.name || '').localeCompare(b.name || '');
+      return sort === 'name-desc' ? -cmp : cmp;
+    });
 
   if (!list.length) {
     return `<div class="catalog-list-empty">${pools?.length
@@ -183,7 +189,6 @@ export function mountVolumePoolsPanel() {
   const listEl = $('vpList');
   const detailEmpty = $('vpDetailEmpty');
   const detailBody = $('vpDetailBody');
-  const searchEl = $('vpSearch');
   if (!listEl) return () => {};
 
   let products = [];
@@ -191,10 +196,17 @@ export function mountVolumePoolsPanel() {
   let pools = [];
   let selectedKey = null;
   let searchQuery = '';
+  let sortKey = 'name';
   let pendingAddId = null;
   let addFraction = null;
   let createFraction = null;
   const memberFractions = new Map();
+
+  const seeded = getTableFilterValues('volume-pools');
+  if (seeded) {
+    searchQuery = seeded.query || '';
+    sortKey = seeded.sort || 'name';
+  }
 
   function currentPool() {
     return selectedKey ? pools.find((p) => p.key === selectedKey) : null;
@@ -205,7 +217,7 @@ export function mountVolumePoolsPanel() {
   }
 
   function paintList() {
-    listEl.innerHTML = renderListItems(pools, selectedKey, searchQuery, caseSizes);
+    listEl.innerHTML = renderListItems(pools, selectedKey, searchQuery, caseSizes, sortKey);
     listEl.querySelectorAll('[data-vp-key]').forEach((btn) => {
       btn.onclick = () => selectPool(btn.dataset.vpKey);
     });
@@ -572,18 +584,22 @@ export function mountVolumePoolsPanel() {
     if (editing) $('vpDelete').onclick = () => deletePool(editName);
   }
 
-  searchEl?.addEventListener('input', () => {
-    searchQuery = searchEl.value;
-    paintList();
-  });
-
   const onToolbarAction = (e) => {
     if (e.detail?.action === 'new-volume-pool') {
       e.detail.handled = true;
       openPoolForm();
     }
   };
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'volume-pools') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    searchQuery = values.query || '';
+    sortKey = values.sort || 'name';
+    paintList();
+  };
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
     listEl.innerHTML = errorState({
@@ -597,5 +613,6 @@ export function mountVolumePoolsPanel() {
 
   return () => {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

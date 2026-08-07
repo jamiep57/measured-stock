@@ -137,3 +137,10 @@ def click_id(page: "Page", element_id: str) -> None:
         }""",
         element_id,
     )
+
+
+def confirm_dialog_ok(page: "Page", timeout: int = 10000) -> None:
+    """Click the custom confirmDialog OK button ([data-confirm-ok])."""
+    btn = page.locator("[data-confirm-ok]").first
+    btn.wait_for(state="visible", timeout=timeout)
+    btn.click()

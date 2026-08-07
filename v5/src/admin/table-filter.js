@@ -79,6 +79,11 @@ function controllerApi(config) {
       const dropdown = $('topbarTableFilterPanel');
       if (dropdown && !dropdown.hidden) remountPanel(dropdown);
     },
+    /** Update active-dot + emit without destroying focused inputs. */
+    touch() {
+      updateTopbarButton();
+      emitFilter();
+    },
     syncUi() {
       updateTopbarButton();
       const dropdown = $('topbarTableFilterPanel');

@@ -7,6 +7,10 @@ import { icon } from '../../lib/icons.js';
 import { getDB, loadSuppliers, loadLibraryProducts } from '../../db.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { parseQty } from '../../stock-entry.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
@@ -50,10 +54,6 @@ function renderShell() {
     <div class="admin-page sup-panel">
       <div class="catalog-layout">
         <aside class="catalog-list-card admin-surface">
-          <div class="catalog-list-head">
-            <input type="search" class="admin-input" id="supSearch"
-              placeholder="Search suppliers…" autocomplete="off" aria-label="Search suppliers">
-          </div>
           <div class="catalog-list" id="supList">
             <div class="catalog-list-empty">${loadingWidget('Loading suppliers…')}</div>
           </div>
@@ -69,12 +69,15 @@ function renderShell() {
     </div>`;
 }
 
-function renderListItems(suppliers, selectedId, query) {
+function renderListItems(suppliers, selectedId, query, sort = 'name') {
   const q = (query || '').trim().toLowerCase();
   const list = (suppliers || [])
     .filter((s) => !q || (s.name || '').toLowerCase().includes(q))
     .slice()
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    .sort((a, b) => {
+      const cmp = (a.name || '').localeCompare(b.name || '');
+      return sort === 'name-desc' ? -cmp : cmp;
+    });
 
   if (!list.length) {
     return `<div class="catalog-list-empty">${suppliers?.length
@@ -185,16 +188,22 @@ export function mountSuppliersPanel() {
   const listEl = $('supList');
   const detailEmpty = $('supDetailEmpty');
   const detailBody = $('supDetailBody');
-  const searchEl = $('supSearch');
   if (!listEl) return () => {};
 
   let suppliers = [];
   let products = [];
   let selectedId = null;
   let searchQuery = '';
+  let sortKey = 'name';
+
+  const seeded = getTableFilterValues('suppliers');
+  if (seeded) {
+    searchQuery = seeded.query || '';
+    sortKey = seeded.sort || 'name';
+  }
 
   function paintList() {
-    listEl.innerHTML = renderListItems(suppliers, selectedId, searchQuery);
+    listEl.innerHTML = renderListItems(suppliers, selectedId, searchQuery, sortKey);
     listEl.querySelectorAll('[data-sup-id]').forEach((btn) => {
       btn.onclick = () => selectSupplier(btn.dataset.supId);
     });
@@ -355,18 +364,22 @@ export function mountSuppliersPanel() {
     if (s) $('supDelete').onclick = () => deleteSupplier(s.id);
   }
 
-  searchEl?.addEventListener('input', () => {
-    searchQuery = searchEl.value;
-    paintList();
-  });
-
   const onToolbarAction = (e) => {
     if (e.detail?.action === 'new-supplier') {
       e.detail.handled = true;
       openSupplierForm();
     }
   };
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'suppliers') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    searchQuery = values.query || '';
+    sortKey = values.sort || 'name';
+    paintList();
+  };
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
     listEl.innerHTML = errorState({
@@ -380,5 +393,6 @@ export function mountSuppliersPanel() {
 
   return () => {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

@@ -137,10 +137,13 @@ def test_37_event_audit_alias_rewrites_to_dev(admin_page, seed):
 
 
 def test_38_route_aliases_opening_and_summary(admin_page, seed):
+    # opening → products; summary → reports (client rewrite may interrupt Playwright goto).
     goto_admin_path(admin_page, f"/events/{seed.event_id}/opening")
     expect(admin_page.locator("#epPanel")).to_be_visible(timeout=25000)
+    expect(admin_page).to_have_url(re.compile(r"/events/[^/]+/products"), timeout=10000)
     goto_admin_path(admin_page, f"/events/{seed.event_id}/summary")
     expect(admin_page.locator("#reportsPanel")).to_be_visible(timeout=25000)
+    expect(admin_page).to_have_url(re.compile(r"/events/[^/]+/reports"), timeout=10000)
 
 
 def test_39_panel_nav_stress_no_blank_content(admin_page, seed):

@@ -70,7 +70,8 @@ import {
   scanCodeCandidates,
 } from '../../lib/kit-scan-session.js';
 import { parseQty } from '../../stock-entry.js';
-
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
 }
@@ -1470,7 +1471,13 @@ export function mountKitPanel(route) {
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
-    itemsWrap.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    reportError(err, { source: 'admin.kit.load', silent: true });
+    itemsWrap.innerHTML = errorState({
+      title: 'Couldn’t load kit',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    bindEmptyRetry(itemsWrap, () => refresh());
   });
 
   return () => {

@@ -36,7 +36,8 @@ import {
   reconCellKeyFromInput,
   reconFindCellEl,
 } from '../../lib/grid-collab-keys.js';
-
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 const STATUS_TITLES = {
   red: 'Action needed',
   yellow: 'Review',
@@ -1146,7 +1147,12 @@ export function mountReconPanel(route) {
   }
 
   load().catch((e) => {
-    $('rcnBody').innerHTML = `<tr><td colspan="${RECON_COLS.length}" class="dist-empty del-empty--err">${escapeHtml(e.message || 'Failed to load')}</td></tr>`;
+    reportError(e, { source: 'admin.recon.load', silent: true });
+    $('rcnBody').innerHTML = `<tr><td colspan="${RECON_COLS.length}">${errorState({
+      title: 'Couldn’t load recon',
+      copy: e.message || 'Failed to load',
+      variant: 'admin',
+    })}</td></tr>`;
   });
 
   return () => {

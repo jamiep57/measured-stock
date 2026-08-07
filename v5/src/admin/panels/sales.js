@@ -14,6 +14,8 @@ import { mountProductSearch } from '../../components/product-search.js';
 import { groupProductsByPool, poolSummary } from '../../lib/volume-pools.js';
 import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 import { readModifierFile } from '../../lib/modifier-import.js';
 import { readTillFile } from '../../lib/till-import.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
@@ -1014,7 +1016,13 @@ export function mountSalesPanel(route) {
   panel.addEventListener('keydown', onRecipeTabNav);
 
   reload().catch((err) => {
-    panel.innerHTML = `<div class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    reportError(err, { source: 'admin.sales.reload', silent: true });
+    panel.innerHTML = errorState({
+      title: 'Couldn’t load sales',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    bindEmptyRetry(panel, () => reload());
   });
 
   return () => {

@@ -18,6 +18,10 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
@@ -29,6 +33,28 @@ async function loadWarehouses() {
   } catch {
     return [];
   }
+}
+
+function inDateRange(iso, dates) {
+  const from = dates?.from || '';
+  const to = dates?.to || '';
+  if (!from && !to) return true;
+  if (!iso) return true;
+  const day = String(iso).slice(0, 10);
+  if (from && day < from) return false;
+  if (to && day > to) return false;
+  return true;
+}
+
+function sortByDate(list, sort, dateField) {
+  const items = list.slice();
+  const dir = sort === 'date-asc' ? 1 : -1;
+  items.sort((a, b) => {
+    const ta = new Date(a[dateField] || 0).getTime();
+    const tb = new Date(b[dateField] || 0).getTime();
+    return (ta - tb) * dir;
+  });
+  return items;
 }
 
 function parseSourceValue(val) {
@@ -314,6 +340,22 @@ export function mountTransfersPanel(route) {
   let editingId = null;
   let xferSource = null;
   let xferLines = [];
+  let dates = { from: '', to: '' };
+  let sortKey = 'date-desc';
+
+  const seeded = getTableFilterValues('transfers');
+  if (seeded) {
+    dates = {
+      from: seeded.dates?.from || '',
+      to: seeded.dates?.to || '',
+    };
+    sortKey = seeded.sort || 'date-desc';
+  }
+
+  function visibleTransfers() {
+    let list = transfers.filter((t) => inDateRange(t.transferred_at, dates));
+    return sortByDate(list, sortKey, 'transferred_at');
+  }
 
   function applyProductFilter({ query, productId } = {}) {
     const q = (query || '').trim().toLowerCase();
@@ -885,9 +927,19 @@ export function mountTransfersPanel(route) {
   }
 
   function paintList() {
-    listEl.innerHTML = renderList(transfers, event, warehouses, caseSizes);
-    wireList();
-    listEl.querySelector('[data-empty-cta="log-transfer"]')?.addEventListener('click', () => openTransferForm());
+    const visible = visibleTransfers();
+    if (!visible.length && transfers.length) {
+      listEl.innerHTML = emptyState({
+        iconHtml: icon('search', { size: 22 }),
+        title: 'No matches',
+        copy: 'No transfers match your filter.',
+        variant: 'admin',
+      });
+    } else {
+      listEl.innerHTML = renderList(visible, event, warehouses, caseSizes);
+      wireList();
+      listEl.querySelector('[data-empty-cta="log-transfer"]')?.addEventListener('click', () => openTransferForm());
+    }
     applyProductFilter(getLastProductFilter());
   }
 
@@ -926,13 +978,26 @@ export function mountTransfersPanel(route) {
   const onProductFilter = (e) => {
     applyProductFilter(e.detail || {});
   };
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'transfers') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    dates = {
+      from: values.dates?.from || '',
+      to: values.dates?.to || '',
+    };
+    sortKey = values.sort || 'date-desc';
+    paintList();
+  };
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   load();
 
   return () => {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

@@ -10,9 +10,12 @@ import {
 import { getQueueStats } from '../../sync-queue.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { hrefForRoute } from '../router.js';
 import {
-  ALL_CHECK_IDS,
   CHECK_META,
   filterFindings,
   runEventAudit,
@@ -94,13 +97,11 @@ export function mountAuditPanel(route) {
     expanded: new Set(),
   };
 
-  function checkOptions() {
-    return `<option value="">All checks</option>${
-      ALL_CHECK_IDS.map((id) => {
-        const label = CHECK_META[id]?.label || id;
-        return `<option value="${escapeHtml(id)}"${ctx.checkId === id ? ' selected' : ''}>${escapeHtml(label)}</option>`;
-      }).join('')
-    }`;
+  const seeded = getTableFilterValues('audit');
+  if (seeded) {
+    ctx.severity = seeded.severity || '';
+    ctx.checkId = seeded.check || '';
+    ctx.query = seeded.query || '';
   }
 
   function summaryChips(summary) {
@@ -185,24 +186,7 @@ export function mountAuditPanel(route) {
           </div>
           ${summaryChips(report.summary)}
         </div>
-        <div class="audit-filters">
-          <label class="audit-filter">
-            <select id="auditSeverity" aria-label="Severity">
-              <option value=""${ctx.severity === '' ? ' selected' : ''}>All severities</option>
-              <option value="error"${ctx.severity === 'error' ? ' selected' : ''}>Errors</option>
-              <option value="warn"${ctx.severity === 'warn' ? ' selected' : ''}>Warnings</option>
-              <option value="info"${ctx.severity === 'info' ? ' selected' : ''}>Info</option>
-            </select>
-          </label>
-          <label class="audit-filter">
-            <select id="auditCheck" aria-label="Check">${checkOptions()}</select>
-          </label>
-          <label class="audit-filter audit-filter--search">
-            <input type="search" id="auditQuery" aria-label="Search findings" placeholder="Search product or message…"
-              value="${escapeHtml(ctx.query)}">
-          </label>
-          <span class="muted audit-count">${findings.length} shown · ${report.findings.length} total</span>
-        </div>
+        <p class="muted audit-count">${findings.length} shown · ${report.findings.length} total</p>
       </div>
       <div class="admin-surface audit-table-wrap">
         <table class="admin-table audit-table">
@@ -303,34 +287,6 @@ export function mountAuditPanel(route) {
     }
   }
 
-  function onChange(e) {
-    if (e.target.id === 'auditSeverity') {
-      ctx.severity = e.target.value;
-      render();
-    } else if (e.target.id === 'auditCheck') {
-      ctx.checkId = e.target.value;
-      render();
-    }
-  }
-
-  let queryTimer = null;
-  function onInput(e) {
-    if (e.target.id === 'auditQuery') {
-      ctx.query = e.target.value;
-      clearTimeout(queryTimer);
-      queryTimer = setTimeout(() => {
-        const selStart = e.target.selectionStart;
-        const selEnd = e.target.selectionEnd;
-        render();
-        const el = $('auditQuery');
-        if (el) {
-          el.focus();
-          try { el.setSelectionRange(selStart, selEnd); } catch { /* ignore */ }
-        }
-      }, 120);
-    }
-  }
-
   function onToolbar(e) {
     const id = e.detail?.id;
     if (id === 'audit-run') runAudit();
@@ -344,19 +300,26 @@ export function mountAuditPanel(route) {
     }
   }
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'audit') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    ctx.severity = values.severity || '';
+    ctx.checkId = values.check || '';
+    ctx.query = values.query || '';
+    if (ctx.report) render();
+  };
+
   root.addEventListener('click', onClick);
-  root.addEventListener('change', onChange);
-  root.addEventListener('input', onInput);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   runAudit();
 
   return () => {
     ctx.abort = true;
-    clearTimeout(queryTimer);
     root.removeEventListener('click', onClick);
-    root.removeEventListener('change', onChange);
-    root.removeEventListener('input', onInput);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

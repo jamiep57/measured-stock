@@ -24,7 +24,13 @@ import {
   productsFindCellEl,
 } from '../../lib/grid-collab-keys.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { parseQty } from '../../stock-entry.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 const SAVE_DEBOUNCE_MS = 400;
 const VALUE_BROADCAST_MS = 120;
@@ -46,6 +52,24 @@ function groupByCategory(eps) {
     list.sort((a, b) => (a.product.name || '').localeCompare(b.product.name || ''));
   });
   return grouped;
+}
+
+function sortEventProducts(eps, sort) {
+  const items = eps.slice();
+  if (sort === 'name') {
+    items.sort((a, b) => (a.product.name || '').localeCompare(b.product.name || ''));
+  } else if (sort === 'name-desc') {
+    items.sort((a, b) => (b.product.name || '').localeCompare(a.product.name || ''));
+  } else {
+    items.sort((a, b) => {
+      const ca = a.product?.category?.name || 'Uncategorised';
+      const cb = b.product?.category?.name || 'Uncategorised';
+      const catCmp = ca.localeCompare(cb);
+      if (catCmp) return catCmp;
+      return (a.product.name || '').localeCompare(b.product.name || '');
+    });
+  }
+  return items;
 }
 
 function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes) {
@@ -84,10 +108,16 @@ function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes) {
     </tr>`;
 }
 
-function renderRows(eps, countedIn, damagedFromDeliveries, caseSizes) {
+function renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, sort = 'category') {
   if (!eps.length) return '';
-  const grouped = groupByCategory(eps);
   let html = '';
+  if (sort === 'name' || sort === 'name-desc') {
+    sortEventProducts(eps, sort).forEach((ep) => {
+      html += renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes);
+    });
+    return html;
+  }
+  const grouped = groupByCategory(eps);
   Object.keys(grouped).sort().forEach((cat) => {
     html += `<tr class="dist-cat-row">
       <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
@@ -118,7 +148,6 @@ function epTh(label, extraClass = '', title = '') {
 function renderShell() {
   return `
     <div class="ep-panel" id="epPanel">
-      <p class="ep-hint muted">Add products from your library and set ordered quantities. Counts <strong>auto-save as you type</strong> and update live for anyone else on Products. Use arrow keys to move between Ordered cells. <strong>Counted in</strong> and unusable stock come from deliveries; <strong>opening</strong> = counted in − delivery damages.</p>
       <div class="dist-grid-wrap ep-table-wrap">
         <table class="dist-grid ep-grid" id="epTable">
           <thead>
@@ -158,6 +187,8 @@ export function mountProductsPanel(route) {
   let countedIn = {};
   let damagedFromDeliveries = {};
   let productFilter = getLastProductFilter();
+  let categoriesFilter = [];
+  let sortKey = 'category';
   /** @type {Record<string, ReturnType<typeof setTimeout>>} */
   const saveTimers = {};
   /** @type {Record<string, boolean>} */
@@ -167,6 +198,12 @@ export function mountProductsPanel(route) {
   let valueBroadcastTimer = null;
   let focusPid = null;
   let abort = false;
+
+  const seeded = getTableFilterValues('products');
+  if (seeded) {
+    categoriesFilter = Array.isArray(seeded.categories) ? [...seeded.categories] : [];
+    sortKey = seeded.sort || 'category';
+  }
 
   function stopCollab() {
     if (valueBroadcastTimer) {
@@ -216,8 +253,15 @@ export function mountProductsPanel(route) {
   }
 
   function filteredEps() {
-    const eps = (event?.event_products || [])
+    let eps = (event?.event_products || [])
       .filter((ep) => ep.product?.name);
+    if (categoriesFilter.length) {
+      const allowed = new Set(categoriesFilter);
+      eps = eps.filter((ep) => {
+        const cat = ep.product?.category?.name || 'Uncategorised';
+        return allowed.has(cat);
+      });
+    }
     const q = (productFilter.query || '').trim().toLowerCase();
     if (productFilter.productId) {
       return eps.filter((ep) => ep.product_id === productFilter.productId);
@@ -274,7 +318,7 @@ export function mountProductsPanel(route) {
 
     empty.hidden = true;
     table?.removeAttribute('hidden');
-    body.innerHTML = renderRows(eps, countedIn, damagedFromDeliveries, caseSizes) ||
+    body.innerHTML = renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, sortKey) ||
       '<tr><td colspan="5" class="dist-empty">No products match your filter.</td></tr>';
     collab?.repaint();
 
@@ -519,6 +563,15 @@ export function mountProductsPanel(route) {
     if (e.detail?.productId) e.detail.handled = true;
   };
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'products') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    categoriesFilter = Array.isArray(values.categories) ? [...values.categories] : [];
+    sortKey = values.sort || 'category';
+    paintTable();
+  };
+
   const onToolbarAction = (e) => {
     if (e.detail?.action === 'add-event-product') {
       e.detail.handled = true;
@@ -532,13 +585,20 @@ export function mountProductsPanel(route) {
   panel?.addEventListener('change', onPanelInput);
   panel?.addEventListener('blur', onPanelBlur, true);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   window.addEventListener('pagehide', onPageHide);
 
   refresh().catch((err) => {
     const body = $('epBody');
     if (body) {
-      body.innerHTML = `<tr><td colspan="5" class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
+      reportError(err, { source: 'admin.products.load', silent: true });
+      body.innerHTML = `<tr><td colspan="5">${errorState({
+        title: 'Couldn’t load products',
+        copy: err.message || 'Failed to load',
+        variant: 'admin',
+      })}</td></tr>`;
+      bindEmptyRetry(body, () => refresh());
     }
   });
 
@@ -550,6 +610,7 @@ export function mountProductsPanel(route) {
     panel?.removeEventListener('change', onPanelInput);
     panel?.removeEventListener('blur', onPanelBlur, true);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     window.removeEventListener('pagehide', onPageHide);
   };

@@ -16,7 +16,15 @@ import { icon, initIcons } from '../../lib/icons.js';
 import { skeletonList } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { hrefForRoute } from '../router.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+  patchTableFilterState,
+} from '../table-filter.js';
 
+function sortDirNum(dir) {
+  return dir === 'desc' ? -1 : 1;
+}
 
 function renderDashboard(ctx) {
   const barCount = ctx.bars?.length || 0;
@@ -98,10 +106,16 @@ export function mountDashboardPanel(route) {
     modImport: null,
     modRows: [],
     projection: { rows: [], baselineNet: 0, mappedNet: 0, target: 0, factor: null, items: [] },
-    sortKey: null,
+    sortKey: 'name',
     sortDir: 1,
     abort: false,
   };
+
+  const seeded = getTableFilterValues('dashboard');
+  if (seeded) {
+    ctx.sortKey = seeded.sortKey || 'name';
+    ctx.sortDir = sortDirNum(seeded.sortDir);
+  }
 
   function paintProjectionOnly() {
     const el = panel.querySelector('#dashProjection');
@@ -127,12 +141,13 @@ export function mountDashboardPanel(route) {
     panel.querySelectorAll('.dash-sort[data-sort]').forEach((th) => {
       th.onclick = () => {
         const key = th.dataset.sort;
-        if (ctx.sortKey === key) ctx.sortDir *= -1;
-        else {
-          ctx.sortKey = key;
-          ctx.sortDir = 1;
-        }
+        const nextDir = ctx.sortKey === key
+          ? (ctx.sortDir === 1 ? 'desc' : 'asc')
+          : 'asc';
+        ctx.sortKey = key;
+        ctx.sortDir = sortDirNum(nextDir);
         paintProjectionOnly();
+        patchTableFilterState('dashboard', { sort: key, sortDir: nextDir });
       };
     });
   }
@@ -173,6 +188,17 @@ export function mountDashboardPanel(route) {
     paint();
   }
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'dashboard') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    ctx.sortKey = values.sortKey || 'name';
+    ctx.sortDir = sortDirNum(values.sortDir);
+    paintProjectionOnly();
+  };
+
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
+
   reload().catch((err) => {
     panel.innerHTML = errorState({
       title: 'Couldn’t load dashboard',
@@ -185,5 +211,6 @@ export function mountDashboardPanel(route) {
 
   return () => {
     ctx.abort = true;
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

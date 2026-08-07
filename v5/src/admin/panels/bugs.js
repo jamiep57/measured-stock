@@ -8,8 +8,14 @@ import { getDB } from '../../db.js';
 import { openBugSheet, closeBugSheet, isBugSheetOpen } from '../../components/bug-sheet.js';
 import { icon } from '../../lib/icons.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 export const BUG_REPORT_SAVED = 'bug-report-saved';
 
@@ -396,18 +402,6 @@ export function renderBugsShell() {
         </div>
       </div>
       <div class="admin-surface bugs-card">
-        <div class="bug-list-head">
-          <div class="bug-toggle" role="group" aria-label="Filter by status">
-            <button type="button" data-bug-filter="open" class="active">Open</button>
-            <button type="button" data-bug-filter="resolved">Resolved</button>
-            <button type="button" data-bug-filter="all">All</button>
-          </div>
-          <div class="bug-toggle" role="group" aria-label="Filter by type">
-            <button type="button" data-bug-type="all" class="active">Everything</button>
-            <button type="button" data-bug-type="bug">Bugs</button>
-            <button type="button" data-bug-type="feature">Features</button>
-          </div>
-        </div>
         <div id="bugList"><div class="bug-list-empty">${loadingWidget('Loading reports…')}</div></div>
       </div>
     </div>`;
@@ -420,14 +414,13 @@ export function mountBugsPanel() {
   let bugs = [];
   let statusFilter = 'open';
   let typeFilter = 'all';
+  let sortKey = 'date-desc';
 
-  function syncToggles() {
-    panel.querySelectorAll('[data-bug-filter]').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.bugFilter === statusFilter);
-    });
-    panel.querySelectorAll('[data-bug-type]').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.bugType === typeFilter);
-    });
+  const seeded = getTableFilterValues('bugs');
+  if (seeded) {
+    statusFilter = seeded.status || 'open';
+    typeFilter = seeded.type || 'all';
+    sortKey = seeded.sort || 'date-desc';
   }
 
   function renderList() {
@@ -450,11 +443,11 @@ export function mountBugsPanel() {
       rows = rows.filter((b) => (b.type || 'bug') === typeFilter);
     }
 
+    const dir = sortKey === 'date-asc' ? 1 : -1;
     rows.sort((a, b) => {
-      const ar = bugIsResolved(a);
-      const br = bugIsResolved(b);
-      if (ar !== br) return ar ? 1 : -1;
-      return (b.created_at || '').localeCompare(a.created_at || '');
+      const ta = a.created_at || '';
+      const tb = b.created_at || '';
+      return ta.localeCompare(tb) * dir;
     });
 
     if (!rows.length) {
@@ -513,7 +506,6 @@ export function mountBugsPanel() {
 
   async function refresh() {
     bugs = (await getDB().bugs.list()) || [];
-    syncToggles();
     renderList();
   }
 
@@ -542,20 +534,6 @@ export function mountBugsPanel() {
 
   function onPanelClick(e) {
     if (e.target.closest('.bug-row-shot')) return;
-    const filterBtn = e.target.closest('[data-bug-filter]');
-    if (filterBtn) {
-      statusFilter = filterBtn.dataset.bugFilter;
-      syncToggles();
-      renderList();
-      return;
-    }
-    const typeBtn = e.target.closest('[data-bug-type]');
-    if (typeBtn) {
-      typeFilter = typeBtn.dataset.bugType;
-      syncToggles();
-      renderList();
-      return;
-    }
     const row = e.target.closest('[data-bug-id]');
     if (!row) return;
     const id = row.dataset.bugId;
@@ -579,14 +557,31 @@ export function mountBugsPanel() {
     refresh().catch(() => {});
   };
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'bugs') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    statusFilter = values.status || 'open';
+    typeFilter = values.type || 'all';
+    sortKey = values.sort || 'date-desc';
+    renderList();
+  };
+
   panel.addEventListener('click', onPanelClick);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(BUG_REPORT_SAVED, onSavedElsewhere);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
     const box = $('bugList');
     if (box) {
-      box.innerHTML = `<div class="bug-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+      reportError(err, { source: 'admin.bugs.load', silent: true });
+      box.innerHTML = errorState({
+        title: 'Couldn’t load reports',
+        copy: err.message || 'Failed to load',
+        variant: 'admin',
+      });
+      bindEmptyRetry(box, () => refresh());
     }
   });
 
@@ -594,6 +589,7 @@ export function mountBugsPanel() {
     panel.removeEventListener('click', onPanelClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(BUG_REPORT_SAVED, onSavedElsewhere);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }
 

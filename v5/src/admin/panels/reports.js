@@ -24,7 +24,8 @@ import {
   reportsCellKeyFromInput,
   reportsFindCellEl,
 } from '../../lib/grid-collab-keys.js';
-
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 function fmtQty(n) {
   if (!Number.isFinite(n)) return '—';
   const r = Math.round(n * 100) / 100;
@@ -783,7 +784,13 @@ export function mountReportsPanel(route) {
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
 
   reload().catch((err) => {
-    root.innerHTML = `<div class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load reports')}</div>`;
+    reportError(err, { source: 'admin.reports.load', silent: true });
+    root.innerHTML = errorState({
+      title: 'Couldn’t load reports',
+      copy: err.message || 'Failed to load reports',
+      variant: 'admin',
+    });
+    bindEmptyRetry(root, () => reload());
     toast(err.message || 'Failed to load reports', true);
   });
 

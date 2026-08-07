@@ -8,7 +8,8 @@ import { computeStockProjection } from '../../lib/stock-projection.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import { initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
-
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 export function renderProjectionsShell() {
   return `
     <div class="admin-page projections-page" id="projectionsPanel">
@@ -117,7 +118,13 @@ export function mountProjectionsPanel(route) {
   }
 
   reload().catch((err) => {
-    root.innerHTML = `<div class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load projections')}</div>`;
+    reportError(err, { source: 'admin.projections.load', silent: true });
+    root.innerHTML = errorState({
+      title: 'Couldn’t load projections',
+      copy: err.message || 'Failed to load projections',
+      variant: 'admin',
+    });
+    bindEmptyRetry(root, () => reload());
     toast(err.message || 'Failed to load projections', true);
   });
 

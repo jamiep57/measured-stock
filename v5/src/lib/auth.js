@@ -162,7 +162,11 @@ export async function signOutApp() {
     await sb?.auth.signOut();
   } catch { /* ignore */ }
   try {
-    await fetch('/api/logout', { method: 'POST' });
+    // Local Vite has no /api — don't block redirect on a hanging request.
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 2000) : null;
+    await fetch('/api/logout', { method: 'POST', signal: ctrl?.signal }).catch(() => {});
+    if (timer) clearTimeout(timer);
   } catch { /* ignore */ }
   window.location.href = '/login';
 }

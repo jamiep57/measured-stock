@@ -549,6 +549,8 @@ function simpleEventConfig({
       const def = defaults();
       const h = makeControllerHelpers(api);
       const filterSections = buildFilterSections(state, context) || [];
+      const sectionType = Object.fromEntries(filterSections.map((s) => [s.id, s.type]));
+      const softTypes = new Set(['text', 'date-range']);
       const tabs = [];
       if (filterSections.length) {
         const ids = filterSections.map((s) => s.id);
@@ -560,6 +562,10 @@ function simpleEventConfig({
           values: tabValuesFromState(state, ids),
           onChange(sectionId, value) {
             h.patch(applySectionChange(api.getState(), sectionId, value));
+            if (softTypes.has(sectionType[sectionId])) {
+              api.touch();
+              return;
+            }
             api.syncUi();
             h.emit();
           },

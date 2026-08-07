@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -150,9 +151,9 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
 
     Default: inject a Supabase session from E2E_EMAIL/E2E_PASSWORD (fast, stable).
     Set use_ui_login=True to exercise the /login email form.
-    """
-    import time
 
+    Admin is served at site root (`/`) after the /v5/admin → root move.
+    """
     url = f"{base_url()}/"
 
     if use_ui_login:
@@ -162,7 +163,7 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
             raise RuntimeError("E2E_EMAIL and E2E_PASSWORD required for UI login")
 
         last_err = None
-        for attempt in range(3):
+        for _attempt in range(2):
             try:
                 page.goto(f"{base_url()}/login", wait_until="domcontentloaded")
                 page.locator("#emailForm").wait_for(state="visible", timeout=15000)
@@ -179,16 +180,23 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
                 page.locator("#email").fill(email)
                 page.locator("#password").fill(password)
                 page.locator("#emailBtn").click()
-                page.wait_for_url(re.compile(r"https?://[^/]+/?$"), timeout=30000)
+                # Admin home is `/` (legacy `/v5/admin` still accepted by the router).
+                page.wait_for_function(
+                    """() => {
+                      const p = location.pathname.replace(/\\/+$/, '') || '/';
+                      return p === '/' || p === '/v5/admin' || p.startsWith('/events');
+                    }""",
+                    timeout=30000,
+                )
                 page.wait_for_selector("#adminApp, #homeNewEvent, .admin-app", timeout=20000)
                 return
             except Exception as err:
                 last_err = err
-                time.sleep(1.0 + attempt)
+                time.sleep(0.8)
         raise last_err
 
     last_err = None
-    for attempt in range(3):
+    for _attempt in range(2):
         try:
             session = sign_in_via_api()
             inject_supabase_session(page, session)
@@ -197,22 +205,26 @@ def unlock_admin(page: "Page", *, use_ui_login: bool = False) -> None:
             return
         except Exception as err:
             last_err = err
-            time.sleep(1.0 + attempt)
+            time.sleep(0.8)
     raise last_err
 
 
 def goto_admin_path(page: "Page", path: str) -> None:
-    """Navigate within admin after unlock. path like /library."""
+    """Navigate within admin after unlock. path like /library or /events/:id/setup."""
     from playwright.sync_api import Error as PlaywrightError
 
     if not path.startswith("/"):
         path = "/" + path
+    # Accept legacy /v5/admin prefixes from older tests/docs.
+    if path == "/v5/admin" or path.startswith("/v5/admin/"):
+        path = path[len("/v5/admin") :] or "/"
     url = f"{base_url()}{path}"
     try:
         page.goto(url, wait_until="domcontentloaded")
     except PlaywrightError as err:
         # SPA client navigations can abort the Playwright goto; page may still be fine.
-        if "ERR_ABORTED" not in str(err):
+        msg = str(err)
+        if "ERR_ABORTED" not in msg and "interrupted by another navigation" not in msg:
             raise
     page.wait_for_selector("#adminApp, .admin-app", timeout=20000)
     page.wait_for_selector("#adminContent", timeout=20000)
@@ -232,13 +244,25 @@ def goto_admin_path(page: "Page", path: str) -> None:
         arg=[expected, alt],
         timeout=20000,
     )
-    page.wait_for_function(
-        """() => {
-          const el = document.getElementById('adminContent');
-          return !!(el && el.children.length > 0);
-        }""",
-        timeout=20000,
-    )
+    # Prefer panel-ready content; fall back to any children (some panels mount slowly).
+    try:
+        page.wait_for_function(
+            """() => {
+              const el = document.getElementById('adminContent');
+              return !!(el && el.children.length > 0);
+            }""",
+            timeout=20000,
+        )
+    except Exception:
+        # Client rewrite may still be painting — give SPA one more beat.
+        page.wait_for_timeout(500)
+        page.wait_for_function(
+            """() => {
+              const el = document.getElementById('adminContent');
+              return !!(el && el.children.length > 0);
+            }""",
+            timeout=15000,
+        )
 
 
 def goto_event_panel(page: "Page", event_id: str, panel: str) -> None:

@@ -1,6 +1,8 @@
 import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 import { getDB, loadEventFull, loadCaseSizes } from '../../db.js';
 import {
   barServesProduct,
@@ -356,10 +358,12 @@ export function mountDistributionPanel(route, state) {
     ctx.searchQuery = getLastProductFilter().query || ctx.searchQuery;
     ctx.controls = getDistControls();
     if (!ctx.eps.length || !ctx.bars.length) {
-      panel.innerHTML = `
-        <div class="empty-state">
-          <p>Add products and bars in Event Setup first.</p>
-        </div>`;
+      panel.innerHTML = emptyState({
+        iconHtml: icon('list', { size: 22 }),
+        title: 'Add products and bars first',
+        copy: 'Set up products and bars in Event setup before distributing stock.',
+        variant: 'admin',
+      });
       return;
     }
 
@@ -552,8 +556,13 @@ export function mountDistributionPanel(route, state) {
   }
 
   reload().catch((err) => {
-    console.error(err);
-    panel.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message || 'Failed to load')}</p></div>`;
+    reportError(err, { source: 'admin.distribution.reload', silent: true });
+    panel.innerHTML = errorState({
+      title: 'Couldn’t load distribution',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    bindEmptyRetry(panel, () => reload());
   });
 
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);

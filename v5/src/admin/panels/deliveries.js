@@ -17,11 +17,45 @@ import { mountProductSearch } from '../../components/product-search.js';
 import { mountSupplierSearch } from '../../components/supplier-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+  setTableFilterContext,
+} from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 
 const DELIVERY_BUCKET = 'delivery-photos';
+
+function inDateRange(iso, dates) {
+  const from = dates?.from || '';
+  const to = dates?.to || '';
+  if (!from && !to) return true;
+  if (!iso) return true;
+  const day = String(iso).slice(0, 10);
+  if (from && day < from) return false;
+  if (to && day > to) return false;
+  return true;
+}
+
+function sortDeliveries(list, sort) {
+  const items = list.slice();
+  if (sort === 'supplier') {
+    items.sort((a, b) => {
+      const sa = a.supplier?.name || '';
+      const sb = b.supplier?.name || '';
+      const cmp = sa.localeCompare(sb);
+      if (cmp) return cmp;
+      return new Date(b.delivered_at || 0) - new Date(a.delivered_at || 0);
+    });
+  } else if (sort === 'date-asc') {
+    items.sort((a, b) => new Date(a.delivered_at || 0) - new Date(b.delivered_at || 0));
+  } else {
+    items.sort((a, b) => new Date(b.delivered_at || 0) - new Date(a.delivered_at || 0));
+  }
+  return items;
+}
 
 function lineParts(l, event, caseSizes) {
   const p = productFromEvent(event, l.product_id);
@@ -135,6 +169,7 @@ function renderList(deliveries, event, caseSizes) {
 
   return deliveries.map((d) => {
     const sup = d.supplier?.name || 'No supplier';
+    const supplierId = d.supplier_id || d.supplier?.id || '';
     const lineCount = (d.lines || []).length;
     const lineList = renderLineList(d.lines, event, caseSizes);
     const ids = productIds(d).join(',');
@@ -144,6 +179,7 @@ function renderList(deliveries, event, caseSizes) {
       <article class="del-card" data-delivery-id="${escapeHtml(d.id)}"
         data-product-ids="${escapeHtml(ids)}"
         data-product-names="${escapeHtml(productNamesHaystack(d.lines, event))}"
+        data-supplier-id="${escapeHtml(supplierId)}"
         data-supplier-name="${escapeHtml((sup || '').toLowerCase())}"
         data-reference="${escapeHtml((d.reference || '').toLowerCase())}"
         data-notes="${escapeHtml((d.notes || '').toLowerCase())}">
@@ -235,6 +271,32 @@ export function mountDeliveriesPanel(route) {
   let delNote = null;
   let delPhotos = [];
   let delDamages = [];
+  let supplierIds = [];
+  let dates = { from: '', to: '' };
+  let sortKey = 'date-desc';
+
+  const seeded = getTableFilterValues('deliveries');
+  if (seeded) {
+    supplierIds = Array.isArray(seeded.supplierIds) ? [...seeded.supplierIds] : [];
+    dates = {
+      from: seeded.dates?.from || '',
+      to: seeded.dates?.to || '',
+    };
+    sortKey = seeded.sort || 'date-desc';
+  }
+
+  function visibleDeliveries() {
+    let list = deliveries.slice();
+    if (supplierIds.length) {
+      const allowed = new Set(supplierIds);
+      list = list.filter((d) => {
+        const id = d.supplier_id || d.supplier?.id || '';
+        return id && allowed.has(id);
+      });
+    }
+    list = list.filter((d) => inDateRange(d.delivered_at, dates));
+    return sortDeliveries(list, sortKey);
+  }
 
   function applyProductFilter({ query, productId } = {}) {
     const q = (query || '').trim().toLowerCase();
@@ -840,16 +902,25 @@ export function mountDeliveriesPanel(route) {
   }
 
   function paintList() {
-    listEl.innerHTML = renderList(deliveries, event, caseSizes);
-    wireList();
-    listEl.querySelector('[data-empty-cta="log-delivery"]')?.addEventListener('click', () => openDeliveryForm());
+    const visible = visibleDeliveries();
+    if (!visible.length && deliveries.length) {
+      listEl.innerHTML = emptyState({
+        iconHtml: icon('search', { size: 22 }),
+        title: 'No matches',
+        copy: 'No deliveries match your filter.',
+        variant: 'admin',
+      });
+    } else {
+      listEl.innerHTML = renderList(visible, event, caseSizes);
+      wireList();
+      listEl.querySelector('[data-empty-cta="log-delivery"]')?.addEventListener('click', () => openDeliveryForm());
+    }
     applyProductFilter(getLastProductFilter());
   }
 
   async function refreshList() {
     const DB = getDB();
     deliveries = await DB.deliveries.forEvent(route.eventId);
-    deliveries.sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at));
     paintList();
   }
 
@@ -861,6 +932,12 @@ export function mountDeliveriesPanel(route) {
         loadCategories(),
         loadCaseSizes(),
       ]);
+      setTableFilterContext('deliveries', {
+        suppliers: (suppliers || []).map((s) => ({
+          value: s.id,
+          label: s.name || 'Supplier',
+        })),
+      });
       await refreshList();
     } catch (err) {
       reportError(err, { source: 'admin.deliveries.load', silent: true });
@@ -882,14 +959,28 @@ export function mountDeliveriesPanel(route) {
   const onProductFilter = (e) => {
     applyProductFilter(e.detail || {});
   };
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'deliveries') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    supplierIds = Array.isArray(values.supplierIds) ? [...values.supplierIds] : [];
+    dates = {
+      from: values.dates?.from || '',
+      to: values.dates?.to || '',
+    };
+    sortKey = values.sort || 'date-desc';
+    paintList();
+  };
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   load();
 
   return () => {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
     closeLightbox();
   };
 }

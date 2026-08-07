@@ -35,7 +35,8 @@ import {
   getTableFilterValues,
   patchTableFilterState,
 } from '../table-filter.js';
-
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 
 const CATEGORY_COLOURS = [
@@ -1629,7 +1630,12 @@ export function mountKitLibraryPanel() {
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
-    bodyEl.innerHTML = `<tr><td colspan="7" class="del-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
+    reportError(err, { source: 'admin.kitLibrary.load', silent: true });
+    bodyEl.innerHTML = `<tr><td colspan="7">${errorState({
+      title: 'Couldn’t load kit library',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    })}</td></tr>`;
   });
 
   return () => {

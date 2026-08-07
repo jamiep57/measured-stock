@@ -10,9 +10,15 @@ import { storedToForm, parseQty } from '../../stock-entry.js';
 import { productStockPack } from '../../pack-metrics.js';
 import { round1 } from '../../lib/opening-stock.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 
 const WH_STORAGE_KEY = 'v5_warehouse';
 
@@ -89,10 +95,6 @@ function renderShell() {
     <div class="admin-page wh-panel">
       <div class="catalog-layout">
         <aside class="catalog-list-card admin-surface">
-          <div class="catalog-list-head">
-            <input type="search" class="admin-input" id="whSearch"
-              placeholder="Search warehouses…" autocomplete="off" aria-label="Search warehouses">
-          </div>
           <div class="catalog-list" id="whList">
             <div class="catalog-list-empty">${loadingWidget('Loading warehouses…')}</div>
           </div>
@@ -108,7 +110,7 @@ function renderShell() {
     </div>`;
 }
 
-function renderListItems(warehouses, selectedId, query) {
+function renderListItems(warehouses, selectedId, query, sort = 'name') {
   const q = (query || '').trim().toLowerCase();
   const list = (warehouses || [])
     .filter((w) => {
@@ -116,7 +118,10 @@ function renderListItems(warehouses, selectedId, query) {
       return [w.name, w.address].join(' ').toLowerCase().includes(q);
     })
     .slice()
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    .sort((a, b) => {
+      const cmp = (a.name || '').localeCompare(b.name || '');
+      return sort === 'name-desc' ? -cmp : cmp;
+    });
 
   if (!list.length) {
     return `<div class="catalog-list-empty">${warehouses?.length
@@ -260,13 +265,6 @@ function renderDetail(w, stockRows, transfers, warehouses, events, caseSizes, ki
       </button>
     </div>
 
-    <div class="wh-kind-tabs" role="tablist" aria-label="Stock or kit">
-      <button type="button" class="wh-kind-tab${kind === 'stock' ? ' wh-kind-tab--active' : ''}"
-        data-wh-kind="stock" role="tab" aria-selected="${kind === 'stock'}">Stock</button>
-      <button type="button" class="wh-kind-tab${kind === 'kit' ? ' wh-kind-tab--active' : ''}"
-        data-wh-kind="kit" role="tab" aria-selected="${kind === 'kit'}">Kit</button>
-    </div>
-
     ${isKit ? `
     <div class="wh-kit-actions">
       <button type="button" class="topbar-tool topbar-tool--label topbar-tool--primary" id="whReceiveKitBtn"
@@ -317,7 +315,6 @@ export function mountWarehousesPanel() {
   const listEl = $('whList');
   const detailEmpty = $('whDetailEmpty');
   const detailBody = $('whDetailBody');
-  const searchEl = $('whSearch');
   if (!listEl || !detailEmpty || !detailBody) return () => {};
 
   let warehouses = [];
@@ -325,10 +322,18 @@ export function mountWarehousesPanel() {
   let caseSizes = [];
   let selectedId = null;
   let searchQuery = '';
+  let sortKey = 'name';
   let stockRows = [];
   let transfers = [];
   let detailLoading = false;
   let stockKind = 'stock';
+
+  const seeded = getTableFilterValues('warehouses');
+  if (seeded) {
+    searchQuery = seeded.query || '';
+    sortKey = seeded.sort || 'name';
+    stockKind = seeded.kind === 'kit' ? 'kit' : 'stock';
+  }
 
   function rememberId(id) {
     try {
@@ -348,7 +353,7 @@ export function mountWarehousesPanel() {
   }
 
   function paintList() {
-    listEl.innerHTML = renderListItems(warehouses, selectedId, searchQuery);
+    listEl.innerHTML = renderListItems(warehouses, selectedId, searchQuery, sortKey);
     listEl.querySelectorAll('[data-wh-id]').forEach((btn) => {
       btn.onclick = () => selectWarehouse(btn.dataset.whId);
     });
@@ -375,12 +380,6 @@ export function mountWarehousesPanel() {
       w, stockRows, transfers, warehouses, events, caseSizes, stockKind,
     );
     $('whEditBtn')?.addEventListener('click', () => openWarehouseForm(w.id));
-    detailBody.querySelectorAll('[data-wh-kind]').forEach((btn) => {
-      btn.onclick = () => {
-        stockKind = btn.dataset.whKind === 'kit' ? 'kit' : 'stock';
-        paintDetail();
-      };
-    });
     $('whReceiveKitBtn')?.addEventListener('click', () => openReceiveKit(w.id));
   }
 
@@ -501,7 +500,13 @@ export function mountWarehousesPanel() {
       detailLoading = false;
       detailEmpty.hidden = true;
       detailBody.hidden = false;
-      detailBody.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+      reportError(err, { source: 'admin.warehouses.detail', silent: true });
+      detailBody.innerHTML = errorState({
+        title: 'Couldn’t load stock',
+        copy: err.message || 'Failed to load',
+        variant: 'admin',
+      });
+      bindEmptyRetry(detailBody, () => loadDetail(warehouseId));
       return;
     }
 
@@ -653,18 +658,34 @@ export function mountWarehousesPanel() {
     openWarehouseForm(null);
   }
 
-  searchEl?.addEventListener('input', (e) => {
-    searchQuery = e.target.value;
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'warehouses') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    searchQuery = values.query || '';
+    sortKey = values.sort || 'name';
+    const nextKind = values.kind === 'kit' ? 'kit' : 'stock';
+    const kindChanged = nextKind !== stockKind;
+    stockKind = nextKind;
     paintList();
-  });
+    if (kindChanged) paintDetail();
+  };
 
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refreshList().catch((err) => {
-    listEl.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
+    reportError(err, { source: 'admin.warehouses.list', silent: true });
+    listEl.innerHTML = errorState({
+      title: 'Couldn’t load warehouses',
+      copy: err.message || 'Failed to load',
+      variant: 'admin',
+    });
+    bindEmptyRetry(listEl, () => refreshList());
   });
 
   return () => {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

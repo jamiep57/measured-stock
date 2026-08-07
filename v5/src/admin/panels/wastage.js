@@ -17,6 +17,10 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
@@ -30,6 +34,32 @@ const WASTAGE_REASONS = [
   'Comp / staff drink',
   'Other',
 ];
+
+function inDateRange(iso, dates) {
+  const from = dates?.from || '';
+  const to = dates?.to || '';
+  if (!from && !to) return true;
+  if (!iso) return true;
+  const day = String(iso).slice(0, 10);
+  if (from && day < from) return false;
+  if (to && day > to) return false;
+  return true;
+}
+
+function batchDate(b) {
+  return b.recorded_at || b.created_at || '';
+}
+
+function sortBatches(list, sort) {
+  const items = list.slice();
+  const dir = sort === 'date-asc' ? 1 : -1;
+  items.sort((a, b) => {
+    const ta = new Date(batchDate(a) || 0).getTime();
+    const tb = new Date(batchDate(b) || 0).getTime();
+    return (ta - tb) * dir;
+  });
+  return items;
+}
 
 function fmtGbp(n) {
   if (n == null || !Number.isFinite(n)) return '£0';
@@ -210,6 +240,22 @@ export function mountWastagePanel(route) {
   let batches = [];
   let editingId = null;
   let wstLines = [];
+  let dates = { from: '', to: '' };
+  let sortKey = 'date-desc';
+
+  const seeded = getTableFilterValues('wastage');
+  if (seeded) {
+    dates = {
+      from: seeded.dates?.from || '',
+      to: seeded.dates?.to || '',
+    };
+    sortKey = seeded.sort || 'date-desc';
+  }
+
+  function visibleBatches() {
+    let list = batches.filter((b) => inDateRange(batchDate(b), dates));
+    return sortBatches(list, sortKey);
+  }
 
   function applyProductFilter({ query, productId } = {}) {
     const q = (query || '').trim().toLowerCase();
@@ -547,18 +593,28 @@ export function mountWastagePanel(route) {
   }
 
   function paintList() {
+    const visible = visibleBatches();
     if (statsEl) {
-      if (batches.length) {
+      if (visible.length) {
         statsEl.hidden = false;
-        statsEl.innerHTML = renderStats(batches, event, caseSizes);
+        statsEl.innerHTML = renderStats(visible, event, caseSizes);
       } else {
         statsEl.hidden = true;
         statsEl.innerHTML = '';
       }
     }
-    listEl.innerHTML = renderList(batches, event, caseSizes);
-    wireList();
-    listEl.querySelector('[data-empty-cta="log-wastage"]')?.addEventListener('click', () => openWastageForm());
+    if (!visible.length && batches.length) {
+      listEl.innerHTML = emptyState({
+        iconHtml: icon('search', { size: 22 }),
+        title: 'No matches',
+        copy: 'No wastage entries match your filter.',
+        variant: 'admin',
+      });
+    } else {
+      listEl.innerHTML = renderList(visible, event, caseSizes);
+      wireList();
+      listEl.querySelector('[data-empty-cta="log-wastage"]')?.addEventListener('click', () => openWastageForm());
+    }
     applyProductFilter(getLastProductFilter());
   }
 
@@ -596,13 +652,26 @@ export function mountWastagePanel(route) {
   const onProductFilter = (e) => {
     applyProductFilter(e.detail || {});
   };
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'wastage') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    dates = {
+      from: values.dates?.from || '',
+      to: values.dates?.to || '',
+    };
+    sortKey = values.sort || 'date-desc';
+    paintList();
+  };
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   load();
 
   return () => {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

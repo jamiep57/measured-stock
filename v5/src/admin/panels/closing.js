@@ -44,7 +44,8 @@ import {
   mergeClosingRemoteRow,
   shouldApplyRemoteClosingEdit,
 } from '../../lib/closing-live.js';
-
+import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 const COL_COUNT = 12; // product (pack in meta) + 9 data cols + return + actions
 const LOCAL_ECHO_MS = 1500;
 const AUTOSAVE_MS = 180;
@@ -1326,7 +1327,12 @@ export function mountClosingPanel(route) {
     } catch (err) {
       const body = $('clBody');
       if (body) {
-        body.innerHTML = `<tr><td colspan="${COL_COUNT}" class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load closing stock')}</td></tr>`;
+        reportError(err, { source: 'admin.closing.load', silent: true });
+        body.innerHTML = `<tr><td colspan="${COL_COUNT}">${errorState({
+          title: 'Couldn’t load closing stock',
+          copy: err.message || 'Failed to load closing stock',
+          variant: 'admin',
+        })}</td></tr>`;
       }
       toast(err.message || 'Failed to load closing stock', true);
     }

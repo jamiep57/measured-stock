@@ -16,6 +16,10 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+} from '../table-filter.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import { confirmDialog } from '../../components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
@@ -46,6 +50,24 @@ function groupByCategory(eps) {
     list.sort((a, b) => (a.product.name || '').localeCompare(b.product.name || ''));
   });
   return grouped;
+}
+
+function sortEventProducts(eps, sort) {
+  const items = eps.slice();
+  if (sort === 'name') {
+    items.sort((a, b) => (a.product.name || '').localeCompare(b.product.name || ''));
+  } else if (sort === 'name-desc') {
+    items.sort((a, b) => (b.product.name || '').localeCompare(a.product.name || ''));
+  } else {
+    items.sort((a, b) => {
+      const ca = a.product?.category?.name || 'Uncategorised';
+      const cb = b.product?.category?.name || 'Uncategorised';
+      const catCmp = ca.localeCompare(cb);
+      if (catCmp) return catCmp;
+      return (a.product.name || '').localeCompare(b.product.name || '');
+    });
+  }
+  return items;
 }
 
 function countLineFor(lines, barId, productId) {
@@ -184,25 +206,40 @@ function renderGridBody(ctx) {
   const filtered = filterProducts(ctx);
   const colSpan = 1 + barColCount(ctx);
   let html = '';
+  const sort = ctx.sort || 'category';
 
-  const grouped = groupByCategory(filtered);
-  Object.keys(grouped).sort().forEach((cat) => {
-    html += `<tr class="dist-cat-row">
+  if (sort === 'name' || sort === 'name-desc') {
+    sortEventProducts(filtered, sort).forEach((ep) => {
+      html += renderProductRow(ep, ctx);
+    });
+  } else {
+    const grouped = groupByCategory(filtered);
+    Object.keys(grouped).sort().forEach((cat) => {
+      html += `<tr class="dist-cat-row">
       <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
       <td colspan="${barColCount(ctx)}" class="dist-cat-scroll"></td>
     </tr>`;
-    grouped[cat].forEach((ep) => {
-      html += renderProductRow(ep, ctx);
+      grouped[cat].forEach((ep) => {
+        html += renderProductRow(ep, ctx);
+      });
     });
-  });
+  }
 
   return html || `<tr><td colspan="${colSpan}" class="dist-empty">No products match your filter.</td></tr>`;
 }
 
 function filterProducts(ctx) {
+  let eps = ctx.eps;
+  if (ctx.categoriesFilter?.length) {
+    const allowed = new Set(ctx.categoriesFilter);
+    eps = eps.filter((ep) => {
+      const cat = ep.product?.category?.name || 'Uncategorised';
+      return allowed.has(cat);
+    });
+  }
   const q = ctx.searchQuery.trim().toLowerCase();
-  if (!q) return ctx.eps;
-  return ctx.eps.filter((ep) => {
+  if (!q) return eps;
+  return eps.filter((ep) => {
     const cat = ep.product?.category?.name || '';
     const hay = [ep.product.name, ep.product.sku, cat, productSupplierSearchText(ep.product)]
       .join(' ')
@@ -283,12 +320,20 @@ export function mountCountsPanel(route) {
     bars: [],
     eps: [],
     searchQuery: '',
+    categoriesFilter: [],
+    sort: 'category',
     saveTimers: {},
     theadObserver: null,
     gridWrap: null,
     abort: false,
     collab: null,
   };
+
+  const seeded = getTableFilterValues('counts');
+  if (seeded) {
+    ctx.categoriesFilter = Array.isArray(seeded.categories) ? [...seeded.categories] : [];
+    ctx.sort = seeded.sort || 'category';
+  }
 
   function stopCollab() {
     const session = ctx.collab;
@@ -688,6 +733,15 @@ export function mountCountsPanel(route) {
     e.detail.handled = true;
   }
 
+  function onTableFilter(e) {
+    if (e.detail?.panel !== 'counts') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    ctx.categoriesFilter = Array.isArray(values.categories) ? [...values.categories] : [];
+    ctx.sort = values.sort || 'category';
+    if (ctx.activeSessionId) paintGrid();
+  }
+
   function runPrintCountSheets({ scope, barId }) {
     const result = printCountSheets({
       event: ctx.event,
@@ -781,6 +835,7 @@ export function mountCountsPanel(route) {
 
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   reload().catch((err) => {
     reportError(err, { source: 'admin.counts.reload', silent: true });
@@ -803,5 +858,6 @@ export function mountCountsPanel(route) {
     panel.removeEventListener('input', onPanelInput);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }
