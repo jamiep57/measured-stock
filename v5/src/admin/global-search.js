@@ -59,7 +59,12 @@ export function initGlobalSearch() {
   const topbarToolbar = initTopbarToolbar();
 
   let query = '';
+  /** Data context key (event id, kit, or view) — panel switches reuse cached products. */
   let routeKey = '';
+  /** Event/workspace scope — clearing the filter only when this changes. */
+  let scopeKey = '';
+  let cachedProducts = [];
+  let cachedBars = [];
   /** Drop stale async loads so Kit search/toolbar can’t stick on Closing. */
   let syncGeneration = 0;
 
@@ -94,6 +99,22 @@ export function initGlobalSearch() {
     }
   }
 
+  function contextKeyForRoute(route) {
+    if (route.view === 'kit-library') return 'kit-library';
+    if (route.view === 'event' && route.panel === 'kit' && route.eventId) {
+      return `event:${route.eventId}:kit`;
+    }
+    if (route.view === 'event' && route.eventId) {
+      return `event:${route.eventId}`;
+    }
+    return route.view || '';
+  }
+
+  function scopeKeyForRoute(route) {
+    if (route.view === 'event' && route.eventId) return `event:${route.eventId}`;
+    return route.view || '';
+  }
+
   async function loadPageContext(route) {
     if (route.view === 'kit-library') {
       return { products: await loadKitLibraryProducts(), bars: [] };
@@ -122,13 +143,14 @@ export function initGlobalSearch() {
   return {
     async syncRoute(route) {
       const gen = ++syncGeneration;
-      const nextKey = route.view === 'event'
-        ? `event:${route.eventId}:${route.panel || 'dashboard'}`
-        : route.view;
-      const eventChanged = nextKey !== routeKey;
+      const nextKey = contextKeyForRoute(route);
+      const nextScope = scopeKeyForRoute(route);
+      const scopeChanged = nextScope !== scopeKey;
+      const dataChanged = nextKey !== routeKey;
       routeKey = nextKey;
+      scopeKey = nextScope;
 
-      if (eventChanged) {
+      if (scopeChanged) {
         query = '';
         emitProductFilter({ query: '', productId: null, source: 'route-change' });
       }
@@ -136,9 +158,17 @@ export function initGlobalSearch() {
       container.hidden = hideSearchForRoute(route);
       // Always sync filter/toolbar — including pages that hide product search.
       try {
-        const { products, bars } = container.hidden
-          ? { products: [], bars: [] }
-          : await loadPageContext(route);
+        let products = cachedProducts;
+        let bars = cachedBars;
+        if (container.hidden) {
+          products = [];
+          bars = [];
+        } else if (dataChanged) {
+          ({ products, bars } = await loadPageContext(route));
+          if (gen !== syncGeneration) return;
+          cachedProducts = products;
+          cachedBars = bars;
+        }
         if (gen !== syncGeneration) return;
         if (!container.hidden) mount(products, route);
         topbarControls.syncRoute(route, { products, bars });
@@ -146,6 +176,8 @@ export function initGlobalSearch() {
       } catch (err) {
         if (gen !== syncGeneration) return;
         console.warn('global search load failed', err);
+        cachedProducts = [];
+        cachedBars = [];
         if (!container.hidden) mount([], route);
         topbarControls.syncRoute(route, { products: [], bars: [] });
         topbarToolbar.syncRoute(route);

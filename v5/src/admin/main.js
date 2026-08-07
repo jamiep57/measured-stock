@@ -109,14 +109,17 @@ async function render(route) {
     const html = await renderPanel(route, state);
     if (gen !== renderGen) return;
     content.innerHTML = html;
-    await globalSearch?.syncRoute(route);
-    if (gen !== renderGen) return;
-    cleanupPanel = await mountPanel(route, state);
+    // Overlap topbar context load with panel mount — loadEventFull coalesces.
+    const searchReady = globalSearch?.syncRoute(route) ?? Promise.resolve();
+    const [cleanup] = await Promise.all([
+      mountPanel(route, state),
+      searchReady,
+    ]);
     if (gen !== renderGen) {
-      cleanupPanel?.();
-      cleanupPanel = null;
+      cleanup?.();
       return;
     }
+    cleanupPanel = cleanup || null;
   } catch (err) {
     if (gen !== renderGen) return;
     // Stale Vite chunk after deploy → dynamic import() rejects with Failed to fetch.

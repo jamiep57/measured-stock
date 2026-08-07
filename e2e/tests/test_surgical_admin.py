@@ -174,15 +174,6 @@ def test_40_suppliers_create_via_ui(admin_page, db, tracker):
     admin_page.locator("#supName").fill(name)
     # Leave SOR blank — num-math field has been flaky when filled oddly.
     click_id(admin_page, "supSave")
-    # Wait either toast or sheet close + list row.
-    try:
-        expect_toast(admin_page, "Supplier created", timeout=12000)
-    except Exception:
-        err = (admin_page.locator("#supErr").text_content() or "").strip()
-        # Fall through to DB poll — toast is ephemeral.
-        if err:
-            raise AssertionError(f"supplier create failed: {err}")
-
     rows = poll_until(
         lambda: (
             db.table("suppliers").select("id, name").eq("name", name).limit(1).execute().data

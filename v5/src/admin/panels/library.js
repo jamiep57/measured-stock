@@ -21,6 +21,7 @@ import {
   ADMIN_TABLE_FILTER,
   getTableFilterValues,
   patchTableFilterState,
+  setTableFilterContext,
 } from '../table-filter.js';
 import {
   MERGE_FIELD_DEFS,
@@ -265,9 +266,9 @@ export function mountLibraryPanel() {
     const pid = productFilter.productId;
     return products.filter((p) => {
       if (filterCat && p.category?.name !== filterCat) return false;
-      if (filterSups.length) {
+      if (filterSupIds.length) {
         const sid = preferredSupplierId(p);
-        const match = filterSups.some((filter) => {
+        const match = filterSupIds.some((filter) => {
           if (filter === '__none__') return !sid && !preferredSupplier(p);
           return sid === filter;
         });
@@ -533,6 +534,12 @@ export function mountLibraryPanel() {
       loadSuppliers(),
       loadCaseSizes(),
     ]);
+    setTableFilterContext('library', {
+      suppliers: (suppliers || [])
+        .map((s) => ({ value: s.id, label: s.name || 'Supplier' }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      categories: [...new Set((products || []).map((p) => p.category?.name || 'Uncategorised'))].sort(),
+    });
     paintTable();
   }
 
