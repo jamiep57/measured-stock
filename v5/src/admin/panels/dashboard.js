@@ -15,6 +15,7 @@ import {
 import { icon, initIcons } from '../../lib/icons.js';
 import { skeletonList } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { reportError } from '../../lib/client-errors.js';
 import { hrefForRoute } from '../router.js';
 import {
   ADMIN_TABLE_FILTER,

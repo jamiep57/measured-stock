@@ -100,26 +100,47 @@ export function mountProjectionsPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, recipes, caseSizes, deliveries, wastageBatches] = await Promise.all([
+    const [event, caseSizes] = await Promise.all([
       loadEventLite(ctx.eventId),
-      DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-      loadRecipesFull(),
       loadCaseSizes(),
-      DB.deliveries.forEvent(ctx.eventId).catch(() => []),
-      DB.wastage.forEvent(ctx.eventId).catch(() => []),
     ]);
     if (ctx.abort) return;
 
     ctx.projection = computeStockProjection({
       event,
-      tillRows: tillImport?.rows || [],
-      recipes: recipes || [],
+      tillRows: [],
+      recipes: [],
       products: productsFromEvent(event),
       caseSizes: caseSizes || [],
-      deliveries: deliveries || [],
-      wastageBatches: wastageBatches || [],
+      deliveries: [],
+      wastageBatches: [],
     });
     paint();
+
+    try {
+      const [tillImport, recipes, deliveries, wastageBatches] = await Promise.all([
+        DB.tillImports.forEvent(ctx.eventId).catch(() => null),
+        loadRecipesFull(),
+        DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+        DB.wastage.forEvent(ctx.eventId).catch(() => []),
+      ]);
+      if (ctx.abort) return;
+
+      ctx.projection = computeStockProjection({
+        event,
+        tillRows: tillImport?.rows || [],
+        recipes: recipes || [],
+        products: productsFromEvent(event),
+        caseSizes: caseSizes || [],
+        deliveries: deliveries || [],
+        wastageBatches: wastageBatches || [],
+      });
+      paint();
+    } catch (err) {
+      if (ctx.abort) return;
+      reportError(err, { source: 'admin.projections.load.secondary', silent: true });
+      toast(err.message || 'Projection details failed to load', true);
+    }
   }
 
   const onTableFilter = (e) => {

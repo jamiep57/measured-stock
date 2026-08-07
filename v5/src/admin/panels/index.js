@@ -8,18 +8,6 @@ import { notFoundState } from '../../components/empty-state.js';
 import { resolveActiveEventId } from '../event-workspace.js';
 
 import {
-  renderSuppliersShell,
-  mountSuppliersPanel,
-} from './suppliers.js';
-import {
-  renderVolumePoolsShell,
-  mountVolumePoolsPanel,
-} from './volume-pools.js';
-import {
-  renderLibraryShell,
-  mountLibraryPanel,
-} from './library.js';
-import {
   renderDashboardShell,
   mountDashboardPanel,
 } from './dashboard.js';
@@ -31,10 +19,6 @@ import {
   renderSettingsShell,
   mountSettingsPanel,
 } from './settings.js';
-import {
-  renderWarehousesShell,
-  mountWarehousesPanel,
-} from './warehouses.js';
 import {
   renderHomeShell,
   mountHomePanel,
@@ -63,6 +47,10 @@ const lazy = {
   transfers: () => import('./transfers.js'),
   wastage: () => import('./wastage.js'),
   counts: () => import('./counts.js'),
+  library: () => import('./library.js'),
+  suppliers: () => import('./suppliers.js'),
+  warehouses: () => import('./warehouses.js'),
+  'volume-pools': () => import('./volume-pools.js'),
 };
 
 /** Warm event-workspace chunks so sidebar clicks feel instant. */
@@ -143,7 +131,8 @@ export async function renderPanel(route, state) {
   }
 
   if (route.view === 'library') {
-    return renderLibraryShell();
+    const m = await lazy.library();
+    return m.renderLibraryShell();
   }
 
   if (route.view === 'kit-library') {
@@ -152,11 +141,13 @@ export async function renderPanel(route, state) {
   }
 
   if (route.view === 'suppliers') {
-    return renderSuppliersShell();
+    const m = await lazy.suppliers();
+    return m.renderSuppliersShell();
   }
 
   if (route.view === 'volume-pools') {
-    return renderVolumePoolsShell();
+    const m = await lazy['volume-pools']();
+    return m.renderVolumePoolsShell();
   }
 
   if (route.view === 'bugs') {
@@ -173,7 +164,8 @@ export async function renderPanel(route, state) {
   }
 
   if (route.view === 'warehouses') {
-    return renderWarehousesShell();
+    const m = await lazy.warehouses();
+    return m.renderWarehousesShell();
   }
 
   if (route.view === 'event') {
@@ -359,13 +351,16 @@ export async function mountPanel(route, state) {
     return m.mountReportsPanel(route);
   }
   if (route.view === 'suppliers') {
-    return mountSuppliersPanel();
+    const m = await lazy.suppliers();
+    return m.mountSuppliersPanel();
   }
   if (route.view === 'volume-pools') {
-    return mountVolumePoolsPanel();
+    const m = await lazy['volume-pools']();
+    return m.mountVolumePoolsPanel();
   }
   if (route.view === 'library') {
-    return mountLibraryPanel();
+    const m = await lazy.library();
+    return m.mountLibraryPanel();
   }
   if (route.view === 'kit-library') {
     const m = await lazy['kit-library']();
@@ -383,7 +378,8 @@ export async function mountPanel(route, state) {
     return mountSettingsPanel(route.section || 'users');
   }
   if (route.view === 'warehouses') {
-    return mountWarehousesPanel();
+    const m = await lazy.warehouses();
+    return m.mountWarehousesPanel();
   }
   return null;
 }
