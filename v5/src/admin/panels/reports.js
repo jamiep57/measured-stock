@@ -123,6 +123,17 @@ export function mountReportsPanel(route) {
     collab: null,
   };
 
+  const seeded = getTableFilterValues('reports');
+  if (seeded) {
+    ctx.reportKind = seeded.kind || 'clients';
+    ctx.supplierId = seeded.supplierId || '';
+    ctx.recipientId = seeded.recipientId || '';
+    ctx.dateFrom = seeded.dates?.from || '';
+    ctx.dateTo = seeded.dates?.to || '';
+    ctx.qtyMode = seeded.qtyMode || 'received';
+    ctx.supplierView = seeded.supplierView || 'suppliers';
+  }
+
   function stopCollab() {
     const session = ctx.collab;
     ctx.collab = null;
@@ -564,59 +575,6 @@ export function mountReportsPanel(route) {
   }
 
   function bind() {
-    const supplier = $('rptSupplier');
-    const recipient = $('rptRecipient');
-    const dateFrom = $('rptDateFrom');
-    const dateTo = $('rptDateTo');
-
-    if (supplier) {
-      supplier.onchange = () => {
-        ctx.supplierId = supplier.value || '';
-        compute();
-        paint();
-      };
-    }
-    if (recipient) {
-      recipient.onchange = () => {
-        ctx.recipientId = recipient.value || '';
-        compute();
-        paint();
-      };
-    }
-    if (dateFrom) {
-      dateFrom.onchange = () => {
-        ctx.dateFrom = dateFrom.value || '';
-        compute();
-        paint();
-      };
-    }
-    if (dateTo) {
-      dateTo.onchange = () => {
-        ctx.dateTo = dateTo.value || '';
-        compute();
-        paint();
-      };
-    }
-
-    root.querySelectorAll('.projections-filter-btn[data-report-kind]').forEach((btn) => {
-      btn.onclick = () => {
-        ctx.reportKind = btn.dataset.reportKind || 'clients';
-        paint();
-      };
-    });
-    root.querySelectorAll('.projections-filter-btn[data-qty-mode]').forEach((btn) => {
-      btn.onclick = () => {
-        ctx.qtyMode = btn.dataset.qtyMode || 'received';
-        compute();
-        paint();
-      };
-    });
-    root.querySelectorAll('.projections-filter-btn[data-supplier-view]').forEach((btn) => {
-      btn.onclick = () => {
-        ctx.supplierView = btn.dataset.supplierView || 'suppliers';
-        paint();
-      };
-    });
     root.querySelectorAll('[data-invoice-recipient]').forEach((btn) => {
       btn.onclick = () => {
         const id = btn.getAttribute('data-invoice-recipient') || '';

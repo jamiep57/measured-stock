@@ -2,13 +2,13 @@ import '../styles/admin.css';
 import { $, toast } from '../lib/util.js';
 import { initIcons } from '../lib/icons.js';
 import { loadDbScript } from '../lib/load-db.js';
-import { loadEventsList } from '../db.js';
-import { parseRoute, navigate, startRouter, linkSidebar, hrefForRoute } from './router.js';
+import { loadEventsList, getDB } from '../db.js';
+import { isNetworkFetchError } from '../db.js';import { parseRoute, navigate, startRouter, linkSidebar, hrefForRoute } from './router.js';
 import { initSidebar, syncSidebar } from './sidebar.js';
-import { readRememberedEventId, writeRememberedEventId } from './event-workspace.js';
+import { readRememberedEventId, writeRememberedEventId, resolveActiveEventId } from './event-workspace.js';
 import { initSheet } from '../components/sheet.js';
 import { initBugSheet } from '../components/bug-sheet.js';
-import { PANEL_TITLES, renderPanel, mountPanel } from './panels/index.js';
+import { PANEL_TITLES, renderPanel, mountPanel, prefetchEventPanels } from './panels/index.js';
 import { ADMIN_EVENTS_CHANGED } from './panels/home.js';
 import { syncBugOpenDot, mountBugReportFab, syncBugFabVisibility } from './panels/bugs.js';
 import { initGlobalSearch, applyGenericProductFilter, ADMIN_PRODUCT_FILTER } from './global-search.js';
@@ -96,9 +96,18 @@ async function render(route) {
 
   const content = $('adminContent');
   content.classList.remove('admin-content--enter');
-  content.innerHTML = await renderPanel(route, state);
-  await globalSearch?.syncRoute(route);
-  cleanupPanel = await mountPanel(route, state);
+  try {
+    content.innerHTML = await renderPanel(route, state);
+    await globalSearch?.syncRoute(route);
+    cleanupPanel = await mountPanel(route, state);
+  } catch (err) {
+    // Stale Vite chunk after deploy → dynamic import() rejects with Failed to fetch.
+    if (isNetworkFetchError(err) || /Loading chunk|error loading dynamically imported/i.test(String(err?.message || err))) {
+      window.location.reload();
+      return;
+    }
+    throw err;
+  }
   syncBugFabVisibility();
   requestAnimationFrame(() => {
     content.classList.add('admin-content--enter');
@@ -234,6 +243,12 @@ function wireProfileMenu() {
 
 async function boot() {
   initClientErrorReporting();
+  // After a Vercel deploy, stale hashed chunks 404 and dynamic import() rejects
+  // with "Failed to fetch". One reload picks up the new admin entry + assets.
+  window.addEventListener('vite:preloadError', (event) => {
+    event.preventDefault();
+    window.location.reload();
+  });
   try {
     await loadDbScript();
   } catch {

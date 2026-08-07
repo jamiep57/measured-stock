@@ -112,6 +112,13 @@ export async function loadLibraryProducts() {
   }
 }
 
+function isNetworkFetchError(err) {
+  const msg = String(err?.message || err);
+  return /Failed to fetch|NetworkError|Load failed|ERR_NETWORK|network error/i.test(msg);
+}
+
+export { isNetworkFetchError };
+
 export async function loadKitLibraryProducts() {
   const DB = getDB();
   try {
@@ -131,10 +138,13 @@ export async function loadKitLibraryProducts() {
           '&select=' + KIT_PRODUCT_SELECT_FALLBACK +
           '&order=name',
         );
-      } catch {
+      } catch (fallbackErr) {
+        if (isNetworkFetchError(fallbackErr)) throw fallbackErr;
         return [];
       }
     }
+    // Surface real connectivity failures to the kit library panel.
+    if (isNetworkFetchError(err)) throw err;
     return [];
   }
 }
@@ -159,10 +169,15 @@ export async function loadKitContainerContents(containerIds) {
     return await DB.select('kit_container_contents', q);
   } catch (err) {
     const msg = String(err?.message || err);
-    if (/kit_container_contents|does not exist|PGRST|column|relationship/.test(msg)) {
+    // Contents are optional for the catalogue list — never blank the whole panel.
+    if (
+      isNetworkFetchError(err)
+      || /kit_container_contents|does not exist|PGRST|column|relationship/.test(msg)
+    ) {
       return [];
     }
-    throw err;
+    console.warn('loadKitContainerContents', err);
+    return [];
   }
 }
 

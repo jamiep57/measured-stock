@@ -1358,11 +1358,12 @@ export function mountKitLibraryPanel() {
   }
 
   async function refresh() {
-    const [prods, cats, stock, contentRows] = await Promise.all([
-      loadKitLibraryProducts(),
+    // Load catalogue first so a flaky secondary request cannot blank the panel.
+    const prods = await loadKitLibraryProducts();
+    const [cats, stock, contentRows] = await Promise.all([
       loadKitCategories(),
       loadKitStockMap(),
-      loadKitContainerContents(),
+      loadKitContainerContents().catch(() => []),
     ]);
     products = prods || [];
     categories = cats || [];

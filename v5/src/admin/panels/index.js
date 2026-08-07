@@ -83,6 +83,15 @@ const lazy = {
   'kit-library': () => import('./kit-library.js'),
 };
 
+/** Warm event-workspace chunks so sidebar clicks feel instant. */
+export function prefetchEventPanels() {
+  void lazy.reports();
+  void lazy.recon();
+  void lazy.sales();
+  void lazy.closing();
+  void lazy.kit();
+}
+
 export const PANEL_TITLES = {
   home: 'Events',
   dev: 'Dev tools',
