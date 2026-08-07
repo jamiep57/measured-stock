@@ -22,6 +22,7 @@ import {
   ADMIN_TABLE_FILTER,
   getTableFilterValues,
   setTableFilterContext,
+  patchTableFilterState,
 } from '../table-filter.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import { confirmDialog } from '../../components/modal.js';
@@ -802,6 +803,7 @@ export function mountSalesPanel(route) {
         ctx.tab = next;
         ctx.categoryFilter = '';
         paint();
+        patchTableFilterState('sales', { category: '' });
       };
     });
     bindRecipeControls();

@@ -21,6 +21,11 @@ import { mountProductSearch } from '../../components/product-search.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import {
+  ADMIN_TABLE_FILTER,
+  getTableFilterValues,
+  setTableFilterContext,
+} from '../table-filter.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   kitCellKeyFromInput,
@@ -65,9 +70,6 @@ import {
   scanCodeCandidates,
 } from '../../lib/kit-scan-session.js';
 import { parseQty } from '../../stock-entry.js';
-
-const WH_KEY = 'v5_kit_pack_warehouse';
-const FILTER_KEY = 'v5_kit_pack_filter';
 
 function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
@@ -241,28 +243,8 @@ function renderOnEvent(balance) {
   return `<div class="kit-on-event">${parts.join('<span class="kit-on-event-sep">·</span>')}</div>`;
 }
 
-function renderPackControls(warehouses, warehouseId, filter) {
-  const whOpts = (warehouses || []).map((w) =>
-    `<option value="${escapeHtml(w.id)}"${w.id === warehouseId ? ' selected' : ''}>${escapeHtml(w.name)}</option>`).join('');
-  const filters = [
-    { id: 'all', label: 'All' },
-    { id: 'own', label: 'Own' },
-    { id: 'hire', label: 'Hire-in' },
-    { id: 'short', label: 'Short' },
-  ];
-  return `
-    <label class="kit-pack-wh">
-      <span class="muted">Warehouse</span>
-      <select class="admin-select" id="kitPackWarehouse" aria-label="Warehouse for availability and send">
-        <option value="">All warehouses</option>
-        ${whOpts}
-      </select>
-    </label>
-    <div class="kit-pack-filters rcn-seg" role="group" aria-label="Filter kit lines">
-      ${filters.map((f) => `
-        <button type="button" class="rcn-seg-btn${filter === f.id ? ' is-active' : ''}"
-          data-kit-filter="${f.id}">${escapeHtml(f.label)}</button>`).join('')}
-    </div>`;
+function renderPackControls() {
+  return '';
 }
 
 function renderPackStats(stats, movementCount) {
@@ -506,6 +488,12 @@ export function mountKitPanel(route) {
   let saveTimers = new Map();
   let addingProduct = false;
 
+  const seeded = getTableFilterValues('kit');
+  if (seeded) {
+    sourceFilter = seeded.stockFilter || 'all';
+    warehouseId = seeded.warehouseId || '';
+  }
+
   /** @type {null | { id: string, mode: string }} */
   let scanSession = null;
   let scanMode = SCAN_MODE_PACK;
@@ -545,32 +533,6 @@ export function mountKitPanel(route) {
     });
   }
 
-  try {
-    warehouseId = localStorage.getItem(WH_KEY) || '';
-  } catch { /* ignore */ }
-  try {
-    const stored = localStorage.getItem(FILTER_KEY);
-    if (stored === 'own' || stored === 'hire' || stored === 'short' || stored === 'all') {
-      sourceFilter = stored;
-    }
-  } catch { /* ignore */ }
-
-  function wireToolbar() {
-    $('kitPackWarehouse')?.addEventListener('change', async (e) => {
-      warehouseId = e.target.value || '';
-      try { localStorage.setItem(WH_KEY, warehouseId); } catch { /* ignore */ }
-      availMap = await loadWarehouseAvail(warehouseId || undefined);
-      paint();
-    });
-    controlsEl?.querySelectorAll('[data-kit-filter]').forEach((btn) => {
-      btn.onclick = () => {
-        sourceFilter = btn.dataset.kitFilter || 'all';
-        try { localStorage.setItem(FILTER_KEY, sourceFilter); } catch { /* ignore */ }
-        paint();
-      };
-    });
-  }
-
   function availableKitProducts() {
     const onEvent = new Set(items.map((i) => i.product_id));
     return kitProducts.filter((p) => !onEvent.has(p.id));
@@ -591,8 +553,8 @@ export function mountKitPanel(route) {
   function paint() {
     const stats = packListStats(items, availMap, balanceMap);
     if (controlsEl) {
-      controlsEl.innerHTML = renderPackControls(warehouses, warehouseId, sourceFilter);
-      wireToolbar();
+      controlsEl.innerHTML = renderPackControls();
+      controlsEl.hidden = true;
     }
     if (statsEl) {
       statsEl.innerHTML = renderPackStats(stats, movements.length);
@@ -822,6 +784,7 @@ export function mountKitPanel(route) {
         availMap = await loadWarehouseAvail(warehouseId);
       }
     }
+    setTableFilterContext('kit', { warehouses });
     paint();
     mountAddSearch();
   }
@@ -1480,8 +1443,31 @@ export function mountKitPanel(route) {
     }
   };
 
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'kit') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    const nextStock = values.stockFilter || 'all';
+    const nextWh = values.warehouseId || '';
+    const stockChanged = nextStock !== sourceFilter;
+    const whChanged = nextWh !== warehouseId;
+    sourceFilter = nextStock;
+    if (!whChanged) {
+      if (stockChanged) paint();
+      return;
+    }
+    warehouseId = nextWh;
+    loadWarehouseAvail(warehouseId || undefined)
+      .then((map) => {
+        availMap = map;
+        paint();
+      })
+      .catch(() => paint());
+  };
+
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
     itemsWrap.innerHTML = `<div class="catalog-list-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</div>`;
@@ -1495,6 +1481,7 @@ export function mountKitPanel(route) {
     if (assignBarcodeOpen) closeModal();
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
     saveTimers.forEach((t) => clearTimeout(t));
   };
 }

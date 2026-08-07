@@ -401,28 +401,17 @@ export function mountKitLibraryPanel() {
     return `${rows.length} of ${visible} item${visible !== 1 ? 's' : ''}`;
   }
 
+  function applyTableFilterValues(values) {
+    if (!values) return;
+    filterCat = values.categoryFilter || '';
+    stockFilter = values.stockFilter || 'all';
+    showArchived = Boolean(values.showArchived);
+    sortKey = values.sortKey || 'name';
+    sortDir = values.sortDir === 'desc' ? -1 : 1;
+  }
+
   function paintToolbar(rows) {
-    toolbarEl.innerHTML = renderToolbar(
-      categories, filterCat, stockFilter, showArchived, countLabel(rows),
-    );
-    const catSel = $('kitLibCategory');
-    catSel?.addEventListener('change', () => {
-      filterCat = catSel.value;
-      paintTable();
-    });
-    toolbarEl.querySelectorAll('[data-kit-stock-filter]').forEach((btn) => {
-      btn.onclick = () => {
-        stockFilter = btn.dataset.kitStockFilter || 'all';
-        try { localStorage.setItem(STOCK_FILTER_KEY, stockFilter); } catch { /* ignore */ }
-        paintTable();
-      };
-    });
-    const arch = $('kitLibShowArchived');
-    arch?.addEventListener('change', () => {
-      showArchived = !!arch.checked;
-      try { localStorage.setItem(SHOW_ARCHIVED_KEY, showArchived ? '1' : '0'); } catch { /* ignore */ }
-      paintTable();
-    });
+    toolbarEl.innerHTML = renderToolbar(countLabel(rows));
   }
 
   function paintSortHeaders() {
@@ -1390,12 +1379,13 @@ export function mountKitLibraryPanel() {
     th.onclick = () => {
       const key = th.dataset.sort;
       if (!key) return;
-      if (sortKey === key) sortDir = -sortDir;
-      else {
-        sortKey = key;
-        sortDir = 1;
-      }
+      const nextDir = sortKey === key
+        ? (sortDir === 1 ? 'desc' : 'asc')
+        : 'asc';
+      sortKey = key;
+      sortDir = nextDir === 'desc' ? -1 : 1;
       paintTable();
+      patchTableFilterState('kit-library', { sort: key, sortDir: nextDir });
     };
   });
 
@@ -1423,6 +1413,12 @@ export function mountKitLibraryPanel() {
       e.detail.handled = true;
       runAutoPhotos();
     }
+  };
+
+  const onTableFilter = (e) => {
+    if (e.detail?.panel !== 'kit-library') return;
+    applyTableFilterValues(e.detail?.values);
+    paintTable();
   };
 
   function openMobileCountPairing() {
@@ -1630,6 +1626,7 @@ export function mountKitLibraryPanel() {
 
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   refresh().catch((err) => {
     bodyEl.innerHTML = `<tr><td colspan="7" class="del-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
@@ -1638,5 +1635,6 @@ export function mountKitLibraryPanel() {
   return () => {
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }
