@@ -77,9 +77,9 @@ export function reconFindCellEl(cellKey, root) {
 /** @param {Element | null | undefined} input */
 export function productsCellKeyFromInput(input) {
   if (!input) return null;
-  const pid = input.id?.startsWith('epOrd-')
-    ? input.id.slice('epOrd-'.length)
-    : input.closest?.('[data-pid]')?.dataset?.pid;
+  const pid = input.dataset?.pid
+    || (input.id?.startsWith('epOrd-') ? input.id.slice('epOrd-'.length) : null)
+    || input.closest?.('[data-pid]')?.dataset?.pid;
   return cellFocusKey(pid, 'ordered');
 }
 

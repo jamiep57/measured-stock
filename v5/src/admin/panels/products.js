@@ -26,6 +26,10 @@ import {
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
 
+const SAVE_DEBOUNCE_MS = 400;
+const VALUE_BROADCAST_MS = 120;
+const LOCAL_ECHO_MS = 3000;
+
 function fmtNum(n) {
   if (n == null || n === '' || !Number.isFinite(Number(n))) return '—';
   const v = round1(Number(n));
@@ -44,7 +48,7 @@ function groupByCategory(eps) {
   return grouped;
 }
 
-function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editingOrderedId) {
+function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes) {
   const p = ep.product || {};
   const pid = ep.product_id;
   const pack = productStockPack(p, caseSizes);
@@ -54,14 +58,9 @@ function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editi
   const opening = openingForProduct(pid, countedIn, damagedFromDeliveries, ep);
   const variance = round1(cin - ordered);
   const varCls = variance > 0 ? 'ep-var--pos' : variance < 0 ? 'ep-var--neg' : '';
-
-  const orderedCell = editingOrderedId === pid
-    ? `<td class="ep-num ep-cell--edit ep-prod-ordered" onclick="event.stopPropagation()">
-        <input class="ep-ordered-input num-math" type="text" inputmode="decimal" autocomplete="off"
-          id="epOrd-${escapeHtml(pid)}" value="${ep.qty_ordered != null ? escapeHtml(String(ep.qty_ordered)) : ''}"
-          placeholder="—">
-      </td>`
-    : `<td class="ep-num ep-cell--edit ep-prod-ordered ep-prod-ordered--edit" data-pid="${escapeHtml(pid)}" title="Edit ordered">${fmtNum(ordered)}</td>`;
+  const orderedShown = ep.qty_ordered != null && ep.qty_ordered !== ''
+    ? String(ep.qty_ordered)
+    : '';
 
   return `
     <tr class="ep-prod-row" data-pid="${escapeHtml(pid)}" data-product-name="${escapeHtml((p.name || '').toLowerCase())}" tabindex="0" role="button" title="Edit product">
@@ -73,14 +72,19 @@ function renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editi
           ${packLabel ? `<span class="ep-item-meta">${escapeHtml(packLabel)}</span>` : ''}
         </div>
       </th>
-      ${orderedCell}
+      <td class="ep-num ep-cell--edit ep-prod-ordered">
+        <input class="ep-ordered-input num-math" type="text" inputmode="decimal" autocomplete="off"
+          id="epOrd-${escapeHtml(pid)}" value="${escapeHtml(orderedShown)}"
+          data-pid="${escapeHtml(pid)}"
+          placeholder="—" aria-label="Ordered quantity">
+      </td>
       <td class="ep-num ep-counted" data-pid="${escapeHtml(pid)}">${fmtNum(cin)}</td>
-      <td class="ep-num ep-var ${varCls}" data-pid="${escapeHtml(pid)}">${variance > 0 ? '+' : ''}${fmtNum(variance)}</td>
-      <td class="ep-num ep-num--emphasis ep-opening ep-group-start" data-pid="${escapeHtml(pid)}">${fmtNum(opening)}</td>
+      <td class="ep-num ep-var ${varCls}" data-pid="${escapeHtml(pid)}" id="epVar-${escapeHtml(pid)}">${variance > 0 ? '+' : ''}${fmtNum(variance)}</td>
+      <td class="ep-num ep-num--emphasis ep-opening ep-group-start" data-pid="${escapeHtml(pid)}" id="epOpen-${escapeHtml(pid)}">${fmtNum(opening)}</td>
     </tr>`;
 }
 
-function renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, editingOrderedId) {
+function renderRows(eps, countedIn, damagedFromDeliveries, caseSizes) {
   if (!eps.length) return '';
   const grouped = groupByCategory(eps);
   let html = '';
@@ -90,7 +94,7 @@ function renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, editingOrd
       <td colspan="4" class="dist-cat-scroll"></td>
     </tr>`;
     grouped[cat].forEach((ep) => {
-      html += renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes, editingOrderedId);
+      html += renderProductRow(ep, countedIn, damagedFromDeliveries, caseSizes);
     });
   });
   return html;
@@ -114,7 +118,7 @@ function epTh(label, extraClass = '', title = '') {
 function renderShell() {
   return `
     <div class="ep-panel" id="epPanel">
-      <p class="ep-hint muted">Add products from your library and set ordered quantities. <strong>Counted in</strong> and unusable stock come from deliveries; <strong>opening</strong> = counted in − delivery damages.</p>
+      <p class="ep-hint muted">Add products from your library and set ordered quantities. Counts <strong>auto-save as you type</strong> and update live for anyone else on Products. Use arrow keys to move between Ordered cells. <strong>Counted in</strong> and unusable stock come from deliveries; <strong>opening</strong> = counted in − delivery damages.</p>
       <div class="dist-grid-wrap ep-table-wrap">
         <table class="dist-grid ep-grid" id="epTable">
           <thead>
@@ -154,22 +158,60 @@ export function mountProductsPanel(route) {
   let countedIn = {};
   let damagedFromDeliveries = {};
   let productFilter = getLastProductFilter();
-  let editingOrderedId = null;
+  /** @type {Record<string, ReturnType<typeof setTimeout>>} */
+  const saveTimers = {};
+  /** @type {Record<string, boolean>} */
+  const dirty = {};
+  /** @type {Map<string, number>} */
+  const recentLocalWrites = new Map();
+  let valueBroadcastTimer = null;
+  let focusPid = null;
+  let abort = false;
 
   function stopCollab() {
+    if (valueBroadcastTimer) {
+      clearTimeout(valueBroadcastTimer);
+      valueBroadcastTimer = null;
+    }
     const session = collab;
     collab = null;
     session?.destroy();
   }
 
   function startCollab() {
-    if (!panel || collab) return;
+    if (!panel || collab || abort) return;
     collab = createGridCollabSession({
       channelName: `collab:products:${eventId}`,
       root: panel,
       inputSelector: '.ep-ordered-input',
       cellKeyFromInput: productsCellKeyFromInput,
       findCellEl: productsFindCellEl,
+      onLocalFocusChange: (key) => {
+        focusPid = key ? String(key).split('::')[0] || null : null;
+      },
+      onRemoteFocus: (payload) => {
+        applyRemoteDraftValue(payload);
+      },
+      onChannel: (channel) => {
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'event_products',
+            filter: `event_id=eq.${eventId}`,
+          },
+          (payload) => handleRemoteOrderedChange(payload),
+        );
+      },
+      extraBroadcastPayload: () => {
+        let value;
+        if (focusPid) {
+          const el = document.getElementById(`epOrd-${focusPid}`);
+          if (el) value = el.value;
+        }
+        return { value, productId: focusPid, field: 'ordered' };
+      },
     });
   }
 
@@ -191,12 +233,37 @@ export function mountProductsPanel(route) {
     });
   }
 
-  function paintTable() {
+  function updateDerivedCells(pid) {
+    const ep = (event?.event_products || []).find((x) => x.product_id === pid);
+    if (!ep) return;
+    const cin = countedIn[pid] ?? (ep.delivered_qty != null ? Number(ep.delivered_qty) : 0);
+    const ordered = Number(ep.qty_ordered) || 0;
+    const variance = round1(cin - ordered);
+    const opening = openingForProduct(pid, countedIn, damagedFromDeliveries, ep);
+    const varEl = document.getElementById(`epVar-${pid}`);
+    const openEl = document.getElementById(`epOpen-${pid}`);
+    if (varEl) {
+      varEl.textContent = `${variance > 0 ? '+' : ''}${fmtNum(variance)}`;
+      varEl.classList.toggle('ep-var--pos', variance > 0);
+      varEl.classList.toggle('ep-var--neg', variance < 0);
+    }
+    if (openEl) openEl.textContent = fmtNum(opening);
+  }
+
+  function paintTable({ preserveFocus = false } = {}) {
     const eps = filteredEps();
     const body = $('epBody');
     const empty = $('epEmpty');
     const table = $('epTable');
     if (!body) return;
+
+    const active = preserveFocus && document.activeElement?.matches?.('.ep-ordered-input')
+      ? {
+        id: document.activeElement.id,
+        start: document.activeElement.selectionStart,
+        end: document.activeElement.selectionEnd,
+      }
+      : null;
 
     if (!(event?.event_products || []).some((ep) => ep.product?.name)) {
       body.innerHTML = '';
@@ -207,23 +274,9 @@ export function mountProductsPanel(route) {
 
     empty.hidden = true;
     table?.removeAttribute('hidden');
-    body.innerHTML = renderRows(eps, countedIn, damagedFromDeliveries, caseSizes, editingOrderedId) ||
+    body.innerHTML = renderRows(eps, countedIn, damagedFromDeliveries, caseSizes) ||
       '<tr><td colspan="5" class="dist-empty">No products match your filter.</td></tr>';
     collab?.repaint();
-
-    if (editingOrderedId) {
-      const inp = $(`epOrd-${editingOrderedId}`);
-      inp?.focus();
-      inp?.select();
-    }
-
-    body.querySelectorAll('.ep-prod-ordered--edit').forEach((cell) => {
-      cell.onclick = (e) => {
-        e.stopPropagation();
-        editingOrderedId = cell.dataset.pid;
-        paintTable();
-      };
-    });
 
     body.querySelectorAll('.ep-prod-row[data-pid]').forEach((row) => {
       row.onclick = (e) => {
@@ -231,6 +284,7 @@ export function mountProductsPanel(route) {
         openEditProduct(row.dataset.pid);
       };
       row.onkeydown = (e) => {
+        if (e.target?.matches?.('.ep-ordered-input')) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           openEditProduct(row.dataset.pid);
@@ -238,28 +292,136 @@ export function mountProductsPanel(route) {
       };
     });
 
-    const ordInp = editingOrderedId ? $(`epOrd-${editingOrderedId}`) : null;
-    if (ordInp) {
-      const saveOrd = async () => {
-        const pid = editingOrderedId;
-        const raw = ordInp.value.trim();
-        const qty = raw === '' ? 0 : parseQty(raw);
+    if (active?.id) {
+      const inp = document.getElementById(active.id);
+      if (inp) {
+        inp.focus();
         try {
-          await getDB().eventProducts.setForEvent(eventId, pid, { qty_ordered: qty });
-          const ep = event.event_products.find((x) => x.product_id === pid);
-          if (ep) ep.qty_ordered = qty;
-          editingOrderedId = null;
-          paintTable();
-        } catch (err) {
-          toast(err.message || 'Save failed', true);
-        }
-      };
-      ordInp.onkeydown = (e) => {
-        if (e.key === 'Enter') saveOrd();
-        if (e.key === 'Escape') { editingOrderedId = null; paintTable(); }
-      };
-      ordInp.onblur = saveOrd;
+          inp.setSelectionRange(active.start ?? inp.value.length, active.end ?? inp.value.length);
+        } catch { /* ignore */ }
+      }
     }
+  }
+
+  function scheduleValueBroadcast() {
+    if (!collab?.isReady() || !focusPid) return;
+    clearTimeout(valueBroadcastTimer);
+    valueBroadcastTimer = setTimeout(() => {
+      valueBroadcastTimer = null;
+      const el = document.getElementById(`epOrd-${focusPid}`);
+      const value = el ? el.value : undefined;
+      collab?.broadcastFocus({
+        live: true,
+        value,
+        productId: focusPid,
+        field: 'ordered',
+      });
+    }, VALUE_BROADCAST_MS);
+  }
+
+  function applyRemoteDraftValue(payload) {
+    if (!payload?.productId || payload.field !== 'ordered') return;
+    if (payload.value == null) return;
+    if (dirty[payload.productId]) return;
+    if (focusPid === payload.productId) return;
+    const el = document.getElementById(`epOrd-${payload.productId}`);
+    if (!el || document.activeElement === el) return;
+    if (el.value === String(payload.value)) return;
+    el.value = String(payload.value);
+    const ep = (event?.event_products || []).find((x) => x.product_id === payload.productId);
+    if (ep) {
+      const raw = String(payload.value).trim();
+      ep.qty_ordered = raw === '' ? 0 : parseQty(raw);
+      updateDerivedCells(payload.productId);
+    }
+  }
+
+  function handleRemoteOrderedChange(payload) {
+    if (abort) return;
+    const remote = payload?.new || payload?.old;
+    if (!remote?.product_id) return;
+    const pid = remote.product_id;
+
+    if (payload.eventType === 'DELETE') {
+      event.event_products = (event.event_products || []).filter((ep) => ep.product_id !== pid);
+      paintTable({ preserveFocus: true });
+      return;
+    }
+
+    if (dirty[pid] || focusPid === pid) return;
+    const writtenAt = recentLocalWrites.get(pid) || 0;
+    if (Date.now() - writtenAt < LOCAL_ECHO_MS) return;
+
+    let ep = (event?.event_products || []).find((x) => x.product_id === pid);
+    if (!ep) {
+      // Another user added a product — full refresh is safest.
+      refresh().catch(() => {});
+      return;
+    }
+    ep.qty_ordered = remote.qty_ordered;
+    const el = document.getElementById(`epOrd-${pid}`);
+    if (el && document.activeElement !== el) {
+      el.value = remote.qty_ordered != null && remote.qty_ordered !== ''
+        ? String(remote.qty_ordered)
+        : '';
+    }
+    updateDerivedCells(pid);
+  }
+
+  async function flushSave(pid) {
+    clearTimeout(saveTimers[pid]);
+    delete saveTimers[pid];
+    const el = document.getElementById(`epOrd-${pid}`);
+    if (!el) {
+      delete dirty[pid];
+      return;
+    }
+    const raw = el.value.trim();
+    const qty = raw === '' ? 0 : parseQty(raw);
+    try {
+      await getDB().eventProducts.setForEvent(eventId, pid, { qty_ordered: qty });
+      const ep = (event?.event_products || []).find((x) => x.product_id === pid);
+      if (ep) ep.qty_ordered = qty;
+      recentLocalWrites.set(pid, Date.now());
+      delete dirty[pid];
+      updateDerivedCells(pid);
+    } catch (err) {
+      toast(err.message || 'Save failed', true);
+    }
+  }
+
+  function scheduleSave(pid) {
+    dirty[pid] = true;
+    clearTimeout(saveTimers[pid]);
+    saveTimers[pid] = setTimeout(() => { flushSave(pid); }, SAVE_DEBOUNCE_MS);
+  }
+
+  async function flushAllPending() {
+    const pids = Object.keys(saveTimers);
+    await Promise.all(pids.map((pid) => flushSave(pid)));
+  }
+
+  function onPanelInput(e) {
+    const input = e.target?.closest?.('.ep-ordered-input');
+    if (!input || !panel.contains(input)) return;
+    const pid = input.dataset.pid;
+    if (!pid) return;
+    focusPid = pid;
+    const ep = (event?.event_products || []).find((x) => x.product_id === pid);
+    if (ep) {
+      const raw = input.value.trim();
+      ep.qty_ordered = raw === '' ? 0 : parseQty(raw);
+      updateDerivedCells(pid);
+    }
+    scheduleSave(pid);
+    scheduleValueBroadcast();
+  }
+
+  function onPanelBlur(e) {
+    const input = e.target?.closest?.('.ep-ordered-input');
+    if (!input || !panel.contains(input)) return;
+    const pid = input.dataset.pid;
+    if (pid && dirty[pid]) flushSave(pid);
   }
 
   async function refresh() {
@@ -271,9 +433,10 @@ export function mountProductsPanel(route) {
       loadSuppliers(),
       getDB().deliveries.forEvent(eventId).catch(() => []),
     ]);
+    if (abort) return;
     countedIn = countedInMap(deliveries, event, caseSizes);
     damagedFromDeliveries = damagedFromDeliveriesMap(deliveries);
-    paintTable();
+    paintTable({ preserveFocus: true });
     startCollab();
   }
 
@@ -282,7 +445,6 @@ export function mountProductsPanel(route) {
     if (!ep?.product) return;
 
     const p = ep.product;
-    // Prefer full library row (offers) when available
     const full = library.find((x) => x.id === productId) || p;
     const cin = countedIn[productId] ?? (ep.delivered_qty != null ? Number(ep.delivered_qty) : 0);
     const ordered = Number(ep.qty_ordered) || 0;
@@ -364,16 +526,31 @@ export function mountProductsPanel(route) {
     }
   };
 
+  const onPageHide = () => { flushAllPending(); };
+
+  panel?.addEventListener('input', onPanelInput);
+  panel?.addEventListener('change', onPanelInput);
+  panel?.addEventListener('blur', onPanelBlur, true);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+  window.addEventListener('pagehide', onPageHide);
 
   refresh().catch((err) => {
-    $('epBody').innerHTML = `<tr><td colspan="5" class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
+    const body = $('epBody');
+    if (body) {
+      body.innerHTML = `<tr><td colspan="5" class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load')}</td></tr>`;
+    }
   });
 
   return () => {
+    abort = true;
+    flushAllPending();
     stopCollab();
+    panel?.removeEventListener('input', onPanelInput);
+    panel?.removeEventListener('change', onPanelInput);
+    panel?.removeEventListener('blur', onPanelBlur, true);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
+    window.removeEventListener('pagehide', onPageHide);
   };
 }

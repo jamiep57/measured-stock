@@ -4262,12 +4262,6 @@ body.admin-drawer-open {
   vertical-align: stretch;
   background: #f7f7f8 !important;
 }
-.ep-prod-ordered--edit {
-  cursor: pointer;
-}
-.ep-prod-ordered--edit:hover {
-  background: #f0f0f2 !important;
-}
 .ep-cell--edit:focus-within {
   background: #f0f0f2 !important;
   box-shadow: inset 0 0 0 1.5px var(--foreground);
