@@ -59,12 +59,8 @@ export function initGlobalSearch() {
   const topbarToolbar = initTopbarToolbar();
 
   let query = '';
-  /** Data context key (event id, kit, or view) — panel switches reuse cached products. */
-  let routeKey = '';
   /** Event/workspace scope — clearing the filter only when this changes. */
   let scopeKey = '';
-  let cachedProducts = [];
-  let cachedBars = [];
   /** Drop stale async loads so Kit search/toolbar can’t stick on Closing. */
   let syncGeneration = 0;
 
@@ -97,17 +93,6 @@ export function initGlobalSearch() {
       setQuery(query);
       emitProductFilter({ query, productId: null, source: 'restore' });
     }
-  }
-
-  function contextKeyForRoute(route) {
-    if (route.view === 'kit-library') return 'kit-library';
-    if (route.view === 'event' && route.panel === 'kit' && route.eventId) {
-      return `event:${route.eventId}:kit`;
-    }
-    if (route.view === 'event' && route.eventId) {
-      return `event:${route.eventId}`;
-    }
-    return route.view || '';
   }
 
   function scopeKeyForRoute(route) {
@@ -143,11 +128,8 @@ export function initGlobalSearch() {
   return {
     async syncRoute(route) {
       const gen = ++syncGeneration;
-      const nextKey = contextKeyForRoute(route);
       const nextScope = scopeKeyForRoute(route);
       const scopeChanged = nextScope !== scopeKey;
-      const dataChanged = nextKey !== routeKey;
-      routeKey = nextKey;
       scopeKey = nextScope;
 
       if (scopeChanged) {
@@ -158,16 +140,12 @@ export function initGlobalSearch() {
       container.hidden = hideSearchForRoute(route);
       // Always sync filter/toolbar — including pages that hide product search.
       try {
-        let products = cachedProducts;
-        let bars = cachedBars;
-        if (container.hidden) {
-          products = [];
-          bars = [];
-        } else if (dataChanged) {
+        let products = [];
+        let bars = [];
+        if (!container.hidden) {
+          // loadEventFull / library reads hit shared TTL caches — cheap on panel switches.
           ({ products, bars } = await loadPageContext(route));
           if (gen !== syncGeneration) return;
-          cachedProducts = products;
-          cachedBars = bars;
         }
         if (gen !== syncGeneration) return;
         if (!container.hidden) mount(products, route);
@@ -176,8 +154,6 @@ export function initGlobalSearch() {
       } catch (err) {
         if (gen !== syncGeneration) return;
         console.warn('global search load failed', err);
-        cachedProducts = [];
-        cachedBars = [];
         if (!container.hidden) mount([], route);
         topbarControls.syncRoute(route, { products: [], bars: [] });
         topbarToolbar.syncRoute(route);

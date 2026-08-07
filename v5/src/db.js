@@ -55,37 +55,44 @@ const RECIPE_MUTATION_TABLES = new Set([
 const eventCache = new Map();
 /** @type {Map<string, Promise<any>>} */
 const eventInflight = new Map();
+let eventCacheGen = 0;
 
 /** @type {{ at: number, value: any } | null} */
 let caseSizesCache = null;
 /** @type {Promise<any> | null} */
 let caseSizesInflight = null;
+let caseSizesGen = 0;
 
 /** @type {{ at: number, value: any } | null} */
 let suppliersCache = null;
 /** @type {Promise<any> | null} */
 let suppliersInflight = null;
+let suppliersGen = 0;
 
 /** @type {{ at: number, value: any } | null} */
 let categoriesCache = null;
 /** @type {Promise<any> | null} */
 let categoriesInflight = null;
+let categoriesGen = 0;
 
 /** @type {{ at: number, value: any } | null} */
 let recipesCache = null;
 /** @type {Promise<any> | null} */
 let recipesInflight = null;
+let recipesGen = 0;
 
 /** @type {{ at: number, value: any } | null} */
 let libraryCache = null;
 /** @type {Promise<any> | null} */
 let libraryInflight = null;
+let libraryGen = 0;
 
 function cacheFresh(entry, ttl) {
   return !!(entry && (Date.now() - entry.at) < ttl);
 }
 
 export function invalidateEventCache(eventId) {
+  eventCacheGen += 1;
   if (eventId) {
     const id = String(eventId);
     eventCache.delete(id);
@@ -97,6 +104,9 @@ export function invalidateEventCache(eventId) {
 }
 
 export function invalidateRefCaches() {
+  caseSizesGen += 1;
+  suppliersGen += 1;
+  categoriesGen += 1;
   caseSizesCache = null;
   caseSizesInflight = null;
   suppliersCache = null;
@@ -106,11 +116,13 @@ export function invalidateRefCaches() {
 }
 
 export function invalidateRecipesCache() {
+  recipesGen += 1;
   recipesCache = null;
   recipesInflight = null;
 }
 
 export function invalidateLibraryCache() {
+  libraryGen += 1;
   libraryCache = null;
   libraryInflight = null;
 }
@@ -129,6 +141,8 @@ function noteMutation(table) {
 const READ_REPO_METHODS = new Set([
   'list', 'get', 'where', 'forEvent', 'lines', 'ingredients',
   'listFull', 'listActive', 'byLegacyId', 'getFull',
+  'bySupplier', 'forProduct', 'forWarehouse',
+  'normalise',
 ]);
 
 function wrapRepoMutations(repo) {
@@ -199,17 +213,19 @@ const KIT_PRODUCT_SELECT_FALLBACK =
 export async function loadCaseSizes() {
   if (cacheFresh(caseSizesCache, REF_CACHE_TTL_MS)) return caseSizesCache.value;
   if (caseSizesInflight) return caseSizesInflight;
+  const gen = caseSizesGen;
   caseSizesInflight = (async () => {
     const DB = getDB();
     try {
       const rows = await DB.caseSizes.list();
-      caseSizesCache = { at: Date.now(), value: rows || [] };
-      return caseSizesCache.value;
+      const value = rows || [];
+      if (gen === caseSizesGen) caseSizesCache = { at: Date.now(), value };
+      return value;
     } catch {
-      caseSizesCache = { at: Date.now(), value: [] };
+      if (gen === caseSizesGen) caseSizesCache = { at: Date.now(), value: [] };
       return [];
     } finally {
-      caseSizesInflight = null;
+      if (caseSizesInflight) caseSizesInflight = null;
     }
   })();
   return caseSizesInflight;
@@ -272,13 +288,16 @@ export async function loadEventFull(eventId, opts = {}) {
   const pending = eventInflight.get(id);
   if (pending) return pending;
 
+  const gen = eventCacheGen;
   const request = fetchEventFull(id)
     .then((value) => {
-      eventCache.set(id, { at: Date.now(), value });
+      if (gen === eventCacheGen) {
+        eventCache.set(id, { at: Date.now(), value });
+      }
       return value;
     })
     .finally(() => {
-      eventInflight.delete(id);
+      if (eventInflight.get(id) === request) eventInflight.delete(id);
     });
   eventInflight.set(id, request);
   return request;
@@ -299,11 +318,13 @@ export function productsFromEvent(event) {
 export async function loadSuppliers() {
   if (cacheFresh(suppliersCache, REF_CACHE_TTL_MS)) return suppliersCache.value;
   if (suppliersInflight) return suppliersInflight;
+  const gen = suppliersGen;
   suppliersInflight = (async () => {
     try {
       const rows = await getDB().suppliers.list();
-      suppliersCache = { at: Date.now(), value: rows || [] };
-      return suppliersCache.value;
+      const value = rows || [];
+      if (gen === suppliersGen) suppliersCache = { at: Date.now(), value };
+      return value;
     } finally {
       suppliersInflight = null;
     }
@@ -314,14 +335,15 @@ export async function loadSuppliers() {
 export async function loadCategories() {
   if (cacheFresh(categoriesCache, REF_CACHE_TTL_MS)) return categoriesCache.value;
   if (categoriesInflight) return categoriesInflight;
+  const gen = categoriesGen;
   categoriesInflight = (async () => {
     try {
       const rows = await getDB().categories.list();
       const filtered = (rows || []).filter((c) => !c.kind || c.kind === 'stock');
-      categoriesCache = { at: Date.now(), value: filtered };
+      if (gen === categoriesGen) categoriesCache = { at: Date.now(), value: filtered };
       return filtered;
     } catch {
-      categoriesCache = { at: Date.now(), value: [] };
+      if (gen === categoriesGen) categoriesCache = { at: Date.now(), value: [] };
       return [];
     } finally {
       categoriesInflight = null;
@@ -333,13 +355,15 @@ export async function loadCategories() {
 export async function loadRecipesFull() {
   if (cacheFresh(recipesCache, RECIPES_CACHE_TTL_MS)) return recipesCache.value;
   if (recipesInflight) return recipesInflight;
+  const gen = recipesGen;
   recipesInflight = (async () => {
     try {
       const rows = await getDB().recipes.listFull();
-      recipesCache = { at: Date.now(), value: rows || [] };
-      return recipesCache.value;
+      const value = rows || [];
+      if (gen === recipesGen) recipesCache = { at: Date.now(), value };
+      return value;
     } catch {
-      recipesCache = { at: Date.now(), value: [] };
+      if (gen === recipesGen) recipesCache = { at: Date.now(), value: [] };
       return [];
     } finally {
       recipesInflight = null;
@@ -364,6 +388,7 @@ export async function loadKitCategories() {
 export async function loadLibraryProducts() {
   if (cacheFresh(libraryCache, LIBRARY_CACHE_TTL_MS)) return libraryCache.value;
   if (libraryInflight) return libraryInflight;
+  const gen = libraryGen;
   libraryInflight = (async () => {
     const DB = getDB();
     try {
@@ -374,7 +399,7 @@ export async function loadLibraryProducts() {
         rows = await DB.products.list();
       }
       const filtered = (rows || []).filter((p) => !p.product_kind || p.product_kind === 'stock');
-      libraryCache = { at: Date.now(), value: filtered };
+      if (gen === libraryGen) libraryCache = { at: Date.now(), value: filtered };
       return filtered;
     } finally {
       libraryInflight = null;

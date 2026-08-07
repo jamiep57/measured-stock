@@ -1,16 +1,12 @@
 /**
  * Admin panel registry — shells + mounts.
- * Heavy panels (sales, recon, reports, closing, audit, kit) load on demand.
+ * Heavy panels load on demand (sales, recon, reports, closing, audit, kit, distribution, products).
  */
 
 import { escapeHtml } from '../../lib/util.js';
 import { notFoundState } from '../../components/empty-state.js';
 import { resolveActiveEventId } from '../event-workspace.js';
 
-import {
-  renderDistributionShell,
-  mountDistributionPanel,
-} from './distribution.js';
 import {
   renderDeliveriesShell,
   mountDeliveriesPanel,
@@ -19,10 +15,6 @@ import {
   renderWastageShell,
   mountWastagePanel,
 } from './wastage.js';
-import {
-  renderProductsShell,
-  mountProductsPanel,
-} from './products.js';
 import {
   renderSetupShell,
   mountSetupPanel,
@@ -81,6 +73,8 @@ const lazy = {
   audit: () => import('./audit.js'),
   kit: () => import('./kit.js'),
   'kit-library': () => import('./kit-library.js'),
+  distribution: () => import('./distribution.js'),
+  products: () => import('./products.js'),
 };
 
 /** Warm event-workspace chunks so sidebar clicks feel instant. */
@@ -90,6 +84,8 @@ export function prefetchEventPanels() {
   void lazy.sales();
   void lazy.closing();
   void lazy.kit();
+  void lazy.distribution();
+  void lazy.products();
 }
 
 export const PANEL_TITLES = {
@@ -244,7 +240,8 @@ export async function renderPanel(route, state) {
     }
 
     if (panel === 'distribution') {
-      return renderDistributionShell();
+      const m = await lazy.distribution();
+      return m.renderDistributionShell();
     }
 
     if (panel === 'deliveries') {
@@ -264,7 +261,8 @@ export async function renderPanel(route, state) {
     }
 
     if (panel === 'products') {
-      return renderProductsShell();
+      const m = await lazy.products();
+      return m.renderProductsShell();
     }
 
     if (panel === 'sales') {
@@ -315,7 +313,8 @@ export async function mountPanel(route, state) {
     return mountDevPanel();
   }
   if (route.view === 'event' && route.panel === 'distribution') {
-    return mountDistributionPanel(route, state);
+    const m = await lazy.distribution();
+    return m.mountDistributionPanel(route, state);
   }
   if (route.view === 'event' && route.panel === 'deliveries') {
     return mountDeliveriesPanel(route);
@@ -330,7 +329,8 @@ export async function mountPanel(route, state) {
     return mountSetupPanel(route, state);
   }
   if (route.view === 'event' && route.panel === 'products') {
-    return mountProductsPanel(route);
+    const m = await lazy.products();
+    return m.mountProductsPanel(route);
   }
   if (route.view === 'event' && route.panel === 'dashboard') {
     return mountDashboardPanel(route);
