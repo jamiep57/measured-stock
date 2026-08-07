@@ -4,7 +4,7 @@
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import {
-  getDB, loadEventFull, loadCaseSizes, loadCategories, loadLibraryProducts, loadSuppliers,
+  getDB, loadEventLite, loadCaseSizes, loadCategories, loadLibraryProducts, loadSuppliers,
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
 import {
@@ -479,7 +479,7 @@ export function mountProductsPanel(route) {
 
   async function refresh() {
     [event, caseSizes, library, categories, suppliers, deliveries] = await Promise.all([
-      loadEventFull(eventId),
+      loadEventLite(eventId),
       loadCaseSizes(),
       loadLibraryProducts(),
       loadCategories(),

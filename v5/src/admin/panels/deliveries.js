@@ -7,7 +7,7 @@ import {
 } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import {
-  getDB, loadEventFull, loadSuppliers, loadCaseSizes, loadCategories, productFromEvent,
+  getDB, loadEventLite, loadSuppliers, loadCaseSizes, loadCategories, productFromEvent,
 } from '../../db.js';
 import { formToStored, storedToForm, hasQuantity, totalUnitsForProduct, parseQty } from '../../stock-entry.js';
 import { round1, countedInFromDeliveries, damagedFromDeliveries } from '../../lib/opening-stock.js';
@@ -927,7 +927,7 @@ export function mountDeliveriesPanel(route) {
   async function load() {
     try {
       [event, suppliers, categories, caseSizes] = await Promise.all([
-        loadEventFull(route.eventId),
+        loadEventLite(route.eventId),
         loadSuppliers(),
         loadCategories(),
         loadCaseSizes(),

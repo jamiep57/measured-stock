@@ -1114,36 +1114,57 @@ export function mountReconPanel(route) {
 
   async function load() {
     const DB = getDB();
-    const [event, caseSizes, suppliers, closing, tillImport, modImport, recipes, wastage, transfers, supplierReturns, deliveries] =
-      await Promise.all([
-        loadEventFull(ctx.eventId),
-        loadCaseSizes(),
-        loadSuppliers(),
-        DB.closing.forEvent(ctx.eventId),
-        DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-        DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
-        loadRecipesFull(),
-        DB.wastage.forEvent(ctx.eventId).catch(() => []),
-        DB.transfers.forEvent(ctx.eventId).catch(() => []),
-        DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
-        DB.deliveries.forEvent(ctx.eventId).catch(() => []),
-      ]);
+    // Stage 1 — enough to paint the grid shell quickly.
+    const [event, caseSizes, suppliers, closing] = await Promise.all([
+      loadEventFull(ctx.eventId),
+      loadCaseSizes(),
+      loadSuppliers(),
+      DB.closing.forEvent(ctx.eventId),
+    ]);
     if (ctx.abort) return;
     ctx.event = event;
     ctx.caseSizes = caseSizes;
     ctx.products = productsFromEvent(event);
     ctx.suppliers = suppliers;
     ctx.closingRows = closing || [];
-    ctx.tillRows = tillImport?.rows || [];
-    ctx.modifierRows = modImport?.rows || [];
-    ctx.recipes = recipes || [];
-    ctx.wastageBatches = wastage || [];
-    ctx.transfers = transfers || [];
-    ctx.supplierReturns = supplierReturns || [];
-    ctx.deliveries = deliveries || [];
+    ctx.tillRows = [];
+    ctx.modifierRows = [];
+    ctx.recipes = [];
+    ctx.wastageBatches = [];
+    ctx.transfers = [];
+    ctx.supplierReturns = [];
+    ctx.deliveries = [];
     renderTable();
     applyProductFilter(getLastProductFilter());
     startCollab();
+
+    // Stage 2 — sales / movement datasets that fill derived columns.
+    try {
+      const [tillImport, modImport, recipes, wastage, transfers, supplierReturns, deliveries] =
+        await Promise.all([
+          DB.tillImports.forEvent(ctx.eventId).catch(() => null),
+          DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
+          loadRecipesFull(),
+          DB.wastage.forEvent(ctx.eventId).catch(() => []),
+          DB.transfers.forEvent(ctx.eventId).catch(() => []),
+          DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
+          DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+        ]);
+      if (ctx.abort) return;
+      ctx.tillRows = tillImport?.rows || [];
+      ctx.modifierRows = modImport?.rows || [];
+      ctx.recipes = recipes || [];
+      ctx.wastageBatches = wastage || [];
+      ctx.transfers = transfers || [];
+      ctx.supplierReturns = supplierReturns || [];
+      ctx.deliveries = deliveries || [];
+      renderTable();
+      applyProductFilter(getLastProductFilter());
+    } catch (err) {
+      if (ctx.abort) return;
+      reportError(err, { source: 'admin.recon.load.secondary', silent: true });
+      toast(err.message || 'Some recon columns failed to load', true);
+    }
   }
 
   load().catch((e) => {
