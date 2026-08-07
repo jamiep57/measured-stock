@@ -2,8 +2,8 @@ import '../styles/admin.css';
 import { $, toast } from '../lib/util.js';
 import { initIcons } from '../lib/icons.js';
 import { loadDbScript } from '../lib/load-db.js';
-import { loadEventsList, getDB } from '../db.js';
-import { isNetworkFetchError } from '../db.js';import { parseRoute, navigate, startRouter, linkSidebar, hrefForRoute } from './router.js';
+import { loadEventsList, getDB, isNetworkFetchError } from '../db.js';
+import { parseRoute, navigate, startRouter, linkSidebar, hrefForRoute } from './router.js';
 import { initSidebar, syncSidebar } from './sidebar.js';
 import { readRememberedEventId, writeRememberedEventId, resolveActiveEventId } from './event-workspace.js';
 import { initSheet } from '../components/sheet.js';
@@ -19,7 +19,6 @@ import { openOwnProfileEditor } from './panels/users.js';
 import { initClientErrorReporting } from '../lib/client-errors.js';
 import { initSyncStatus } from '../components/sync-status.js';
 import { flushQueue } from '../sync-queue.js';
-import { getDB } from '../db.js';
 
 const state = {
   events: [],
@@ -34,6 +33,8 @@ function setEventId(id) {
 let cleanupPanel = null;
 let globalSearch = null;
 let genericFilterOff = null;
+/** Bumps on every navigate so a slow mount can't overwrite a newer panel. */
+let renderGen = 0;
 
 function wireGenericProductFilter() {
   if (genericFilterOff) genericFilterOff();
@@ -50,6 +51,7 @@ async function loadEvents() {
 }
 
 async function render(route) {
+  const gen = ++renderGen;
   if (route.view === 'audit' && route.eventId) {
     setEventId(route.eventId);
   }
@@ -62,6 +64,10 @@ async function render(route) {
       navigate(route, { replace: true });
       route = parseRoute();
     }
+  }
+
+  if ((route.view === 'event' || route.view === 'audit') && resolveActiveEventId(route, state)) {
+    prefetchEventPanels();
   }
 
   linkSidebar(route);
@@ -96,17 +102,32 @@ async function render(route) {
 
   const content = $('adminContent');
   content.classList.remove('admin-content--enter');
+  // Immediate feedback while lazy panels (reports/recon/…) download.
+  content.innerHTML = '<div class="admin-page"><div class="muted" style="padding:24px">Loading…</div></div>';
+
   try {
-    content.innerHTML = await renderPanel(route, state);
+    const html = await renderPanel(route, state);
+    if (gen !== renderGen) return;
+    content.innerHTML = html;
     await globalSearch?.syncRoute(route);
+    if (gen !== renderGen) return;
     cleanupPanel = await mountPanel(route, state);
+    if (gen !== renderGen) {
+      cleanupPanel?.();
+      cleanupPanel = null;
+      return;
+    }
   } catch (err) {
+    if (gen !== renderGen) return;
     // Stale Vite chunk after deploy → dynamic import() rejects with Failed to fetch.
     if (isNetworkFetchError(err) || /Loading chunk|error loading dynamically imported/i.test(String(err?.message || err))) {
       window.location.reload();
       return;
     }
-    throw err;
+    console.error(err);
+    content.innerHTML = `<div class="admin-page"><div class="dist-empty del-empty--err">${String(err?.message || 'Failed to load page').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]))}</div></div>`;
+    toast(err.message || 'Failed to load page', true);
+    return;
   }
   syncBugFabVisibility();
   requestAnimationFrame(() => {
@@ -114,16 +135,20 @@ async function render(route) {
   });
 }
 
+function goEventPanel(panel) {
+  const eventId = resolveActiveEventId(parseRoute(), state);
+  if (!eventId || !panel) return false;
+  navigate({ view: 'event', eventId, panel });
+  void render(parseRoute());
+  return true;
+}
+
 function wireNav() {
   document.getElementById('sidebarGlobal')?.addEventListener('click', (e) => {
     const eventLink = e.target.closest('a[data-event], .nav-link-cog[data-event]');
     if (eventLink) {
       e.preventDefault();
-      const route = parseRoute();
-      const eventId = (route.view === 'event' && route.eventId) || state.eventId;
-      if (!eventId) return;
-      navigate({ view: 'event', eventId, panel: eventLink.dataset.route });
-      render(parseRoute());
+      goEventPanel(eventLink.dataset.route);
       return;
     }
     const a = e.target.closest('a[data-route]:not([data-event])');
@@ -133,7 +158,7 @@ function wireNav() {
     if (view === 'home') navigate({ view: 'home' });
     else if (view === 'settings') navigate({ view: 'settings', section: a.dataset.section || 'users' });
     else navigate({ view });
-    render(parseRoute());
+    void render(parseRoute());
   });
 
   document.querySelector('.sidebar-nav-tools')?.addEventListener('click', (e) => {
@@ -143,7 +168,7 @@ function wireNav() {
     const view = a.dataset.route;
     if (view === 'settings') navigate({ view: 'settings', section: a.dataset.section || 'users' });
     else navigate({ view });
-    render(parseRoute());
+    void render(parseRoute());
   });
 
   const eventNavIds = ['sidebarEventStock', 'sidebarEventKit', 'sidebarEventSales', 'sidebarEventReports'];
@@ -155,17 +180,13 @@ function wireNav() {
         const view = globalLink.dataset.route;
         if (view === 'settings') navigate({ view: 'settings', section: globalLink.dataset.section || 'users' });
         else navigate({ view });
-        render(parseRoute());
+        void render(parseRoute());
         return;
       }
       const a = e.target.closest('a[data-event], .nav-link-cog[data-event]');
       if (!a) return;
       e.preventDefault();
-      const route = parseRoute();
-      const eventId = (route.view === 'event' && route.eventId) || state.eventId;
-      if (!eventId) return;
-      navigate({ view: 'event', eventId, panel: a.dataset.route });
-      render(parseRoute());
+      goEventPanel(a.dataset.route);
     });
   });
 }
@@ -283,7 +304,11 @@ async function boot() {
   wireNav();
   initSidebar((opts = {}) => {
     if (opts.clearEvent) setEventId('');
-    render(parseRoute());
+    if (opts.panel) {
+      goEventPanel(opts.panel);
+      return;
+    }
+    void render(parseRoute());
   });
   wireGenericProductFilter();
   globalSearch = initGlobalSearch();

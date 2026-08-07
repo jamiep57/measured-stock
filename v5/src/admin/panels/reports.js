@@ -43,25 +43,6 @@ function fmtCost(n) {
   return `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function supplierOptions(suppliers, selected) {
-  return `<option value="">All suppliers</option>${
-    (suppliers || []).map((s) => `
-      <option value="${escapeHtml(s.id)}"${s.id === selected ? ' selected' : ''}>
-        ${escapeHtml(s.name)}
-      </option>`).join('')
-  }`;
-}
-
-function recipientOptions(recipients, selected) {
-  if (!(recipients || []).length) {
-    return `<option value="">No clients with transfers</option>`;
-  }
-  return (recipients || []).map((r) => `
-      <option value="${escapeHtml(r.id)}"${r.id === selected ? ' selected' : ''}>
-        ${escapeHtml(r.name)}
-      </option>`).join('');
-}
-
 const PRICING_STORAGE_PREFIX = 'v5ClientReportPricing:';
 
 function emptyPricing() {
@@ -173,8 +154,9 @@ export function mountReportsPanel(route) {
   }
 
   function ensureClientSelected(clients) {
-    if (ctx.recipientId && clients.some((c) => c.id === ctx.recipientId)) return;
-    ctx.recipientId = clients[0]?.id || '';
+    if (ctx.recipientId && !clients.some((c) => c.id === ctx.recipientId)) {
+      ctx.recipientId = '';
+    }
   }
 
   function compute() {
@@ -640,7 +622,6 @@ export function mountReportsPanel(route) {
 
     let body = '';
     let lead = '';
-    let filters = '';
 
     if (isClients) {
       const report = ctx.clientReport || {
@@ -652,20 +633,7 @@ export function mountReportsPanel(route) {
         missingPriceCount: 0,
         recipientRows: [],
       };
-      lead = 'Select a client to view transfers. Edit unit prices and add an internal markup % — markup is baked into invoice prices and not shown as its own line.';
-      filters = `
-        <label class="reports-filter-field">
-          <span class="admin-label">Client</span>
-          <select id="rptRecipient" class="admin-select lib-filter">${recipientOptions(recipients, ctx.recipientId)}</select>
-        </label>
-        <label class="reports-filter-field">
-          <span class="admin-label">From</span>
-          <input type="date" id="rptDateFrom" class="admin-input reports-date" value="${escapeHtml(ctx.dateFrom)}">
-        </label>
-        <label class="reports-filter-field">
-          <span class="admin-label">To</span>
-          <input type="date" id="rptDateTo" class="admin-input reports-date" value="${escapeHtml(ctx.dateTo)}">
-        </label>`;
+      lead = 'Use the filter menu to pick a client and date range. Edit unit prices and add an internal markup % — markup is baked into invoice prices and not shown as its own line.';
       if (!recipients.length) {
         body = emptyState({
           iconHtml: icon('arrow-left-right', { size: 22 }),
@@ -673,6 +641,15 @@ export function mountReportsPanel(route) {
           copy: 'Log a transfer to a recipient (Artist Liaison, Production, etc.) on the Transfers page.',
           variant: 'admin',
         });
+      } else if (!ctx.recipientId) {
+        body = `
+        ${renderClientStats(report)}
+        ${emptyState({
+          iconHtml: icon('funnel', { size: 22 }),
+          title: 'Choose a client',
+          copy: 'Open the filter menu and pick a client to see transfer detail and invoice pricing.',
+          variant: 'admin',
+        })}`;
       } else {
         body = `
         ${renderClientStats(report)}
@@ -690,29 +667,7 @@ export function mountReportsPanel(route) {
         deliveryRows: [],
       };
       const bySupplier = ctx.supplierView === 'suppliers';
-      const invoiced = ctx.qtyMode === 'invoiced';
-      lead = 'Total cost of stock transferred in from suppliers (deliveries), priced from each delivery’s supplier offer or event price override.';
-      filters = `
-        <label class="reports-filter-field">
-          <span class="admin-label">Supplier</span>
-          <select id="rptSupplier" class="admin-select lib-filter">${supplierOptions(ctx.suppliers, ctx.supplierId)}</select>
-        </label>
-        <label class="reports-filter-field">
-          <span class="admin-label">From</span>
-          <input type="date" id="rptDateFrom" class="admin-input reports-date" value="${escapeHtml(ctx.dateFrom)}">
-        </label>
-        <label class="reports-filter-field">
-          <span class="admin-label">To</span>
-          <input type="date" id="rptDateTo" class="admin-input reports-date" value="${escapeHtml(ctx.dateTo)}">
-        </label>
-        <div class="projections-filter" role="tablist" aria-label="Quantity basis">
-          <button type="button" class="projections-filter-btn${invoiced ? '' : ' is-active'}" data-qty-mode="received" role="tab" aria-selected="${!invoiced}">Received</button>
-          <button type="button" class="projections-filter-btn${invoiced ? ' is-active' : ''}" data-qty-mode="invoiced" role="tab" aria-selected="${invoiced}">Invoiced</button>
-        </div>
-        <div class="projections-filter" role="tablist" aria-label="Report view">
-          <button type="button" class="projections-filter-btn${bySupplier ? ' is-active' : ''}" data-supplier-view="suppliers" role="tab" aria-selected="${bySupplier}">By supplier</button>
-          <button type="button" class="projections-filter-btn${bySupplier ? '' : ' is-active'}" data-supplier-view="deliveries" role="tab" aria-selected="${!bySupplier}">By delivery</button>
-        </div>`;
+      lead = 'Total cost of stock transferred in from suppliers (deliveries). Use the filter menu for report type, supplier, dates, quantity basis, and view.';
       body = `
         ${renderSupplierStats(report)}
         <section class="admin-surface projections-table-section">
@@ -721,17 +676,19 @@ export function mountReportsPanel(route) {
     }
 
     root.innerHTML = `
-      <div class="projections-filter reports-kind" role="tablist" aria-label="Report type">
-        <button type="button" class="projections-filter-btn${isClients ? ' is-active' : ''}" data-report-kind="clients" role="tab" aria-selected="${isClients}">Transfers by client</button>
-        <button type="button" class="projections-filter-btn${isClients ? '' : ' is-active'}" data-report-kind="suppliers" role="tab" aria-selected="${!isClients}">Supplier delivery cost</button>
-      </div>
       <p class="projections-lead muted">${escapeHtml(lead)}</p>
-      <div class="projections-toolbar reports-toolbar">${filters}</div>
       ${body}`;
     initIcons(root);
     bind();
     if (isClients) startCollab();
     else stopCollab();
+  }
+
+  function pushFilterContext() {
+    setTableFilterContext('reports', {
+      recipients: clientsWithTransfers().map((r) => ({ id: r.id, name: r.name })),
+      suppliers: (ctx.suppliers || []).map((s) => ({ value: s.id, label: s.name })),
+    });
   }
 
   async function reload() {
@@ -749,6 +706,7 @@ export function mountReportsPanel(route) {
     ctx.transfers = transfers || [];
     ctx.caseSizes = caseSizes || [];
     ctx.suppliers = (suppliers || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    pushFilterContext();
     compute();
     paint();
   }
@@ -765,7 +723,23 @@ export function mountReportsPanel(route) {
     }
   }
 
+  function onTableFilter(e) {
+    if (e.detail?.panel !== 'reports') return;
+    const values = e.detail?.values;
+    if (!values) return;
+    ctx.reportKind = values.kind || 'clients';
+    ctx.supplierId = values.supplierId || '';
+    ctx.recipientId = values.recipientId || '';
+    ctx.dateFrom = values.dates?.from || '';
+    ctx.dateTo = values.dates?.to || '';
+    ctx.qtyMode = values.qtyMode || 'received';
+    ctx.supplierView = values.supplierView || 'suppliers';
+    compute();
+    paint();
+  }
+
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
+  document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
   reload().catch((err) => {
     reportError(err, { source: 'admin.reports.load', silent: true });
@@ -782,5 +756,6 @@ export function mountReportsPanel(route) {
     ctx.abort = true;
     stopCollab();
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
+    document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };
 }

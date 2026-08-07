@@ -60,6 +60,8 @@ export function initGlobalSearch() {
 
   let query = '';
   let routeKey = '';
+  /** Drop stale async loads so Kit search/toolbar can’t stick on Closing. */
+  let syncGeneration = 0;
 
   function setQuery(value) {
     query = value || '';
@@ -119,6 +121,7 @@ export function initGlobalSearch() {
 
   return {
     async syncRoute(route) {
+      const gen = ++syncGeneration;
       const nextKey = route.view === 'event'
         ? `event:${route.eventId}:${route.panel || 'dashboard'}`
         : route.view;
@@ -136,10 +139,12 @@ export function initGlobalSearch() {
         const { products, bars } = container.hidden
           ? { products: [], bars: [] }
           : await loadPageContext(route);
+        if (gen !== syncGeneration) return;
         if (!container.hidden) mount(products, route);
         topbarControls.syncRoute(route, { products, bars });
         topbarToolbar.syncRoute(route);
       } catch (err) {
+        if (gen !== syncGeneration) return;
         console.warn('global search load failed', err);
         if (!container.hidden) mount([], route);
         topbarControls.syncRoute(route, { products: [], bars: [] });

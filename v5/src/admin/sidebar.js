@@ -111,12 +111,18 @@ function initSections() {
   });
 }
 
-function wireSections() {
+function wireSections(onNavigate) {
   document.querySelectorAll('.sidebar-section-toggle').forEach((toggle) => {
     toggle.addEventListener('click', () => {
       const section = toggle.closest('.sidebar-section');
       const open = section?.classList.contains('is-collapsed');
       setSectionOpen(section, open);
+
+      // Section headers with data-nav-panel open that panel (Reports header ≠ expand-only).
+      const panel = toggle.dataset.navPanel;
+      if (panel && typeof onNavigate === 'function') {
+        onNavigate({ panel });
+      }
     });
   });
 }
@@ -158,6 +164,12 @@ function wireWorkspace(onNavigate) {
 
 /** Ensure Reports exists even if a cached admin.html predates the nav link. */
 function ensureReportsNavLink() {
+  const reportsSection = document.querySelector('.sidebar-section[data-section="event-reports"]');
+  const reportsToggle = reportsSection?.querySelector('.sidebar-section-toggle');
+  if (reportsToggle && !reportsToggle.dataset.navPanel) {
+    reportsToggle.dataset.navPanel = 'reports';
+  }
+
   const nav = document.getElementById('sidebarEventReports')
     || document.getElementById('sidebarEventSales');
   if (!nav) return;
@@ -181,7 +193,7 @@ function ensureReportsNavLink() {
 export function initSidebar(onNavigate) {
   ensureReportsNavLink();
   initSections();
-  wireSections();
+  wireSections(onNavigate);
   wireWorkspace(onNavigate);
 }
 

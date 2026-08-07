@@ -77,6 +77,7 @@ function renderDashboard(ctx) {
           sortKey: ctx.sortKey,
           sortDir: ctx.sortDir,
           tableId: 'dashProjectionTable',
+          filter: ctx.runoutFilter || 'all',
         })}</div>
       </section>
     </div>`;
@@ -108,6 +109,7 @@ export function mountDashboardPanel(route) {
     projection: { rows: [], baselineNet: 0, mappedNet: 0, target: 0, factor: null, items: [] },
     sortKey: 'name',
     sortDir: 1,
+    runoutFilter: 'all',
     abort: false,
   };
 
@@ -115,6 +117,7 @@ export function mountDashboardPanel(route) {
   if (seeded) {
     ctx.sortKey = seeded.sortKey || 'name';
     ctx.sortDir = sortDirNum(seeded.sortDir);
+    ctx.runoutFilter = seeded.runoutFilter || 'all';
   }
 
   function paintProjectionOnly() {
@@ -126,6 +129,7 @@ export function mountDashboardPanel(route) {
         sortKey: ctx.sortKey,
         sortDir: ctx.sortDir,
         tableId: 'dashProjectionTable',
+        filter: ctx.runoutFilter || 'all',
       });
     }
     bindSort();
@@ -194,6 +198,7 @@ export function mountDashboardPanel(route) {
     if (!values) return;
     ctx.sortKey = values.sortKey || 'name';
     ctx.sortDir = sortDirNum(values.sortDir);
+    ctx.runoutFilter = values.runoutFilter || 'all';
     paintProjectionOnly();
   };
 

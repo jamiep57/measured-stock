@@ -669,6 +669,7 @@ export const closingConfig = simpleEventConfig({
         id: 'category',
         label: 'Category',
         type: 'radio',
+        scroll: true,
         options: [
           { value: '', label: 'All categories' },
           ...context.categories.map((c) => ({ value: c, label: c })),
@@ -950,7 +951,7 @@ export const reportsConfig = simpleEventConfig({
         type: 'radio',
         scroll: true,
         options: [
-          { value: '', label: 'All clients' },
+          { value: '', label: 'Select a client' },
           ...recipients.map((r) => ({ value: r.id || r.value, label: r.name || r.label })),
         ],
       });
@@ -1028,17 +1029,20 @@ export const dashboardConfig = {
   id: 'dashboard',
   match: eventMatch('dashboard'),
   routeKey: (route) => `dashboard:${route.eventId}`,
-  defaults: () => ({ sort: 'name', sortDir: 'asc' }),
-  persist: { keys: ['sort', 'sortDir'], storageKey: 'v5DashboardTableFilter' },
+  defaults: () => ({ runoutFilter: 'all', sort: 'name', sortDir: 'asc' }),
+  persist: { keys: ['sort', 'sortDir', 'runoutFilter'], storageKey: 'v5DashboardTableFilter' },
   createState() {
-    return loadPersisted('v5DashboardTableFilter', { sort: 'name', sortDir: 'asc' }, ['sort', 'sortDir']);
+    return loadPersisted('v5DashboardTableFilter', {
+      runoutFilter: 'all', sort: 'name', sortDir: 'asc',
+    }, ['sort', 'sortDir', 'runoutFilter']);
   },
   getContext() { return {}; },
   onStateChange(state) {
-    savePersisted('v5DashboardTableFilter', state, ['sort', 'sortDir']);
+    savePersisted('v5DashboardTableFilter', state, ['sort', 'sortDir', 'runoutFilter']);
   },
   toValues(state) {
     return {
+      runoutFilter: state.runoutFilter || 'all',
       sortKey: state.sort || 'name',
       sortDir: state.sortDir || 'asc',
     };
@@ -1058,6 +1062,30 @@ export const dashboardConfig = {
       { value: 'pct', label: '% used' },
     ];
     return [{
+      id: 'filter',
+      label: 'Filter',
+      icon: 'funnel',
+      sections: [{
+        id: 'runoutFilter',
+        label: 'Products',
+        type: 'segment',
+        options: [
+          { value: 'all', label: 'All mapped products' },
+          { value: 'runout', label: 'Runs out before target' },
+        ],
+      }],
+      values: { runoutFilter: state.runoutFilter || 'all' },
+      onChange(_id, value) {
+        h.patch({ runoutFilter: value });
+        api.syncUi();
+        h.emit();
+      },
+      onReset() {
+        h.patch({ runoutFilter: 'all' });
+        api.syncUi();
+        h.emit();
+      },
+    }, {
       id: 'sort',
       label: 'Sort',
       icon: 'list-sort-descending',
@@ -1082,16 +1110,25 @@ export const dashboardConfig = {
   },
   buildActiveItems(api) {
     const state = api.getState();
-    if (api.getActiveTab() === 'sort' || state.sort === 'name') return [];
-    return [{ id: 'sort', label: state.sort }];
+    const items = [];
+    if (api.getActiveTab() !== 'filter' && state.runoutFilter === 'runout') {
+      items.push({ id: 'runoutFilter', label: 'Runs out before target' });
+    }
+    if (api.getActiveTab() !== 'sort' && state.sort !== 'name') {
+      items.push({ id: 'sort', label: state.sort });
+    }
+    return items;
   },
   removeActiveItem(api, id) {
-    if (id !== 'sort') return false;
-    api.setState({ ...api.getState(), sort: 'name', sortDir: 'asc' });
+    const state = api.getState();
+    if (id === 'runoutFilter') api.setState({ ...state, runoutFilter: 'all' });
+    else if (id === 'sort') api.setState({ ...state, sort: 'name', sortDir: 'asc' });
+    else return false;
     return true;
   },
   isActive(api) {
-    return api.getState().sort !== 'name';
+    const state = api.getState();
+    return state.sort !== 'name' || state.runoutFilter === 'runout';
   },
 };
 

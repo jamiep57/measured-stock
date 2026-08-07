@@ -406,10 +406,24 @@ export function createGridCollabSession(opts) {
     }, delay);
   }
 
+  function dropExistingChannel(rt) {
+    // supabase-js reuses channels by topic; adding presence after subscribe() throws.
+    const topic = `realtime:${channelName}`;
+    const existing = (rt.getChannels?.() || []).filter((ch) => {
+      const t = ch?.topic || '';
+      return t === topic || t === channelName || t.endsWith(`:${channelName}`);
+    });
+    for (const ch of existing) {
+      try { rt.removeChannel(ch); } catch { /* ignore */ }
+    }
+  }
+
   function start() {
     if (destroyed || channel) return;
     const rt = getRealtimeClient();
     if (!rt) return;
+
+    dropExistingChannel(rt);
 
     const selfId = getClientId();
     channel = rt.channel(channelName, {
