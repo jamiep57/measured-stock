@@ -103,8 +103,6 @@ function renderTransferList() {
       copy: 'Move stock between bars or from a warehouse.',
       ctaHtml: '<button type="button" class="btn btn-primary empty-retry-btn" data-empty-cta="transfer">Log transfer</button>',
     });
-    bindEmptyRetry(list, () => startNewTransfer());
-    // bindEmptyRetry looks for data-empty-retry; wire CTA manually
     list.querySelector('[data-empty-cta="transfer"]')?.addEventListener('click', () => startNewTransfer());
     return;
   }

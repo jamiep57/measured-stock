@@ -1667,3 +1667,53 @@ body.app-drawer-open { overflow: hidden; }
     transition-delay: 0s !important;
   }
 }
+
+/* —— Production polish: empty CTA / last sync / press —— */
+.empty-cta,
+.empty-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+.empty-retry-btn.btn,
+.btn.empty-retry-btn {
+  min-height: 40px;
+  padding: 0 16px;
+}
+.last-sync-label {
+  position: fixed;
+  top: calc(var(--safe-top, 0px) + 58px);
+  left: 12px;
+  z-index: 44;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.last-sync-label[hidden] { display: none !important; }
+.offline-banner:not([hidden]) ~ .last-sync-label {
+  top: calc(var(--safe-top, 0px) + 108px);
+}
+.sync-badge:not([hidden]) ~ .last-sync-label {
+  display: none !important;
+}
+.btn:active,
+.session-card:active,
+.navbtn:active,
+.compose-fab-btn:active {
+  transform: scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn:active,
+  .session-card:active,
+  .navbtn:active,
+  .compose-fab-btn:active {
+    transform: none;
+  }
+}

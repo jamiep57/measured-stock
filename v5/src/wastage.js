@@ -8,6 +8,8 @@ import { entryMode } from './pack-metrics.js';
 import { openSheet, closeSheet } from './components/sheet.js';
 import { mountProductSearch } from './components/product-search.js';
 import { confirmDialog } from './components/modal.js';
+import { emptyState, errorState, bindEmptyRetry } from './components/empty-state.js';
+import { scheduleDestructive } from './lib/action-undo.js';
 
 const WASTAGE_REASONS = [
   'Breakage / spillage',
@@ -43,24 +45,22 @@ export async function loadWastageView() {
   if (!el) return;
 
   if (!ctx?.eventId) {
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-calendar-blank"></i></span>
-        <p class="empty-title">Choose an event</p>
-        <p class="empty-copy">Select an event in the top bar to log wastage.</p>
-      </div>`;
+    el.innerHTML = emptyState({
+      icon: 'calendar-blank',
+      title: 'Choose an event',
+      copy: 'Select an event in the top bar to log wastage.',
+    });
     return;
   }
 
   try {
     batches = await getDB().wastage.forEvent(ctx.eventId);
   } catch (err) {
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-warning-circle"></i></span>
-        <p class="empty-title">Couldn’t load wastage</p>
-        <p class="empty-copy">${escapeHtml(err.message)}</p>
-      </div>`;
+    el.innerHTML = errorState({
+      title: 'Couldn’t load wastage',
+      copy: err.message || 'Check your connection and try again.',
+    });
+    bindEmptyRetry(el, () => loadWastageView());
     return;
   }
 
@@ -79,12 +79,13 @@ function renderWastageList() {
   const list = $('wstList');
   if (!list) return;
   if (!batches.length) {
-    list.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-trash"></i></span>
-        <p class="empty-title">No wastage yet</p>
-        <p class="empty-copy">Tap + to log the first write-off for this event.</p>
-      </div>`;
+    list.innerHTML = emptyState({
+      icon: 'trash',
+      title: 'No wastage yet',
+      copy: 'Log breakage, comps, and unsellable write-offs.',
+      ctaHtml: '<button type="button" class="btn btn-primary empty-retry-btn" data-empty-cta="wastage">Log wastage</button>',
+    });
+    list.querySelector('[data-empty-cta="wastage"]')?.addEventListener('click', () => startNewWastage());
     return;
   }
 
@@ -290,15 +291,27 @@ async function saveWastage() {
 
 async function deleteWastage(id) {
   if (!(await confirmDialog({ title: 'Confirm', message: 'Delete this wastage entry?', confirmLabel: 'Delete', danger: true }))) return;
-  try {
-    const DB = getDB();
-    await DB.wastage.clearLines(id);
-    await DB.wastage.remove(id);
-    toast('Wastage deleted');
-    await loadWastageView();
-  } catch (err) {
-    toast(err.message || 'Delete failed', true);
+  const removed = batches.find((x) => x.id === id);
+  const idx = batches.findIndex((x) => x.id === id);
+  if (idx >= 0) {
+    batches = batches.filter((x) => x.id !== id);
+    renderWastageList();
   }
+  scheduleDestructive({
+    message: 'Wastage deleted',
+    delayMs: 6000,
+    commit: async () => {
+      const DB = getDB();
+      await DB.wastage.clearLines(id);
+      await DB.wastage.remove(id);
+    },
+    onUndo: () => {
+      if (removed && idx >= 0) {
+        batches = [...batches.slice(0, idx), removed, ...batches.slice(idx)];
+        renderWastageList();
+      }
+    },
+  });
 }
 
 async function openWastageForm(editId) {

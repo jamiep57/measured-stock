@@ -69,24 +69,22 @@ export async function loadCountsView() {
   const el = $('view-counts');
   if (!ctx.eventId) {
     exitCountMode();
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-calendar-blank"></i></span>
-        <p class="empty-title">Choose an event</p>
-        <p class="empty-copy">Select an event in the top bar to start a stock count.</p>
-      </div>`;
+    el.innerHTML = emptyState({
+      icon: 'calendar-blank',
+      title: 'Choose an event',
+      copy: 'Select an event in the top bar to start a stock count.',
+    });
     return;
   }
 
   try {
     counts = await getDB().stockCounts.forEvent(ctx.eventId);
   } catch (err) {
-    el.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-warning-circle"></i></span>
-        <p class="empty-title">Couldn’t load counts</p>
-        <p class="empty-copy">${escapeHtml(err.message)}</p>
-      </div>`;
+    el.innerHTML = errorState({
+      title: 'Couldn’t load counts',
+      copy: err.message || 'Check your connection and try again.',
+    });
+    bindEmptyRetry(el, () => loadCountsView());
     return;
   }
 
@@ -110,12 +108,13 @@ function renderCountList() {
   const list = $('countList');
   if (!list) return;
   if (!counts.length) {
-    list.innerHTML = `
-      <div class="empty empty--panel">
-        <span class="empty-icon" aria-hidden="true"><i class="ph ph-clipboard-text"></i></span>
-        <p class="empty-title">No sessions yet</p>
-        <p class="empty-copy">Tap + to start a new count session for this event.</p>
-      </div>`;
+    list.innerHTML = emptyState({
+      icon: 'clipboard-text',
+      title: 'No sessions yet',
+      copy: 'Start a count session and work through each bar.',
+      ctaHtml: '<button type="button" class="btn btn-primary empty-retry-btn" data-empty-cta="count">New count</button>',
+    });
+    list.querySelector('[data-empty-cta="count"]')?.addEventListener('click', () => startNewCount());
     return;
   }
   list.innerHTML = `

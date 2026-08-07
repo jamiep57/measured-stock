@@ -13,10 +13,42 @@ import {
   renderQuickActions,
 } from '../../lib/dashboard-insights.js';
 import { icon, initIcons } from '../../lib/icons.js';
-import { loadingWidget } from '../../components/loading-widget.js';
+import { loadingWidget, skeletonList } from '../../components/loading-widget.js';
+import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { hrefForRoute } from '../router.js';
 
 
 function renderDashboard(ctx) {
+  const barCount = ctx.bars?.length || 0;
+  const productCount = ctx.eps?.length || 0;
+  if (!barCount || !productCount) {
+    const steps = [
+      !barCount ? 'Add bars in Event setup' : null,
+      !productCount ? 'Add products to this event' : null,
+      'Set opening stock, then run the first count',
+    ].filter(Boolean);
+    const setupHref = hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'setup' });
+    const productsHref = hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'products' });
+    return `
+      <div class="dash-panel dash-panel--onboarding" id="dashPanel">
+        ${emptyState({
+          iconHtml: icon('list-checks', { size: 22 }),
+          title: 'Finish setting up this event',
+          copy: 'A few steps before stock and sales insights light up.',
+          variant: 'admin',
+          className: 'empty--onboarding',
+          ctaHtml: `
+            <ol class="empty-checklist">
+              ${steps.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}
+            </ol>
+            <div class="empty-cta-row">
+              <a class="admin-drawer-btn admin-drawer-btn--primary" href="${escapeHtml(setupHref)}">Event setup</a>
+              <a class="admin-drawer-btn admin-drawer-btn--solid" href="${escapeHtml(productsHref)}">Products</a>
+            </div>`,
+        })}
+      </div>`;
+  }
+
   const insights = computeDashboardInsights(ctx);
   const actions = buildQuickActions(ctx);
   const projectionCards = renderProjectionStats(ctx.projection);
@@ -45,7 +77,7 @@ function renderDashboard(ctx) {
 export function renderDashboardShell() {
   return `
     <div class="dash-panel" id="dashPanel">
-      ${loadingWidget('Loading dashboard…')}
+      ${skeletonList({ rows: 5, className: 'skel-list--dash' })}
     </div>`;
 }
 
@@ -142,7 +174,12 @@ export function mountDashboardPanel(route) {
   }
 
   reload().catch((err) => {
-    panel.innerHTML = `<div class="dist-empty del-empty--err">${escapeHtml(err.message || 'Failed to load dashboard')}</div>`;
+    panel.innerHTML = errorState({
+      title: 'Couldn’t load dashboard',
+      copy: err.message || 'Failed to load dashboard',
+      variant: 'admin',
+    });
+    bindEmptyRetry(panel, () => reload());
     toast(err.message || 'Failed to load dashboard', true);
   });
 
