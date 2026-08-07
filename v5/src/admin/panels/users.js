@@ -49,15 +49,15 @@ export function renderUsersSection() {
         </p>
         <div id="usersSetupResult" class="users-setup-result" hidden></div>
       </div>
-      <div class="admin-table-wrap">
-        <table class="admin-table" id="usersTable">
+      <div class="admin-table-wrap users-table-wrap">
+        <table class="admin-table users-table" id="usersTable">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th></th>
+              <th class="users-col-name">Name</th>
+              <th class="users-col-email">Email</th>
+              <th class="users-col-role">Role</th>
+              <th class="users-col-status">Status</th>
+              <th class="users-col-actions"></th>
             </tr>
           </thead>
           <tbody id="usersTbody">
@@ -79,11 +79,13 @@ function rowHtml(p, selfId) {
 
   return `
     <tr data-user-id="${escapeHtml(p.id)}">
-      <td>${escapeHtml(p.display_name || '—')}${isSelf ? ' <span class="muted">(you)</span>' : ''}</td>
-      <td>${escapeHtml(p.email || '—')}</td>
-      <td>${escapeHtml(p.role || '—')}</td>
-      <td>${statusBadge(p.status)}</td>
-      <td class="users-actions">${actions.join(' ')}</td>
+      <td class="users-col-name">
+        <span class="users-name">${escapeHtml(p.display_name || '—')}</span>${isSelf ? ' <span class="users-you muted">you</span>' : ''}
+      </td>
+      <td class="users-col-email">${escapeHtml(p.email || '—')}</td>
+      <td class="users-col-role"><span class="users-role">${escapeHtml(p.role || '—')}</span></td>
+      <td class="users-col-status">${statusBadge(p.status)}</td>
+      <td class="users-col-actions users-actions">${actions.join(' ')}</td>
     </tr>`;
 }
 
