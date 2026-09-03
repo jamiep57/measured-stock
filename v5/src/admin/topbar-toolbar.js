@@ -187,6 +187,12 @@ export const PANEL_TOOLBAR = {
           label: 'Export invoice',
           title: 'Download client transfer invoice PDF',
         },
+        {
+          id: 'export-volume',
+          icon: 'download',
+          label: 'Export volume report',
+          title: 'Download PLU, PLU+5% and consumption volumes as CSV',
+        },
       ],
     },
   ],

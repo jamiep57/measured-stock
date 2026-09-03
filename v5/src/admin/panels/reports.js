@@ -3,7 +3,7 @@
  */
 
 import { $, escapeHtml, toast, formatMoney, fmtDateTime } from '../../lib/util.js';
-import { getDB, loadEventFull, loadCaseSizes, loadSuppliers } from '../../db.js';
+import { getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, productsFromEvent } from '../../db.js';
 import {
   buildSupplierDeliveryCostReport,
   supplierDeliveryCostCsv,
@@ -19,6 +19,11 @@ import { icon, initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
+import {
+  computeReconRows,
+  reconTotals,
+  roundN,
+} from '../../lib/recon.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   reportsCellKeyFromInput,
@@ -102,6 +107,13 @@ export function mountReportsPanel(route) {
     clientReport: null,
     pricing: loadPricing(route.eventId),
     collab: null,
+    tillRows: [],
+    modifierRows: [],
+    recipes: [],
+    products: [],
+    wastageBatches: [],
+    closingRows: [],
+    supplierReturns: [],
   };
 
   const seeded = getTableFilterValues('reports');
@@ -198,6 +210,66 @@ export function mountReportsPanel(route) {
     if (!ctx.supplierReport) return;
     const { filename, content } = supplierDeliveryCostCsv(ctx.supplierReport, ctx.event?.name);
     downloadBlob(filename, content);
+  }
+
+  function exportVolumeCsv() {
+    if (!ctx.event) {
+      toast('Event not loaded yet', true);
+      return;
+    }
+    const reconRows = computeReconRows({
+      event: ctx.event,
+      closingRows: ctx.closingRows,
+      tillRows: ctx.tillRows,
+      modifierRows: ctx.modifierRows,
+      recipes: ctx.recipes,
+      products: ctx.products,
+      caseSizes: ctx.caseSizes,
+      suppliers: ctx.suppliers,
+      wastageBatches: ctx.wastageBatches,
+      transfers: ctx.transfers,
+      supplierReturns: ctx.supplierReturns,
+      deliveries: ctx.deliveries,
+      showHidden: false,
+      drafts: {},
+    });
+
+    if (!reconRows.length) {
+      toast('No product data to export', true);
+      return;
+    }
+
+    const esc = (v) => {
+      const s = String(v ?? '');
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = ['Product', 'Case Size', 'PLU', 'PLU + 5%', 'Consumption'];
+    const lines = [headers.map(esc).join(',')];
+    reconRows.forEach((r) => {
+      const plu = roundN(r.plu || 0, 2);
+      const pluPlus5 = roundN(plu * 1.05, 2);
+      const consumption = roundN(r.consumption || 0, 2);
+      lines.push([
+        r.p.name || '',
+        r.p.case_size || '',
+        plu,
+        pluPlus5,
+        consumption,
+      ].map(esc).join(','));
+    });
+
+    const totals = reconTotals(reconRows);
+    const totalPlu = roundN(totals.totPluCases, 2);
+    lines.push([
+      'TOTAL', '',
+      totalPlu,
+      roundN(totalPlu * 1.05, 2),
+      roundN(totals.totConsumption, 2),
+    ].map(esc).join(','));
+
+    const eventName = (ctx.event?.name || 'event').replace(/[^\w\s.-]/g, '');
+    downloadBlob(`${eventName} Volume Report.csv`, lines.join('\r\n'));
+    toast('Volume report exported');
   }
 
   function downloadBlob(filename, content) {
@@ -708,13 +780,26 @@ export function mountReportsPanel(route) {
     compute();
     paint();
 
-    const [deliveries, transfers] = await Promise.all([
+    const [deliveries, transfers, tillImport, modImport, recipes, wastage, closingRows, supplierReturns] = await Promise.all([
       DB.deliveries.forEvent(ctx.eventId),
       DB.transfers.forEvent(ctx.eventId),
+      DB.tillImports.forEvent(ctx.eventId).catch(() => null),
+      DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
+      loadRecipesFull().catch(() => []),
+      DB.wastage.forEvent(ctx.eventId).catch(() => []),
+      DB.closing.forEvent(ctx.eventId).catch(() => []),
+      DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
     ]);
     if (ctx.abort) return;
     ctx.deliveries = deliveries || [];
     ctx.transfers = transfers || [];
+    ctx.tillRows = tillImport?.rows || [];
+    ctx.modifierRows = modImport?.rows || [];
+    ctx.recipes = recipes || [];
+    ctx.products = productsFromEvent(event);
+    ctx.wastageBatches = wastage || [];
+    ctx.closingRows = closingRows || [];
+    ctx.supplierReturns = supplierReturns || [];
     pushFilterContext();
     compute();
     paint();
@@ -729,6 +814,11 @@ export function mountReportsPanel(route) {
     if (e.detail?.action === 'export-invoice') {
       e.detail.handled = true;
       exportInvoice(currentRecipientFilter());
+      return;
+    }
+    if (e.detail?.action === 'export-volume') {
+      e.detail.handled = true;
+      exportVolumeCsv();
     }
   }
 
