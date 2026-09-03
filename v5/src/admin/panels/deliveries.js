@@ -3,7 +3,7 @@
  */
 
 import {
-  $, escapeHtml, rid, toast, nowLocalInput, fmtDateTime,
+  $, escapeHtml, rid, toast, nowLocalInput, fmtDateTime, formatMoney,
 } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import {
@@ -12,6 +12,7 @@ import {
 import { formToStored, storedToForm, hasQuantity, totalUnitsForProduct, parseQty } from '../../stock-entry.js';
 import { round1, countedInFromDeliveries, damagedFromDeliveries } from '../../lib/opening-stock.js';
 import { productStockPack } from '../../pack-metrics.js';
+import { costDeliveryLine } from '../../lib/supplier-delivery-cost.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { mountSupplierSearch } from '../../components/supplier-search.js';
@@ -24,6 +25,7 @@ import {
 } from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
+import { loadingWidget } from '../../components/loading-widget.js';
 import { reportError } from '../../lib/client-errors.js';
 
 const DELIVERY_BUCKET = 'delivery-photos';
@@ -57,24 +59,153 @@ function sortDeliveries(list, sort) {
   return items;
 }
 
+function fmtQtyNum(n) {
+  const v = round1(n);
+  if (!Number.isFinite(v)) return '0';
+  return String(v);
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function dayKey(iso) {
+  if (!iso) return 'unknown';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return 'unknown';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatDayHeading(iso) {
+  if (!iso) return 'Undated';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return 'Undated';
+  const now = new Date();
+  const opts = { weekday: 'short', day: 'numeric', month: 'short' };
+  if (d.getFullYear() !== now.getFullYear()) {
+    return d.toLocaleDateString('en-GB', { ...opts, year: 'numeric' });
+  }
+  return d.toLocaleDateString('en-GB', opts);
+}
+
+function qtyKey(form) {
+  return `${form?.cases || ''}|${form?.singles || ''}`;
+}
+
 function lineParts(l, event, caseSizes) {
   const p = productFromEvent(event, l.product_id);
   const name = p?.name || 'Product';
   const pack = productStockPack(p, caseSizes);
   const packLabel = pack?.label || p?.case_size || '';
   const form = storedToForm(l);
-  const parts = [];
-  if (form.cases) parts.push(`${form.cases} cases`);
-  if (form.singles) parts.push(`${form.singles} singles`);
-  if (l.damaged_qty) parts.push(`${l.damaged_qty} damaged`);
-  if (l.invoice_qty != null || l.invoice_singles) {
-    const invForm = storedToForm({ qty: l.invoice_qty, singles: l.invoice_singles });
-    const invParts = [];
-    if (invForm.cases) invParts.push(`${invForm.cases} inv cases`);
-    if (invForm.singles) invParts.push(`${invForm.singles} inv singles`);
-    if (invParts.length) parts.push(invParts.join(', '));
+  const hasInvoice = l.invoice_qty != null || l.invoice_singles;
+  const invoiceForm = hasInvoice
+    ? storedToForm({ qty: l.invoice_qty, singles: l.invoice_singles })
+    : null;
+  const mismatch = Boolean(invoiceForm && qtyKey(form) !== qtyKey(invoiceForm));
+  return {
+    name,
+    packLabel,
+    form,
+    invoiceForm,
+    mismatch,
+    damaged: l.damaged_qty ? Number(l.damaged_qty) || 0 : 0,
+  };
+}
+
+function deliveryMetrics(d, event, caseSizes) {
+  const lines = d.lines || [];
+  let cases = 0;
+  let cost = 0;
+  let priced = 0;
+  let damaged = 0;
+  let invoiceMismatch = 0;
+  for (const l of lines) {
+    const p = productFromEvent(event, l.product_id);
+    const form = storedToForm(l);
+    cases += totalUnitsForProduct(form.cases, form.singles, p, caseSizes);
+    if (l.damaged_qty) damaged += Number(l.damaged_qty) || 0;
+    const pricedLine = costDeliveryLine({
+      line: l,
+      supplierId: d.supplier_id || d.supplier?.id || null,
+      event,
+      caseSizes,
+    });
+    if (!pricedLine.missingPrice) {
+      cost += pricedLine.cost;
+      priced += 1;
+    }
+    if (l.invoice_qty != null || l.invoice_singles) {
+      const invForm = storedToForm({ qty: l.invoice_qty, singles: l.invoice_singles });
+      if (qtyKey(form) !== qtyKey(invForm)) invoiceMismatch += 1;
+    }
   }
-  return { name, packLabel, qty: parts.join(', ') };
+  return {
+    cases: round1(cases),
+    cost,
+    priced,
+    damaged: round1(damaged),
+    invoiceMismatch,
+    lineCount: lines.length,
+  };
+}
+
+function groupDeliveries(list, sort) {
+  const groups = [];
+  const index = new Map();
+  const bySupplier = sort === 'supplier';
+  for (const d of list) {
+    const key = bySupplier
+      ? (d.supplier_id || d.supplier?.id || d.supplier?.name || 'none')
+      : dayKey(d.delivered_at);
+    if (!index.has(key)) {
+      index.set(key, groups.length);
+      groups.push({
+        key,
+        label: bySupplier
+          ? (d.supplier?.name || 'No supplier')
+          : formatDayHeading(d.delivered_at),
+        bySupplier,
+        items: [],
+      });
+    }
+    groups[index.get(key)].items.push(d);
+  }
+  return groups;
+}
+
+function renderAmt(form) {
+  const parts = [];
+  if (form?.cases) {
+    parts.push(`<span class="del-amt"><span class="del-amt-n">${escapeHtml(form.cases)}</span><span class="del-amt-u">cases</span></span>`);
+  }
+  if (form?.singles) {
+    parts.push(`<span class="del-amt"><span class="del-amt-n">${escapeHtml(form.singles)}</span><span class="del-amt-u">singles</span></span>`);
+  }
+  if (!parts.length) {
+    parts.push('<span class="del-amt del-amt--empty">—</span>');
+  }
+  return parts.join('');
+}
+
+function renderQtyStack(form, { invoiceForm, damaged, mismatch } = {}) {
+  let inv = '';
+  if (invoiceForm && (invoiceForm.cases || invoiceForm.singles)) {
+    const bits = [];
+    if (invoiceForm.cases) bits.push(`${invoiceForm.cases} cases`);
+    if (invoiceForm.singles) bits.push(`${invoiceForm.singles} singles`);
+    inv = `<span class="del-amt-inv${mismatch ? ' del-amt-inv--warn' : ''}">Inv ${escapeHtml(bits.join(', '))}</span>`;
+  }
+  const dmg = damaged
+    ? `<span class="del-amt-dmg">${escapeHtml(String(damaged))} damaged</span>`
+    : '';
+  return `<div class="del-line-amts">${renderAmt(form)}${inv}${dmg}</div>`;
 }
 
 function invoiceToStored(invoiceCases, invoiceSingles) {
@@ -92,20 +223,27 @@ function invoiceFromLine(line) {
 function renderLineList(lines, event, caseSizes) {
   const items = (lines || []);
   if (!items.length) return '';
+  const showInvoiceCol = items.some((l) => l.invoice_qty != null || l.invoice_singles);
   return `
-    <ul class="del-card-lines">
-      ${items.map((l) => {
-        const { name, packLabel, qty } = lineParts(l, event, caseSizes);
-        return `<li class="del-card-line" data-pid="${escapeHtml(l.product_id || '')}"
-          data-product-name="${escapeHtml((name || '').toLowerCase())}">
-          <div class="del-card-line-main">
-            <span class="del-card-line-name">${escapeHtml(name)}</span>
-            ${packLabel ? `<span class="del-card-line-pack">${escapeHtml(packLabel)}</span>` : ''}
-          </div>
-          ${qty ? `<span class="del-card-line-qty">${escapeHtml(qty)}</span>` : ''}
-        </li>`;
-      }).join('')}
-    </ul>`;
+    <div class="del-record-table">
+      <div class="del-record-cols" aria-hidden="true">
+        <span>Product</span>
+        <span>${showInvoiceCol ? 'Received' : 'Qty'}</span>
+      </div>
+      <ul class="del-card-lines">
+        ${items.map((l) => {
+          const { name, packLabel, form, invoiceForm, mismatch, damaged } = lineParts(l, event, caseSizes);
+          return `<li class="del-card-line" data-pid="${escapeHtml(l.product_id || '')}"
+            data-product-name="${escapeHtml((name || '').toLowerCase())}">
+            <div class="del-card-line-main">
+              <span class="del-card-line-name">${escapeHtml(name)}</span>
+              ${packLabel ? `<span class="del-card-line-pack">${escapeHtml(packLabel)}</span>` : ''}
+            </div>
+            ${renderQtyStack(form, { invoiceForm, damaged, mismatch })}
+          </li>`;
+        }).join('')}
+      </ul>
+    </div>`;
 }
 
 function productIds(delivery) {
@@ -122,8 +260,9 @@ function productNamesHaystack(lines, event) {
 function renderShell() {
   return `
     <div class="admin-page del-panel">
+      <div class="del-summary" id="delSummary" hidden></div>
       <div class="del-list" id="delList">
-        <div class="del-loading muted">Loading deliveries…</div>
+        <div class="del-loading">${loadingWidget('Loading deliveries…')}</div>
       </div>
     </div>`;
 }
@@ -140,23 +279,104 @@ function renderCardExtras(d) {
   const notes = d.notes
     ? `<p class="del-card-notes">${escapeHtml(d.notes)}</p>`
     : '';
-  const noteThumb = d.delivery_note_url
-    ? `<span class="del-card-photo-label">Note</span>${photoThumbHtml('Delivery note', d.delivery_note_url)}`
-    : '';
-  const photoThumbs = (d.photo_urls || []).length
-    ? `<span class="del-card-photo-label">Photos</span>${(d.photo_urls || []).map((u) => photoThumbHtml('Photo', u)).join('')}`
-    : '';
-  const dmgThumbs = (d.damages_photo_urls || []).length
-    ? `<span class="del-card-photo-label">Damages</span>${(d.damages_photo_urls || []).map((u) => photoThumbHtml('Damage', u)).join('')}`
-    : '';
-  const photosBlock = (noteThumb || photoThumbs || dmgThumbs)
-    ? `<div class="del-card-photos">${noteThumb}${photoThumbs}${dmgThumbs}</div>`
+  const thumbs = [
+    d.delivery_note_url ? photoThumbHtml('Delivery note', d.delivery_note_url) : '',
+    ...(d.photo_urls || []).map((u) => photoThumbHtml('Photo', u)),
+    ...(d.damages_photo_urls || []).map((u) => photoThumbHtml('Damage', u)),
+  ].filter(Boolean).join('');
+  const photosBlock = thumbs
+    ? `<div class="del-card-photos">${thumbs}</div>`
     : '';
   if (!notes && !photosBlock) return '';
   return `<div class="del-card-extra">${notes}${photosBlock}</div>`;
 }
 
-function renderList(deliveries, event, caseSizes) {
+function renderFlags(metrics) {
+  const chips = [];
+  if (metrics.damaged) {
+    chips.push(`<span class="del-chip del-chip--warn">${escapeHtml(fmtQtyNum(metrics.damaged))} damaged</span>`);
+  }
+  if (metrics.invoiceMismatch) {
+    chips.push('<span class="del-chip del-chip--warn">Invoice variance</span>');
+  }
+  if (!chips.length) return '';
+  return `<div class="del-record-flags">${chips.join('')}</div>`;
+}
+
+function renderSummary(deliveries, event, caseSizes) {
+  let products = 0;
+  let cases = 0;
+  let cost = 0;
+  let priced = 0;
+  deliveries.forEach((d) => {
+    const m = deliveryMetrics(d, event, caseSizes);
+    products += m.lineCount;
+    cases += m.cases;
+    cost += m.cost;
+    priced += m.priced;
+  });
+  const items = [
+    { value: String(deliveries.length), label: deliveries.length === 1 ? 'Delivery' : 'Deliveries' },
+    { value: String(products), label: products === 1 ? 'Product' : 'Products' },
+    { value: fmtQtyNum(cases), label: 'Cases in' },
+  ];
+  if (priced) {
+    items.push({ value: formatMoney(cost), label: 'Value' });
+  }
+  return items.map((item) => `
+    <div class="del-summary-item">
+      <span class="del-summary-value">${escapeHtml(item.value)}</span>
+      <span class="del-summary-label">${escapeHtml(item.label)}</span>
+    </div>`).join('');
+}
+
+function renderCard(d, event, caseSizes, { groupedBySupplier }) {
+  const sup = d.supplier?.name || 'No supplier';
+  const supplierId = d.supplier_id || d.supplier?.id || '';
+  const metrics = deliveryMetrics(d, event, caseSizes);
+  const lineList = renderLineList(d.lines, event, caseSizes);
+  const ids = productIds(d).join(',');
+  const extras = renderCardExtras(d);
+  const flags = renderFlags(metrics);
+  const untitled = !d.supplier?.name;
+  const title = groupedBySupplier ? fmtDateTime(d.delivered_at) : sup;
+  const metaBits = [];
+  if (!groupedBySupplier) metaBits.push(fmtTime(d.delivered_at));
+  metaBits.push(`${metrics.lineCount} product${metrics.lineCount !== 1 ? 's' : ''}`);
+  if (d.reference) metaBits.push(d.reference);
+
+  return `
+    <article class="del-card del-record" data-delivery-id="${escapeHtml(d.id)}"
+      data-open="${escapeHtml(d.id)}"
+      data-product-ids="${escapeHtml(ids)}"
+      data-product-names="${escapeHtml(productNamesHaystack(d.lines, event))}"
+      data-supplier-id="${escapeHtml(supplierId)}"
+      data-supplier-name="${escapeHtml((sup || '').toLowerCase())}"
+      data-reference="${escapeHtml((d.reference || '').toLowerCase())}"
+      data-notes="${escapeHtml((d.notes || '').toLowerCase())}">
+      <div class="del-record-head">
+        <div class="del-record-who">
+          <h3 class="del-record-supplier${untitled && !groupedBySupplier ? ' del-record-supplier--empty' : ''}">${escapeHtml(title)}</h3>
+          <p class="del-record-meta">${metaBits.map((b) => escapeHtml(b)).join(' · ')}</p>
+          ${flags}
+        </div>
+        <div class="del-card-actions">
+          <button type="button" class="topbar-tool del-card-action" data-edit="${escapeHtml(d.id)}"
+            title="Edit delivery" aria-label="Edit delivery">
+            ${icon('pencil', { size: 16 })}
+          </button>
+          <button type="button" class="topbar-tool del-card-action del-card-action--danger" data-del="${escapeHtml(d.id)}"
+            title="Delete delivery" aria-label="Delete delivery">
+            ${icon('trash', { size: 16 })}
+          </button>
+        </div>
+      </div>
+      ${lineList}
+      ${extras}
+    </article>`;
+}
+
+function renderList(deliveries, event, caseSizes, sortKey) {
   if (!deliveries.length) {
     return emptyState({
       iconHtml: icon('container', { size: 22 }),
@@ -167,47 +387,22 @@ function renderList(deliveries, event, caseSizes) {
     });
   }
 
-  return deliveries.map((d) => {
-    const sup = d.supplier?.name || 'No supplier';
-    const supplierId = d.supplier_id || d.supplier?.id || '';
-    const lineCount = (d.lines || []).length;
-    const lineList = renderLineList(d.lines, event, caseSizes);
-    const ids = productIds(d).join(',');
-    const extras = renderCardExtras(d);
-
+  const groups = groupDeliveries(deliveries, sortKey);
+  return groups.map((group) => {
+    const cases = round1(group.items.reduce((sum, d) => (
+      sum + deliveryMetrics(d, event, caseSizes).cases
+    ), 0));
+    const n = group.items.length;
     return `
-      <article class="del-card" data-delivery-id="${escapeHtml(d.id)}"
-        data-product-ids="${escapeHtml(ids)}"
-        data-product-names="${escapeHtml(productNamesHaystack(d.lines, event))}"
-        data-supplier-id="${escapeHtml(supplierId)}"
-        data-supplier-name="${escapeHtml((sup || '').toLowerCase())}"
-        data-reference="${escapeHtml((d.reference || '').toLowerCase())}"
-        data-notes="${escapeHtml((d.notes || '').toLowerCase())}">
-        <div class="del-card-main del-card-main--stacked">
-          <div class="del-card-head">
-            <div class="del-card-body">
-              <h3 class="del-card-pill-title"><span class="del-card-pill-name">${escapeHtml(sup)}</span></h3>
-              <p class="del-card-meta">
-                ${escapeHtml(fmtDateTime(d.delivered_at))}
-                · ${lineCount} product${lineCount !== 1 ? 's' : ''}
-                ${d.reference ? ` · ${escapeHtml(d.reference)}` : ''}
-              </p>
-            </div>
-            <div class="del-card-actions">
-              <button type="button" class="topbar-tool del-card-action" data-edit="${escapeHtml(d.id)}"
-                title="Edit delivery" aria-label="Edit delivery">
-                ${icon('pencil', { size: 16 })}
-              </button>
-              <button type="button" class="topbar-tool del-card-action del-card-action--danger" data-del="${escapeHtml(d.id)}"
-                title="Delete delivery" aria-label="Delete delivery">
-                ${icon('trash', { size: 16 })}
-              </button>
-            </div>
-          </div>
-          ${lineList}
-          ${extras}
-        </div>
-      </article>`;
+      <section class="del-day">
+        <header class="del-day-head">
+          <h2 class="del-day-label${group.bySupplier ? ' del-day-label--name' : ''}">${escapeHtml(group.label)}</h2>
+          <p class="del-day-meta">${n} ${n === 1 ? 'delivery' : 'deliveries'} · ${escapeHtml(fmtQtyNum(cases))} cases</p>
+        </header>
+        ${group.items.map((d) => renderCard(d, event, caseSizes, {
+          groupedBySupplier: group.bySupplier,
+        })).join('')}
+      </section>`;
   }).join('');
 }
 
@@ -328,6 +523,10 @@ export function mountDeliveriesPanel(route) {
         return;
       }
       card.hidden = filtering && !anyLineVisible;
+    });
+    listEl.querySelectorAll('.del-day').forEach((day) => {
+      const cards = [...day.querySelectorAll('.del-card')];
+      day.hidden = cards.length > 0 && cards.every((c) => c.hidden);
     });
   }
 
@@ -899,11 +1098,31 @@ export function mountDeliveriesPanel(route) {
         openLightbox(btn.dataset.lightbox);
       };
     });
+    listEl.querySelectorAll('[data-open]').forEach((el) => {
+      el.onclick = (e) => {
+        if (e.target.closest('button')) return;
+        if (window.getSelection?.()?.toString()) return;
+        openDeliveryForm(el.dataset.open);
+      };
+    });
+  }
+
+  function setSummary(html) {
+    const el = $('delSummary');
+    if (!el) return;
+    if (!html) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = html;
   }
 
   function paintList() {
     const visible = visibleDeliveries();
     if (!visible.length && deliveries.length) {
+      setSummary('');
       listEl.innerHTML = emptyState({
         iconHtml: icon('search', { size: 22 }),
         title: 'No matches',
@@ -911,7 +1130,8 @@ export function mountDeliveriesPanel(route) {
         variant: 'admin',
       });
     } else {
-      listEl.innerHTML = renderList(visible, event, caseSizes);
+      setSummary(visible.length ? renderSummary(visible, event, caseSizes) : '');
+      listEl.innerHTML = renderList(visible, event, caseSizes, sortKey);
       wireList();
       listEl.querySelector('[data-empty-cta="log-delivery"]')?.addEventListener('click', () => openDeliveryForm());
     }

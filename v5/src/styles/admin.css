@@ -2895,6 +2895,274 @@ body.admin-drawer-open {
   box-shadow: none;
 }
 
+/* Deliveries feed — summary, day groups, records */
+.del-panel .del-list {
+  gap: 22px;
+}
+.del-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: var(--shell-radius);
+  background: var(--card);
+  overflow: hidden;
+}
+.del-summary:not(:has(.del-summary-item:nth-child(4))) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.del-summary[hidden] { display: none; }
+.del-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 16px;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+.del-summary-item:last-child { border-right: none; }
+.del-summary-value {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+.del-summary-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.del-day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.del-day[hidden] { display: none; }
+.del-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px 6px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--admin-canvas);
+}
+.del-day-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.del-day-label--name {
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--foreground);
+}
+.del-day-meta {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.del-panel .del-card.del-record {
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+}
+.del-panel .del-card.del-record .del-card-actions,
+.del-panel .del-card.del-record .del-card-extra {
+  cursor: default;
+}
+.del-panel .del-card.del-record:hover {
+  background: var(--card);
+  box-shadow: var(--shell-shadow);
+  border-color: color-mix(in srgb, var(--border) 55%, var(--foreground));
+}
+.del-record-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 16px 12px;
+}
+.del-record-who { min-width: 0; }
+.del-record-supplier {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+.del-record-supplier--empty {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.del-record-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+.del-record-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0 0;
+}
+.del-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted-foreground);
+  background: var(--secondary);
+  border-radius: 999px;
+}
+.del-chip--warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--card));
+}
+.del-record-table {
+  width: 100%;
+  border-top: 1px solid var(--border);
+}
+.del-record-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8.5rem;
+  gap: 8px 16px;
+  padding: 8px 16px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.del-record-cols span:last-child { text-align: right; }
+.del-panel .del-card-lines {
+  margin: 0;
+  padding: 0 0 6px;
+  gap: 0;
+}
+.del-panel .del-card-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8.5rem;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 8px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+}
+.del-panel .del-card-line[hidden] { display: none; }
+.del-panel .del-card-line:first-child { border-top: none; }
+.del-panel .del-card-line-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.del-panel .del-card-line-name {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+.del-panel .del-card-line-pack {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  min-width: 0;
+}
+.del-line-amts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+.del-amt {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.del-amt-n {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.del-amt-u {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.del-amt--empty {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.del-amt-inv {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.del-amt-inv--warn {
+  color: var(--warning);
+  font-weight: 600;
+}
+.del-amt-dmg {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warning);
+  font-variant-numeric: tabular-nums;
+}
+.del-panel .del-card-extra {
+  margin: 0;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--border);
+}
+.del-panel .del-card-notes {
+  margin: 0 0 8px;
+  font-style: normal;
+  color: var(--foreground);
+}
+.del-panel .del-card-photos { gap: 8px; }
+.del-panel .del-card-photo {
+  width: 44px;
+  height: 44px;
+}
+
+@media (max-width: 720px) {
+  .del-summary,
+  .del-summary:not(:has(.del-summary-item:nth-child(4))) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .del-summary-item { border-right: none; border-bottom: 1px solid var(--border); }
+  .del-summary-item:nth-child(2n) { border-right: none; }
+  .del-summary-item:nth-last-child(-n+2) { border-bottom: none; }
+  .del-record-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .del-record-cols { display: none; }
+  .del-panel .del-card-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
 /* Global catalog panels (suppliers, library, setup, settings) */
 .sup-panel,
 .cs-panel,
