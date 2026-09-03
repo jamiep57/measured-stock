@@ -190,8 +190,8 @@ export const PANEL_TOOLBAR = {
         {
           id: 'export-volume',
           icon: 'download',
-          label: 'Export volume report',
-          title: 'Download PLU, PLU+5% and consumption volumes as CSV',
+          label: 'Export volume Excel',
+          title: 'Download a formatted Excel workbook grouped by product category',
         },
       ],
     },

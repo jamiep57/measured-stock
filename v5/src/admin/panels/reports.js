@@ -19,11 +19,8 @@ import { icon, initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
-import {
-  computeReconRows,
-  reconTotals,
-  roundN,
-} from '../../lib/recon.js';
+import { computeReconRows } from '../../lib/recon.js';
+import { buildVolumeReportXlsx } from '../../lib/volume-report-xlsx.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   reportsCellKeyFromInput,
@@ -212,7 +209,7 @@ export function mountReportsPanel(route) {
     downloadBlob(filename, content);
   }
 
-  function exportVolumeCsv() {
+  function exportVolumeExcel() {
     if (!ctx.event) {
       toast('Event not loaded yet', true);
       return;
@@ -239,41 +236,18 @@ export function mountReportsPanel(route) {
       return;
     }
 
-    const esc = (v) => {
-      const s = String(v ?? '');
-      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const headers = ['Product', 'Case Size', 'PLU', 'PLU + 5%', 'Consumption'];
-    const lines = [headers.map(esc).join(',')];
-    reconRows.forEach((r) => {
-      const plu = roundN(r.plu || 0, 2);
-      const pluPlus5 = roundN(plu * 1.05, 2);
-      const consumption = roundN(r.consumption || 0, 2);
-      lines.push([
-        r.p.name || '',
-        r.p.case_size || '',
-        plu,
-        pluPlus5,
-        consumption,
-      ].map(esc).join(','));
-    });
-
-    const totals = reconTotals(reconRows);
-    const totalPlu = roundN(totals.totPluCases, 2);
-    lines.push([
-      'TOTAL', '',
-      totalPlu,
-      roundN(totalPlu * 1.05, 2),
-      roundN(totals.totConsumption, 2),
-    ].map(esc).join(','));
-
     const eventName = (ctx.event?.name || 'event').replace(/[^\w\s.-]/g, '');
-    downloadBlob(`${eventName} Volume Report.csv`, lines.join('\r\n'));
+    const workbook = buildVolumeReportXlsx(reconRows, ctx.event?.name || 'Event');
+    downloadBlob(
+      `${eventName} Volume Report.xlsx`,
+      workbook,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     toast('Volume report exported');
   }
 
-  function downloadBlob(filename, content) {
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+  function downloadBlob(filename, content, type = 'text/csv;charset=utf-8') {
+    const blob = new Blob([content], { type });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename;
@@ -818,7 +792,7 @@ export function mountReportsPanel(route) {
     }
     if (e.detail?.action === 'export-volume') {
       e.detail.handled = true;
-      exportVolumeCsv();
+      exportVolumeExcel();
     }
   }
 
