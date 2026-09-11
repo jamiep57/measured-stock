@@ -341,6 +341,8 @@ export function mountReconPanel(route) {
     deliveries: [],
     statusFilter: '',
     categoryFilter: [],
+    searchQuery: getLastProductFilter().query || '',
+    productId: getLastProductFilter().productId || null,
     showHidden: false,
     sort: 'category',
     colVis: loadReconColVisibility(),
@@ -416,14 +418,19 @@ export function mountReconPanel(route) {
     });
   }
 
-  function hasCategoryFilter() {
-    return Array.isArray(ctx.categoryFilter) && ctx.categoryFilter.length > 0;
+  function totalSourceRows() {
+    return filterReconRows(allRows(), {
+      statusFilter: ctx.statusFilter,
+      categories: ctx.categoryFilter,
+      query: ctx.searchQuery,
+      productId: ctx.productId,
+    });
   }
 
   function renderTable() {
     const body = $('rcnBody');
     if (!body) return;
-    const totalSource = (ctx.statusFilter || hasCategoryFilter()) ? visibleRows() : allRows().filter((r) => !r.reconHidden);
+    const totalSource = totalSourceRows();
 
     const rows = visibleRows();
     const all = allRows();
@@ -458,6 +465,7 @@ export function mountReconPanel(route) {
     body.innerHTML = html;
     applyColVisibility(panel, ctx.colVis);
     initIcons(panel);
+    applyProductFilter({ query: ctx.searchQuery, productId: ctx.productId });
     layoutTableScroll();
     ctx.collab?.repaint();
   }
@@ -473,13 +481,11 @@ export function mountReconPanel(route) {
     if (!wrap || wrap.offsetParent === null) return;
     const top = wrap.getBoundingClientRect().top;
     wrap.style.maxHeight = `${Math.max(280, window.innerHeight - top - 20)}px`;
+    const thead = wrap.querySelector('thead');
+    if (thead) {
+      wrap.style.setProperty('--rcn-thead-h', `${Math.ceil(thead.getBoundingClientRect().height)}px`);
+    }
     syncScrollHint();
-  }
-
-  function totalSourceRows() {
-    return (ctx.statusFilter || hasCategoryFilter())
-      ? visibleRows()
-      : allRows().filter((r) => !r.reconHidden);
   }
 
   function refreshStatsAndTotalRow() {
@@ -1041,10 +1047,12 @@ export function mountReconPanel(route) {
   }
 
   function applyProductFilter({ query, productId } = {}) {
-    const q = (query || '').trim().toLowerCase();
+    ctx.searchQuery = query || '';
+    ctx.productId = productId || null;
+    const q = ctx.searchQuery.trim().toLowerCase();
     const setHidden = (tr) => {
-      if (productId) {
-        tr.hidden = tr.dataset.rcnPid !== productId;
+      if (ctx.productId) {
+        tr.hidden = tr.dataset.rcnPid !== ctx.productId;
         return;
       }
       if (!q) {
@@ -1057,9 +1065,15 @@ export function mountReconPanel(route) {
     };
     panel.querySelectorAll('.recon-row[data-rcn-pid], .recon-sub-row[data-rcn-pid]').forEach(setHidden);
     panel.querySelectorAll('.dist-cat-row').forEach((tr) => {
-      const next = tr.nextElementSibling;
-      tr.hidden = next?.classList.contains('recon-row') && next.hidden;
+      let sibling = tr.nextElementSibling;
+      let anyVisible = false;
+      while (sibling && !sibling.classList.contains('dist-cat-row') && !sibling.classList.contains('recon-total-row')) {
+        if (sibling.classList.contains('recon-row') && !sibling.hidden) anyVisible = true;
+        sibling = sibling.nextElementSibling;
+      }
+      tr.hidden = !anyVisible;
     });
+    refreshStatsAndTotalRow();
   }
 
   panel.addEventListener('click', (e) => {

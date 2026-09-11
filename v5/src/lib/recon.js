@@ -660,11 +660,32 @@ export function computeReconRows(state) {
   }));
 }
 
-export function filterReconRows(rows, { statusFilter = '', categoryFilter = '', categories = null } = {}) {
+function reconRowMatchesSearch(r, { query = '', productId = null } = {}) {
+  if (productId) return r.pid === productId || r.p?.id === productId;
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return true;
+  const name = (r.p?.name || '').toLowerCase();
+  const suppliers = [];
+  if (r.supplierName && r.supplierName !== '—') suppliers.push(r.supplierName);
+  (r.deliverySources || []).forEach((s) => {
+    if (s.supplierName) suppliers.push(s.supplierName);
+  });
+  const supplier = suppliers.join(' ').toLowerCase();
+  return name.includes(q) || supplier.includes(q);
+}
+
+export function filterReconRows(rows, {
+  statusFilter = '',
+  categoryFilter = '',
+  categories = null,
+  query = '',
+  productId = null,
+} = {}) {
   const catIds = Array.isArray(categories)
     ? categories
     : (categoryFilter ? [categoryFilter] : []);
   return rows.filter((r) => {
+    if (!reconRowMatchesSearch(r, { query, productId })) return false;
     if (statusFilter) {
       const s = r.reconStatus || '';
       if (statusFilter === 'none') { if (s) return false; }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildReconRow, closingInvoiceQty, computePluByProductId, reconBudgetCost, varianceClass } from './recon.js';
+import { buildReconRow, closingInvoiceQty, computePluByProductId, filterReconRows, reconBudgetCost, reconTotals, varianceClass } from './recon.js';
 
 describe('buildReconRow', () => {
   const product = {
@@ -564,5 +564,66 @@ describe('varianceClass', () => {
   it('flags large variance as bad', () => {
     expect(varianceClass(10, 20, 10)).toBe('recon-var-bad');
     expect(varianceClass(10, 10.5, 0.5)).toBe('recon-var-good');
+  });
+});
+
+describe('filterReconRows', () => {
+  const rows = [
+    {
+      pid: 'p1',
+      p: { id: 'p1', name: 'Brand Bros Orange Pure', category: { id: 'c-keg' } },
+      supplierName: 'LWC',
+      deliverySources: [],
+      reconStatus: 'red',
+      budgetCost: 100,
+      consumptionCharge: 50,
+    },
+    {
+      pid: 'p2',
+      p: { id: 'p2', name: 'Heineken Keg', category: { id: 'c-keg' } },
+      supplierName: 'TWE',
+      deliverySources: [{ supplierName: 'Matthew Clark' }],
+      reconStatus: 'green',
+      budgetCost: 200,
+      consumptionCharge: 80,
+    },
+  ];
+
+  it('filters by product search query', () => {
+    const matched = filterReconRows(rows, { query: 'brand bros orang' });
+    expect(matched.map((r) => r.pid)).toEqual(['p1']);
+  });
+
+  it('filters by supplier name including delivery sources', () => {
+    const matched = filterReconRows(rows, { query: 'matthew' });
+    expect(matched.map((r) => r.pid)).toEqual(['p2']);
+  });
+
+  it('filters by selected product id', () => {
+    const matched = filterReconRows(rows, { query: 'keg', productId: 'p1' });
+    expect(matched.map((r) => r.pid)).toEqual(['p1']);
+  });
+
+  it('combines search with status and category filters', () => {
+    const matched = filterReconRows(rows, {
+      query: 'keg',
+      statusFilter: 'green',
+      categories: ['c-keg'],
+    });
+    expect(matched.map((r) => r.pid)).toEqual(['p2']);
+  });
+});
+
+describe('reconTotals', () => {
+  it('sums only the rows passed in', () => {
+    const totals = reconTotals([
+      { budgetCost: 10, consumptionCharge: 4, consumptionLooseCharge: 1, invoiceCharge: 2, pluCharge: 3, consumption: 5, plu: 6, variance: 1, wastage: 0, reconStatus: 'red' },
+      { budgetCost: 20, consumptionCharge: 8, consumptionLooseCharge: 2, invoiceCharge: 4, pluCharge: 6, consumption: 7, plu: 8, variance: -1, wastage: 0, reconStatus: 'green' },
+    ]);
+    expect(totals.totBudget).toBe(30);
+    expect(totals.totCons).toBe(12);
+    expect(totals.totVariance).toBe(0);
+    expect(totals.statusCounts.red).toBe(1);
+    expect(totals.statusCounts.green).toBe(1);
   });
 });
