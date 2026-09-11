@@ -6395,7 +6395,7 @@ body.admin-drawer-open {
   --rcn-num-w: 76px;
   --rcn-supplier-w: 108px;
   --rcn-edit-w: 76px;
-  --rcn-thead-h: 36px;
+  --rcn-thead-h: 48px;
   --rcn-group-border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   --dist-thead-h: var(--rcn-thead-h);
 
@@ -6545,11 +6545,14 @@ body.admin-drawer-open {
   min-width: max-content;
 }
 
-/* Header — single-line, uniform labels */
+/* Header — solid paint so rows tuck underneath (color-mix on sticky often fails) */
+.rcn-grid thead th {
+  z-index: 6;
+}
 .rcn-grid .rcn-th {
   padding: 10px 8px !important;
   vertical-align: middle;
-  background: color-mix(in srgb, var(--secondary) 70%, var(--card)) !important;
+  background: var(--secondary) !important;
   border-bottom: 1px solid var(--border);
 }
 .rcn-grid .rcn-th .dist-bar-head {
@@ -6585,15 +6588,15 @@ body.admin-drawer-open {
   font-weight: 600;
 }
 
-/* Sticky identity columns */
+/* Sticky identity columns — below thead so vertical scroll goes behind the header */
 .rcn-sticky {
   position: sticky;
   z-index: 2;
   background: var(--card);
 }
 .rcn-grid thead .rcn-sticky {
-  z-index: 5;
-  background: color-mix(in srgb, var(--secondary) 70%, var(--card));
+  z-index: 7;
+  background: var(--secondary) !important;
 }
 .rcn-col-item {
   left: 0;
@@ -6669,6 +6672,7 @@ body.admin-drawer-open {
   padding: 0 !important;
   text-align: center;
   vertical-align: stretch;
+  isolation: isolate;
   background: color-mix(in srgb, var(--secondary) 35%, var(--card)) !important;
 }
 .recon-row:hover .rcn-cell--edit {
@@ -6765,6 +6769,7 @@ body.admin-drawer-open {
 }
 .rcn-panel .dist-cat-row td.dist-cat-scroll {
   top: var(--rcn-thead-h);
+  z-index: 1;
   background: var(--card);
   border-right: none;
 }
