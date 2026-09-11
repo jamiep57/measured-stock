@@ -82,7 +82,6 @@ function setReconCols(visibleKeys) {
   const next = {};
   RECON_COLS.forEach((c) => { next[c.id] = visibleKeys.includes(c.id); });
   if (next.item === false) next.item = true;
-  if (next.status === false) next.status = true;
   saveReconColVisibility(next);
   return next;
 }
@@ -427,7 +426,7 @@ export const reconConfig = {
         options: RECON_COLS.map((c) => ({
           value: c.id,
           label: c.label,
-          disabled: c.id === 'item' || c.id === 'status',
+          disabled: c.id === 'item',
         })),
       }],
       values: { visibleColumns: visibleReconCols(state.colVis || {}) },

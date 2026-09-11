@@ -81,15 +81,21 @@ function readInlineDraft(pid, closingRows) {
   };
 }
 
-function renderMarkerCell(pid, status) {
-  const s = status || '';
-  const dots = ['red', 'yellow', 'green', 'blue'].map((c) =>
-    `<button type="button" class="recon-marker recon-marker-${c}${s === c ? ' active' : ''}"
-      title="${escapeHtml(STATUS_TITLES[c])}" aria-label="${escapeHtml(STATUS_TITLES[c])}"
-      data-rcn-marker="${c}" data-pid="${escapeHtml(pid)}"></button>`).join('');
-  return `<td class="rcn-sticky rcn-col-status recon-marker-cell" data-rcn-col="status">
-    <span class="recon-markers">${dots}</span>
-  </td>`;
+const STATUS_ORDER = ['red', 'yellow', 'green', 'blue'];
+
+function nextReconStatus(current) {
+  const i = STATUS_ORDER.indexOf(current);
+  if (i < 0) return 'red';
+  if (i >= STATUS_ORDER.length - 1) return null;
+  return STATUS_ORDER[i + 1];
+}
+
+function renderStatusDot(pid, status) {
+  const title = STATUS_TITLES[status] || 'Unmarked';
+  const color = status ? ` rcn-seg-dot--${escapeHtml(status)}` : '';
+  return `<button type="button" class="rcn-item-status-dot rcn-seg-dot${color}"
+    title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"
+    data-pid="${escapeHtml(pid)}" data-rcn-marker="${escapeHtml(status || '')}"></button>`;
 }
 
 function renderInlineInput(pid, fieldId, value) {
@@ -144,7 +150,6 @@ function renderSubRows(r) {
       data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
       data-supplier-name="${escapeHtml((s.supplierName || '').toLowerCase())}"
       data-rcn-status="${escapeHtml(r.reconStatus || '')}">
-      <td class="rcn-sticky rcn-col-status recon-marker-cell" data-rcn-col="status"></td>
       <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
         <div class="rcn-item rcn-item--sub">
           <span class="rcn-sub-label" title="${escapeHtml(s.supplierName)}">↳ ${escapeHtml(s.supplierName)}</span>
@@ -191,17 +196,13 @@ function renderRow(r) {
   const supplierTitle = r.multiSupplierPriceWarn
     ? `${supplierLabel} — multiple suppliers at different prices`
     : (r.multiOfferWarn ? `${supplierLabel} — multiple supplier offers differ` : supplierLabel);
-  const statusTitle = STATUS_TITLES[r.reconStatus] || '';
-  const statusDot = r.reconStatus
-    ? `<span class="rcn-item-status-dot rcn-seg-dot rcn-seg-dot--${escapeHtml(r.reconStatus)}" title="${escapeHtml(statusTitle)}" aria-label="${escapeHtml(statusTitle)}"></span>`
-    : '';
+  const statusDot = renderStatusDot(r.pid, r.reconStatus);
 
   return `
     <tr class="recon-row${r.reconHidden ? ' recon-row-hidden' : ''}${r.multiSupplierDelivery ? ' recon-row--has-subs' : ''}"
       data-rcn-pid="${escapeHtml(r.pid)}" data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
       data-supplier-name="${escapeHtml(supplierSearchText(r))}"
       data-rcn-status="${escapeHtml(r.reconStatus || '')}">
-      ${renderMarkerCell(r.pid, r.reconStatus)}
       <td class="rcn-sticky rcn-col-item" data-rcn-col="item">
         <div class="rcn-item">
           <div class="rcn-item-top">
@@ -258,8 +259,7 @@ function renderTotalRow(totals) {
   return `<tr class="recon-total-row">
     ${RECON_COLS.map((c) => {
       let cls = 'rcn-num';
-      if (c.id === 'status') cls = 'rcn-col-status rcn-sticky';
-      else if (c.id === 'item') cls = 'rcn-col-item rcn-sticky';
+      if (c.id === 'item') cls = 'rcn-col-item rcn-sticky';
       else if (c.id === 'consumption_charge' || c.id === 'consumption_loose') cls += ' rcn-num--money rcn-emphasis';
       else if (c.id === 'plu_charge' || c.id === 'invoice_charge') cls += ' rcn-num--money';
       else if (c.id === 'budget_cost') cls += ' rcn-num--money rcn-budget';
@@ -285,7 +285,6 @@ export function renderReconShell() {
         <table class="dist-grid rcn-grid" id="rcnTable">
           <thead>
             <tr class="rcn-head-row">
-              ${rcnTh('status', 'Status', 'rcn-sticky rcn-col-status')}
               ${rcnTh('item', 'Product', 'rcn-sticky rcn-col-item')}
               ${rcnTh('case_price', 'Price', 'rcn-num rcn-num--money')}
               ${rcnTh('supplier', 'Supplier', 'rcn-col-supplier')}
@@ -449,9 +448,8 @@ export function mountReconPanel(route) {
     Object.keys(grouped).sort().forEach((cat) => {
       if (!flat) {
         html += `<tr class="dist-cat-row">
-        <td class="rcn-sticky rcn-col-status dist-cat-status" data-rcn-col="status"></td>
         <td class="dist-cat-pinned"><span class="dist-bar-name">${escapeHtml(cat)}</span></td>
-        <td colspan="${RECON_COLS.length - 2}" class="dist-cat-scroll"></td>
+        <td colspan="${RECON_COLS.length - 1}" class="dist-cat-scroll"></td>
       </tr>`;
       }
       grouped[cat].forEach((r) => { html += renderRow(r); });
@@ -627,11 +625,10 @@ export function mountReconPanel(route) {
   }
 
   async function setStatus(pid, status) {
-    const cl = closingRowFor(ctx.closingRows, pid) || {};
-    const next = cl.recon_status === status ? null : status;
+    const next = status || null;
     const DB = getDB();
-    let row = cl;
-    if (!row.product_id) {
+    let row = closingRowFor(ctx.closingRows, pid);
+    if (!row) {
       row = { event_id: ctx.eventId, product_id: pid };
       ctx.closingRows.push(row);
     }
@@ -1074,10 +1071,10 @@ export function mountReconPanel(route) {
       discardChanges();
       return;
     }
-    const statusBtn = e.target.closest('.recon-marker[data-rcn-marker]');
+    const statusBtn = e.target.closest('.rcn-item-status-dot[data-pid]');
     if (statusBtn) {
       e.stopPropagation();
-      setStatus(statusBtn.dataset.pid, statusBtn.dataset.rcnMarker);
+      setStatus(statusBtn.dataset.pid, nextReconStatus(statusBtn.dataset.rcnMarker || ''));
       return;
     }
     const editBtn = e.target.closest('[data-rcn-edit]');
