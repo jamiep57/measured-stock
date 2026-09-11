@@ -34,6 +34,7 @@ export function formatReconQty(n) {
 }
 
 export const RECON_COLS = [
+  { id: 'status', label: 'Status' },
   { id: 'item', label: 'Item' },
   { id: 'case_price', label: 'Price' },
   { id: 'supplier', label: 'Supplier' },
@@ -64,6 +65,8 @@ export function loadReconColVisibility() {
     RECON_COLS.forEach((c) => {
       if (typeof parsed[c.id] === 'boolean') defaults[c.id] = parsed[c.id];
     });
+    defaults.item = true;
+    defaults.status = true;
   } catch { /* ignore */ }
   return defaults;
 }

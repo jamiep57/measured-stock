@@ -6389,6 +6389,7 @@ body.admin-drawer-open {
 
 /* Financial recon */
 .rcn-panel {
+  --rcn-status-w: 56px;
   --rcn-item-w: 280px;
   --rcn-meta-w: 68px;
   --rcn-money-w: 88px;
@@ -6515,6 +6516,7 @@ body.admin-drawer-open {
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
 }
 .rcn-seg-dot {
+  display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -6533,7 +6535,7 @@ body.admin-drawer-open {
   border-radius: var(--radius-lg, 12px);
   background: var(--card);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.03);
-  --dist-scroll-hint-left: var(--rcn-item-w);
+  --dist-scroll-hint-left: calc(var(--rcn-status-w) + var(--rcn-item-w));
 }
 .rcn-panel .rcn-table-wrap::after {
   left: var(--dist-scroll-hint-left);
@@ -6594,8 +6596,17 @@ body.admin-drawer-open {
   z-index: 5;
   background: color-mix(in srgb, var(--secondary) 70%, var(--card));
 }
-.rcn-col-item {
+.rcn-col-status {
   left: 0;
+  width: var(--rcn-status-w);
+  min-width: var(--rcn-status-w);
+  max-width: var(--rcn-status-w);
+  padding: 6px 4px !important;
+  text-align: center;
+  vertical-align: middle;
+}
+.rcn-col-item {
+  left: var(--rcn-status-w);
   width: var(--rcn-item-w);
   min-width: var(--rcn-item-w);
   max-width: var(--rcn-item-w);
@@ -6730,9 +6741,21 @@ body.admin-drawer-open {
 .rcn-panel .dist-cat-row td {
   border-bottom: 1px solid var(--border);
 }
-.rcn-panel .dist-cat-row td.dist-cat-pinned {
+.rcn-panel .dist-cat-row td.dist-cat-status {
+  position: sticky;
   top: var(--rcn-thead-h);
   left: 0;
+  z-index: 4;
+  width: var(--rcn-status-w);
+  min-width: var(--rcn-status-w);
+  max-width: var(--rcn-status-w);
+  background: var(--card);
+  border-right: none;
+  box-shadow: none;
+}
+.rcn-panel .dist-cat-row td.dist-cat-pinned {
+  top: var(--rcn-thead-h);
+  left: var(--rcn-status-w);
   z-index: 4;
   width: var(--rcn-item-w);
   min-width: var(--rcn-item-w);
@@ -6833,6 +6856,45 @@ body.admin-drawer-open {
 td.rcn-num:not(:has(*)) {
   color: var(--muted-foreground);
 }
+
+/* Status markers */
+.recon-marker-cell {
+  vertical-align: middle;
+}
+.recon-markers {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+}
+.recon-marker {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.28;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.recon-marker:hover {
+  opacity: 0.7;
+  transform: scale(1.15);
+}
+.recon-marker.active {
+  opacity: 1;
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px var(--card);
+}
+.recon-marker-red { background: #ef4444; }
+.recon-marker-yellow { background: #f59e0b; }
+.recon-marker-green { background: #22c55e; }
+.recon-marker-blue { background: #3b82f6; }
+.recon-marker-red.active { box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 6%, var(--card)), 0 0 0 3px #ef4444; }
+.recon-marker-yellow.active { box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 8%, var(--card)), 0 0 0 3px #f59e0b; }
+.recon-marker-green.active { box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 7%, var(--card)), 0 0 0 3px #22c55e; }
+.recon-marker-blue.active { box-shadow: 0 0 0 2px color-mix(in srgb, #3b82f6 7%, var(--card)), 0 0 0 3px #3b82f6; }
 
 .recon-note-hint {
   display: block;
