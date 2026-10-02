@@ -16,6 +16,22 @@ import {
 import { syncRecipeIngredientsForProductRename } from '../lib/recipe-stock.js';
 import { parseQty } from '../stock-entry.js';
 import { confirmDialog } from '../components/modal.js';
+import { attachLwcNameSuggest } from '../components/lwc-catalog-search.js';
+import { mapCatalogHitToFields } from '../lib/supplier-catalogs.js';
+import {
+  KEG_COUPLER_TYPES,
+  DISPENSE_GAS_TYPES,
+  normaliseProductAttributes,
+  palletQtyOf,
+} from '../lib/product-attributes.js';
+
+function optionList(options, selected) {
+  return [
+    '<option value="">— not set —</option>',
+    ...options.map((o) =>
+      `<option value="${escapeHtml(o.value)}"${o.value === selected ? ' selected' : ''}>${escapeHtml(o.label)}</option>`),
+  ].join('');
+}
 
 function displayOfferPrice(row) {
   if (row?.case_price != null) return row.case_price;
@@ -83,7 +99,7 @@ export function openProductFormSheet(opts) {
     ...caseSizes.slice().sort((a, b) =>
       (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''))
       .map((cs) =>
-        `<option value="${escapeHtml(cs.id)}"${cs.id === (p?.case_size_id || p?.stock_case_size_id) ? ' selected' : ''}>${escapeHtml(cs.label)} — ${escapeHtml(caseSizeSummary(cs))}</option>`),
+        `<option value="${escapeHtml(cs.id)}"${cs.id === (p?.stock_case_size_id || p?.case_size_id) ? ' selected' : ''}>${escapeHtml(cs.label)} — ${escapeHtml(caseSizeSummary(cs))}</option>`),
   ].join('');
 
   const eventBlock = eventContext
@@ -123,7 +139,13 @@ export function openProductFormSheet(opts) {
         <div class="del-form-err" id="libErr"></div>
         <div class="admin-field">
           <label class="admin-label" for="libName">Name</label>
-          <input class="admin-input" type="text" id="libName" required placeholder="Product name">
+          <input class="admin-input" type="text" id="libName" required placeholder="${p ? 'Product name' : 'Search LWC, TWE or type a name'}">
+          ${p ? '' : '<p class="wst-form-hint muted" id="libLwcHint">Type a name to search LWC and The Whisky Exchange.</p>'}
+        </div>
+        <div class="admin-field">
+          <label class="admin-label" for="libMenuName">Menu name</label>
+          <input class="admin-input" type="text" id="libMenuName" maxlength="120" placeholder="Customer-facing name, e.g. Utopian Premium British Lager">
+          <p class="wst-form-hint muted">Shown on menus and client exports. Leave blank to use the product name.</p>
         </div>
         <div class="admin-field-grid">
           <div class="admin-field">
@@ -140,9 +162,26 @@ export function openProductFormSheet(opts) {
           <select class="admin-select" id="libCaseSizeId">${csOpts}</select>
           <p class="wst-form-hint muted">Stock pack, units per case, count-as, and servings per unit come from the catalogue.</p>
         </div>
-        <div class="admin-field">
-          <label class="admin-label" for="libAbv">ABV (%)</label>
-          <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libAbv" placeholder="Optional">
+        <div class="admin-field-grid">
+          <div class="admin-field">
+            <label class="admin-label" for="libAbv">ABV (%)</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libAbv" placeholder="Optional">
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="libPalletQty">Pallet quantity</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libPalletQty" placeholder="Cases per pallet">
+            <p class="wst-form-hint muted" id="libPalletHint"></p>
+          </div>
+        </div>
+        <div class="admin-field-grid">
+          <div class="admin-field">
+            <label class="admin-label" for="libCoupler">Keg coupler</label>
+            <select class="admin-select" id="libCoupler">${optionList(KEG_COUPLER_TYPES, p?.keg_coupler_type || '')}</select>
+          </div>
+          <div class="admin-field">
+            <label class="admin-label" for="libGas">Dispense gas</label>
+            <select class="admin-select" id="libGas">${optionList(DISPENSE_GAS_TYPES, p?.dispense_gas_type || '')}</select>
+          </div>
         </div>
         <div class="admin-field">
           <label class="admin-label" for="libPoolName">Volume pool</label>
@@ -179,7 +218,19 @@ export function openProductFormSheet(opts) {
     $('libSku').value = p.sku || '';
     $('libAbv').value = p.abv != null ? String(p.abv) : '';
     $('libPoolName').value = p.pool_name || '';
+    $('libMenuName').value = p.menu_name || '';
+    $('libPalletQty').value = p.pallet_qty != null ? String(p.pallet_qty) : '';
   }
+
+  function syncPalletHint() {
+    const hint = $('libPalletHint');
+    if (!hint) return;
+    const caseSizeId = $('libCaseSizeId')?.value || null;
+    const fallback = palletQtyOf({ stock_case_size_id: caseSizeId }, caseSizes);
+    hint.textContent = fallback ? `Blank uses case size default (${fallback}).` : '';
+  }
+  syncPalletHint();
+  $('libCaseSizeId')?.addEventListener('change', syncPalletHint);
 
   const poolFractionMount = $('libPoolFractionMount');
   const poolFraction = poolFractionMount
@@ -195,6 +246,7 @@ export function openProductFormSheet(opts) {
     const cs = caseSizeId ? caseSizes.find((c) => c.id === caseSizeId) : null;
     return {
       ...(p || {}),
+      stock_case_size_id: cs?.id || null,
       case_size_id: cs?.id || p?.case_size_id || null,
       case_size: cs?.label ?? p?.case_size ?? null,
       units_per_case: cs?.units_per_case != null
@@ -358,6 +410,39 @@ export function openProductFormSheet(opts) {
   };
   $('libCancel').onclick = closeSheet;
 
+  function applyLwcHit(hit) {
+    const mapped = mapCatalogHitToFields(hit, { categories, caseSizes, suppliers });
+    if (mapped.name) $('libName').value = mapped.name;
+    if (mapped.sku) $('libSku').value = mapped.sku;
+    if (mapped.abv != null) $('libAbv').value = String(mapped.abv);
+    if (mapped.categoryId && $('libCategoryId')) {
+      $('libCategoryId').value = mapped.categoryId;
+    }
+    if (mapped.caseSizeId && $('libCaseSizeId')) {
+      $('libCaseSizeId').value = mapped.caseSizeId;
+      $('libCaseSizeId').dispatchEvent(new Event('change'));
+    }
+    if (mapped.supplierId) {
+      const row = offersWrap?.querySelector('.lib-offer-row');
+      const picker = row?.querySelector('.supplier-search');
+      if (picker?.setValue) picker.setValue(mapped.supplierId);
+      else if (row) row.dataset.supplierId = mapped.supplierId;
+    }
+    const hint = $('libLwcHint');
+    if (hint && mapped.url) {
+      const skuBit = mapped.sku ? ` · SKU ${escapeHtml(mapped.sku)}` : '';
+      const src = escapeHtml(mapped.sourceLabel || 'catalogue');
+      hint.innerHTML = `Filled from ${src}${skuBit}. <a class="lwc-filled-link" href="${escapeHtml(mapped.url)}" target="_blank" rel="noopener noreferrer">View on catalogue</a>`;
+    }
+  }
+
+  if (!p) {
+    attachLwcNameSuggest($('libName'), {
+      dropdownFixed: true,
+      onPick: applyLwcHit,
+    });
+  }
+
   $('libSave').onclick = async () => {
     const name = ($('libName')?.value || '').trim();
     if (!name) {
@@ -400,9 +485,24 @@ export function openProductFormSheet(opts) {
       pool_servings_text = derived.pool_servings_text;
     }
 
+    const palletRaw = ($('libPalletQty')?.value || '').trim();
+    const attrs = normaliseProductAttributes({
+      menu_name: $('libMenuName')?.value,
+      pallet_qty: palletRaw === '' ? null : parseQty(palletRaw),
+      keg_coupler_type: $('libCoupler')?.value,
+      dispense_gas_type: $('libGas')?.value,
+    });
+    if (attrs.error) {
+      $('libErr').textContent = attrs.error;
+      return;
+    }
+
+    // Prefer stock_case_size_id: DB trigger syncs case_size_id/label/units from it,
+    // and overwrites case_size_id when stock_case_size_id is already set.
     const patch = {
       name,
       category_id: $('libCategoryId')?.value || null,
+      stock_case_size_id: caseSizeId,
       case_size_id: caseSizeId,
       case_size: cs?.label ?? p?.case_size ?? null,
       units_per_case: cs?.units_per_case != null
@@ -414,6 +514,7 @@ export function openProductFormSheet(opts) {
       pool_name: poolName,
       pool_servings_per_unit,
       pool_servings_text,
+      ...attrs.patch,
     };
 
     const btn = $('libSave');

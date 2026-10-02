@@ -674,6 +674,15 @@ function reconRowMatchesSearch(r, { query = '', productId = null } = {}) {
   return name.includes(q) || supplier.includes(q);
 }
 
+function reconRowMatchesStatus(r, statusFilter) {
+  const wanted = Array.isArray(statusFilter)
+    ? statusFilter.filter((s) => typeof s === 'string' && s)
+    : (typeof statusFilter === 'string' && statusFilter ? [statusFilter] : []);
+  if (!wanted.length) return true;
+  const s = r.reconStatus || '';
+  return wanted.some((sf) => (sf === 'none' ? !s : s === sf));
+}
+
 export function filterReconRows(rows, {
   statusFilter = '',
   categoryFilter = '',
@@ -686,11 +695,7 @@ export function filterReconRows(rows, {
     : (categoryFilter ? [categoryFilter] : []);
   return rows.filter((r) => {
     if (!reconRowMatchesSearch(r, { query, productId })) return false;
-    if (statusFilter) {
-      const s = r.reconStatus || '';
-      if (statusFilter === 'none') { if (s) return false; }
-      else if (s !== statusFilter) return false;
-    }
+    if (!reconRowMatchesStatus(r, statusFilter)) return false;
     if (catIds.length) {
       const cid = r.p?.category?.id;
       if (!catIds.includes(cid)) return false;

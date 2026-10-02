@@ -1,6 +1,6 @@
 /**
  * Reusable table filter panel — tabbed selector + compact sections.
- * Section types: checkbox, searchable-checkbox, radio, segment, date-range, text.
+ * Section types: checkbox, searchable-checkbox, radio, segment (optional multi), date-range, text.
  */
 
 import { escapeHtml } from '../lib/util.js';
@@ -8,17 +8,38 @@ import { icon } from '../lib/icons.js';
 
 const MULTI_TYPES = new Set(['checkbox', 'searchable-checkbox']);
 
+function isMultiValueSection(section) {
+  return MULTI_TYPES.has(section.type) || (section.type === 'segment' && section.multi);
+}
+
+function selectedList(val) {
+  if (Array.isArray(val)) return val.filter((v) => v != null && v !== '');
+  if (val != null && val !== '') return [val];
+  return [];
+}
+
+/** Toggle a segment chip. Multi segments treat empty/`allValue` as "All" (clears the list). */
+export function toggleSegmentSelection(current, clicked, { multi = false, allValue = '' } = {}) {
+  if (!multi) return clicked;
+  if (clicked === allValue) return [];
+  const selected = [...selectedList(current)];
+  const i = selected.findIndex((v) => String(v) === String(clicked));
+  if (i >= 0) selected.splice(i, 1);
+  else selected.push(clicked);
+  return selected;
+}
+
 function selectedCount(section, values) {
   const val = values[section.id];
-  if (MULTI_TYPES.has(section.type)) return (val || []).length;
+  if (isMultiValueSection(section)) return selectedList(val).length;
   return 0;
 }
 
 function sectionLabel(section, values) {
   let count = section.showCount ? selectedCount(section, values) : 0;
-  if (section.hideCountWhenFull && MULTI_TYPES.has(section.type)) {
-    const val = values[section.id] || [];
-    if (val.length === (section.options || []).length) count = 0;
+  if (section.hideCountWhenFull && isMultiValueSection(section)) {
+    const val = selectedList(values[section.id]);
+    if (val.length === (section.options || []).filter((o) => o.value !== '').length) count = 0;
   }
   const suffix = count > 0 ? ` (${count})` : '';
   return `${escapeHtml(section.label)}${suffix}`;
@@ -26,6 +47,11 @@ function sectionLabel(section, values) {
 
 function isOptionChecked(section, values, value) {
   const val = values[section.id];
+  if (section.type === 'segment' && section.multi) {
+    const selected = selectedList(val);
+    if (value === '' || value == null) return selected.length === 0;
+    return selected.some((v) => String(v) === String(value));
+  }
   if (section.type === 'radio' || section.type === 'segment') return val === value;
   return Array.isArray(val) && val.includes(value);
 }
@@ -55,9 +81,10 @@ function renderSegmentOption(section, opt, values) {
   const swatch = opt.dot
     ? `<span class="tfp-seg-dot tfp-seg-dot--${escapeHtml(opt.dot)}" aria-hidden="true"></span>`
     : '';
+  const role = section.multi ? 'checkbox' : 'radio';
   return `<button type="button" class="tfp-seg-btn${checked ? ' is-active' : ''}"
     data-tfp-segment="${escapeHtml(section.id)}" data-value="${escapeHtml(String(opt.value))}"
-    role="radio" aria-checked="${checked}"${disabled}>
+    role="${role}" aria-checked="${checked}"${disabled}>
     ${swatch}<span>${escapeHtml(opt.label)}</span>
   </button>`;
 }
@@ -86,9 +113,10 @@ function renderSearchableCheckbox(section, values) {
 }
 
 function renderSegmentSection(section, values) {
+  const groupRole = section.multi ? 'group' : 'radiogroup';
   return `<div class="tfp-group" data-section="${escapeHtml(section.id)}" data-type="segment">
     <div class="tfp-group-label">${sectionLabel(section, values)}</div>
-    <div class="tfp-seg" role="radiogroup" aria-label="${escapeHtml(section.label)}">
+    <div class="tfp-seg" role="${groupRole}" aria-label="${escapeHtml(section.label)}">
       ${(section.options || []).map((opt) => renderSegmentOption(section, opt, values)).join('')}
     </div>
   </div>`;
@@ -274,7 +302,12 @@ export function mountCombinedTableFilterPanel(container, options = {}) {
       const tab = currentTab();
       const section = tab?.sections.find((s) => s.id === sectionId);
       if (!section) return;
-      tab.onChange?.(sectionId, segBtn.dataset.value);
+      const next = toggleSegmentSelection(
+        tab.values?.[sectionId],
+        segBtn.dataset.value,
+        { multi: Boolean(section.multi) },
+      );
+      tab.onChange?.(sectionId, next);
       return;
     }
 
@@ -348,13 +381,18 @@ export function mountCombinedTableFilterPanel(container, options = {}) {
 }
 
 function valuesEqual(section, a, b) {
-  if (section.type === 'radio' || section.type === 'segment' || section.type === 'text') {
-    return (a ?? '') === (b ?? '');
-  }
   if (section.type === 'date-range') {
     const aa = a || {};
     const bb = b || {};
     return (aa.from || '') === (bb.from || '') && (aa.to || '') === (bb.to || '');
+  }
+  if (isMultiValueSection(section)) {
+    const aa = selectedList(a).map(String).sort().join('|');
+    const bb = selectedList(b).map(String).sort().join('|');
+    return aa === bb;
+  }
+  if (section.type === 'radio' || section.type === 'segment' || section.type === 'text') {
+    return (a ?? '') === (b ?? '');
   }
   const aa = Array.isArray(a) ? [...a].map(String).sort().join('|') : '';
   const bb = Array.isArray(b) ? [...b].map(String).sort().join('|') : '';

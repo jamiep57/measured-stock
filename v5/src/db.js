@@ -202,6 +202,7 @@ function getDB() {
 const PRODUCT_SELECT =
   'id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit,product_kind,' +
   'case_price,unit_price,supplier_id,sku,abv,pool_name,pool_servings_per_unit,pool_servings_text,' +
+  'menu_name,pallet_qty,keg_coupler_type,dispense_gas_type,' +
   'category:categories(id,name,colour_key,kind),' +
   'product_suppliers(id,supplier_id,sku,pack_size,units_per_case,case_price,unit_price,is_preferred,purchase_case_size_id,supplier:suppliers(id,name))';
 
@@ -209,6 +210,7 @@ const PRODUCT_SELECT =
 const PRODUCT_SELECT_LITE =
   'id,name,case_size,case_size_id,stock_case_size_id,units_per_case,stock_unit,product_kind,' +
   'case_price,unit_price,supplier_id,sku,abv,pool_name,pool_servings_per_unit,pool_servings_text,' +
+  'menu_name,pallet_qty,keg_coupler_type,dispense_gas_type,' +
   'category:categories(id,name,colour_key,kind)';
 
 const KIT_PRODUCT_SELECT =

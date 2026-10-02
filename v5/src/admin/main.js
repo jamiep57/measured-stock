@@ -175,7 +175,7 @@ function wireNav() {
     void render(parseRoute());
   });
 
-  const eventNavIds = ['sidebarEventStock', 'sidebarEventKit', 'sidebarEventSales', 'sidebarEventReports'];
+  const eventNavIds = ['sidebarEventPlanning', 'sidebarEventStock', 'sidebarEventKit', 'sidebarEventSales', 'sidebarEventReports'];
   eventNavIds.forEach((id) => {
     document.getElementById(id)?.addEventListener('click', (e) => {
       const globalLink = e.target.closest('a[data-route]:not([data-event])');

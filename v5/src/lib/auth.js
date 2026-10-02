@@ -12,7 +12,10 @@ let clientKey = '';
 /** @type {import('@supabase/supabase-js').Session | null} */
 let cachedSession = null;
 
-/** @type {null | { id: string, email?: string, display_name?: string, role?: string, status?: string }} */
+/**
+ * @typedef {{ id: string, name: string, role: 'admin'|'staff' }} OrgMembership
+ * @type {null | { id: string, email?: string, display_name?: string, role?: string, status?: string, active_org_id?: string, organisations?: OrgMembership[] }}
+ */
 let cachedProfile = null;
 
 function cloudConfig() {
@@ -112,6 +115,10 @@ export async function ensureAppAuth(opts = {}) {
       window.location.href = `${loginPath}?error=disabled`;
       return null;
     }
+    if (res.status === 403 && data.error === 'no_organisation') {
+      window.location.href = `${loginPath}?pending=1`;
+      return null;
+    }
     resOk = res.ok;
   } catch {
     // Local Vite has no /api — fall through to profile read.
@@ -136,7 +143,21 @@ export async function ensureAppAuth(opts = {}) {
         window.location.href = `${loginPath}?error=disabled`;
         return null;
       }
-      cachedProfile = profile;
+      const memberships = await window.DB.select(
+        'organisation_members',
+        `?profile_id=eq.${encodeURIComponent(session.user.id)}&select=org_id,role,organisations(id,name)&order=created_at`
+      ).catch(() => []);
+      const organisations = (Array.isArray(memberships) ? memberships : []).map((m) => ({
+        id: m.org_id,
+        name: m.organisations?.name || 'Organisation',
+        role: m.role === 'admin' ? 'admin' : 'staff',
+      }));
+      const activeOrg = organisations.find((o) => o.id === profile.active_org_id);
+      if (!activeOrg) {
+        window.location.href = `${loginPath}?pending=1`;
+        return null;
+      }
+      cachedProfile = { ...profile, role: activeOrg.role, organisations };
     } catch (err) {
       console.error('ensureAppAuth profile', err);
       window.location.href = `${loginPath}?error=session`;

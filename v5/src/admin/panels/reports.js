@@ -1,5 +1,6 @@
 /**
- * Reports — supplier delivery cost + internal transfers by client.
+ * Reports — headlines, sales, revenue & GP, loose stock (reports-insights.js),
+ * supplier delivery cost and internal transfers by client.
  */
 
 import { $, escapeHtml, toast, formatMoney, fmtDateTime } from '../../lib/util.js';
@@ -33,6 +34,7 @@ import {
   getTableFilterValues,
   setTableFilterContext,
 } from '../table-filter.js';
+import { INSIGHT_KINDS, createReportInsights } from '../reports-insights.js';
 
 function fmtQty(n) {
   if (!Number.isFinite(n)) return '—';
@@ -111,11 +113,21 @@ export function mountReportsPanel(route) {
     wastageBatches: [],
     closingRows: [],
     supplierReturns: [],
+    salesGroup: 'item',
+    location: '',
   };
+
+  const insightFilters = () => ({
+    dateFrom: ctx.dateFrom, dateTo: ctx.dateTo, location: ctx.location, salesGroup: ctx.salesGroup,
+  });
+  const insights = createReportInsights({ getBase: () => ctx, onChange: () => paint() });
+  const isInsight = () => INSIGHT_KINDS.includes(ctx.reportKind);
 
   const seeded = getTableFilterValues('reports');
   if (seeded) {
     ctx.reportKind = seeded.kind || 'clients';
+    ctx.salesGroup = seeded.salesGroup || 'item';
+    ctx.location = seeded.location || '';
     ctx.supplierId = seeded.supplierId || '';
     ctx.recipientId = seeded.recipientId || '';
     ctx.dateFrom = seeded.dates?.from || '';
@@ -663,6 +675,16 @@ export function mountReportsPanel(route) {
   }
 
   function paint() {
+    if (isInsight()) {
+      stopCollab();
+      insights.ensure(ctx.reportKind, insightFilters());
+      root.innerHTML = `
+        <p class="projections-lead muted">${escapeHtml(insights.lead(ctx.reportKind))}</p>
+        ${ctx.detailLoaded ? insights.render(ctx.reportKind, insightFilters()) : loadingWidget('Loading sales and recon…')}`;
+      initIcons(root);
+      insights.bind(root, ctx.reportKind);
+      return;
+    }
     const isClients = ctx.reportKind === 'clients';
     const recipients = clientsWithTransfers();
 
@@ -734,6 +756,7 @@ export function mountReportsPanel(route) {
     setTableFilterContext('reports', {
       recipients: clientsWithTransfers().map((r) => ({ id: r.id, name: r.name })),
       suppliers: (ctx.suppliers || []).map((s) => ({ value: s.id, label: s.name })),
+      locations: insights.locations(),
     });
   }
 
@@ -774,6 +797,7 @@ export function mountReportsPanel(route) {
     ctx.wastageBatches = wastage || [];
     ctx.closingRows = closingRows || [];
     ctx.supplierReturns = supplierReturns || [];
+    ctx.detailLoaded = true;
     pushFilterContext();
     compute();
     paint();
@@ -782,7 +806,13 @@ export function mountReportsPanel(route) {
   function onToolbar(e) {
     if (e.detail?.action === 'export-reports') {
       e.detail.handled = true;
-      exportCsv();
+      if (isInsight()) insights.exportCsv(ctx.reportKind, insightFilters());
+      else exportCsv();
+      return;
+    }
+    if (e.detail?.action === 'export-report-pdf') {
+      e.detail.handled = true;
+      insights.exportPdf(ctx.reportKind, insightFilters()).catch((err) => toast(err.message || 'PDF failed', true));
       return;
     }
     if (e.detail?.action === 'export-invoice') {
@@ -807,6 +837,8 @@ export function mountReportsPanel(route) {
     ctx.dateTo = values.dates?.to || '';
     ctx.qtyMode = values.qtyMode || 'received';
     ctx.supplierView = values.supplierView || 'suppliers';
+    ctx.salesGroup = values.salesGroup || 'item';
+    ctx.location = values.location || '';
     compute();
     paint();
   }

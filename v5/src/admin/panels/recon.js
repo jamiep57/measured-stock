@@ -339,7 +339,7 @@ export function mountReconPanel(route) {
     transfers: [],
     supplierReturns: [],
     deliveries: [],
-    statusFilter: '',
+    statusFilter: [],
     categoryFilter: [],
     searchQuery: getLastProductFilter().query || '',
     productId: getLastProductFilter().productId || null,
@@ -1144,9 +1144,19 @@ export function mountReconPanel(route) {
       ctx.showHidden = values.showHidden;
       needsRender = true;
     }
-    if (typeof values.statusFilter === 'string' && values.statusFilter !== ctx.statusFilter) {
-      ctx.statusFilter = values.statusFilter;
-      needsRender = true;
+    if (values.statusFilter !== undefined) {
+      const next = Array.isArray(values.statusFilter)
+        ? values.statusFilter.filter((s) => typeof s === 'string' && s)
+        : (typeof values.statusFilter === 'string' && values.statusFilter
+          ? [values.statusFilter] : []);
+      const prev = Array.isArray(ctx.statusFilter)
+        ? ctx.statusFilter
+        : (ctx.statusFilter ? [ctx.statusFilter] : []);
+      const changed = next.length !== prev.length || next.some((s) => !prev.includes(s));
+      if (changed) {
+        ctx.statusFilter = next;
+        needsRender = true;
+      }
     }
     if (typeof values.sort === 'string' && values.sort !== ctx.sort) {
       ctx.sort = values.sort;

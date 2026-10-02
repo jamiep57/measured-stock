@@ -6,7 +6,7 @@
 /** Admin lives at site root — home is `/`. */
 const BASE = '';
 
-export const SETTINGS_SECTIONS = ['users', 'warehouses', 'categories', 'case-sizes'];
+export const SETTINGS_SECTIONS = ['organisation', 'users', 'history', 'warehouses', 'categories', 'case-sizes'];
 
 function joinAdmin(...parts) {
   const rest = parts.filter(Boolean).join('/');
@@ -41,7 +41,7 @@ export function parseRoute(pathname = location.pathname) {
   if (rest === 'dev/bugs' || rest === 'bugs') return { view: 'bugs' };
   if (rest === 'dev/audit') return { view: 'audit' };
 
-  const global = ['library', 'kit-library', 'suppliers', 'warehouses', 'volume-pools'];
+  const global = ['library', 'kit-library', 'suppliers', 'accounts', 'warehouses', 'volume-pools', 'price-years'];
   if (global.includes(rest)) return { view: rest };
 
   const m = rest.match(/^events\/([^/]+)(?:\/(.+))?$/);

@@ -330,7 +330,7 @@ function mountProductComposer() {
   });
 }
 
-async function createProductForDelivery({ name, category_id, case_size_id }) {
+async function createProductForDelivery({ name, category_id, case_size_id, sku, abv }) {
   const DB = getDB();
   const cs = (ctx.caseSizes || []).find((c) => c.id === case_size_id);
   const category = categories.find((c) => c.id === category_id);
@@ -340,6 +340,9 @@ async function createProductForDelivery({ name, category_id, case_size_id }) {
     case_size_id: case_size_id || null,
     case_size: cs?.label || null,
     units_per_case: cs?.units_per_case ?? 1,
+    stock_unit: cs?.stock_unit || null,
+    sku: sku || null,
+    abv: abv != null ? abv : null,
   });
 
   const ep = await DB.eventProducts.setForEvent(ctx.eventId, created.id, {});

@@ -481,7 +481,7 @@ export function mountTransfersPanel(route) {
     if ($('xfProductSearch')) renderProductsSection();
   }
 
-  async function createProductForTransfer({ name, category_id, case_size_id }) {
+  async function createProductForTransfer({ name, category_id, case_size_id, sku, abv }) {
     const DB = getDB();
     const cs = caseSizes.find((c) => c.id === case_size_id);
     const category = categories.find((c) => c.id === category_id);
@@ -491,6 +491,9 @@ export function mountTransfersPanel(route) {
       case_size_id: case_size_id || null,
       case_size: cs?.label || null,
       units_per_case: cs?.units_per_case ?? 1,
+      stock_unit: cs?.stock_unit || null,
+      sku: sku || null,
+      abv: abv != null ? abv : null,
     });
 
     const ep = await DB.eventProducts.setForEvent(route.eventId, created.id, {});

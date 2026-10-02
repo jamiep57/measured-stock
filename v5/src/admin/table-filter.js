@@ -255,7 +255,7 @@ export function getDistControls() {
 
 export function getReconControls() {
   return getTableFilterValues('recon') || {
-    statusFilter: '',
+    statusFilter: [],
     categories: [],
     showHidden: false,
     sort: 'category',

@@ -9,7 +9,7 @@
  *     poolValue: poolName,
  *     allowCreate: false,
  *     categories: [],    // for create modal
- *     onCreateProduct,  // async ({ name, category_id, case_size_id }) => { productId, product }
+ *     onCreateProduct,  // async ({ name, category_id, case_size_id, sku, abv }) => { productId, product }
  *     onSelect({ productId, poolName, product }),
  *   })
  */
@@ -18,6 +18,8 @@ import { escapeHtml } from '../lib/util.js';
 import { productStockPack } from '../pack-metrics.js';
 import { openModal, closeModal } from './modal.js';
 import { mountSearchSelect } from './search-select.js';
+import { attachLwcNameSuggest } from './lwc-catalog-search.js';
+import { mapCatalogHitToFields } from '../lib/supplier-catalogs.js';
 
 function normaliseProducts(list) {
   return (list || []).map((item) => {
@@ -217,7 +219,8 @@ export function mountProductSearch(container, options = {}) {
           <div class="admin-drawer-form product-create-form">
             <div class="admin-field">
               <label class="admin-label" for="psCreateName">Name</label>
-              <input type="text" class="admin-input" id="psCreateName" value="${escapeHtml(name)}" required>
+              <input type="text" class="admin-input" id="psCreateName" value="${escapeHtml(name)}" required placeholder="Search LWC, TWE or type a name">
+              <p class="wst-form-hint muted" id="psCreateLwcHint">Type a name to search LWC and The Whisky Exchange.</p>
             </div>
             <div class="admin-field">
               <label class="admin-label" for="psCreateCategoryInput">Category</label>
@@ -239,8 +242,10 @@ export function mountProductSearch(container, options = {}) {
       const nameEl = modal.querySelector('#psCreateName');
       const errEl = modal.querySelector('#psCreateErr');
       const submitBtn = modal.querySelector('#psCreateSubmit');
+      const lwcHint = modal.querySelector('#psCreateLwcHint');
+      const lwcExtra = { sku: null, abv: null };
 
-      mountSearchSelect(modal.querySelector('#psCreateCategoryMount'), {
+      const categorySelect = mountSearchSelect(modal.querySelector('#psCreateCategoryMount'), {
         options: (categories || []).map((c) => ({
           value: c.id,
           label: c.name || 'Category',
@@ -255,7 +260,7 @@ export function mountProductSearch(container, options = {}) {
         inputClass: 'search-select-input admin-input',
       });
 
-      mountSearchSelect(modal.querySelector('#psCreateCaseMount'), {
+      const caseSelect = mountSearchSelect(modal.querySelector('#psCreateCaseMount'), {
         options: (caseSizes || []).map((c) => ({
           value: c.id,
           label: c.label || c.name || 'Case size',
@@ -270,6 +275,25 @@ export function mountProductSearch(container, options = {}) {
         inputId: 'psCreateCaseInput',
         inputClass: 'search-select-input admin-input',
       });
+
+      if (nameEl) {
+        attachLwcNameSuggest(nameEl, {
+          dropdownFixed: true,
+          onPick: (hit) => {
+            const mapped = mapCatalogHitToFields(hit, { categories, caseSizes });
+            if (mapped.name) nameEl.value = mapped.name;
+            lwcExtra.sku = mapped.sku;
+            lwcExtra.abv = mapped.abv;
+            if (mapped.categoryId) categorySelect?.setValue?.(mapped.categoryId);
+            if (mapped.caseSizeId) caseSelect?.setValue?.(mapped.caseSizeId);
+            if (lwcHint && mapped.url) {
+              const skuBit = mapped.sku ? ` · SKU ${escapeHtml(mapped.sku)}` : '';
+              const src = escapeHtml(mapped.sourceLabel || 'catalogue');
+              lwcHint.innerHTML = `Filled from ${src}${skuBit}. <a class="lwc-filled-link" href="${escapeHtml(mapped.url)}" target="_blank" rel="noopener noreferrer">View on catalogue</a>`;
+            }
+          },
+        });
+      }
 
       modal.querySelector('#psCreateCancel')?.addEventListener('click', closeModal);
 
@@ -294,6 +318,8 @@ export function mountProductSearch(container, options = {}) {
             name: nameVal,
             category_id: categoryId,
             case_size_id: caseSizeId,
+            sku: lwcExtra.sku,
+            abv: lwcExtra.abv,
           });
           if (result?.product) {
             items = items.some((p) => p._productId === result.productId)

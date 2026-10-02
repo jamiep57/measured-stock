@@ -17,7 +17,7 @@ import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
 import { readModifierFile } from '../../lib/modifier-import.js';
-import { readTillFile } from '../../lib/till-import.js';
+import { mergeTillRowsByItem, readTillFile } from '../../lib/till-import.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
@@ -840,7 +840,7 @@ export function mountSalesPanel(route) {
     }, 'event_id'))[0];
 
     await DB.remove('till_sale_rows', `import_id=eq.${DB._.enc(imp.id)}`);
-    await DB.insert('till_sale_rows', parsed.map((p) => ({
+    const rows = parsed.map((p) => ({
       import_id: imp.id,
       name: p.name,
       variation: p.variation,
@@ -849,10 +849,20 @@ export function mountSalesPanel(route) {
       items_sold: p.items_sold,
       net_sales: p.net_sales,
       gross_sales: p.gross_sales,
-    })), { returning: false });
+      location: p.location || null,
+      sale_date: p.sale_date || null,
+    }));
+    try {
+      await DB.insert('till_sale_rows', rows, { returning: false });
+    } catch (err) {
+      // Before migration 072 the location/date columns don't exist: keep event-wide totals.
+      if (!/location|sale_date|PGRST204/i.test(String(err?.message || err))) throw err;
+      await DB.insert('till_sale_rows', mergeTillRowsByItem(rows).map(({ location, sale_date, ...r }) => r), { returning: false });
+      toast('Imported event totals — apply migration 072 to keep bar and date detail', false);
+    }
 
     ctx.tillImport = await DB.tillImports.forEvent(ctx.eventId);
-    ctx.tillRows = ctx.tillImport?.rows || [];
+    ctx.tillRows = mergeTillRowsByItem(ctx.tillImport?.rows);
     ctx.tab = 'items';
     paint();
     toast(`Imported ${parsed.length} item sales line${parsed.length === 1 ? '' : 's'}`);
@@ -961,7 +971,7 @@ export function mountSalesPanel(route) {
     ctx.caseSizes = caseSizes || [];
     ctx.pools = [];
     ctx.tillImport = tillImport;
-    ctx.tillRows = tillImport?.rows || [];
+    ctx.tillRows = mergeTillRowsByItem(tillImport?.rows);
     ctx.modImport = modImport;
     ctx.modRows = modImport?.rows || [];
     ctx.recipes = recipes || [];

@@ -3,6 +3,7 @@ import {
   renderCombinedTableFilterPanel,
   tableFilterIsActive,
   parseActiveItemId,
+  toggleSegmentSelection,
 } from './table-filter-panel.js';
 import {
   buildStandardActiveItems,
@@ -56,6 +57,13 @@ describe('tableFilterIsActive', () => {
       sections,
     )).toBe(true);
   });
+
+  it('detects multi-select segment differences', () => {
+    const sections = [{ id: 'status', type: 'segment', multi: true }];
+    expect(tableFilterIsActive({ status: [] }, { status: [] }, sections)).toBe(false);
+    expect(tableFilterIsActive({ status: ['red'] }, { status: [] }, sections)).toBe(true);
+    expect(tableFilterIsActive({ status: ['red', 'green'] }, { status: ['green', 'red'] }, sections)).toBe(false);
+  });
 });
 
 describe('parseActiveItemId', () => {
@@ -108,6 +116,49 @@ describe('renderCombinedTableFilterPanel', () => {
     expect(html).toContain('tfp-text-input');
     expect(html).toContain('Find…');
     expect(html).toContain('data-type="segment"');
+  });
+
+  it('renders multi status segments as toggleable checkboxes', () => {
+    const html = renderCombinedTableFilterPanel({
+      tabs: [{
+        id: 'filter',
+        label: 'Filter',
+        values: { status: ['red', 'blue'] },
+        sections: [{
+          id: 'status',
+          label: 'Status',
+          type: 'segment',
+          multi: true,
+          options: [
+            { value: '', label: 'All' },
+            { value: 'red', label: 'Action', dot: 'red' },
+            { value: 'yellow', label: 'Review', dot: 'yellow' },
+            { value: 'blue', label: 'None returned', dot: 'blue' },
+          ],
+        }],
+      }],
+      activeTab: 'filter',
+    });
+    expect(html).toContain('role="group"');
+    expect(html).toContain('role="checkbox"');
+    expect(html).toMatch(/data-value="red"[^>]*aria-checked="true"/);
+    expect(html).toMatch(/data-value="yellow"[^>]*aria-checked="false"/);
+    expect(html).toMatch(/data-value="blue"[^>]*aria-checked="true"/);
+    expect(html).toMatch(/data-value=""[^>]*aria-checked="false"/);
+  });
+});
+
+describe('toggleSegmentSelection', () => {
+  it('replaces the value for single-select segments', () => {
+    expect(toggleSegmentSelection('red', 'green')).toBe('green');
+  });
+
+  it('toggles values and treats All as a clear', () => {
+    expect(toggleSegmentSelection([], 'red', { multi: true })).toEqual(['red']);
+    expect(toggleSegmentSelection(['red'], 'green', { multi: true })).toEqual(['red', 'green']);
+    expect(toggleSegmentSelection(['red', 'green'], 'red', { multi: true })).toEqual(['green']);
+    expect(toggleSegmentSelection(['red'], '', { multi: true })).toEqual([]);
+    expect(toggleSegmentSelection(['green'], 'green', { multi: true })).toEqual([]);
   });
 });
 

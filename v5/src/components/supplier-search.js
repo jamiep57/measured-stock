@@ -283,6 +283,8 @@ export function mountSupplierSearch(container, options = {}) {
     hideList();
   });
 
+  root.setValue = (id) => setSelection(id || '');
+
   root.updateSuppliers = (next) => {
     items = sortSuppliers(next);
     if (selectedId && !items.some((s) => s.id === selectedId)) {

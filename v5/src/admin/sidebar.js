@@ -2,10 +2,19 @@
  * Admin sidebar — workspace switcher and collapsible sections.
  */
 
-import { escapeHtml } from '../lib/util.js';
+import { escapeHtml, toast } from '../lib/util.js';
 import { initIcons } from '../lib/icons.js';
 import { navigate, hrefForRoute } from './router.js';
 import { resolveActiveEventId } from './event-workspace.js';
+import {
+  listOrganisations,
+  getActiveOrganisation,
+  isOrgAdmin,
+  canSwitchOrganisation,
+  switchOrganisation,
+  createOrganisation,
+} from '../lib/organisations.js';
+import { openModal, closeModal } from '../components/modal.js';
 
 const SECTION_STORAGE_KEY = 'v5-admin-sidebar-sections';
 const DEFAULT_WORKSPACE_MARK = '/assets/img/logomark.png';
@@ -33,16 +42,90 @@ function workspaceItemMark(imageUrl) {
     </span>`;
 }
 
+function renderOrganisationItems() {
+  const orgs = listOrganisations();
+  const active = getActiveOrganisation();
+  const admin = isOrgAdmin();
+  if (orgs.length <= 1 && !admin) return [];
+  return [
+    '<div class="sidebar-workspace-divider" role="separator"></div>',
+    '<div class="sidebar-workspace-heading">Organisations</div>',
+    ...orgs.map((org) => `<button type="button" class="sidebar-workspace-item${org.id === active?.id ? ' is-active' : ''}" data-org-id="${escapeHtml(org.id)}">
+        <span class="sidebar-workspace-item-mark sidebar-workspace-item-mark--org" aria-hidden="true"><i data-lucide="building-2"></i></span>
+        <span class="sidebar-workspace-item-text">
+          <span class="sidebar-workspace-item-name">${escapeHtml(org.name)}</span>
+          <span class="sidebar-workspace-item-sub">${org.role === 'admin' ? 'Admin' : 'Staff'}</span>
+        </span>
+      </button>`),
+    admin
+      ? `<button type="button" class="sidebar-workspace-item" data-org-create>
+          <span class="sidebar-workspace-item-mark sidebar-workspace-item-mark--org" aria-hidden="true"><i data-lucide="plus"></i></span>
+          <span class="sidebar-workspace-item-text"><span class="sidebar-workspace-item-name">New organisation</span></span>
+        </button>`
+      : '',
+  ];
+}
+
+function openCreateOrganisationModal() {
+  const el = openModal({
+    title: 'New organisation',
+    bodyHtml: `<label class="admin-field">
+        <span class="admin-label">Name</span>
+        <input type="text" class="admin-input" data-org-name maxlength="80" autocomplete="off" />
+      </label>
+      <p class="muted" style="font-size:12px;margin-top:8px">Organisations have separate products, events, suppliers and users. You will be its admin.</p>`,
+    footHtml: `<div class="admin-modal-confirm-foot">
+        <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
+        <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-save>Create</button>
+      </div>`,
+  });
+  const input = el?.querySelector('[data-org-name]');
+  requestAnimationFrame(() => input?.focus());
+  el?.querySelector('[data-cancel]')?.addEventListener('click', closeModal);
+  el?.querySelector('[data-save]')?.addEventListener('click', async (e) => {
+    const btn = /** @type {HTMLButtonElement} */ (e.currentTarget);
+    const name = input?.value.trim();
+    if (!name) {
+      input?.focus();
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const org = await createOrganisation(name);
+      const created = Array.isArray(org) ? org[0] : org;
+      closeModal();
+      if (created?.id) await switchOrganisation(created.id);
+    } catch (err) {
+      btn.disabled = false;
+      toast(String(err?.message || err), true);
+    }
+  });
+}
+
+async function handleOrganisationSwitch(orgId) {
+  if (orgId === getActiveOrganisation()?.id) return;
+  if (!(await canSwitchOrganisation())) {
+    toast('Sync pending changes before switching organisation', true);
+    return;
+  }
+  try {
+    await switchOrganisation(orgId);
+  } catch (err) {
+    toast(String(err?.message || err), true);
+  }
+}
+
 function renderWorkspaceMenu(events, rememberedEventId) {
   const menu = document.getElementById('sidebarWorkspaceMenu');
   if (!menu) return;
 
+  const orgName = getActiveOrganisation()?.name || 'Measured Stock Admin';
   const items = [
     `<button type="button" class="sidebar-workspace-item${!rememberedEventId ? ' is-active' : ''}" data-workspace="home">
       ${workspaceItemMark(null)}
       <span class="sidebar-workspace-item-text">
         <span class="sidebar-workspace-item-name">All events</span>
-        <span class="sidebar-workspace-item-sub">Measured Stock Admin</span>
+        <span class="sidebar-workspace-item-sub">${escapeHtml(orgName)}</span>
       </span>
     </button>`,
     ...events.map((event) => {
@@ -55,9 +138,11 @@ function renderWorkspaceMenu(events, rememberedEventId) {
         </span>
       </button>`;
     }),
+    ...renderOrganisationItems(),
   ];
 
   menu.innerHTML = items.join('');
+  initIcons(menu);
 }
 
 function setWorkspaceMark(imageUrl) {
@@ -85,7 +170,7 @@ function updateWorkspaceHeader(route, state) {
   }
 
   nameEl.textContent = 'Measured Stock';
-  subEl.textContent = 'Admin';
+  subEl.textContent = getActiveOrganisation()?.name || 'Admin';
   setWorkspaceMark(null);
 }
 
@@ -150,6 +235,17 @@ function wireWorkspace(onNavigate) {
   });
 
   menu.addEventListener('click', (e) => {
+    const orgItem = e.target.closest('[data-org-id]');
+    if (orgItem) {
+      setWorkspaceMenuOpen(false);
+      handleOrganisationSwitch(orgItem.dataset.orgId);
+      return;
+    }
+    if (e.target.closest('[data-org-create]')) {
+      setWorkspaceMenuOpen(false);
+      openCreateOrganisationModal();
+      return;
+    }
     const item = e.target.closest('[data-workspace]');
     if (!item) return;
     setWorkspaceMenuOpen(false);

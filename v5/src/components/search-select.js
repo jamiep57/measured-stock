@@ -230,7 +230,7 @@ export function mountSearchSelect(container, options = {}) {
 
   Object.defineProperty(root, 'value', {
     get: () => selectedValue,
-    set: (v) => setSelection(v || '', { silent: true }),
+    set: (v) => { setSelection(v || '', { silent: true }); },
   });
 
   syncInput();

@@ -30,6 +30,81 @@ export function setTopbarToolbarStrips(strips) {
 /** Per-panel strips (left of filter/search on distribution). */
 export const PANEL_TOOLBAR = {
   distribution: [],
+  planning: [
+    {
+      id: 'actions',
+      label: 'Menu',
+      items: [
+        {
+          id: 'plan-seed',
+          icon: 'sparkles',
+          label: 'Seed from house menu',
+          title: 'Copy the price year’s house menu onto this event',
+          primary: true,
+        },
+        {
+          id: 'plan-add-product',
+          icon: 'plus',
+          label: 'Add product',
+          title: 'Add a library product to this event menu',
+        },
+        {
+          id: 'plan-add-scenario',
+          icon: 'target',
+          label: 'Scenario',
+          title: 'Add a pricing scenario column',
+        },
+        {
+          id: 'plan-costs',
+          icon: 'lock',
+          label: 'Costs',
+          title: 'Lock or unlock menu costs',
+        },
+        {
+          id: 'plan-export',
+          icon: 'download',
+          label: 'Export',
+          title: 'Designer menu, client pack or schedule of rates',
+        },
+      ],
+    },
+  ],
+  orders: [
+    {
+      id: 'actions',
+      label: 'Orders',
+      items: [
+        {
+          id: 'orders-generate',
+          icon: 'sparkles',
+          label: 'Generate orders',
+          title: 'Draft one purchase order per supplier for the cases still needed',
+          primary: true,
+        },
+        {
+          id: 'orders-new',
+          icon: 'plus',
+          label: 'New order',
+          title: 'Create a purchase order',
+        },
+      ],
+    },
+  ],
+  'price-years': [
+    {
+      id: 'actions',
+      label: 'Price years',
+      items: [
+        {
+          id: 'price-year-new',
+          icon: 'plus',
+          label: 'New year',
+          title: 'Create a price year',
+          primary: true,
+        },
+      ],
+    },
+  ],
   deliveries: [
     {
       id: 'actions',
@@ -188,6 +263,12 @@ export const PANEL_TOOLBAR = {
           title: 'Download client transfer invoice PDF',
         },
         {
+          id: 'export-report-pdf',
+          icon: 'file-text',
+          label: 'Export PDF',
+          title: 'Event headlines or loose stock statement as a PDF',
+        },
+        {
           id: 'export-volume',
           icon: 'download',
           label: 'Export volume Excel',
@@ -279,6 +360,21 @@ export const PANEL_TOOLBAR = {
           icon: 'plus',
           label: 'New supplier',
           title: 'New supplier',
+          primary: true,
+        },
+      ],
+    },
+  ],
+  accounts: [
+    {
+      id: 'actions',
+      label: 'Accounts',
+      items: [
+        {
+          id: 'new-account',
+          icon: 'plus',
+          label: 'New account',
+          title: 'Add a client or supplier account',
           primary: true,
         },
       ],

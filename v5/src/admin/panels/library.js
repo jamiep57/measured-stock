@@ -190,6 +190,15 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
     const skuMeta = p.sku
       ? `<span class="lib-prod-sku muted">SKU ${escapeHtml(p.sku)}</span>`
       : '';
+    const menuMeta = p.menu_name && p.menu_name !== p.name
+      ? `<span class="lib-prod-sku muted">Menu: ${escapeHtml(p.menu_name)}</span>`
+      : '';
+    const dispense = [
+      p.keg_coupler_type && p.keg_coupler_type !== 'none' ? `${p.keg_coupler_type} coupler` : '',
+      p.dispense_gas_type && p.dispense_gas_type !== 'none' ? p.dispense_gas_type : '',
+      p.pallet_qty ? `${p.pallet_qty}/pallet` : '',
+    ].filter(Boolean).join(' · ');
+    const dispenseMeta = dispense ? `<span class="lib-prod-sku muted">${escapeHtml(dispense)}</span>` : '';
     return `
       <tr data-pid="${escapeHtml(p.id)}" data-product-name="${escapeHtml((p.name || '').toLowerCase())}"
         class="${isSel ? 'lib-selected' : ''}${mergeMode ? ' lib-row--merge' : ''}">
@@ -199,7 +208,9 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
         </td>
         <td>
           <span class="lib-prod-name">${escapeHtml(p.name || 'Product')}</span>
+          ${menuMeta}
           ${skuMeta}
+          ${dispenseMeta}
         </td>
         <td>${escapeHtml(packLabel)}</td>
         <td>${escapeHtml(countAs)}${auto}</td>

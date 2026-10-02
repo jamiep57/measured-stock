@@ -7,6 +7,7 @@ import {
 import {
   getUserFromAccessToken,
   getProfileById,
+  listMembershipsForProfile,
 } from '../../lib/supabase-auth-admin.js';
 
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -99,7 +100,25 @@ export default async function handler(req, res) {
     return;
   }
 
-  const role = profile.role === 'admin' ? 'admin' : 'staff';
+  let memberships = [];
+  try {
+    memberships = await listMembershipsForProfile(profile.id);
+  } catch (err) {
+    res.status(500).json({ error: 'membership_lookup_failed', message: String(err?.message || err) });
+    return;
+  }
+  const active = memberships.find((m) => m.org_id === profile.active_org_id);
+  if (!active) {
+    res.status(403).json({ error: 'no_organisation' });
+    return;
+  }
+  const organisations = memberships.map((m) => ({
+    id: m.org_id,
+    name: m.organisations?.name || 'Organisation',
+    role: m.role,
+  }));
+
+  const role = active.role === 'admin' ? 'admin' : 'staff';
   const displayName =
     normalizeDisplayName(body.display_name) ||
     normalizeDisplayName(profile.display_name) ||
@@ -123,6 +142,8 @@ export default async function handler(req, res) {
       display_name: displayName,
       role,
       status: profile.status,
+      active_org_id: profile.active_org_id,
+      organisations,
     },
   });
 }

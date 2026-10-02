@@ -612,6 +612,26 @@ describe('filterReconRows', () => {
     });
     expect(matched.map((r) => r.pid)).toEqual(['p2']);
   });
+
+  it('keeps a single status string filter', () => {
+    expect(filterReconRows(rows, { statusFilter: 'green' }).map((r) => r.pid)).toEqual(['p2']);
+    expect(filterReconRows(rows, { statusFilter: 'red' }).map((r) => r.pid)).toEqual(['p1']);
+  });
+
+  it('matches any of multiple selected statuses', () => {
+    const withUnmarked = [
+      ...rows,
+      { pid: 'p3', p: { id: 'p3', name: 'Guinness' }, reconStatus: '' },
+    ];
+    expect(filterReconRows(withUnmarked, { statusFilter: ['green', 'red'] }).map((r) => r.pid))
+      .toEqual(['p1', 'p2']);
+    expect(filterReconRows(withUnmarked, { statusFilter: ['green', 'none'] }).map((r) => r.pid))
+      .toEqual(['p2', 'p3']);
+  });
+
+  it('treats an empty status list as all rows', () => {
+    expect(filterReconRows(rows, { statusFilter: [] }).map((r) => r.pid)).toEqual(['p1', 'p2']);
+  });
 });
 
 describe('reconTotals', () => {

@@ -145,8 +145,9 @@ async function main() {
     throw err;
   }
 
-  // Upsert catalogue (merge on unique label).
-  const upserted = await api('case_sizes?on_conflict=label', {
+  // Upsert catalogue (merge on unique label per organisation; org_id is
+  // filled server-side, defaulting to the default organisation).
+  const upserted = await api('case_sizes?on_conflict=org_id,label', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(CATALOGUE),

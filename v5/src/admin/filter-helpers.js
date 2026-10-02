@@ -93,8 +93,9 @@ export function buildStandardActiveItems({
     (sections || []).forEach((section) => {
       const val = state[section.id];
       const def = defaults[section.id];
-      if (section.type === 'checkbox' || section.type === 'searchable-checkbox') {
-        const selected = Array.isArray(val) ? val : [];
+      if (section.type === 'checkbox' || section.type === 'searchable-checkbox'
+        || (section.type === 'segment' && section.multi)) {
+        const selected = Array.isArray(val) ? val : (val ? [val] : []);
         const labels = optionLabels[section.id] || {};
         selected.forEach((v) => {
           items.push({

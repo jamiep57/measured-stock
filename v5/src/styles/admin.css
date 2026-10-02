@@ -1,5 +1,6 @@
 @import './v5.css';
 @import './table-filter-panel.css';
+@import './planning.css';
 
 :root {
   --sidebar-w: 260px;
@@ -261,6 +262,31 @@ body:has(.admin-app) .toast.err {
 
 .sidebar-workspace-item-mark.has-event-image {
   background: var(--secondary);
+}
+
+.sidebar-workspace-item-mark--org {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.sidebar-workspace-item-mark--org svg {
+  width: 15px;
+  height: 15px;
+}
+
+.sidebar-workspace-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.sidebar-workspace-heading {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 .sidebar-workspace-item-mark.has-event-image img {
@@ -1743,6 +1769,43 @@ body.admin-drawer-open {
   background: color-mix(in srgb, var(--foreground) 55%, transparent);
   vertical-align: middle;
 }
+.lwc-name-search { position: relative; }
+.lwc-suggest-list { z-index: 260; }
+.lwc-suggest-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.lwc-suggest-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.lwc-suggest-thumb--empty { display: inline-block; }
+.lwc-suggest-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.lwc-suggest-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+.lwc-filled-link {
+  color: inherit;
+}
+
 .product-search-item--pool .product-search-meta {
   font-weight: 600;
 }
@@ -9168,3 +9231,15 @@ label.collab-cell--peer {
     transform: none;
   }
 }
+
+/* ---------- Settings: organisation + change history ---------- */
+.settings-org-form { max-width: 420px; gap: 12px; }
+.settings-org-role { font-size: 12px; }
+.settings-history-filters { display: flex; gap: 8px; }
+.settings-history-filters .admin-select { max-width: 220px; }
+.settings-history { overflow-x: auto; }
+.settings-history-table { width: 100%; font-size: 12px; }
+.settings-history-table th { text-align: left; }
+.settings-history-when { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.settings-history-change { word-break: break-word; }
+.settings-history-more { display: flex; justify-content: center; padding: 12px 0; }

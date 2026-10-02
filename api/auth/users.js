@@ -1,14 +1,17 @@
 import {
   getUserFromAccessToken,
   getProfileById,
-  listProfiles,
   updateProfile,
   createUserWithPassword,
   findUserByEmail,
   ensureProfile,
   adminUpdateUser,
   adminDeleteUser,
-  countActiveAdmins,
+  countActiveOrgAdmins,
+  listOrgProfiles,
+  listMembershipsForProfile,
+  upsertMembership,
+  removeMembership,
 } from '../../lib/supabase-auth-admin.js';
 import { sendAccountApprovedEmail } from '../../lib/postmark.js';
 import { appLoginUrl, appOnboardUrl } from '../../lib/app-url.js';
@@ -43,10 +46,25 @@ async function requireAdmin(req) {
   const user = await getUserFromAccessToken(token);
   if (!user) return { error: 'unauthorized', status: 401 };
   const profile = await getProfileById(user.id);
-  if (!profile || profile.status !== 'active' || profile.role !== 'admin') {
+  // profiles.role mirrors the role in the active organisation.
+  if (!profile || profile.status !== 'active' || profile.role !== 'admin' || !profile.active_org_id) {
     return { error: 'forbidden', status: 403 };
   }
-  return { user, profile };
+  return { user, profile, orgId: profile.active_org_id };
+}
+
+/**
+ * Resolve a target profile's relationship to the admin's organisation.
+ * @returns {Promise<{ member: { role: string } | null, otherOrgs: number, unassigned: boolean }>}
+ */
+async function orgRelation(orgId, profileId) {
+  const memberships = await listMembershipsForProfile(profileId);
+  const member = memberships.find((m) => m.org_id === orgId) || null;
+  return {
+    member,
+    otherOrgs: memberships.filter((m) => m.org_id !== orgId).length,
+    unassigned: memberships.length === 0,
+  };
 }
 
 function randomPassword() {
@@ -55,16 +73,16 @@ function randomPassword() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function assertNotLastAdmin(target, nextRole, nextStatus) {
-  const wasActiveAdmin = target.role === 'admin' && target.status === 'active';
+async function assertNotLastAdmin(orgId, target, memberRole, nextRole, nextStatus) {
+  const wasActiveAdmin = memberRole === 'admin' && target.status === 'active';
   if (!wasActiveAdmin) return null;
 
-  const role = nextRole != null ? nextRole : target.role;
+  const role = nextRole != null ? nextRole : memberRole;
   const status = nextStatus != null ? nextStatus : target.status;
   const stillActiveAdmin = role === 'admin' && status === 'active';
   if (stillActiveAdmin) return null;
 
-  const admins = await countActiveAdmins();
+  const admins = await countActiveOrgAdmins(orgId);
   if (admins <= 1) {
     return { error: 'last_admin', message: 'Cannot remove or demote the last active admin', status: 400 };
   }
@@ -74,7 +92,7 @@ async function assertNotLastAdmin(target, nextRole, nextStatus) {
 /**
  * Ensure auth user + active profile, return app-owned onboard link.
  */
-async function createAppInvite({ email, role, meta, secret, onboardUrl }) {
+async function createAppInvite({ orgId, email, role, meta, secret, onboardUrl }) {
   let userId = null;
   try {
     const created = await createUserWithPassword(email, randomPassword(), { data: meta || {} });
@@ -94,11 +112,8 @@ async function createAppInvite({ email, role, meta, secret, onboardUrl }) {
     role: role === 'admin' ? 'admin' : 'staff',
     status: 'active',
   });
-  await updateProfile(userId, {
-    role: role === 'admin' ? 'admin' : 'staff',
-    status: 'active',
-    email,
-  });
+  await updateProfile(userId, { status: 'active', email });
+  await upsertMembership(orgId, userId, role === 'admin' ? 'admin' : 'staff');
 
   const token = await createInviteToken(secret, { userId, email, role });
   return {
@@ -124,7 +139,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const profiles = await listProfiles();
+      const profiles = await listOrgProfiles(auth.orgId);
       res.status(200).json({ profiles });
       return;
     }
@@ -142,6 +157,14 @@ export default async function handler(req, res) {
         res.status(404).json({ error: 'not_found' });
         return;
       }
+      const rel = await orgRelation(auth.orgId, id);
+      if (!rel.member && !rel.unassigned) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      // Identity-level changes (password, email, account status) affect every
+      // organisation the user belongs to, so only allow them for single-org users.
+      const sharedIdentity = rel.otherOrgs > 0;
 
       // Password reset: set (or generate) a temporary password via Auth Admin.
       if (body.reset_password === true || body.password != null) {
@@ -149,6 +172,13 @@ export default async function handler(req, res) {
           res.status(400).json({
             error: 'cannot_reset_self',
             message: 'Use account settings to change your own password',
+          });
+          return;
+        }
+        if (sharedIdentity) {
+          res.status(409).json({
+            error: 'shared_identity',
+            message: 'This user belongs to other organisations; they must reset their own password',
           });
           return;
         }
@@ -169,6 +199,8 @@ export default async function handler(req, res) {
 
       /** @type {Record<string, unknown>} */
       const patch = {};
+      /** @type {'admin'|'staff'|undefined} */
+      let nextRole;
       if (body.status != null) {
         const status = String(body.status);
         if (!['pending', 'active', 'disabled'].includes(status)) {
@@ -183,7 +215,7 @@ export default async function handler(req, res) {
           res.status(400).json({ error: 'invalid_role' });
           return;
         }
-        patch.role = role;
+        nextRole = /** @type {'admin'|'staff'} */ (role);
       }
       if (body.display_name != null) {
         patch.display_name = String(body.display_name).trim().slice(0, 40) || null;
@@ -199,13 +231,21 @@ export default async function handler(req, res) {
         patch.email = nextEmail;
       }
 
-      if (!Object.keys(patch).length) {
+      if (!Object.keys(patch).length && !nextRole) {
         res.status(400).json({ error: 'empty_patch' });
         return;
       }
 
+      if (sharedIdentity && (patch.status != null || patch.email != null)) {
+        res.status(409).json({
+          error: 'shared_identity',
+          message: 'This user belongs to other organisations; remove them from this organisation instead',
+        });
+        return;
+      }
+
       if (id === auth.user.id) {
-        if (patch.role === 'staff' || (patch.status && patch.status !== 'active')) {
+        if (nextRole === 'staff' || (patch.status && patch.status !== 'active')) {
           res.status(400).json({
             error: 'cannot_demote_self',
             message: 'You cannot demote or disable your own account',
@@ -215,13 +255,21 @@ export default async function handler(req, res) {
       }
 
       const guard = await assertNotLastAdmin(
+        auth.orgId,
         before,
-        /** @type {string|undefined} */ (patch.role),
+        rel.member?.role,
+        nextRole,
         /** @type {string|undefined} */ (patch.status),
       );
       if (guard) {
         res.status(guard.status).json({ error: guard.error, message: guard.message });
         return;
+      }
+
+      // Approving an unassigned signup adds them to this organisation.
+      const memberRole = nextRole || (rel.member?.role === 'admin' ? 'admin' : 'staff');
+      if (nextRole || (!rel.member && patch.status === 'active')) {
+        await upsertMembership(auth.orgId, id, memberRole);
       }
 
       if (nextEmail && nextEmail !== String(before.email || '').toLowerCase()) {
@@ -233,11 +281,14 @@ export default async function handler(req, res) {
         await adminUpdateUser(id, { email: nextEmail, email_confirm: true });
       }
 
-      const updated = await updateProfile(id, patch);
+      const updated = Object.keys(patch).length
+        ? await updateProfile(id, patch)
+        : await getProfileById(id);
       if (!updated) {
         res.status(404).json({ error: 'not_found' });
         return;
       }
+      if (rel.member || patch.status === 'active') updated.role = memberRole;
 
       if (
         before?.status !== 'active' &&
@@ -294,9 +345,21 @@ export default async function handler(req, res) {
         return;
       }
 
-      const guard = await assertNotLastAdmin(before, 'staff', 'disabled');
+      const rel = await orgRelation(auth.orgId, id);
+      if (!rel.member && !rel.unassigned) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+
+      const guard = await assertNotLastAdmin(auth.orgId, before, rel.member?.role, 'staff', 'disabled');
       if (guard) {
         res.status(guard.status).json({ error: guard.error, message: guard.message });
+        return;
+      }
+
+      if (rel.otherOrgs > 0) {
+        await removeMembership(auth.orgId, id);
+        res.status(200).json({ ok: true, deleted: false, removed_from_org: true, id });
         return;
       }
 
@@ -328,7 +391,8 @@ export default async function handler(req, res) {
         const created = await createUserWithPassword(email, password, { data: meta });
         const userId = created?.id || created?.user?.id;
         if (userId) {
-          await updateProfile(userId, { role, status: 'active', email });
+          await updateProfile(userId, { status: 'active', email });
+          await upsertMembership(auth.orgId, userId, role);
         }
         res.status(200).json({
           ok: true,
@@ -347,6 +411,7 @@ export default async function handler(req, res) {
       }
 
       const invited = await createAppInvite({
+        orgId: auth.orgId,
         email,
         role,
         meta,

@@ -100,10 +100,10 @@ export default async function handler(req, res) {
       role: payload.role,
       status: 'active',
     });
+    // Role comes from the organisation membership created with the invite.
     await updateProfile(payload.userId, {
       display_name: displayName,
       status: 'active',
-      role: payload.role,
       email: payload.email,
     });
 

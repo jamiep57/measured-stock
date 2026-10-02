@@ -39,10 +39,20 @@ function distDefaults() {
   return { sort: 'category', categories: [], hiddenColumns: [] };
 }
 
+const RECON_STATUS_LABELS = {
+  red: 'Action', yellow: 'Review', green: 'Done', blue: 'None returned', none: 'Unmarked',
+};
+
+function asStatusList(status) {
+  if (Array.isArray(status)) return status.filter((s) => typeof s === 'string' && s);
+  if (typeof status === 'string' && status) return [status];
+  return [];
+}
+
 function reconDefaults() {
   const colVis = loadReconColVisibility();
   return {
-    status: '',
+    status: [],
     categories: [],
     showHidden: false,
     sort: 'category',
@@ -316,13 +326,14 @@ export const reconConfig = {
     const ids = new Set((context.categories || []).map((c) => c.value));
     return {
       ...state,
+      status: asStatusList(state.status),
       categories: (state.categories || []).filter((id) => ids.has(id)),
       colVis: state.colVis || loadReconColVisibility(),
     };
   },
   toValues(state) {
     return {
-      statusFilter: state.status || '',
+      statusFilter: asStatusList(state.status),
       categories: [...state.categories],
       showHidden: Boolean(state.showHidden),
       sort: state.sort || 'category',
@@ -337,6 +348,7 @@ export const reconConfig = {
       id: 'status',
       label: 'Status',
       type: 'segment',
+      multi: true,
       options: [
         { value: '', label: 'All' },
         { value: 'red', label: 'Action', dot: 'red' },
@@ -372,18 +384,19 @@ export const reconConfig = {
       icon: 'funnel',
       sections: filterSections,
       values: {
-        status: state.status || '',
+        status: asStatusList(state.status),
         categories: [...state.categories],
         showHidden: state.showHidden ? 'hidden' : 'active',
       },
       onChange(sectionId, value) {
         if (sectionId === 'showHidden') h.patch({ showHidden: value === 'hidden' });
+        else if (sectionId === 'status') h.patch({ status: asStatusList(value) });
         else h.patch({ [sectionId]: value });
         api.syncUi();
         h.emit();
       },
       onReset() {
-        h.patch({ status: '', categories: [], showHidden: false });
+        h.patch({ status: [], categories: [], showHidden: false });
         api.syncUi();
         h.emit();
       },
@@ -448,12 +461,9 @@ export const reconConfig = {
     const activeTab = api.getActiveTab();
     const items = [];
     if (activeTab !== 'filter') {
-      if (state.status) {
-        const labels = {
-          red: 'Action', yellow: 'Review', green: 'Done', blue: 'None returned', none: 'Unmarked',
-        };
-        items.push({ id: 'status', label: labels[state.status] || state.status });
-      }
+      asStatusList(state.status).forEach((s) => {
+        items.push({ id: `status:${s}`, label: RECON_STATUS_LABELS[s] || s });
+      });
       state.categories.forEach((id) => {
         const cat = context.categories?.find((c) => c.value === id);
         items.push({ id: `categories:${id}`, label: cat?.label || id });
@@ -477,8 +487,11 @@ export const reconConfig = {
   },
   removeActiveItem(api, id) {
     const state = api.getState();
-    if (id === 'status') api.setState({ ...state, status: '' });
-    else if (id === 'showHidden') api.setState({ ...state, showHidden: false });
+    if (id === 'status') api.setState({ ...state, status: [] });
+    else if (id.startsWith('status:')) {
+      const val = id.slice('status:'.length);
+      api.setState({ ...state, status: asStatusList(state.status).filter((s) => s !== val) });
+    } else if (id === 'showHidden') api.setState({ ...state, showHidden: false });
     else if (id === 'sort') api.setState({ ...state, sort: 'category' });
     else if (id.startsWith('categories:')) {
       const catId = id.slice('categories:'.length);
@@ -494,7 +507,7 @@ export const reconConfig = {
   isActive(api) {
     const state = api.getState();
     const hiddenCols = RECON_COLS.some((c) => state.colVis?.[c.id] === false);
-    return Boolean(state.status)
+    return asStatusList(state.status).length > 0
       || state.categories.length > 0
       || state.showHidden
       || (state.sort && state.sort !== 'category')
@@ -921,24 +934,56 @@ export const reportsConfig = simpleEventConfig({
     dates: { from: '', to: '' },
     qtyMode: 'received',
     supplierView: 'suppliers',
+    salesGroup: 'item',
+    location: '',
   }),
-  buildFilterSections(_state, context) {
+  buildFilterSections(state, context) {
+    const kind = state?.kind || 'clients';
     const sections = [{
       id: 'kind',
       label: 'Report type',
-      type: 'segment',
+      type: 'radio',
       options: [
+        { value: 'headlines', label: 'Headlines' },
+        { value: 'sales', label: 'Sales' },
+        { value: 'revenue', label: 'Revenue & GP' },
+        { value: 'loose', label: 'Loose stock' },
         { value: 'clients', label: 'Transfers by client' },
         { value: 'suppliers', label: 'Supplier delivery cost' },
       ],
-    }, {
-      id: 'dates',
-      label: 'Date',
-      type: 'date-range',
     }];
+    if (kind === 'revenue' || kind === 'loose') return sections;
+    sections.push({ id: 'dates', label: 'Date', type: 'date-range' });
+    if (kind === 'sales' || kind === 'headlines') {
+      if (kind === 'sales') {
+        sections.push({
+          id: 'salesGroup',
+          label: 'Group by',
+          type: 'segment',
+          options: [
+            { value: 'item', label: 'Product' },
+            { value: 'category', label: 'Category' },
+            { value: 'location', label: 'Location' },
+            { value: 'date', label: 'Date' },
+            { value: 'event', label: 'Event' },
+          ],
+        });
+      }
+      const locations = context.locations || [];
+      if (locations.length) {
+        sections.push({
+          id: 'location',
+          label: 'Location',
+          type: 'radio',
+          scroll: true,
+          options: [{ value: '', label: 'All locations' }, ...locations.map((l) => ({ value: l, label: l }))],
+        });
+      }
+      return sections;
+    }
     const recipients = context.recipients || [];
     const suppliers = context.suppliers || [];
-    if (recipients.length) {
+    if (kind === 'clients' && recipients.length) {
       sections.push({
         id: 'recipientId',
         label: 'Client',
@@ -950,6 +995,7 @@ export const reportsConfig = simpleEventConfig({
         ],
       });
     }
+    if (kind === 'clients') return sections;
     if (suppliers.length) {
       sections.push({
         id: 'supplierId',
@@ -1274,6 +1320,41 @@ export const suppliersConfig = viewConfig({
   ],
 });
 
+export const accountsConfig = viewConfig({
+  id: 'accounts',
+  defaults: () => ({ query: '', kind: 'all', archived: 'hide', sort: 'name' }),
+  persist: { keys: ['sort', 'kind'], storageKey: 'v5AccountsTableFilter' },
+  buildFilterSections() {
+    return [{
+      id: 'query',
+      label: 'Search',
+      type: 'text',
+      placeholder: 'Account or contact…',
+    }, {
+      id: 'kind',
+      label: 'Type',
+      type: 'segment',
+      options: [
+        { value: 'all', label: 'All' },
+        { value: 'client', label: 'Clients' },
+        { value: 'supplier', label: 'Suppliers' },
+      ],
+    }, {
+      id: 'archived',
+      label: 'Archived',
+      type: 'segment',
+      options: [
+        { value: 'hide', label: 'Hide' },
+        { value: 'show', label: 'Show' },
+      ],
+    }];
+  },
+  sortOptions: [
+    { value: 'name', label: 'Name A–Z' },
+    { value: 'name-desc', label: 'Name Z–A' },
+  ],
+});
+
 export const warehousesConfig = viewConfig({
   id: 'warehouses',
   defaults: () => ({ query: '', kind: 'stock', sort: 'name' }),
@@ -1349,6 +1430,166 @@ export const bugsConfig = viewConfig({
   ],
 });
 
+const PLANNING_COLUMN_OPTIONS = [
+  { value: 'serve', label: 'Serves / unit' },
+  { value: 'cost', label: 'Cost / serve' },
+  { value: 'house', label: 'House price' },
+  { value: 'required', label: 'Required price' },
+  { value: 'suggested', label: 'Suggested price' },
+  { value: 'other', label: 'Other event price' },
+  { value: 'scenarios', label: 'Scenarios' },
+  { value: 'serves', label: 'Projected serves' },
+  { value: 'revenue', label: 'Revenue & GP £' },
+  { value: 'deal', label: 'Deal cost & ref' },
+];
+
+const planningBase = simpleEventConfig({
+  id: 'planning',
+  defaults: () => ({ menu: 'on', gpStatus: 'all', category: '', columns: PLANNING_COLUMN_OPTIONS.map((c) => c.value), sort: 'category' }),
+  persist: { keys: ['menu', 'sort', 'columns'], storageKey: 'v5PlanningTableFilter' },
+  buildFilterSections(_state, context) {
+    const sections = [{
+      id: 'menu',
+      label: 'Menu',
+      type: 'segment',
+      options: [
+        { value: 'on', label: 'On menu' },
+        { value: 'all', label: 'All' },
+        { value: 'off', label: 'Off menu' },
+      ],
+    }, {
+      id: 'gpStatus',
+      label: 'GP vs target',
+      type: 'segment',
+      options: [
+        { value: 'all', label: 'All' },
+        { value: 'red', label: 'Below' },
+        { value: 'amber', label: 'Near' },
+        { value: 'green', label: 'On target' },
+        { value: 'none', label: 'No GP' },
+      ],
+    }];
+    if (context.categories?.length) {
+      sections.push({
+        id: 'category',
+        label: 'Category',
+        type: 'radio',
+        scroll: true,
+        options: [{ value: '', label: 'All categories' }, ...context.categories.map((c) => ({ value: c, label: c }))],
+      });
+    }
+    sections.push({
+      id: 'columns',
+      label: 'Columns',
+      type: 'checkbox',
+      showCount: true,
+      hideCountWhenFull: true,
+      options: PLANNING_COLUMN_OPTIONS,
+    });
+    return sections;
+  },
+  sortOptions: [
+    { value: 'category', label: 'Category, then name' },
+    { value: 'name', label: 'Product A–Z' },
+    { value: 'gp-asc', label: 'Lowest GP first' },
+    { value: 'gp-desc', label: 'Highest GP first' },
+    { value: 'revenue-desc', label: 'Highest revenue first' },
+  ],
+  toValues(state) {
+    const shown = Array.isArray(state.columns) ? state.columns : PLANNING_COLUMN_OPTIONS.map((c) => c.value);
+    return {
+      menu: state.menu || 'on',
+      gpStatus: state.gpStatus || 'all',
+      category: state.category || '',
+      sort: state.sort || 'category',
+      hiddenColumns: PLANNING_COLUMN_OPTIONS.map((c) => c.value).filter((k) => !shown.includes(k)),
+    };
+  },
+});
+
+export const planningConfig = {
+  ...planningBase,
+  buildActiveItems(api) {
+    return planningBase.buildActiveItems(api).filter((item) => !String(item.id).startsWith('columns:'));
+  },
+  isActive(api) {
+    const s = api.getState();
+    return (s.menu || 'on') !== 'on' || (s.gpStatus || 'all') !== 'all' || Boolean(s.category);
+  },
+};
+
+export const ordersConfig = simpleEventConfig({
+  id: 'orders',
+  defaults: () => ({ status: 'all', supplier: '', sort: 'gap' }),
+  persist: { keys: ['sort'], storageKey: 'v5OrdersTableFilter' },
+  buildFilterSections(_state, context) {
+    const sections = [{
+      id: 'status',
+      label: 'Plan vs ordered',
+      type: 'segment',
+      options: [
+        { value: 'all', label: 'All' },
+        { value: 'attention', label: 'Gaps' },
+        { value: 'short', label: 'Short' },
+        { value: 'over', label: 'Over' },
+        { value: 'ok', label: 'Matched' },
+        { value: 'unplanned', label: 'Unplanned' },
+      ],
+    }];
+    if (context.suppliers?.length) {
+      sections.push({
+        id: 'supplier',
+        label: 'Preferred supplier',
+        type: 'radio',
+        scroll: true,
+        options: [{ value: '', label: 'All suppliers' }, ...context.suppliers],
+      });
+    }
+    return sections;
+  },
+  sortOptions: [
+    { value: 'gap', label: 'Biggest shortage first' },
+    { value: 'category', label: 'Category, then name' },
+    { value: 'name', label: 'Product A–Z' },
+  ],
+  toValues(state) {
+    return {
+      status: state.status || 'all',
+      supplier: state.supplier || '',
+      sort: state.sort || 'gap',
+    };
+  },
+});
+
+export const priceYearsConfig = viewConfig({
+  id: 'price-years',
+  defaults: () => ({ priced: 'priced', category: '' }),
+  persist: { keys: ['priced'], storageKey: 'v5PriceYearsTableFilter' },
+  buildFilterSections(_state, context) {
+    const sections = [{
+      id: 'priced',
+      label: 'Products',
+      type: 'segment',
+      options: [
+        { value: 'priced', label: 'On house menu' },
+        { value: 'all', label: 'All products' },
+        { value: 'unpriced', label: 'Not priced' },
+      ],
+    }];
+    if (context.categories?.length) {
+      sections.push({
+        id: 'category',
+        label: 'Category',
+        type: 'radio',
+        scroll: true,
+        options: [{ value: '', label: 'All categories' }, ...context.categories.map((c) => ({ value: c, label: c }))],
+      });
+    }
+    return sections;
+  },
+  sortOptions: null,
+});
+
 const AUDIT_CHECKS = [
   { value: 'delivered_consistency', label: 'Delivered consistency' },
   { value: 'opening_identity', label: 'Opening identity' },
@@ -1396,6 +1637,9 @@ export const auditConfig = viewConfig({
 
 export const ALL_FILTER_CONFIGS = [
   distributionConfig,
+  planningConfig,
+  ordersConfig,
+  priceYearsConfig,
   reconConfig,
   closingConfig,
   salesConfig,
@@ -1411,6 +1655,7 @@ export const ALL_FILTER_CONFIGS = [
   libraryConfig,
   kitLibraryConfig,
   suppliersConfig,
+  accountsConfig,
   warehousesConfig,
   volumePoolsConfig,
   bugsConfig,

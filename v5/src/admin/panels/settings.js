@@ -13,9 +13,17 @@ import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+import {
+  renderOrganisationSection,
+  mountOrganisationSection,
+  renderHistorySection,
+  mountHistorySection,
+} from './settings-org.js';
 
 const SETTINGS_NAV = [
+  { id: 'organisation', label: 'Organisation' },
   { id: 'users', label: 'Users' },
+  { id: 'history', label: 'Change history' },
   { id: 'warehouses', label: 'Warehouses' },
   { id: 'categories', label: 'Product categories' },
   { id: 'case-sizes', label: 'Case sizes' },
@@ -163,6 +171,8 @@ function renderCaseSizesSection() {
 }
 
 function renderSectionPane(section) {
+  if (section === 'organisation') return renderOrganisationSection();
+  if (section === 'history') return renderHistorySection();
   if (section === 'users') return renderUsersSection();
   if (section === 'warehouses') return renderWarehousesSection();
   if (section === 'categories') return renderCategoriesSection();
@@ -209,6 +219,8 @@ export function mountSettingsPanel(section = 'users') {
   if (section === 'users') {
     return mountUsersPanel();
   }
+  if (section === 'organisation') return mountOrganisationSection();
+  if (section === 'history') return mountHistorySection();
 
   const whWrap = $('settingsWarehouses');
   const catWrap = $('settingsCategories');

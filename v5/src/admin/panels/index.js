@@ -49,8 +49,12 @@ const lazy = {
   counts: () => import('./counts.js'),
   library: () => import('./library.js'),
   suppliers: () => import('./suppliers.js'),
+  accounts: () => import('./accounts.js'),
   warehouses: () => import('./warehouses.js'),
   'volume-pools': () => import('./volume-pools.js'),
+  planning: () => import('./planning.js'),
+  orders: () => import('./orders.js'),
+  'price-years': () => import('./price-years.js'),
 };
 
 /** Warm event-workspace chunks so sidebar clicks feel instant. */
@@ -61,6 +65,7 @@ export function prefetchEventPanels() {
   void lazy.closing();
   void lazy.kit();
   void lazy.distribution();
+  void lazy.planning();
   void lazy.products();
   void lazy.deliveries();
   void lazy.transfers();
@@ -74,8 +79,12 @@ export const PANEL_TITLES = {
   library: 'Product library',
   'kit-library': 'Kit library',
   suppliers: 'Suppliers',
+  accounts: 'Accounts',
   warehouses: 'Warehouses',
   'volume-pools': 'Volume pools',
+  'price-years': 'Price years',
+  planning: 'Menu & GP',
+  orders: 'Orders',
   bugs: 'Bug & Feature Reports',
   settings: 'Workspace settings',
   dashboard: 'Event dashboard',
@@ -145,9 +154,19 @@ export async function renderPanel(route, state) {
     return m.renderSuppliersShell();
   }
 
+  if (route.view === 'accounts') {
+    const m = await lazy.accounts();
+    return m.renderAccountsShell();
+  }
+
   if (route.view === 'volume-pools') {
     const m = await lazy['volume-pools']();
     return m.renderVolumePoolsShell();
+  }
+
+  if (route.view === 'price-years') {
+    const m = await lazy['price-years']();
+    return m.renderPriceYearsShell();
   }
 
   if (route.view === 'bugs') {
@@ -228,6 +247,16 @@ export async function renderPanel(route, state) {
       return m.renderDistributionShell();
     }
 
+    if (panel === 'planning') {
+      const m = await lazy.planning();
+      return m.renderPlanningShell();
+    }
+
+    if (panel === 'orders') {
+      const m = await lazy.orders();
+      return m.renderOrdersShell();
+    }
+
     if (panel === 'deliveries') {
       const m = await lazy.deliveries();
       return m.renderDeliveriesShell();
@@ -304,6 +333,18 @@ export async function mountPanel(route, state) {
     const m = await lazy.distribution();
     return m.mountDistributionPanel(route, state);
   }
+  if (route.view === 'event' && route.panel === 'planning') {
+    const m = await lazy.planning();
+    return m.mountPlanningPanel(route, state);
+  }
+  if (route.view === 'event' && route.panel === 'orders') {
+    const m = await lazy.orders();
+    return m.mountOrdersPanel(route, state);
+  }
+  if (route.view === 'price-years') {
+    const m = await lazy['price-years']();
+    return m.mountPriceYearsPanel();
+  }
   if (route.view === 'event' && route.panel === 'deliveries') {
     const m = await lazy.deliveries();
     return m.mountDeliveriesPanel(route);
@@ -353,6 +394,10 @@ export async function mountPanel(route, state) {
   if (route.view === 'suppliers') {
     const m = await lazy.suppliers();
     return m.mountSuppliersPanel();
+  }
+  if (route.view === 'accounts') {
+    const m = await lazy.accounts();
+    return m.mountAccountsPanel();
   }
   if (route.view === 'volume-pools') {
     const m = await lazy['volume-pools']();

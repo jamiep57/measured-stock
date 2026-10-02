@@ -12578,7 +12578,7 @@
       setStatus('auto-mapping ' + toCreate.length + ' recipes…');
       const recipeRows = await DB.upsert('recipes',
         toCreate.map((r) => ({ till_item: r.till_item, till_variation: r.till_variation, unit_model: 'case', notes: r.notes })),
-        { onConflict: 'till_item,till_variation' });
+        { onConflict: 'org_id,till_item,till_variation' });
       const idByKey = {};
       (recipeRows || []).forEach((r) => { idByKey[recipeKey(r.till_item, r.till_variation)] = r.id; });
       const ingRows = [];
