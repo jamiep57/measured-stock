@@ -24,6 +24,9 @@
 *.log
 npm-debug.log*
 
+# Migration test harness scratch output
+scripts/migration-test/.last-err
+
 # V5
 v5/node_modules/
 v5/dist/
