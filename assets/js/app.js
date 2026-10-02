@@ -3947,8 +3947,9 @@ let _autoLoadSample = false;
 load();
 sortAllLists();
 save(); // persist the sorted order so it survives next load
-if (_autoLoadSample) loadSampleData(true);
-else renderAll();
+// Auto-loading sample data is disabled: it saved a "Highlights 2025" sample
+// event to the cloud from every fresh browser, creating duplicate events.
+renderAll();
 initPillDelegation();
 applyAppVersion();
 

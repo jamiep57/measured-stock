@@ -20,7 +20,7 @@
   ║  v1.2  Full-width layout, Outfit font, reduced border radius.        ║
   ║        File renamed to Measured-Stock-System.html.                   ║
   ║        Supabase migration tool (supabase_migrate.html) added.        ║
-  ║        Sample data auto-populated on first load.                     ║
+  ║        Starts with a blank event on first load (no sample data).     ║
   ║                                                                      ║
   ║  v1.3  Sticky table headers (frozen panes).                          ║
   ║        Product sort: canonical category order (Beer → Cider →        ║
@@ -418,7 +418,6 @@
           <div class="card">
             <div class="card-title" style="margin-bottom:14px">Data & Backup</div>
             <div class="btn-row" style="margin-top:0">
-              <button class="btn btn-outline btn-sm" onclick="loadSampleData()">Load Sample Data</button>
               <button class="btn btn-outline btn-sm" onclick="exportData()">Export JSON</button>
               <label class="btn btn-outline btn-sm" style="cursor:pointer">
                 Import JSON
@@ -1180,7 +1179,7 @@
 <!-- ========== SCRIPTS ========== -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="assets/js/app.js?v=20260601-2256-sync-trigger"></script>
+<script src="assets/js/app.js?v=20261002-no-sample-data"></script>
 
 </body>
 </html>
