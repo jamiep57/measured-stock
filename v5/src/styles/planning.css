@@ -295,6 +295,16 @@
   line-height: 1;
 }
 .plan-cell-suffix--balance { visibility: hidden; }
+.plan-cell-prefix {
+  flex: 0 0 auto;
+  font-weight: 500;
+  line-height: 1;
+}
+.plan-cell-affix--money:has(.plan-cell-input:placeholder-shown) .plan-cell-prefix {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+  font-weight: 400;
+}
 .plan-cell-affix:has(.plan-cell-input:placeholder-shown) .plan-cell-suffix {
   color: var(--muted-foreground);
   opacity: 0.7;
@@ -411,10 +421,37 @@
   min-height: 0;
   padding: 0;
 }
+.plan-grid .plan-cell-affix--money {
+  display: flex;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-width: 76px;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+.plan-grid .plan-cell-affix--money .plan-cell-input {
+  field-sizing: fixed;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-width: 4.5ch;
+  text-align: right;
+}
 .plan-grid .plan-scenario-cell .plan-cell-input {
   height: 24px;
   min-height: 0;
   padding: 0 6px;
+}
+.plan-grid .plan-scenario-cell .plan-cell-affix--money {
+  height: 24px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0 4px;
+}
+.plan-grid .plan-scenario-cell .plan-cell-affix--money .plan-cell-input {
+  height: 24px;
+  padding: 0;
 }
 .plan-scenario-gp {
   padding: 0 6px;

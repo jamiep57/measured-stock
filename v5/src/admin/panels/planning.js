@@ -31,6 +31,7 @@ import { formatGpPct, roundUpToStep } from '../../lib/gp.js';
 import {
   liveUnitCost,
   menuTotals,
+  formatPlanningPriceInput,
   parsePlanningNumber,
   resolveMenuLine,
   scenarioGp,
@@ -238,19 +239,32 @@ export function mountPlanningPanel(route) {
 
   // ---------- rendering ----------------------------------------------
 
-  function cellInput(field, value, { placeholder = '', label = '', text = false, width = '', suffix = '' } = {}) {
+  function cellInput(field, value, { placeholder = '', label = '', text = false, width = '', suffix = '', money = false } = {}) {
     const dis = locked() ? 'disabled' : '';
     if (text) {
       return `<input type="text" class="plan-cell-input plan-cell-input--text" data-field="${field}"
         value="${escapeHtml(value ?? '')}" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(label)}"
         maxlength="120" autocomplete="off" ${dis}>`;
     }
+    const shown = money ? formatPlanningPriceInput(value) : inputValue(value);
+    const hint = money ? formatPlanningPriceInput(placeholder) : placeholder;
     const input = `<input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input${width ? ` plan-cell-input--${width}` : ''}"
-      data-field="${field}" value="${escapeHtml(inputValue(value))}" placeholder="${escapeHtml(placeholder)}"
+      data-field="${field}"${money ? ' data-money="1"' : ''} value="${escapeHtml(shown)}" placeholder="${escapeHtml(hint)}"
       aria-label="${escapeHtml(label)}" ${dis}>`;
+    if (money) {
+      return `<span class="plan-cell-affix plan-cell-affix--money"><span class="plan-cell-prefix" aria-hidden="true">£</span>${input}</span>`;
+    }
     if (!suffix) return input;
     const mark = escapeHtml(suffix);
     return `<span class="plan-cell-affix"><span class="plan-cell-suffix plan-cell-suffix--balance" aria-hidden="true">${mark}</span>${input}<span class="plan-cell-suffix" aria-hidden="true">${mark}</span></span>`;
+  }
+
+  function paintMoneyInput(input) {
+    if (!input?.matches?.('[data-money]')) return;
+    const parsed = parsePlanningNumber(input.value);
+    if (!parsed.ok) return;
+    const next = formatPlanningPriceInput(parsed.value);
+    if (input.value !== next) input.value = next;
   }
 
   function columnShown(id) {
@@ -352,7 +366,7 @@ export function mountPlanningPanel(route) {
       </td>`;
     }
     if (id === 'menu') {
-      return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
+      return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice, label: 'Menu price', money: true })}</td>`;
     }
     if (id === 'target') {
       return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm', suffix: '%' })}</td>`;
@@ -363,7 +377,7 @@ export function mountPlanningPanel(route) {
         : money(line.requiredPrice)}</td>`;
     }
     if (id === 'suggested') {
-      return `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '', label: 'Suggested price' })}</td>`;
+      return `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice, label: 'Suggested price', money: true })}</td>`;
     }
     if (id === 'gp') {
       return `<td class="plan-cell plan-cell--key plan-out" data-out="gp">${gpBadge(line.gpPct, line.status)}</td>`;
@@ -375,9 +389,9 @@ export function mountPlanningPanel(route) {
       const sg = scenarioGp(line, price);
       return `<td class="plan-cell plan-cell--scenario" data-scenario="${escapeHtml(s.id)}">
           <div class="plan-scenario-cell">
-            <input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input"
-              data-scenario-price="${escapeHtml(s.id)}" value="${escapeHtml(inputValue(price))}"
-              aria-label="${escapeHtml(s.name)} price" ${dis}>
+            <span class="plan-cell-affix plan-cell-affix--money"><span class="plan-cell-prefix" aria-hidden="true">£</span><input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input"
+              data-money="1" data-scenario-price="${escapeHtml(s.id)}" value="${escapeHtml(formatPlanningPriceInput(price))}"
+              aria-label="${escapeHtml(s.name)} price" ${dis}></span>
             <span class="plan-scenario-gp ${statusClass(sg.status)}" data-out="scenario-gp">${escapeHtml(formatGpPct(sg.gpPct))}</span>
           </div>
         </td>`;
@@ -393,7 +407,7 @@ export function mountPlanningPanel(route) {
     }
     if (id === 'deal') {
       const live = liveUnitCost(ctx.productById.get(line.productId));
-      return `<td class="plan-cell">${cellInput('unit_cost_override', item.unit_cost_override, { placeholder: live != null ? live.toFixed(2) : '', label: 'Deal cost per unit' })}</td>`;
+      return `<td class="plan-cell">${cellInput('unit_cost_override', item.unit_cost_override, { placeholder: live, label: 'Deal cost per unit', money: true })}</td>`;
     }
     if (id === 'deal-ref') {
       return `<td class="plan-cell plan-cell--text">${cellInput('deal_ref', item.deal_ref, { text: true, placeholder: 'Ref', label: 'Deal reference' })}</td>`;
@@ -415,7 +429,7 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(detail || 'Cost of the ingredients')}">${money(line.costPerServe)}</td>`;
     }
     if (id === 'menu') {
-      return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
+      return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice, label: 'Menu price', money: true })}</td>`;
     }
     if (id === 'target') {
       return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm', suffix: '%' })}</td>`;
@@ -426,7 +440,7 @@ export function mountPlanningPanel(route) {
         : money(line.requiredPrice)}</td>`;
     }
     if (id === 'suggested') {
-      return `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '', label: 'Suggested price' })}</td>`;
+      return `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice, label: 'Suggested price', money: true })}</td>`;
     }
     if (id === 'gp') {
       return `<td class="plan-cell plan-cell--key plan-out" data-out="gp">${gpBadge(line.gpPct, line.status)}</td>`;
@@ -1799,6 +1813,7 @@ export function mountPlanningPanel(route) {
     if (e.target.closest('#planSettings')) onSettingsInput(e);
     else onGridInput(e);
   });
+  panel.addEventListener('blur', (e) => paintMoneyInput(e.target), true);
   panel.addEventListener('change', (e) => {
     if (!e.target.closest('#planSettings')) void onGridChange(e);
   });

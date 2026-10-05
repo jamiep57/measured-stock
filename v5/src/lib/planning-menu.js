@@ -147,6 +147,14 @@ export function parsePlanningNumber(raw, { max } = {}) {
   return { ok: true, value: Math.round(value * 10000) / 10000 };
 }
 
+/** Price typed into a Menu & GP cell, shown as accounting pounds to two decimals. */
+export function formatPlanningPriceInput(n) {
+  if (n == null || n === '') return '';
+  const parsed = parsePlanningNumber(n);
+  if (!parsed.ok || parsed.value == null) return '';
+  return parsed.value.toFixed(2);
+}
+
 /** GP for the same line priced at an alternative (scenario) price. */
 export function scenarioGp(line, price) {
   const p = num(price);

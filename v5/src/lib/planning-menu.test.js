@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveMenuLine, resolveUnitCost, menuTotals, scenarioGp, parsePlanningNumber,
+  formatPlanningPriceInput,
 } from './planning-menu.js';
 
 describe('parsePlanningNumber', () => {
@@ -12,6 +13,14 @@ describe('parsePlanningNumber', () => {
   });
   it('treats empty as clear', () => {
     expect(parsePlanningNumber('  ')).toEqual({ ok: true, value: null });
+  });
+  it('shows a price as accounting pounds to two decimals', () => {
+    expect(formatPlanningPriceInput(9)).toBe('9.00');
+    expect(formatPlanningPriceInput(7.5)).toBe('7.50');
+    expect(formatPlanningPriceInput('£1,200.5')).toBe('1200.50');
+    expect(formatPlanningPriceInput(0)).toBe('0.00');
+    expect(formatPlanningPriceInput(null)).toBe('');
+    expect(formatPlanningPriceInput('')).toBe('');
   });
   it('rejects junk, negatives and values at the max', () => {
     expect(parsePlanningNumber('abc').ok).toBe(false);
