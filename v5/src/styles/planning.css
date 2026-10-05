@@ -123,7 +123,7 @@
 }
 .dist-grid.plan-grid { width: 100%; }
 .plan-th { width: 78px; min-width: 78px; }
-.plan-th--size { width: 120px; min-width: 120px; }
+.plan-th--size { width: 88px; min-width: 88px; }
 .plan-th--narrow { width: 68px; min-width: 68px; }
 .plan-th--narrow .dist-bar-name {
   white-space: normal;
@@ -294,8 +294,16 @@
 }
 .plan-cell-input--sm { width: 56px; }
 .plan-cell-input--text { width: 110px; text-align: left; font-weight: 400; }
-.plan-cell--size { display: flex; align-items: center; gap: 4px; }
-.plan-cell-input--size { width: 72px; }
+.plan-cell--size {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.plan-cell-input.plan-cell-input--size {
+  width: 76px;
+  text-align: center;
+  font-weight: 500;
+}
 .plan-cell-input::placeholder { color: var(--muted-foreground); opacity: 0.7; font-weight: 400; }
 .plan-cell-input:hover:not(:disabled) { border-color: var(--border); background: var(--card); }
 .plan-cell-input:focus {
@@ -671,6 +679,12 @@
 .plan-kpi.plan-row--mark-violet,
 .wst-stat.plan-row--mark-violet { background: #e7defb !important; }
 .plan-cell--menu { outline: 2px solid var(--foreground); outline-offset: -2px; }
+li.plan-row--mark-sand { background: #f3ead8 !important; }
+li.plan-row--mark-amber { background: #fde7c7 !important; }
+li.plan-row--mark-green { background: #d8f3e4 !important; }
+li.plan-row--mark-sky { background: #d9e9fb !important; }
+li.plan-row--mark-rose { background: #f8dbe3 !important; }
+li.plan-row--mark-violet { background: #e7defb !important; }
 
 .plan-ctx {
   position: fixed;
