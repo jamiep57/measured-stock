@@ -17,6 +17,13 @@ import { mountProductSearch, productSupplierSearchText } from '../../components/
 import { listAccounts, loadEventClientAccount } from '../../lib/accounts-data.js';
 import { openMenuExportDialog } from '../planning-export.js';
 import { openCocktailEditor } from '../planning-cocktail.js';
+import {
+  closePlanningContextMenu,
+  editablePlanningField,
+  openPlanningContextMenu,
+  planningColumnLabel,
+  planningContextActions,
+} from '../planning-context-menu.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
@@ -37,8 +44,17 @@ import {
 } from '../../lib/planning-columns.js';
 import { cocktailLineKey, resolveCocktailLine } from '../../lib/menu-cocktails.js';
 import {
+  PLANNING_MARK_IDS,
+  planningCellMark,
+  planningRowMark,
+  readPlanningMarks,
+  setPlanningMark,
+  writePlanningMarks,
+} from '../../lib/planning-marks.js';
+import {
   clearEventCostSnapshots,
   createScenario,
+  deleteEventCocktail,
   deleteScenario,
   isCocktailSchemaMissing,
   isEventPricingLocked,
@@ -149,6 +165,7 @@ export function mountPlanningPanel(route) {
     accounts: null,
     clientAccountId: null,
     columnOrder: readPlanningColumnOrder(typeof localStorage === 'undefined' ? null : localStorage),
+    marks: readPlanningMarks(typeof localStorage === 'undefined' ? null : localStorage, route.eventId),
     abort: false,
   };
 
@@ -232,7 +249,8 @@ export function mountPlanningPanel(route) {
       data-field="${field}" value="${escapeHtml(inputValue(value))}" placeholder="${escapeHtml(placeholder)}"
       aria-label="${escapeHtml(label)}" ${dis}>`;
     if (!suffix) return input;
-    return `<span class="plan-cell-affix">${input}<span class="plan-cell-suffix" aria-hidden="true">${escapeHtml(suffix)}</span></span>`;
+    const mark = escapeHtml(suffix);
+    return `<span class="plan-cell-affix"><span class="plan-cell-suffix plan-cell-suffix--balance" aria-hidden="true">${mark}</span>${input}<span class="plan-cell-suffix" aria-hidden="true">${mark}</span></span>`;
   }
 
   function columnShown(id) {
