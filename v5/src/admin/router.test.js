@@ -17,6 +17,10 @@ describe('admin router', () => {
       eventId: 'abc-123',
       panel: 'deliveries',
     });
+    expect(parseRoute('/admin')).toEqual({ view: 'home' });
+    expect(parseRoute('/admin/')).toEqual({ view: 'home' });
+    expect(parseRoute('/admin/library')).toEqual({ view: 'library' });
+    expect(parseRoute('/admin/settings/access')).toEqual({ view: 'settings', section: 'access' });
     expect(parseRoute('/v5/admin/settings/users')).toEqual({
       view: 'settings',
       section: 'users',

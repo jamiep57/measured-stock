@@ -59,8 +59,10 @@ export default async function middleware(request) {
   const session = cookie ? await verifyAuthToken(secret, cookie) : null;
 
   if (session) {
-    const desktop = session.shell === 'desktop'
-      || (session.shell !== 'field' && session.role !== 'user' && session.role !== 'staff');
+    const desktop = session.role === 'sysadmin'
+      || session.role === 'admin'
+      || session.role === 'manager'
+      || session.shell === 'desktop';
     if (desktop || isStaffAllowed(url.pathname)) {
       return;
     }

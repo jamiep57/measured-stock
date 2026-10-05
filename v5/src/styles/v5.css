@@ -1042,6 +1042,7 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   color: var(--foreground);
   font: 600 15px/1.2 Outfit, system-ui, sans-serif;
   text-align: left;
+  text-decoration: none;
 }
 .app-drawer-item i { font-size: 20px; color: var(--muted-foreground); }
 .app-drawer-item:active { background: var(--secondary); }

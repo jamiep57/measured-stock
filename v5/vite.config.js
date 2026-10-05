@@ -84,7 +84,13 @@ function serveRootAssets() {
             return;
           }
         }
-        if (url === '/' || (ADMIN_ROUTE_RE.test(url) && !path.extname(url))) {
+        if (
+          url === '/' ||
+          url === '/admin' ||
+          url === '/admin/' ||
+          url.startsWith('/admin/') ||
+          (ADMIN_ROUTE_RE.test(url) && !path.extname(url))
+        ) {
           req.url = '/admin.html';
         }
         if ((url === '/app' || url === '/app/') && !path.extname(url)) {

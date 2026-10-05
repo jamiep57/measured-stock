@@ -13,11 +13,13 @@ function joinAdmin(...parts) {
   return rest ? `/${rest}` : '/';
 }
 
-/** Strip legacy `/v5/admin` prefix so old bookmarks still parse. */
+/** Strip `/admin` and legacy `/v5/admin` so those URLs open the same admin app as `/`. */
 export function stripLegacyAdminPrefix(pathname) {
-  const raw = String(pathname || '');
+  let raw = String(pathname || '');
   if (raw === '/v5/admin' || raw === '/v5/admin/' || raw === '/v5/admin.html') return '/';
-  if (raw.startsWith('/v5/admin/')) return raw.slice('/v5/admin'.length) || '/';
+  if (raw.startsWith('/v5/admin/')) raw = raw.slice('/v5/admin'.length) || '/';
+  if (raw === '/admin' || raw === '/admin/' || raw === '/admin.html') return '/';
+  if (raw.startsWith('/admin/')) return raw.slice('/admin'.length) || '/';
   return raw;
 }
 

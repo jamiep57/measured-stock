@@ -20,7 +20,7 @@ import { retireLegacyServiceWorkers, setupMeasuredPwaInstall } from './lib/pwa-i
 import { showEventGate, hideEventGate } from './event-gate.js';
 import { initAppMenu, closeAppDrawer } from './app-menu.js';
 import { ensureAppAuth, getCachedProfile } from './lib/auth.js';
-import { can, loadPermissions } from './lib/permissions.js';
+import { can, loadPermissions, profileNeedsDesktop } from './lib/permissions.js';
 import { initClientErrorReporting } from './lib/client-errors.js';
 import { initSyncStatus } from './components/sync-status.js';
 
@@ -572,6 +572,10 @@ async function boot() {
   if (!auth) return;
   await loadPermissions(getCachedProfile()?.active_org_id);
   applyFieldPermissions();
+  const adminLink = document.querySelector('[data-app-menu="admin"]');
+  if (adminLink) {
+    adminLink.hidden = !profileNeedsDesktop(auth.profile?.role, auth.profile?.permissions || []);
+  }
 
   initSheet();
   initSpreadsheetCells(document.body);
