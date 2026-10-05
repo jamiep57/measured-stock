@@ -49,12 +49,6 @@ export const PANEL_TOOLBAR = {
           title: 'Copy a saved menu onto this event',
         },
         {
-          id: 'plan-seed',
-          icon: 'sparkles',
-          label: 'Add stock products',
-          title: 'Add products already on this event to the menu. Existing menu prices stay as they are.',
-        },
-        {
           id: 'plan-add-product',
           icon: 'plus',
           label: 'Add product',

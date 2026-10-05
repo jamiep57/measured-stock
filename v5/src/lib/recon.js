@@ -97,10 +97,16 @@ export function reconUsesBottlePrice(product, caseSizes = []) {
   return productStockUnit(product, caseSizes) === 'bottle';
 }
 
+function pricesCaptured(ep) {
+  return ep?.prices_captured_at != null;
+}
+
 function defaultCasePrice(ep, suppliers, caseSizes) {
   const p = ep?.product;
   if (!p) return 0;
   if (ep.order_price_override != null) return Number(ep.order_price_override) || 0;
+  // Price copied when the product joined this event. Library edits do not move it.
+  if (pricesCaptured(ep)) return ep.case_price_snapshot != null ? Number(ep.case_price_snapshot) || 0 : 0;
   const sid = preferredSupplierId(p);
   const offer = findOfferForSupplier(p, sid);
   if (offer?.case_price != null) return Number(offer.case_price) || 0;
@@ -116,6 +122,7 @@ function defaultUnitPrice(ep, suppliers, caseSizes) {
     const upc = reconUnitsPerCase(p, caseSizes) || 1;
     return upc > 0 ? (Number(ep.order_price_override) || 0) / upc : null;
   }
+  if (pricesCaptured(ep)) return ep.unit_price_snapshot != null ? Number(ep.unit_price_snapshot) || 0 : null;
   const sid = preferredSupplierId(p);
   const offer = findOfferForSupplier(p, sid);
   if (offer?.unit_price != null) return Number(offer.unit_price) || 0;

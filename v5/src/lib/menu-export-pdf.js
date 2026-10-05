@@ -17,11 +17,11 @@ function eventDates(event) {
  * @param {{
  *   type: 'designer'|'client'|'sor',
  *   model: ReturnType<import('./menu-exports.js').buildMenuExport>,
- *   event: object, year?: object|null, client?: { name: string, contact?: object|null }|null,
+ *   event: object, client?: { name: string, contact?: object|null }|null,
  *   vatRate: number, rateNote?: string, preparedBy?: { name?: string, email?: string }|null,
  * }} input
  */
-export async function generateMenuExportPDF({ type, model, event, year, client, vatRate, rateNote = '', preparedBy = null }) {
+export async function generateMenuExportPDF({ type, model, event, client, vatRate, rateNote = '', preparedBy = null }) {
   if (!model.count) throw new Error('Nothing to export — no priced items on the event menu.');
   const spec = EXPORT_TYPES[type];
   const wide = model.columns.length > 5;
@@ -44,7 +44,6 @@ export async function generateMenuExportPDF({ type, model, event, year, client, 
 
   ctx.header({
     meta: [
-      year?.label ? `Price year  ${year.label}` : null,
       `Issued  ${formatDocDate(new Date())}`,
     ],
     parties,
@@ -96,7 +95,7 @@ export async function generateMenuExportPDF({ type, model, event, year, client, 
     ctx.y += 2;
     ctx.sectionTitle('Notes');
     [
-      `Rates apply to ${event?.name || 'this event'}${year?.label ? ` in price year ${year.label}` : ''}.`,
+      `Rates apply to ${event?.name || 'this event'}.`,
       `Rates are per unit as listed, in GBP and inclusive of VAT at ${vatPct}%.`,
     ].forEach((t) => ctx.paragraph(`•  ${t}`, { size: 8.5 }));
   } else if (type === 'designer') {
@@ -105,5 +104,5 @@ export async function generateMenuExportPDF({ type, model, event, year, client, 
     ctx.paragraph(`${model.missingRates} item${model.missingRates === 1 ? ' has' : 's have'} no menu price yet and show as —.`, { size: 8.5, color: BRAND.muted });
   }
 
-  return ctx.finish(`${exportFileStem(type, event?.name, year?.label)}.pdf`);
+  return ctx.finish(`${exportFileStem(type, event?.name)}.pdf`);
 }

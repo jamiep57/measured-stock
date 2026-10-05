@@ -19,6 +19,7 @@ import { openOwnProfileEditor } from './panels/users.js';
 import { initClientErrorReporting } from '../lib/client-errors.js';
 import { initSyncStatus } from '../components/sync-status.js';
 import { flushQueue } from '../sync-queue.js';
+import { retireLegacyServiceWorkers } from '../lib/pwa-install.js';
 
 const state = {
   events: [],
@@ -273,6 +274,7 @@ function wireProfileMenu() {
 }
 
 async function boot() {
+  retireLegacyServiceWorkers();
   initClientErrorReporting();
   // After a Vercel deploy, stale hashed chunks 404 and dynamic import() rejects
   // with "Failed to fetch". One reload picks up the new admin entry + assets.

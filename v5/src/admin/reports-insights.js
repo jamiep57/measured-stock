@@ -15,7 +15,7 @@ import { isOrgAdmin } from '../lib/organisations.js';
 import { computeReconRows } from '../lib/recon.js';
 import { formatGpPct, gpStatus } from '../lib/gp.js';
 import { parsePlanningNumber, resolveMenuLine } from '../lib/planning-menu.js';
-import { listEventMenu, listHousePrices, listPriceYears, loadEventPricing } from '../lib/planning-data.js';
+import { listEventMenu, loadEventPricing } from '../lib/planning-data.js';
 import {
   eventHeadlines, filterSales, groupSales, revenueComparison, rowsWithEvents, salesCsv, salesTotals,
 } from '../lib/sales-report.js';
@@ -111,21 +111,19 @@ export function createReportInsights({ getBase, onChange }) {
     state.menuLoading = true;
     const { eventId, caseSizes } = getBase();
     try {
-      const [event, years, items, products] = await Promise.all([
-        loadEventPricing(eventId), listPriceYears(), listEventMenu(eventId), loadLibraryProducts(),
+      const [event, items, products] = await Promise.all([
+        loadEventPricing(eventId), listEventMenu(eventId), loadLibraryProducts(),
       ]);
-      const year = (years || []).find((y) => y.id === event?.price_year_id) || null;
-      const house = new Map(((year ? await listHousePrices(year.id) : []) || []).map((h) => [h.product_id, h]));
       const productById = new Map((products || []).map((p) => [p.id, p]));
       const itemMap = new Map((items || []).map((i) => [i.product_id, i]));
       const lines = [...itemMap.values()].map((item) => resolveMenuLine(item, {
-        product: productById.get(item.product_id), house: house.get(item.product_id), year, event, caseSizes,
+        product: productById.get(item.product_id), event, caseSizes,
       }));
       state.menu = {
         lines,
         items: itemMap,
         products: productById,
-        targetGpPct: event?.target_gp_pct ?? year?.default_target_gp_pct ?? null,
+        targetGpPct: event?.target_gp_pct ?? null,
         amberBand: event?.gp_amber_band ?? 5,
         yearLabel: year?.label || null,
       };

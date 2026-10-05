@@ -499,6 +499,22 @@ describe('buildReconRow budget method', () => {
     expect(row.rowPrice).toBe(24);
     expect(row.consumptionLooseCharge).toBe(12);
   });
+
+  it('keeps the captured event price when the library price changes', () => {
+    const row = buildReconRow(baseCtx({
+      ep: {
+        prices_captured_at: '2026-01-01T00:00:00Z',
+        case_price_snapshot: 24,
+        unit_price_snapshot: 1,
+        product: {
+          ...product,
+          case_price: 40,
+          product_suppliers: [{ supplier_id: 's1', is_preferred: true, case_price: 48, supplier: { name: 'Acme' } }],
+        },
+      },
+    }));
+    expect(row.rowPrice).toBe(24);
+  });
 });
 
 describe('closingInvoiceQty', () => {

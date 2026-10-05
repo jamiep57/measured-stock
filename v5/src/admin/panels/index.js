@@ -54,7 +54,6 @@ const lazy = {
   'volume-pools': () => import('./volume-pools.js'),
   planning: () => import('./planning.js'),
   orders: () => import('./orders.js'),
-  'price-years': () => import('./price-years.js'),
 };
 
 /** Warm event-workspace chunks so sidebar clicks feel instant. */
@@ -82,7 +81,6 @@ export const PANEL_TITLES = {
   accounts: 'Accounts',
   warehouses: 'Warehouses',
   'volume-pools': 'Volume pools',
-  'price-years': 'Price years',
   planning: 'Menu & GP',
   orders: 'Orders',
   bugs: 'Bug & Feature Reports',
@@ -162,11 +160,6 @@ export async function renderPanel(route, state) {
   if (route.view === 'volume-pools') {
     const m = await lazy['volume-pools']();
     return m.renderVolumePoolsShell();
-  }
-
-  if (route.view === 'price-years') {
-    const m = await lazy['price-years']();
-    return m.renderPriceYearsShell();
   }
 
   if (route.view === 'bugs') {
@@ -340,10 +333,6 @@ export async function mountPanel(route, state) {
   if (route.view === 'event' && route.panel === 'orders') {
     const m = await lazy.orders();
     return m.mountOrdersPanel(route, state);
-  }
-  if (route.view === 'price-years') {
-    const m = await lazy['price-years']();
-    return m.mountPriceYearsPanel();
   }
   if (route.view === 'event' && route.panel === 'deliveries') {
     const m = await lazy.deliveries();

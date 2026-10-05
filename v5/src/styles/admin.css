@@ -9135,6 +9135,15 @@ label.collab-cell--peer {
   gap: 8px;
   flex-wrap: wrap;
 }
+.admin-modal-confirm-foot--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+.admin-modal-confirm-foot--stack .admin-drawer-btn {
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+}
 
 .skel-list {
   display: flex;

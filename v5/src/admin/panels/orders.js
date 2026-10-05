@@ -27,8 +27,6 @@ import {
   isEventPricingLocked,
   isPlanningSchemaMissing,
   listEventMenu,
-  listHousePrices,
-  listPriceYears,
   loadEventPricing,
   upsertEventMenuItem,
 } from '../../lib/planning-data.js';
@@ -121,8 +119,6 @@ export function mountOrdersPanel(route) {
     eventId: route.eventId,
     event: null,
     pricing: null,
-    year: null,
-    house: new Map(),
     items: new Map(),
     products: [],
     productById: new Map(),
@@ -149,8 +145,6 @@ export function mountOrdersPanel(route) {
     const product = ctx.productById.get(pid);
     const line = resolveMenuLine(item, {
       product,
-      house: ctx.house.get(pid),
-      year: ctx.year,
       event: ctx.pricing,
       caseSizes: ctx.caseSizes,
     });
@@ -862,10 +856,9 @@ export function mountOrdersPanel(route) {
   async function reload() {
     await flushSaves();
     const DB = getDB();
-    const [event, pricing, years, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries] = await Promise.all([
+    const [event, pricing, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries] = await Promise.all([
       loadEventLite(ctx.eventId),
       loadEventPricing(ctx.eventId),
-      listPriceYears(),
       listEventMenu(ctx.eventId),
       listPurchaseOrders(ctx.eventId),
       loadOrderBuffer(ctx.eventId),
@@ -879,7 +872,6 @@ export function mountOrdersPanel(route) {
     if (!event || !pricing) throw new Error('Event not found');
     ctx.event = event;
     ctx.pricing = pricing;
-    ctx.year = (years || []).find((y) => y.id === pricing.price_year_id) || null;
     ctx.items = new Map((items || []).map((i) => [i.product_id, i]));
     ctx.orders = orders || [];
     ctx.buffer = buffer;
@@ -891,9 +883,6 @@ export function mountOrdersPanel(route) {
     ctx.categories = categories || [];
     const hasLines = (deliveries || []).some((d) => (d.lines || []).length);
     ctx.countedIn = hasLines ? countedInFromDeliveries(deliveries, event.event_products, caseSizes) : null;
-    const house = await listHousePrices(pricing.price_year_id);
-    if (ctx.abort) return;
-    ctx.house = new Map((house || []).map((h) => [h.product_id, h]));
     recompute();
     const supplierIds = new Set(ctx.rows.map((r) => preferredSupplierId(ctx.productById.get(r.productId))).filter(Boolean));
     setTableFilterContext('orders', {

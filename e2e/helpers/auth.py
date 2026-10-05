@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 def base_url() -> str:
-    return (os.getenv("BASE_URL") or "https://localhost:5173").rstrip("/")
+    return (os.getenv("BASE_URL") or "http://localhost:5173").rstrip("/")
 
 
 def inject_cloud_config(page: "Page") -> None:

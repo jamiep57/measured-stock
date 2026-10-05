@@ -1,6 +1,6 @@
 /**
  * Planning → Export dialog: Designer, Client pack and Schedule of Rates as
- * PDF, Excel or CSV for the selected event and its price year. Every export
+ * PDF, Excel or CSV for the selected event menu. Every export
  * is written to the audit log; internal cost/GP columns are admin-only and
  * the export is refused if that audit write fails.
  */
@@ -78,7 +78,7 @@ export function openMenuExportDialog(ctx) {
         <div data-export-section="sor" hidden>
           <label class="admin-field"><span class="admin-label">Rates from</span>
             <select class="admin-select" id="planExportRate">${rateOpts}</select></label>
-          ${client ? '' : '<p class="muted plan-export-note">Set a client account in the settings bar to address the schedule and use rider rates.</p>'}
+          ${client ? '' : '<p class="muted plan-export-note">This event has no client account, so the schedule can’t be addressed and rider rates aren’t available.</p>'}
         </div>
         <p class="plan-export-summary" id="planExportSummary"></p>
         <p class="plan-form-err" id="planExportErr" hidden></p>
@@ -113,7 +113,6 @@ export function openMenuExportDialog(ctx) {
     const model = buildMenuExport(t, options());
     const bits = [
       `${model.count} item${model.count === 1 ? '' : 's'}`,
-      ctx.year?.label ? `price year ${ctx.year.label}` : 'no price year set',
       client ? `client ${client.name}` : null,
     ].filter(Boolean);
     let extra = '';
@@ -164,7 +163,6 @@ export function openMenuExportDialog(ctx) {
     const detail = {
       type: t,
       format,
-      price_year: ctx.year?.label || null,
       items: model.count,
       scenarios: opts.scenarioIds,
       rate_source: t === 'sor' ? opts.rateSource : null,
@@ -186,7 +184,7 @@ export function openMenuExportDialog(ctx) {
     }
 
     const spec = EXPORT_TYPES[t];
-    const stem = exportFileStem(t, ctx.event?.name, ctx.year?.label);
+    const stem = exportFileStem(t, ctx.event?.name);
     const rateNote = t === 'sor' && opts.rateSource === 'rider' ? riderNote : '';
     try {
       if (format === 'csv') {
@@ -199,7 +197,6 @@ export function openMenuExportDialog(ctx) {
           title: `${spec.title} — ${ctx.event?.name || 'Event'}`,
           meta: [
             client?.name,
-            ctx.year?.label ? `Price year ${ctx.year.label}` : null,
             `Prices in GBP inc VAT ${vatPct}%`,
             rateNote,
           ],
@@ -213,7 +210,6 @@ export function openMenuExportDialog(ctx) {
           type: t,
           model,
           event: ctx.event,
-          year: ctx.year,
           client: client ? { name: client.name, contact: primaryContact(client.account_contacts, 'account_manager') } : null,
           vatRate,
           rateNote,

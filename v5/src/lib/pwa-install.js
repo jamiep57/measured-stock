@@ -118,3 +118,20 @@ export function setupMeasuredPwaInstall() {
 export function setupKitCountPwaInstall() {
   setupMeasuredPwaInstall();
 }
+
+/**
+ * Drop service workers left over from the old `/v5` shell.
+ * Those workers answer failed localhost requests with a cached unstyled page.
+ * The current staff worker is scoped to `/app/` and is registered again on load.
+ */
+export function retireLegacyServiceWorkers() {
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker?.getRegistrations) return;
+  navigator.serviceWorker.getRegistrations()
+    .then((regs) => Promise.all(regs.map((reg) => {
+      let scopePath = '';
+      try { scopePath = new URL(reg.scope).pathname; } catch { /* drop it */ }
+      if (scopePath === '/app/') return null;
+      return reg.unregister();
+    })))
+    .catch(() => {});
+}

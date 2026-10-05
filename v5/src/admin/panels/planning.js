@@ -43,7 +43,6 @@ import {
   listSavedMenus,
   saveEventMenu,
   savedMenuProductCount,
-  seedEventMenu,
   setScenarioPrice,
   snapshotEventCosts,
   updateEventPricing,
@@ -606,33 +605,6 @@ export function mountPlanningPanel(route) {
 
   // ---------- toolbar actions ----------------------------------------
 
-  function openSeedDialog() {
-    if (locked()) { toast('Pricing is locked for this event', true); return; }
-    const el = openModal({
-      title: 'Add stock products',
-      bodyHtml: `
-        <p class="admin-modal-confirm-msg">Adds products already ordered or delivered for this event onto the menu. Items already on the menu keep their prices.</p>`,
-      footHtml: `
-        <div class="admin-modal-confirm-foot">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>Add products</button>
-        </div>`,
-    });
-    el.querySelector('[data-cancel]').onclick = closeModal;
-    el.querySelector('[data-ok]').onclick = async () => {
-      el.querySelector('[data-ok]').disabled = true;
-      try {
-        const added = await seedEventMenu(ctx.eventId, false);
-        closeModal();
-        await reload();
-        toast(`${Number(added) || 0} item${Number(added) === 1 ? '' : 's'} added`);
-      } catch (err) {
-        el.querySelector('[data-ok]').disabled = false;
-        toast(err.message || 'Seed failed', true);
-      }
-    };
-  }
-
   function openAddProduct() {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
     const available = ctx.products.filter((p) => !ctx.items.has(p.id) || ctx.items.get(p.id).included === false);
@@ -1017,7 +989,6 @@ export function mountPlanningPanel(route) {
     const handlers = {
       'plan-save-menu': () => { void openSaveMenu(); },
       'plan-apply-menu': () => { void openApplyMenu(); },
-      'plan-seed': openSeedDialog,
       'plan-add-product': openAddProduct,
       'plan-add-scenario': openAddScenario,
       'plan-costs': toggleCostLock,

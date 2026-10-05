@@ -704,11 +704,12 @@ export function mountReconPanel(route) {
 
           <div class="rcn-drawer-section">
             <div class="rcn-drawer-section-label">Prices</div>
+            <p class="muted rcn-drawer-meta">Blank uses the price captured for this event. Changing the library price does not change it.</p>
             <div class="admin-field-grid">
               <div class="admin-field">
                 <label class="admin-label" for="rcnDrawerCasePrice">Case override (£)</label>
                 <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="rcnDrawerCasePrice"
-                  value="${ep.order_price_override != null ? escapeHtml(String(ep.order_price_override)) : ''}" placeholder="From offer">
+                  value="${ep.order_price_override != null ? escapeHtml(String(ep.order_price_override)) : ''}" placeholder="Event price">
               </div>
               <div class="admin-field">
                 <label class="admin-label" for="rcnDrawerUnitPrice">Unit override (£)</label>

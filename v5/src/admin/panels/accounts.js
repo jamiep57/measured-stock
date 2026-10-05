@@ -17,7 +17,6 @@ import { navigate } from '../router.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues } from '../table-filter.js';
 import { parsePlanningNumber } from '../../lib/planning-menu.js';
-import { listPriceYears } from '../../lib/planning-data.js';
 import {
   AGREEMENT_STATUSES,
   CONTACT_ROLES,
@@ -101,7 +100,6 @@ export function mountAccountsPanel() {
     usage: null,
     agreements: [],
     events: [],
-    years: [],
     products: [],
     productById: new Map(),
     categories: [],
@@ -178,7 +176,7 @@ export function mountAccountsPanel() {
     const ev = events.length
       ? `<ul class="acct-links">${events.map((e) => `<li><button type="button" class="acct-link" data-event="${escapeHtml(e.id)}">${escapeHtml(e.name)}</button>
           <span class="muted">${escapeHtml(fmtDate(e.start_date))}${e.status ? ` · ${escapeHtml(e.status)}` : ''}</span></li>`).join('')}</ul>`
-      : '<p class="muted acct-none">Not the client on any event yet — set it from an event’s Menu &amp; GP page.</p>';
+      : '<p class="muted acct-none">Not the client on any event yet.</p>';
     const rc = recipients.length
       ? `<ul class="acct-links">${recipients.map((r) => `<li>${escapeHtml(r.event?.name || 'Event')}<span class="muted"> · ${escapeHtml(r.name)}${r.department ? ` (${escapeHtml(r.department)})` : ''}</span></li>`).join('')}</ul>`
       : '';
@@ -188,8 +186,7 @@ export function mountAccountsPanel() {
   function agreementHtml(ag) {
     const status = AGREEMENT_STATUSES.find((s) => s.value === ag.status)?.label || ag.status;
     const ev = ctx.events.find((e) => e.id === ag.event_id);
-    const year = ctx.years.find((y) => y.id === ag.price_year_id);
-    const scope = [ev ? ev.name : 'All events', year?.label, ag.valid_from || ag.valid_to
+    const scope = [ev ? ev.name : 'All events', ag.valid_from || ag.valid_to
       ? `${fmtDate(ag.valid_from) || '…'} – ${fmtDate(ag.valid_to) || '…'}` : null].filter(Boolean).join(' · ');
     const lines = (ag.rider_price_lines || []).slice().sort((x, y) =>
       (ctx.productById.get(x.product_id)?.name || '').localeCompare(ctx.productById.get(y.product_id)?.name || ''));
@@ -488,9 +485,6 @@ export function mountAccountsPanel() {
             <label class="admin-field"><span class="admin-label">Event</span>
               <select class="admin-select" id="agEvent"><option value="">All events</option>
                 ${ctx.events.map((e) => `<option value="${escapeHtml(e.id)}" ${ag?.event_id === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}</select></label>
-            <label class="admin-field"><span class="admin-label">Price year</span>
-              <select class="admin-select" id="agYear"><option value="">—</option>
-                ${ctx.years.map((y) => `<option value="${escapeHtml(y.id)}" ${ag?.price_year_id === y.id ? 'selected' : ''}>${escapeHtml(y.label)}</option>`).join('')}</select></label>
           </div>
           <div class="admin-field-grid">
             <label class="admin-field"><span class="admin-label">Valid from</span><input type="date" class="admin-input" id="agFrom" value="${f('valid_from')}"></label>
@@ -524,7 +518,6 @@ export function mountAccountsPanel() {
         name,
         reference: el.querySelector('#agRef').value.trim() || null,
         event_id: el.querySelector('#agEvent').value || null,
-        price_year_id: el.querySelector('#agYear').value || null,
         valid_from: from,
         valid_to: to,
         status: el.querySelector('#agStatus').value,
@@ -650,10 +643,9 @@ export function mountAccountsPanel() {
   }
 
   async function load() {
-    const [accounts, events, years, products, categories, caseSizes] = await Promise.all([
+    const [accounts, events, products, categories, caseSizes] = await Promise.all([
       listAccounts({ force: true }),
       getDB().select('events', '?select=id,name,start_date&order=start_date.desc.nullslast&limit=300'),
-      listPriceYears().catch(() => []),
       loadLibraryProducts(),
       loadCategories(),
       loadCaseSizes(),
@@ -661,7 +653,6 @@ export function mountAccountsPanel() {
     if (ctx.abort) return;
     ctx.accounts = accounts || [];
     ctx.events = events || [];
-    ctx.years = years || [];
     ctx.products = (products || []).filter((p) => !p.archived);
     ctx.productById = new Map((products || []).map((p) => [p.id, p]));
     ctx.categories = categories || [];

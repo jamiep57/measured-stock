@@ -108,10 +108,6 @@ export async function upsertEventMenuItem(eventId, productId, patch) {
   return rows?.[0] || null;
 }
 
-export function seedEventMenu(eventId, refreshPrices = false) {
-  return getDB().rpc('seed_event_menu', { p_event: eventId, p_refresh_prices: !!refreshPrices });
-}
-
 // ---------- saved menus ----------------------------------------------
 
 export function listSavedMenus() {

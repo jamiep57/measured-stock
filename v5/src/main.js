@@ -16,7 +16,7 @@ import { loadDbScript } from './lib/load-db.js';
 import { initSpreadsheetCells } from './lib/spreadsheet-cells.js';
 import { loadWarehousesList } from './lib/transfer-form.js';
 import { startKitCountApp } from './kit-count-app.js';
-import { setupMeasuredPwaInstall } from './lib/pwa-install.js';
+import { retireLegacyServiceWorkers, setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
 import { initAppMenu, closeAppDrawer } from './app-menu.js';
 import { ensureAppAuth } from './lib/auth.js';
@@ -629,6 +629,7 @@ async function boot() {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    retireLegacyServiceWorkers();
     navigator.serviceWorker.register('/sw.js', { scope: '/app/' }).catch((err) => {
       console.warn('SW registration failed', err);
     });

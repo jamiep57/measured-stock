@@ -1433,7 +1433,6 @@ export const bugsConfig = viewConfig({
 const PLANNING_COLUMN_OPTIONS = [
   { value: 'serve', label: 'Serves / unit' },
   { value: 'cost', label: 'Cost / serve' },
-  { value: 'house', label: 'House price' },
   { value: 'required', label: 'Required price' },
   { value: 'suggested', label: 'Suggested price' },
   { value: 'other', label: 'Other event price' },
@@ -1561,35 +1560,6 @@ export const ordersConfig = simpleEventConfig({
   },
 });
 
-export const priceYearsConfig = viewConfig({
-  id: 'price-years',
-  defaults: () => ({ priced: 'priced', category: '' }),
-  persist: { keys: ['priced'], storageKey: 'v5PriceYearsTableFilter' },
-  buildFilterSections(_state, context) {
-    const sections = [{
-      id: 'priced',
-      label: 'Products',
-      type: 'segment',
-      options: [
-        { value: 'priced', label: 'On house menu' },
-        { value: 'all', label: 'All products' },
-        { value: 'unpriced', label: 'Not priced' },
-      ],
-    }];
-    if (context.categories?.length) {
-      sections.push({
-        id: 'category',
-        label: 'Category',
-        type: 'radio',
-        scroll: true,
-        options: [{ value: '', label: 'All categories' }, ...context.categories.map((c) => ({ value: c, label: c }))],
-      });
-    }
-    return sections;
-  },
-  sortOptions: null,
-});
-
 const AUDIT_CHECKS = [
   { value: 'delivered_consistency', label: 'Delivered consistency' },
   { value: 'opening_identity', label: 'Opening identity' },
@@ -1639,7 +1609,6 @@ export const ALL_FILTER_CONFIGS = [
   distributionConfig,
   planningConfig,
   ordersConfig,
-  priceYearsConfig,
   reconConfig,
   closingConfig,
   salesConfig,

@@ -15,7 +15,13 @@ import {
 } from '../lib/volume-pools.js';
 import { syncRecipeIngredientsForProductRename } from '../lib/recipe-stock.js';
 import { parseQty } from '../stock-entry.js';
-import { confirmDialog } from '../components/modal.js';
+import { confirmDialog, openModal, closeModal } from '../components/modal.js';
+import {
+  eventsAffectedByPriceChange,
+  priceChangeCopy,
+  reconPriceChanged,
+  reconPricesFromOffers,
+} from '../lib/price-change-events.js';
 import { attachLwcNameSuggest } from '../components/lwc-catalog-search.js';
 import { mapCatalogHitToFields } from '../lib/supplier-catalogs.js';
 import {
@@ -45,6 +51,34 @@ function splitOfferPrice(price, unitsPerCase) {
   if (!Number.isFinite(n)) return { case_price: null, unit_price: null };
   const upc = Number(unitsPerCase) > 0 ? Number(unitsPerCase) : 1;
   return { case_price: n, unit_price: n / upc };
+}
+
+function askPriceChange(events) {
+  const copy = priceChangeCopy(events);
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      closeModal();
+      resolve(value);
+    };
+    const el = openModal({
+      title: 'Update price',
+      bodyHtml: `<p class="admin-modal-confirm-msg">${escapeHtml(copy.message)}</p>`,
+      footHtml: `
+        <div class="admin-modal-confirm-foot admin-modal-confirm-foot--stack">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-price-keep>${escapeHtml(copy.keepLabel)}</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-price-events>${escapeHtml(copy.applyLabel)}</button>
+          <button type="button" class="admin-drawer-btn" data-price-cancel>${escapeHtml(copy.cancelLabel)}</button>
+        </div>`,
+      onClose: () => settle('cancel'),
+    });
+    el?.querySelector('[data-price-keep]')?.addEventListener('click', () => settle('keep'));
+    el?.querySelector('[data-price-events]')?.addEventListener('click', () => settle('events'));
+    el?.querySelector('[data-price-cancel]')?.addEventListener('click', () => settle('cancel'));
+    requestAnimationFrame(() => el?.querySelector('[data-price-keep]')?.focus());
+  });
 }
 
 function caseSizeSummary(cs) {
@@ -517,13 +551,39 @@ export function openProductFormSheet(opts) {
       ...attrs.patch,
     };
 
+    const DB = getDB();
+    let eventIdsToReprice = [];
+    let nextPrices = null;
+    if (p?.id) {
+      const before = reconPricesFromOffers(p.product_suppliers, p.units_per_case);
+      nextPrices = reconPricesFromOffers(offers, patch.units_per_case, { fromForm: true });
+      if (reconPriceChanged(before, nextPrices)) {
+        let rows = [];
+        try {
+          rows = await DB.select(
+            'event_products',
+            '?product_id=eq.' + encodeURIComponent(p.id)
+              + '&select=id,case_price_snapshot,unit_price_snapshot,event:events(id,name,status)',
+          );
+        } catch (err) {
+          $('libErr').textContent = err.message || 'Could not check which events use this price.';
+          return;
+        }
+        const affected = eventsAffectedByPriceChange(rows || [], nextPrices);
+        if (affected.length) {
+          const choice = await askPriceChange(affected);
+          if (choice !== 'keep' && choice !== 'events') return;
+          if (choice === 'events') eventIdsToReprice = affected.map((ep) => ep.id);
+        }
+      }
+    }
+
     const btn = $('libSave');
     btn.disabled = true;
     const prevLabel = btn.textContent;
     btn.textContent = 'Saving…';
 
     try {
-      const DB = getDB();
       let productId = p?.id || null;
       const created = !productId;
       if (productId) {
@@ -548,6 +608,17 @@ export function openProductFormSheet(opts) {
         };
       }));
 
+      if (eventIdsToReprice.length && nextPrices) {
+        await DB.update(
+          'event_products',
+          'id=in.(' + eventIdsToReprice.join(',') + ')',
+          {
+            case_price_snapshot: nextPrices.casePrice,
+            unit_price_snapshot: nextPrices.unitPrice,
+          },
+        );
+      }
+
       if (eventContext && typeof eventContext.onSaveOrdered === 'function') {
         await eventContext.onSaveOrdered(qtyOrdered);
       }
@@ -565,7 +636,10 @@ export function openProductFormSheet(opts) {
 
       closeSheet();
       if (onSaved) await onSaved({ productId, created, product: savedProduct, qtyOrdered });
-      toast(created ? 'Product created' : 'Product updated');
+      const eventNote = eventIdsToReprice.length
+        ? ` · reconciliation updated on ${eventIdsToReprice.length} event${eventIdsToReprice.length === 1 ? '' : 's'}`
+        : '';
+      toast(created ? 'Product created' : `Product updated${eventNote}`);
     } catch (err) {
       $('libErr').textContent = err.message || 'Save failed';
     } finally {
