@@ -18,6 +18,7 @@ import { parseQty } from '../stock-entry.js';
 import { confirmDialog, openModal, closeModal } from '../components/modal.js';
 import {
   eventsAffectedByPriceChange,
+  openEventsUsingProduct,
   priceChangeCopy,
   reconPriceChanged,
   reconPricesFromOffers,
@@ -444,6 +445,83 @@ export function openProductFormSheet(opts) {
   };
   $('libCancel').onclick = closeSheet;
 
+  // Decided when the preferred price is clicked, then applied on save.
+  // null = not asked yet; 'keep' leaves event prices; 'events' pushes the new price.
+  let priceChoice = null;
+  let pricePrompting = false;
+  let eventPriceRows = null;
+  let eventPriceRowsPromise = null;
+
+  function loadEventPriceRows() {
+    if (!p?.id) return Promise.resolve([]);
+    if (eventPriceRows) return Promise.resolve(eventPriceRows);
+    if (!eventPriceRowsPromise) {
+      eventPriceRowsPromise = getDB().select(
+        'event_products',
+        '?product_id=eq.' + encodeURIComponent(p.id)
+          + '&select=id,case_price_snapshot,unit_price_snapshot,event:events(id,name,status)',
+      ).then((rows) => {
+        eventPriceRows = rows || [];
+        return eventPriceRows;
+      }).catch((err) => {
+        eventPriceRowsPromise = null;
+        throw err;
+      });
+    }
+    return eventPriceRowsPromise;
+  }
+
+  if (p?.id) loadEventPriceRows().catch(() => {});
+
+  function preferredPriceInput(input) {
+    const row = input.closest('.lib-offer-row');
+    return !!row?.querySelector('.lib-offer-pref input')?.checked;
+  }
+
+  function priceInputNeedsGuard(input) {
+    return !!(p?.id && input && !priceChoice && preferredPriceInput(input));
+  }
+
+  async function promptPriceChange(input) {
+    if (!priceInputNeedsGuard(input) || pricePrompting) return;
+    pricePrompting = true;
+    let rows = [];
+    try {
+      rows = await loadEventPriceRows();
+    } catch (err) {
+      pricePrompting = false;
+      $('libErr').textContent = err.message || 'Could not check which events use this price.';
+      return;
+    }
+    const openEvents = openEventsUsingProduct(rows);
+    if (!openEvents.length) {
+      priceChoice = 'keep';
+      pricePrompting = false;
+      input.focus();
+      return;
+    }
+    const choice = await askPriceChange(openEvents);
+    pricePrompting = false;
+    if (choice === 'keep' || choice === 'events') {
+      priceChoice = choice;
+      input.focus();
+    }
+  }
+
+  offersWrap?.addEventListener('pointerdown', (e) => {
+    const input = e.target instanceof Element ? e.target.closest('.lib-offer-price') : null;
+    if (!input || !priceInputNeedsGuard(input) || pricePrompting) return;
+    e.preventDefault();
+    void promptPriceChange(input);
+  });
+
+  offersWrap?.addEventListener('focusin', (e) => {
+    const input = e.target instanceof Element ? e.target.closest('.lib-offer-price') : null;
+    if (!input || !priceInputNeedsGuard(input)) return;
+    input.blur();
+    if (!pricePrompting) void promptPriceChange(input);
+  });
+
   function applyLwcHit(hit) {
     const mapped = mapCatalogHitToFields(hit, { categories, caseSizes, suppliers });
     if (mapped.name) $('libName').value = mapped.name;
@@ -554,27 +632,18 @@ export function openProductFormSheet(opts) {
     const DB = getDB();
     let eventIdsToReprice = [];
     let nextPrices = null;
-    if (p?.id) {
+    if (p?.id && priceChoice === 'events') {
       const before = reconPricesFromOffers(p.product_suppliers, p.units_per_case);
       nextPrices = reconPricesFromOffers(offers, patch.units_per_case, { fromForm: true });
       if (reconPriceChanged(before, nextPrices)) {
         let rows = [];
         try {
-          rows = await DB.select(
-            'event_products',
-            '?product_id=eq.' + encodeURIComponent(p.id)
-              + '&select=id,case_price_snapshot,unit_price_snapshot,event:events(id,name,status)',
-          );
+          rows = await loadEventPriceRows();
         } catch (err) {
           $('libErr').textContent = err.message || 'Could not check which events use this price.';
           return;
         }
-        const affected = eventsAffectedByPriceChange(rows || [], nextPrices);
-        if (affected.length) {
-          const choice = await askPriceChange(affected);
-          if (choice !== 'keep' && choice !== 'events') return;
-          if (choice === 'events') eventIdsToReprice = affected.map((ep) => ep.id);
-        }
+        eventIdsToReprice = eventsAffectedByPriceChange(rows || [], nextPrices).map((ep) => ep.id);
       }
     }
 

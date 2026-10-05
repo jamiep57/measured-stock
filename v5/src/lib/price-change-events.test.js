@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   eventsAffectedByPriceChange,
+  openEventsUsingProduct,
   priceChangeCopy,
   reconPriceChanged,
   reconPricesFromOffers,
@@ -18,6 +19,18 @@ describe('reconPricesFromOffers', () => {
     expect(reconPricesFromOffers([
       { is_preferred: true, case_price: 24, unit_price: 1 },
     ], 24)).toEqual({ casePrice: 24, unitPrice: 1 });
+  });
+});
+
+describe('openEventsUsingProduct', () => {
+  it('lists named events that are still open', () => {
+    const rows = openEventsUsingProduct([
+      { id: 'ep1', event: { name: 'Festival', status: 'active' } },
+      { id: 'ep2', event: { name: 'Warehouse', status: 'closing' } },
+      { id: 'ep3', event: { name: 'Old show', status: 'archived' } },
+      { id: 'ep4', event: { name: '', status: 'active' } },
+    ]);
+    expect(rows.map((r) => r.event.name)).toEqual(['Festival', 'Warehouse']);
   });
 });
 

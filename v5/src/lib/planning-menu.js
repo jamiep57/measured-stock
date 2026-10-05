@@ -99,6 +99,8 @@ export function resolveMenuLine(item, ctx = {}) {
     name: product?.name || '',
     menuName: menuNameOf(product),
     caseSize,
+    stockUnit: pack?.stockUnit || product?.stock_unit || null,
+    abv: num(product?.abv),
     category: product?.category?.name || 'Uncategorised',
     included: item?.included !== false,
     serveLabel: item?.serve_label || house?.serve_label || null,

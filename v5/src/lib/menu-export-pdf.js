@@ -24,8 +24,8 @@ function eventDates(event) {
 export async function generateMenuExportPDF({ type, model, event, client, vatRate, rateNote = '', preparedBy = null }) {
   if (!model.count) throw new Error('Nothing to export — no priced items on the event menu.');
   const spec = EXPORT_TYPES[type];
-  const wide = model.columns.length > 5;
-  const ctx = await createBrandDoc({ title: spec.title, orientation: wide ? 'landscape' : 'portrait' });
+  const orientation = type === 'designer' || model.columns.length > 5 ? 'landscape' : 'portrait';
+  const ctx = await createBrandDoc({ title: spec.title, orientation });
   ctx.continuationNote = event?.name || '';
   if (model.includeInternal) ctx.footerNote = 'INTERNAL — contains costs and GP. Not for distribution.';
 
@@ -69,7 +69,7 @@ export async function generateMenuExportPDF({ type, model, event, client, vatRat
   }
 
   const widths = {
-    menuName: 34, productName: 30, serve: 14, price: 12, rate: 14, mixPct: 10, costPerServe: 12, gpPct: 9,
+    menuName: 34, productName: 30, serve: 16, abv: 12, price: 12, rate: 14, mixPct: 10, costPerServe: 12, gpPct: 9,
   };
   const columns = model.columns.map((c) => ({
     label: c.label,

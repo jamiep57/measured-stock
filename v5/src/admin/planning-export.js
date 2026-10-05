@@ -57,7 +57,7 @@ export function openMenuExportDialog(ctx) {
               <input type="radio" name="planExportType" value="${key}" ${i === 0 ? 'checked' : ''}>
               <span class="plan-export-type-title">${escapeHtml(spec.label)}</span>
               <span class="plan-export-type-copy">${key === 'designer'
-                ? 'Menu names, products, categories and selling prices'
+                ? 'Landscape menu copy with names, serve sizes, ABV and prices'
                 : key === 'client' ? 'Product mix, menu prices and chosen scenarios' : 'Agreed products, units and rates — client-facing'}</span>
             </label>`).join('')}
         </div>
@@ -202,6 +202,7 @@ export function openMenuExportDialog(ctx) {
           ],
           notes: model.includeInternal ? ['INTERNAL — contains costs and GP. Not for distribution.'] : [],
           sheetName: spec.label,
+          orientation: t === 'designer' ? 'landscape' : 'portrait',
         });
         downloadBlob(`${stem}.xlsx`, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       } else {

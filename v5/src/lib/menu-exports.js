@@ -11,7 +11,7 @@ export const EXPORT_TYPES = {
   designer: {
     label: 'Designer',
     title: 'Menu copy',
-    fields: ['category', 'menuName', 'productName', 'serve', 'price'],
+    fields: ['category', 'menuName', 'productName', 'serve', 'abv', 'price'],
     allowInternal: false,
   },
   client: {
@@ -45,6 +45,31 @@ export function sanitizeRow(type, row, { includeInternal = false } = {}) {
 
 function round2(n) {
   return n == null || !Number.isFinite(Number(n)) ? null : Math.round(Number(n) * 100) / 100;
+}
+
+/** ABV for menu copy, e.g. 4.5 → "4.5%". Empty when the product has none. */
+export function formatAbv(value) {
+  if (value == null || value === '') return '';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return `${Math.round(n * 100) / 100}%`;
+}
+
+/**
+ * Serve printed on a designer menu. An explicit serve label wins; otherwise
+ * the unit in the pack (440ml, 330ml, 70cl). Draught packs are a pint.
+ */
+export function serveSizeOf(line) {
+  const explicit = String(line?.serveLabel || '').trim();
+  if (explicit) return explicit;
+  const label = String(line?.caseSize || '').trim();
+  const stockUnit = String(line?.stockUnit || '').toLowerCase();
+  if (stockUnit === 'keg' || /\b(keg|keykeg|cask)\b/i.test(label) || /\d\s*gal\b/i.test(label)) return 'Pint';
+  const sized = label.match(/[×x]\s*(\d+(?:\.\d+)?)\s*(ml|cl|l)\b/i)
+    || label.match(/(\d+(?:\.\d+)?)\s*(ml|cl|l)\b/i);
+  if (!sized) return '';
+  const unit = sized[2].toLowerCase() === 'l' ? 'L' : sized[2].toLowerCase();
+  return `${sized[1]}${unit}`;
 }
 
 /**
@@ -101,6 +126,8 @@ export function buildMenuExport(type, input) {
     if (type === 'designer' && price == null) missingRates += 1;
     const row = {
       ...base,
+      serve: type === 'designer' ? serveSizeOf(l) : base.serve,
+      abv: formatAbv(l.abv) || '—',
       price,
       mixPct: totalServes > 0 && l.projectedServes ? Math.round((Number(l.projectedServes) / totalServes) * 1000) / 10 : null,
       scenarios: Object.fromEntries(scenarios.map((s) => [s.id, scenarioPrice(s, l.productId)])),
@@ -113,7 +140,8 @@ export function buildMenuExport(type, input) {
   const columns = [];
   if (type === 'designer') {
     columns.push({ key: 'menuName', label: 'Menu name' }, { key: 'productName', label: 'Product' },
-      { key: 'serve', label: 'Serve' }, { key: 'price', label: 'Price', align: 'right', money: true });
+      { key: 'serve', label: 'Serve size' }, { key: 'abv', label: 'ABV' },
+      { key: 'price', label: 'Price', align: 'right', money: true });
   } else if (type === 'client') {
     columns.push({ key: 'menuName', label: 'Product' }, { key: 'serve', label: 'Serve' },
       { key: 'price', label: 'Menu price', align: 'right', money: true });

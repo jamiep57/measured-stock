@@ -21,6 +21,10 @@ function finishClose() {
   }
 }
 
+export function isModalOpen() {
+  return !!modalEl;
+}
+
 export function closeModal() {
   if (!modalEl) return;
   backdropEl?.classList.remove('admin-modal-backdrop--visible');

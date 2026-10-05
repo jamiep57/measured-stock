@@ -1,4 +1,5 @@
 import { $ } from '../lib/util.js';
+import { isModalOpen } from './modal.js';
 
 let closeHandler = null;
 let closeTimer = null;
@@ -110,6 +111,7 @@ export function openSheet({ title, bodyHtml, footHtml, onClose, variant }) {
 
   onKeyDown = (e) => {
     if (e.key === 'Escape') {
+      if (isModalOpen()) return;
       e.preventDefault();
       closeSheet();
       return;

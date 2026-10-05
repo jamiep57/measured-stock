@@ -53,6 +53,7 @@ describe('resolveMenuLine', () => {
     );
     expect(line.menuName).toBe('Utopian Premium British Lager');
     expect(line.caseSize).toBe('50L Keg');
+    expect(line.abv).toBeNull();
     expect(line.costPerServe).toBe(1);
     expect(line.targetGpPct).toBe(72);
     expect(line.gpPct).toBeCloseTo(80, 10);

@@ -28,5 +28,17 @@ describe('menu export xlsx', () => {
     expect(xml).not.toContain('1.23');
     expect(xml).not.toContain('77.8');
     expect(xml).not.toMatch(/GP %|COST/);
+    expect(xml).toContain('orientation="portrait"');
+  });
+  it('prints the designer sheet landscape with serve size and ABV', () => {
+    const model = buildMenuExport('designer', {
+      lines: [{ ...lines[0], abv: 4.6, caseSize: '24×330ml', serveLabel: '' }],
+    });
+    const xml = sheetXml(buildMenuExportXlsx({ model, title: 'Menu copy', orientation: 'landscape' }));
+    expect(xml).toContain('orientation="landscape"');
+    expect(xml).toContain('SERVE SIZE');
+    expect(xml).toContain('ABV');
+    expect(xml).toContain('330ml');
+    expect(xml).toContain('4.6%');
   });
 });

@@ -37,6 +37,14 @@ export function reconPriceChanged(before, after) {
     || !sameMoney(before?.unitPrice, after?.unitPrice);
 }
 
+/** Open events that carry this product. Archived events stay as filed. */
+export function openEventsUsingProduct(rows) {
+  return (rows || []).filter((ep) => {
+    const status = ep.event?.status;
+    return !!ep.event?.name && status !== 'archived';
+  }).sort((a, b) => a.event.name.localeCompare(b.event.name));
+}
+
 /** Events whose captured recon price is not already the new library price. Archived events stay as filed. */
 export function eventsAffectedByPriceChange(rows, next) {
   return (rows || []).filter((ep) => {

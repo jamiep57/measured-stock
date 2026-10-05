@@ -28,6 +28,13 @@ import {
   scenarioGp,
 } from '../../lib/planning-menu.js';
 import {
+  movePlanningColumn,
+  readPlanningColumnOrder,
+  reconcilePlanningColumnOrder,
+  scenarioColumnId,
+  writePlanningColumnOrder,
+} from '../../lib/planning-columns.js';
+import {
   clearEventCostSnapshots,
   createScenario,
   deleteScenario,
@@ -133,6 +140,7 @@ export function mountPlanningPanel(route) {
     saveTimers: {},
     accounts: null,
     clientAccountId: null,
+    columnOrder: readPlanningColumnOrder(typeof localStorage === 'undefined' ? null : localStorage),
     abort: false,
   };
 
@@ -205,49 +213,122 @@ export function mountPlanningPanel(route) {
       aria-label="${escapeHtml(label)}" ${dis}>`;
   }
 
-  function th(label, title = '', cls = '') {
-    return `<th class="dist-th plan-th ${cls}" title="${escapeHtml(title || label)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(label)}</span></div></th>`;
+  function columnShown(id) {
+    if (id.startsWith('scenario:')) return colOn('scenarios');
+    if (id === 'gp-amount') return colOn('revenue');
+    if (id === 'deal-ref') return colOn('deal');
+    if (id === 'menu' || id === 'target' || id === 'gp') return true;
+    return colOn(id);
   }
 
-  function renderHead() {
-    let html = `<tr>
-      <th class="dist-th dist-sticky plan-col-product" title="Product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div></th>`;
-    if (colOn('serve')) html += th('Serves', 'Serves per stock unit (e.g. 88 pints per keg)');
-    if (colOn('cost')) html += th('Cost', 'Cost per serve (ex VAT)');
-    html += th('Menu £', 'Event menu price inc VAT', 'plan-th--key');
-    html += th('Target', 'Target GP %');
-    if (colOn('required')) html += th('Required', 'Price inc VAT needed to hit the target GP — click to use');
-    if (colOn('suggested')) html += th('Suggested', 'Suggested selling price (defaults to required)');
-    html += th('GP', 'Projected GP % at the menu price', 'plan-th--key');
-    if (colOn('scenarios')) {
-      ctx.scenarios.forEach((s) => {
-        html += `<th class="dist-th plan-th plan-th--scenario" title="Scenario — click to edit">
+  function fullColumnOrder() {
+    return reconcilePlanningColumnOrder(ctx.columnOrder, ctx.scenarios.map((s) => s.id));
+  }
+
+  function shownColumnIds() {
+    return fullColumnOrder().filter(columnShown);
+  }
+
+  function th(id, label, title = '', cls = '') {
+    const hint = title || label;
+    return `<th class="dist-th plan-th plan-th--move ${cls}" data-col="${escapeHtml(id)}" title="${escapeHtml(`${hint}. Drag to reorder`)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(label)}</span></div></th>`;
+  }
+
+  function columnHead(id) {
+    if (id === 'serve') return th(id, 'Serves', 'Serves per stock unit (e.g. 88 pints per keg)');
+    if (id === 'cost') return th(id, 'Cost', 'Cost per serve (ex VAT)');
+    if (id === 'menu') return th(id, 'Menu £', 'Event menu price inc VAT', 'plan-th--key');
+    if (id === 'target') return th(id, 'Target', 'Target GP %');
+    if (id === 'required') return th(id, 'Required', 'Price inc VAT needed to hit the target GP — click to use');
+    if (id === 'suggested') return th(id, 'Suggested', 'Suggested selling price (defaults to required)');
+    if (id === 'gp') return th(id, 'GP', 'Projected GP % at the menu price', 'plan-th--key');
+    if (id === 'serves') return th(id, 'Serves', 'Projected serves for the event');
+    if (id === 'revenue') return th(id, 'Revenue', 'Projected revenue inc VAT');
+    if (id === 'gp-amount') return th(id, 'GP £', 'Projected GP £ (ex VAT)');
+    if (id === 'deal') return th(id, 'Deal cost', 'Agreed deal cost per stock unit — replaces the supplier cost');
+    if (id === 'deal-ref') return th(id, 'Deal ref', 'Deal or agreement reference');
+    if (id.startsWith('scenario:')) {
+      const s = ctx.scenarios.find((x) => scenarioColumnId(x.id) === id);
+      if (!s) return '';
+      return `<th class="dist-th plan-th plan-th--move plan-th--scenario" data-col="${escapeHtml(id)}" title="Drag to reorder. Click the name to edit.">
           <button type="button" class="plan-scenario-head" data-scenario-edit="${escapeHtml(s.id)}">
             <span class="dist-bar-name">${escapeHtml(s.name)}</span>
             ${s.client_visible ? '<span class="dist-bar-tag">Client</span>' : ''}
           </button>
         </th>`;
-      });
     }
-    if (colOn('serves')) html += th('Serves', 'Projected serves for the event');
-    if (colOn('revenue')) {
-      html += th('Revenue', 'Projected revenue inc VAT');
-      html += th('GP £', 'Projected GP £ (ex VAT)');
-    }
-    if (colOn('deal')) {
-      html += th('Deal cost', 'Agreed deal cost per stock unit — replaces the supplier cost');
-      html += th('Deal ref', 'Deal or agreement reference');
-    }
-    return `${html}</tr>`;
+    return '';
+  }
+
+  function renderHead() {
+    const cells = shownColumnIds().map(columnHead).join('');
+    return `<tr>
+      <th class="dist-th dist-sticky plan-col-product" data-col="product" title="Product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div></th>
+      ${cells}</tr>`;
   }
 
   function colCount() {
-    let n = 4;
-    ['serve', 'cost', 'required', 'suggested', 'serves'].forEach((k) => { if (colOn(k)) n += 1; });
-    if (colOn('scenarios')) n += ctx.scenarios.length;
-    if (colOn('revenue')) n += 2;
-    if (colOn('deal')) n += 2;
-    return n;
+    return 1 + shownColumnIds().length;
+  }
+
+  function columnCell(id, line, item) {
+    const dis = locked() ? 'disabled' : '';
+    if (id === 'serve') {
+      return `<td class="plan-cell">${cellInput('serves_per_unit', item.serves_per_unit, { placeholder: line.servesPerUnit ?? '', label: 'Serves per unit', width: 'sm' })}</td>`;
+    }
+    if (id === 'cost') {
+      return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(`${costSourceLabel(line.costSource)} · ${money(line.unitCost)} per unit`)}">
+        ${money(line.costPerServe)}${line.costSource === 'locked' ? ` <span class="plan-lock">${icon('lock', { size: 11 })}</span>` : ''}
+      </td>`;
+    }
+    if (id === 'menu') {
+      return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
+    }
+    if (id === 'target') {
+      return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm' })}</td>`;
+    }
+    if (id === 'required') {
+      return `<td class="plan-cell plan-out" data-out="required">${line.requiredPrice != null && !locked()
+        ? `<button type="button" class="plan-use-price" data-use-price="${line.requiredPrice}" title="Use as menu price">${money(line.requiredPrice)}</button>`
+        : money(line.requiredPrice)}</td>`;
+    }
+    if (id === 'suggested') {
+      return `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '', label: 'Suggested price' })}</td>`;
+    }
+    if (id === 'gp') {
+      return `<td class="plan-cell plan-cell--key plan-out" data-out="gp">${gpBadge(line.gpPct, line.status)}</td>`;
+    }
+    if (id.startsWith('scenario:')) {
+      const s = ctx.scenarios.find((x) => scenarioColumnId(x.id) === id);
+      if (!s) return '';
+      const price = scenarioPrice(s, line.productId);
+      const sg = scenarioGp(line, price);
+      return `<td class="plan-cell plan-cell--scenario" data-scenario="${escapeHtml(s.id)}">
+          <div class="plan-scenario-cell">
+            <input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input"
+              data-scenario-price="${escapeHtml(s.id)}" value="${escapeHtml(inputValue(price))}"
+              aria-label="${escapeHtml(s.name)} price" ${dis}>
+            <span class="plan-scenario-gp ${statusClass(sg.status)}" data-out="scenario-gp">${escapeHtml(formatGpPct(sg.gpPct))}</span>
+          </div>
+        </td>`;
+    }
+    if (id === 'serves') {
+      return `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Projected serves' })}</td>`;
+    }
+    if (id === 'revenue') {
+      return `<td class="plan-cell plan-out" data-out="revenue">${money(line.revenueGross, 0)}</td>`;
+    }
+    if (id === 'gp-amount') {
+      return `<td class="plan-cell plan-out" data-out="gp-amount">${money(line.gpAmount, 0)}</td>`;
+    }
+    if (id === 'deal') {
+      const live = liveUnitCost(ctx.productById.get(line.productId));
+      return `<td class="plan-cell">${cellInput('unit_cost_override', item.unit_cost_override, { placeholder: live != null ? live.toFixed(2) : '', label: 'Deal cost per unit' })}</td>`;
+    }
+    if (id === 'deal-ref') {
+      return `<td class="plan-cell plan-cell--text">${cellInput('deal_ref', item.deal_ref, { text: true, placeholder: 'Ref', label: 'Deal reference' })}</td>`;
+    }
+    return '';
   }
 
   function renderRow(line) {
@@ -258,7 +339,8 @@ export function mountPlanningPanel(route) {
       ? `<span class="dist-item-meta">${escapeHtml(line.caseSize)}</span>` : '';
     const menuMeta = line.menuName && line.menuName !== line.name
       ? `<span class="dist-item-meta">${escapeHtml(line.menuName)}</span>` : '';
-    let html = `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}" data-pid="${escapeHtml(pid)}">
+    const cells = shownColumnIds().map((id) => columnCell(id, line, item)).join('');
+    return `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}" data-pid="${escapeHtml(pid)}">
       <th class="dist-sticky plan-col-product" scope="row">
         <div class="plan-item">
           <input type="checkbox" class="plan-include" data-field="included" ${line.included ? 'checked' : ''} ${dis}
@@ -269,53 +351,7 @@ export function mountPlanningPanel(route) {
             ${menuMeta}
           </div>
         </div>
-      </th>`;
-    if (colOn('serve')) {
-      html += `<td class="plan-cell">${cellInput('serves_per_unit', item.serves_per_unit, { placeholder: line.servesPerUnit ?? '', label: 'Serves per unit', width: 'sm' })}</td>`;
-    }
-    if (colOn('cost')) {
-      html += `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(`${costSourceLabel(line.costSource)} · ${money(line.unitCost)} per unit`)}">
-        ${money(line.costPerServe)}${line.costSource === 'locked' ? ` <span class="plan-lock">${icon('lock', { size: 11 })}</span>` : ''}
-      </td>`;
-    }
-    html += `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
-    html += `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm' })}</td>`;
-    if (colOn('required')) {
-      html += `<td class="plan-cell plan-out" data-out="required">${line.requiredPrice != null && !locked()
-        ? `<button type="button" class="plan-use-price" data-use-price="${line.requiredPrice}" title="Use as menu price">${money(line.requiredPrice)}</button>`
-        : money(line.requiredPrice)}</td>`;
-    }
-    if (colOn('suggested')) {
-      html += `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '', label: 'Suggested price' })}</td>`;
-    }
-    html += `<td class="plan-cell plan-cell--key plan-out" data-out="gp">${gpBadge(line.gpPct, line.status)}</td>`;
-    if (colOn('scenarios')) {
-      ctx.scenarios.forEach((s) => {
-        const price = scenarioPrice(s, pid);
-        const sg = scenarioGp(line, price);
-        html += `<td class="plan-cell plan-cell--scenario" data-scenario="${escapeHtml(s.id)}">
-          <div class="plan-scenario-cell">
-            <input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input"
-              data-scenario-price="${escapeHtml(s.id)}" value="${escapeHtml(inputValue(price))}"
-              aria-label="${escapeHtml(s.name)} price" ${dis}>
-            <span class="plan-scenario-gp ${statusClass(sg.status)}" data-out="scenario-gp">${escapeHtml(formatGpPct(sg.gpPct))}</span>
-          </div>
-        </td>`;
-      });
-    }
-    if (colOn('serves')) {
-      html += `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Projected serves' })}</td>`;
-    }
-    if (colOn('revenue')) {
-      html += `<td class="plan-cell plan-out" data-out="revenue">${money(line.revenueGross, 0)}</td>`;
-      html += `<td class="plan-cell plan-out" data-out="gp-amount">${money(line.gpAmount, 0)}</td>`;
-    }
-    if (colOn('deal')) {
-      const live = liveUnitCost(ctx.productById.get(pid));
-      html += `<td class="plan-cell">${cellInput('unit_cost_override', item.unit_cost_override, { placeholder: live != null ? live.toFixed(2) : '', label: 'Deal cost per unit' })}</td>`;
-      html += `<td class="plan-cell plan-cell--text">${cellInput('deal_ref', item.deal_ref, { text: true, placeholder: 'Ref', label: 'Deal reference' })}</td>`;
-    }
-    return `${html}</tr>`;
+      </th>${cells}</tr>`;
   }
 
   function renderBody() {
@@ -567,7 +603,142 @@ export function mountPlanningPanel(route) {
     paintGrid();
   }
 
+  let colDrag = null;
+  let suppressHeaderClick = false;
+
+  function sameOrder(a, b) {
+    return a.length === b.length && a.every((id, i) => id === b[i]);
+  }
+
+  function clearColumnDragMarks() {
+    panel.querySelectorAll('.plan-th--drop-before, .plan-th--drop-after, .plan-th--dragging').forEach((el) => {
+      el.classList.remove('plan-th--drop-before', 'plan-th--drop-after', 'plan-th--dragging');
+    });
+  }
+
+  function headerAt(clientX, clientY) {
+    const wrap = panel.querySelector('.plan-grid-wrap');
+    if (!wrap) return null;
+    const rect = wrap.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+    const headers = [...panel.querySelectorAll('#planHead th[data-col]')];
+    const product = headers.find((el) => el.dataset.col === 'product');
+    const productRight = product ? product.getBoundingClientRect().right : rect.left;
+    let match = null;
+    headers.forEach((thEl) => {
+      const box = thEl.getBoundingClientRect();
+      const left = thEl.dataset.col === 'product' ? box.left : Math.max(box.left, productRight);
+      if (clientX >= left && clientX <= box.right && box.right > left) match = thEl;
+    });
+    return match;
+  }
+
+  function markColumnDrop(clientX, clientY) {
+    panel.querySelectorAll('.plan-th--drop-before, .plan-th--drop-after').forEach((el) => {
+      el.classList.remove('plan-th--drop-before', 'plan-th--drop-after');
+    });
+    colDrag.overId = null;
+    colDrag.place = null;
+    const hit = headerAt(clientX, clientY);
+    if (!hit || hit.dataset.col === colDrag.id) return;
+    if (hit.dataset.col === 'product') {
+      hit.classList.add('plan-th--drop-after');
+      colDrag.overId = 'product';
+      colDrag.place = 'before';
+      return;
+    }
+    const box = hit.getBoundingClientRect();
+    const after = clientX > box.left + box.width / 2;
+    hit.classList.add(after ? 'plan-th--drop-after' : 'plan-th--drop-before');
+    colDrag.overId = hit.dataset.col;
+    colDrag.place = after ? 'after' : 'before';
+  }
+
+  function applyColumnMove(fromId, toId, place) {
+    const order = fullColumnOrder();
+    let target = toId;
+    let where = place;
+    if (toId === 'product') {
+      target = order.find((id) => id !== fromId && columnShown(id));
+      where = 'before';
+    }
+    if (!target) return;
+    const next = movePlanningColumn(order, fromId, target, where);
+    if (sameOrder(order, next)) return;
+    ctx.columnOrder = next;
+    writePlanningColumnOrder(typeof localStorage === 'undefined' ? null : localStorage, next);
+    paintGrid();
+  }
+
+  function onColPointerDown(e) {
+    if (e.button !== 0) return;
+    const thEl = e.target.closest('#planHead th[data-col]');
+    if (!thEl || thEl.dataset.col === 'product') return;
+    colDrag = {
+      id: thEl.dataset.col,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      x: e.clientX,
+      y: e.clientY,
+      active: false,
+      th: thEl,
+      overId: null,
+      place: null,
+      raf: 0,
+    };
+  }
+
+  function onColPointerMove(e) {
+    if (!colDrag || e.pointerId !== colDrag.pointerId) return;
+    colDrag.x = e.clientX;
+    colDrag.y = e.clientY;
+    if (!colDrag.active) {
+      const dx = e.clientX - colDrag.startX;
+      const dy = e.clientY - colDrag.startY;
+      if (dx * dx + dy * dy < 25) return;
+      colDrag.active = true;
+      colDrag.th.classList.add('plan-th--dragging');
+      panel.classList.add('plan-col-dragging');
+      try { colDrag.th.setPointerCapture(e.pointerId); } catch { /* already released */ }
+      const step = () => {
+        if (!colDrag?.active) return;
+        const wrap = panel.querySelector('.plan-grid-wrap');
+        if (wrap) {
+          const rect = wrap.getBoundingClientRect();
+          if (colDrag.x < rect.left + 56) wrap.scrollLeft -= 14;
+          else if (colDrag.x > rect.right - 56) wrap.scrollLeft += 14;
+        }
+        markColumnDrop(colDrag.x, colDrag.y);
+        colDrag.raf = requestAnimationFrame(step);
+      };
+      colDrag.raf = requestAnimationFrame(step);
+    }
+    markColumnDrop(colDrag.x, colDrag.y);
+    e.preventDefault();
+  }
+
+  function endColDrag(e) {
+    if (!colDrag || e.pointerId !== colDrag.pointerId) return;
+    if (colDrag.active) markColumnDrop(colDrag.x, colDrag.y);
+    const drag = colDrag;
+    colDrag = null;
+    if (drag.raf) cancelAnimationFrame(drag.raf);
+    panel.classList.remove('plan-col-dragging');
+    try { drag.th.releasePointerCapture(drag.pointerId); } catch { /* not captured */ }
+    clearColumnDragMarks();
+    if (!drag.active) return;
+    suppressHeaderClick = true;
+    setTimeout(() => { suppressHeaderClick = false; }, 400);
+    if (e.type === 'pointercancel' || !drag.overId || !drag.place) return;
+    applyColumnMove(drag.id, drag.overId, drag.place);
+  }
+
   function onPanelClick(e) {
+    if (suppressHeaderClick) {
+      suppressHeaderClick = false;
+      return;
+    }
     if (e.target.closest('[data-add-product]')) {
       openAddProduct();
       return;
@@ -1076,6 +1247,10 @@ export function mountPlanningPanel(route) {
     if (!e.target.closest('#planSettings')) void onGridChange(e);
   });
   panel.addEventListener('click', onPanelClick);
+  panel.addEventListener('pointerdown', onColPointerDown);
+  document.addEventListener('pointermove', onColPointerMove, { passive: false });
+  document.addEventListener('pointerup', endColDrag);
+  document.addEventListener('pointercancel', endColDrag);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
@@ -1085,7 +1260,14 @@ export function mountPlanningPanel(route) {
   return () => {
     ctx.abort = true;
     void flushSaves();
+    if (colDrag?.raf) cancelAnimationFrame(colDrag.raf);
+    colDrag = null;
+    panel.classList.remove('plan-col-dragging');
     panel.removeEventListener('click', onPanelClick);
+    panel.removeEventListener('pointerdown', onColPointerDown);
+    document.removeEventListener('pointermove', onColPointerMove);
+    document.removeEventListener('pointerup', endColDrag);
+    document.removeEventListener('pointercancel', endColDrag);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);

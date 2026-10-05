@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMenuExport, cellValue, menuExportCsv, sanitizeRow, INTERNAL_FIELDS } from './menu-exports.js';
+import { buildMenuExport, cellValue, menuExportCsv, sanitizeRow, serveSizeOf, INTERNAL_FIELDS } from './menu-exports.js';
 
 const lines = [
   { productId: 'p1', name: 'Camden Hells 50L', menuName: 'Camden Hells', category: 'Draught', included: true, serveLabel: 'Pint', menuPrice: 6.5, projectedServes: 300, costPerServe: 1.2, gpPct: 77.8 },
@@ -37,11 +37,33 @@ describe('field whitelisting', () => {
   });
 });
 
+describe('serve size', () => {
+  it('uses the pack unit, and a pint for draught', () => {
+    expect(serveSizeOf({ caseSize: '12×440ml Cans' })).toBe('440ml');
+    expect(serveSizeOf({ caseSize: '24×330ml' })).toBe('330ml');
+    expect(serveSizeOf({ caseSize: '70cl' })).toBe('70cl');
+    expect(serveSizeOf({ caseSize: '50L Keg' })).toBe('Pint');
+    expect(serveSizeOf({ caseSize: '9 Gal', stockUnit: 'keg' })).toBe('Pint');
+    expect(serveSizeOf({ serveLabel: '175ml', caseSize: '750ml' })).toBe('175ml');
+  });
+});
+
 describe('designer export', () => {
-  it('lists on-menu items by category with menu names and prices', () => {
-    const m = buildMenuExport('designer', { lines });
+  it('lists on-menu items by category with menu names, serve sizes, ABV and prices', () => {
+    const withPack = [
+      { ...lines[0], abv: 4.6, caseSize: '50L Keg', stockUnit: 'keg' },
+      { ...lines[1], serveLabel: '', abv: 5.5, caseSize: '12×440ml Cans' },
+      lines[2],
+      lines[3],
+    ];
+    const m = buildMenuExport('designer', { lines: withPack });
+    expect(m.columns.map((c) => c.label)).toEqual(['Menu name', 'Product', 'Serve size', 'ABV', 'Price']);
     expect(m.groups.map((g) => g.category)).toEqual(['Draught', 'Wine']);
     expect(m.groups[0].rows.map((r) => r.menuName)).toEqual(['Aspall Cider', 'Camden Hells']);
+    const byName = Object.fromEntries(m.groups[0].rows.map((r) => [r.menuName, r]));
+    expect(byName['Camden Hells']).toMatchObject({ serve: 'Pint', abv: '4.6%' });
+    expect(byName['Aspall Cider']).toMatchObject({ serve: '440ml', abv: '5.5%' });
+    expect(m.groups[1].rows[0]).toMatchObject({ serve: '175ml', abv: '—' });
     expect(m.count).toBe(3);
     expect(m.missingRates).toBe(1);
   });

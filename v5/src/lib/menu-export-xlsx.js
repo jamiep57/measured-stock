@@ -79,7 +79,7 @@ function number(ref, value, style) {
  * @param {{ model, title: string, meta: string[], notes?: string[], sheetName?: string }} input
  * @returns {Uint8Array}
  */
-export function buildMenuExportXlsx({ model, title, meta = [], notes = [], sheetName = 'Menu' }) {
+export function buildMenuExportXlsx({ model, title, meta = [], notes = [], sheetName = 'Menu', orientation = 'portrait' }) {
   const cols = model.columns;
   const last = colRef(cols.length - 1);
   const out = [];
@@ -114,7 +114,9 @@ export function buildMenuExportXlsx({ model, title, meta = [], notes = [], sheet
     r += 1;
   });
 
-  const widths = cols.map((c) => (c.key === 'menuName' || c.key === 'productName' ? 36 : c.key === 'serve' ? 14 : 14));
+  const widths = cols.map((c) => (
+    c.key === 'menuName' || c.key === 'productName' ? 36 : c.key === 'serve' ? 16 : c.key === 'abv' ? 12 : 14
+  ));
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${headRow}" topLeftCell="A${headRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
@@ -123,7 +125,7 @@ export function buildMenuExportXlsx({ model, title, meta = [], notes = [], sheet
   <sheetData>${out.join('')}</sheetData>
   <mergeCells count="${merges.length}">${merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>
   <pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
-  <pageSetup orientation="portrait" fitToWidth="1" fitToHeight="0"/>
+  <pageSetup orientation="${orientation === 'landscape' ? 'landscape' : 'portrait'}" fitToWidth="1" fitToHeight="0"/>
 </worksheet>`;
 
   const safeSheet = xmlEscape(String(sheetName).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Menu');
