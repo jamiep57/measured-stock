@@ -10,7 +10,7 @@ import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
-import { loadCaseSizes, loadLibraryProducts, loadCategories } from '../../db.js';
+import { loadCaseSizes, loadLibraryProducts, loadCategories, loadServeSizes } from '../../db.js';
 import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
@@ -83,6 +83,8 @@ import {
   patchEventMenuItems,
 } from '../../lib/planning-data.js';
 import { baseMenuItem, portionOf, serveKey, SHARED_MENU_FIELDS } from '../../lib/menu-serves.js';
+import { createServeSize, mergeServeSize, portionForSize } from '../../lib/serve-sizes.js';
+import { closeServeSizeMenu, openServeSizeMenu } from '../serve-size-menu.js';
 
 const SAVE_DEBOUNCE_MS = 450;
 
@@ -169,6 +171,7 @@ export function mountPlanningPanel(route) {
     productById: new Map(),
     categories: [],
     caseSizes: [],
+    serveSizes: [],
     scenarios: [],
     lines: new Map(),
     filter: getTableFilterValues('planning') || {},
@@ -397,6 +400,13 @@ export function mountPlanningPanel(route) {
     return `<button type="button" class="plan-row-menu" data-row-menu aria-haspopup="menu" aria-label="Actions for ${escapeHtml(name)}">${icon('ellipsis', { size: 14 })}</button>`;
   }
 
+  function sizeButton(label, { placeholder = 'Size', empty = false } = {}) {
+    const shown = String(label || '').trim();
+    const text = shown || placeholder;
+    const dis = locked() ? 'disabled' : '';
+    return `<button type="button" class="plan-size-btn${shown && !empty ? '' : ' is-empty'}" data-size-pick ${dis} aria-haspopup="listbox" aria-label="Serve size"><span>${escapeHtml(text)}</span></button>`;
+  }
+
   function sizeCell(line, item) {
     const typed = String(item?.serve_label || '').trim();
     const shown = typed || suggestedServeSize(line);
@@ -404,7 +414,7 @@ export function mountPlanningPanel(route) {
     const portionInput = portion !== 1
       ? cellInput('portion', item.portion, { label: 'Share of one serve', width: 'sm' })
       : '';
-    const serve = cellInput('serve_label', shown, { text: true, placeholder: 'Pint', label: 'Serve size', width: 'size' });
+    const serve = sizeButton(shown, { empty: !shown });
     const body = portionInput ? `<div class="plan-size-split">${serve}${portionInput}</div>` : serve;
     return `<td class="plan-cell">${body}</td>`;
   }
@@ -478,7 +488,7 @@ export function mountPlanningPanel(route) {
 
   function cocktailColumnCell(id, line, item) {
     if (id === 'size') {
-      return `<td class="plan-cell">${cellInput('serve_label', item.serve_label, { text: true, placeholder: 'Serve', label: 'Serve size', width: 'size' })}</td>`;
+      return `<td class="plan-cell">${sizeButton(item.serve_label, { placeholder: 'Serve', empty: !String(item.serve_label || '').trim() })}</td>`;
     }
     if (id === 'serve') {
       return '<td class="plan-cell"></td>';
@@ -698,6 +708,7 @@ export function mountPlanningPanel(route) {
 
   function paintGrid() {
     closePlanningContextMenu();
+    closeServeSizeMenu();
     const head = $('planHead');
     const body = $('planBody');
     if (!head || !body) { paint(); return; }
@@ -752,6 +763,13 @@ export function mountPlanningPanel(route) {
       if (sugInput) sugInput.placeholder = line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '';
       const tgtInput = row.querySelector('[data-field="target_gp_pct"]');
       if (tgtInput) tgtInput.placeholder = line.targetGpPct != null ? String(line.targetGpPct) : '';
+      const sizeBtn = row.querySelector('[data-size-pick]');
+      if (sizeBtn) {
+        const label = line.serveLabel || suggestedServeSize(line) || '';
+        sizeBtn.classList.toggle('is-empty', !label);
+        const span = sizeBtn.querySelector('span');
+        if (span) span.textContent = label || 'Size';
+      }
     }
     if (line) refreshCocktailsUsing(line.productId);
     paintKpis();
@@ -780,6 +798,13 @@ export function mountPlanningPanel(route) {
       if (sugInput) sugInput.placeholder = line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '';
       const tgtInput = row.querySelector('[data-field="target_gp_pct"]');
       if (tgtInput) tgtInput.placeholder = line.targetGpPct != null ? String(line.targetGpPct) : '';
+      const sizeBtn = row.querySelector('[data-size-pick]');
+      if (sizeBtn) {
+        const label = String(cocktail.serve_label || '').trim();
+        sizeBtn.classList.toggle('is-empty', !label);
+        const span = sizeBtn.querySelector('span');
+        if (span) span.textContent = label || 'Serve';
+      }
       row.querySelectorAll('.plan-cell--scenario .plan-scenario-gp').forEach((el) => {
         el.textContent = formatGpPct(line.gpPct);
         el.className = `plan-scenario-gp ${statusClass(line.status)}`;
@@ -1105,6 +1130,8 @@ export function mountPlanningPanel(route) {
     if (colId === 'product') return line.name || '';
     const cell = row.querySelector(`[data-col="${CSS.escape(colId)}"]`);
     if (!cell) return '';
+    const sizeBtn = cell.querySelector('[data-size-pick]');
+    if (sizeBtn) return sizeBtn.classList.contains('is-empty') ? '' : sizeBtn.textContent.trim();
     const input = cell.querySelector('input');
     if (input) return input.value.trim();
     return cell.textContent.replace(/\s+/g, ' ').trim();
@@ -1131,6 +1158,15 @@ export function mountPlanningPanel(route) {
       text = String(await navigator.clipboard.readText()).trim();
     } catch {
       toast('Couldn’t read the clipboard', true);
+      return;
+    }
+    if (colId === 'size') {
+      try {
+        const name = await addGlobalServeSize(text);
+        await chooseServeSize(row, name);
+      } catch (err) {
+        toast(err.message || 'Could not set that size', true);
+      }
       return;
     }
     const input = row.querySelector(`[data-col="${CSS.escape(colId)}"] input`);
@@ -1313,6 +1349,45 @@ export function mountPlanningPanel(route) {
     openRowMenu(row, colId, e.clientX, e.clientY, 'cell', null);
   }
 
+  async function addGlobalServeSize(label) {
+    const saved = await createServeSize(label, ctx.serveSizes);
+    ctx.serveSizes = mergeServeSize(ctx.serveSizes, saved);
+    return saved.label;
+  }
+
+  async function chooseServeSize(row, label) {
+    const name = String(label || '').trim();
+    if (!name || !row) return false;
+    if (row.dataset.cid) {
+      const saved = await setCocktailField(row.dataset.cid, 'serve_label', name, { immediate: true });
+      return !!saved;
+    }
+    const itemId = row.dataset.item;
+    const item = ctx.items.get(itemId);
+    if (!item) return false;
+    const saved = await setItemField(itemId, 'serve_label', name, { immediate: true });
+    if (!saved) return false;
+    const portion = portionForSize(name);
+    if (portionOf(ctx.items.get(itemId)) !== portion) {
+      await setItemField(itemId, 'portion', portion, { immediate: true });
+    }
+    return true;
+  }
+
+  function openSizePicker(anchor, { current = '', onPick } = {}) {
+    if (locked()) return;
+    openServeSizeMenu({
+      anchor,
+      sizes: ctx.serveSizes,
+      current,
+      onPick,
+      onCreate: async (label) => {
+        const name = await addGlobalServeSize(label);
+        await onPick(name);
+      },
+    });
+  }
+
   function onPanelClick(e) {
     if (suppressHeaderClick) {
       suppressHeaderClick = false;
@@ -1346,6 +1421,18 @@ export function mountPlanningPanel(route) {
     const edit = e.target.closest('[data-edit-cocktail]');
     if (edit) {
       openCocktail(edit.dataset.editCocktail);
+      return;
+    }
+    const sizeBtn = e.target.closest('[data-size-pick]');
+    if (sizeBtn) {
+      e.preventDefault();
+      const row = sizeBtn.closest('tr.plan-row');
+      const empty = sizeBtn.classList.contains('is-empty');
+      const current = empty ? '' : sizeBtn.querySelector('span')?.textContent?.trim() || '';
+      openSizePicker(sizeBtn, {
+        current,
+        onPick: (label) => chooseServeSize(row, label),
+      });
       return;
     }
     const use = e.target.closest('[data-use-price]');
@@ -1446,15 +1533,17 @@ export function mountPlanningPanel(route) {
     if (!source?.id) return;
     const productName = ctx.productById.get(source.product_id)?.name || 'This product';
     const needsCurrentName = !String(source.serve_label || '').trim();
+    let currentChoice = needsCurrentName ? '' : String(source.serve_label || '').trim();
+    let nextChoice = '';
     const el = openModal({
       title: `Another size of ${productName}`,
       bodyHtml: `
         <div class="admin-drawer-form">
           <p class="muted plan-sheet-lead">Same keg or bottle, its own price. A half is 0.5 of one serve. The Serves column stays the yield of the whole case.</p>
           ${needsCurrentName ? `<label class="admin-field"><span class="admin-label">Name the size already on the menu</span>
-            <input class="admin-input" id="sizeCurrent" maxlength="40" placeholder="Pint"></label>` : ''}
+            <button type="button" class="admin-input serve-size-field is-empty" id="sizeCurrent">Choose a size</button></label>` : ''}
           <label class="admin-field"><span class="admin-label">New size</span>
-            <input class="admin-input" id="sizeName" maxlength="40" placeholder="Half"></label>
+            <button type="button" class="admin-input serve-size-field is-empty" id="sizeName">Choose a size</button></label>
           <label class="admin-field"><span class="admin-label">How much of one serve</span>
             <input class="admin-input num-math" id="sizePortion" inputmode="decimal" placeholder="0.5" value="0.5"></label>
           <p class="plan-form-err" id="sizeErr" hidden></p>
@@ -1465,11 +1554,32 @@ export function mountPlanningPanel(route) {
           <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>Add size</button>
         </div>`,
     });
-    el.querySelector('[data-cancel]').onclick = closeModal;
+    function bindSizeField(id, getValue, setValue) {
+      const button = el.querySelector(id);
+      if (!button) return;
+      button.onclick = () => {
+        openSizePicker(button, {
+          current: getValue(),
+          onPick: async (label) => {
+            setValue(label);
+            button.textContent = label;
+            button.classList.remove('is-empty');
+            if (id === '#sizeName') {
+              const portion = el.querySelector('#sizePortion');
+              if (portion && !portion.dataset.touched) portion.value = String(portionForSize(label));
+            }
+          },
+        });
+      };
+    }
+    bindSizeField('#sizeCurrent', () => currentChoice, (label) => { currentChoice = label; });
+    bindSizeField('#sizeName', () => nextChoice, (label) => { nextChoice = label; });
+    el.querySelector('#sizePortion')?.addEventListener('input', (e) => { e.target.dataset.touched = '1'; });
+    el.querySelector('[data-cancel]').onclick = () => { closeServeSizeMenu(); closeModal(); };
     el.querySelector('[data-ok]').onclick = async () => {
       const err = el.querySelector('#sizeErr');
-      const currentName = needsCurrentName ? el.querySelector('#sizeCurrent').value.trim() : String(source.serve_label || '').trim();
-      const name = el.querySelector('#sizeName').value.trim();
+      const currentName = currentChoice;
+      const name = nextChoice;
       const portion = parsePlanningNumber(el.querySelector('#sizePortion').value);
       if (needsCurrentName && !currentName) { err.textContent = 'Name the size already on the menu'; err.hidden = false; return; }
       if (!name) { err.textContent = 'Name the new size'; err.hidden = false; return; }
@@ -1497,6 +1607,7 @@ export function mountPlanningPanel(route) {
         });
         if (!saved?.id) throw new Error('Could not add that size');
         ctx.items.set(saved.id, saved);
+        closeServeSizeMenu();
         closeModal();
         showMenu();
         toast(`${productName} ${name} added`);
@@ -1929,6 +2040,7 @@ export function mountPlanningPanel(route) {
     ctx.filter = e.detail.values || {};
     if (prevCols !== JSON.stringify(ctx.filter.hiddenColumns || [])) paintGrid();
     else {
+      closeServeSizeMenu();
       const body = $('planBody');
       if (body) body.innerHTML = renderBody();
     }
@@ -1936,6 +2048,7 @@ export function mountPlanningPanel(route) {
 
   function onProductFilter(e) {
     ctx.query = e.detail?.query || '';
+    closeServeSizeMenu();
     const body = $('planBody');
     if (body) body.innerHTML = renderBody();
     if (e.detail?.productId) {
@@ -1948,12 +2061,13 @@ export function mountPlanningPanel(route) {
 
   async function reload() {
     await flushSaves();
-    const [event, items, scenarios, products, caseSizes, categories, cocktailRows] = await Promise.all([
+    const [event, items, scenarios, products, caseSizes, serveSizes, categories, cocktailRows] = await Promise.all([
       loadEventPricing(ctx.eventId),
       listEventMenu(ctx.eventId),
       listScenarios(ctx.eventId),
       loadLibraryProducts(),
       loadCaseSizes(),
+      loadServeSizes(),
       loadCategories(),
       listEventCocktails(ctx.eventId).catch((err) => {
         if (isCocktailSchemaMissing(err)) return null;
@@ -1970,6 +2084,7 @@ export function mountPlanningPanel(route) {
     ctx.products = (products || []).filter((p) => !p.archived && (p.product_kind || 'stock') === 'stock');
     ctx.productById = new Map((products || []).map((p) => [p.id, p]));
     ctx.caseSizes = caseSizes || [];
+    ctx.serveSizes = serveSizes || [];
     ctx.categories = categories || [];
     const [accounts, clientId] = await Promise.all([
       listAccounts().catch(() => null),
@@ -2018,6 +2133,7 @@ export function mountPlanningPanel(route) {
   return () => {
     ctx.abort = true;
     closePlanningContextMenu();
+    closeServeSizeMenu();
     void flushSaves();
     if (colDrag?.raf) cancelAnimationFrame(colDrag.raf);
     colDrag = null;

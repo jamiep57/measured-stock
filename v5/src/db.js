@@ -37,6 +37,7 @@ const EVENT_MUTATION_TABLES = new Set([
 
 const REF_MUTATION_TABLES = new Set([
   'case_sizes',
+  'serve_sizes',
   'categories',
   'suppliers',
 ]);
@@ -64,6 +65,12 @@ let caseSizesCache = null;
 /** @type {Promise<any> | null} */
 let caseSizesInflight = null;
 let caseSizesGen = 0;
+
+/** @type {{ at: number, value: any } | null} */
+let serveSizesCache = null;
+/** @type {Promise<any> | null} */
+let serveSizesInflight = null;
+let serveSizesGen = 0;
 
 /** @type {{ at: number, value: any } | null} */
 let suppliersCache = null;
@@ -109,10 +116,13 @@ export function invalidateEventCache(eventId) {
 
 export function invalidateRefCaches() {
   caseSizesGen += 1;
+  serveSizesGen += 1;
   suppliersGen += 1;
   categoriesGen += 1;
   caseSizesCache = null;
   caseSizesInflight = null;
+  serveSizesCache = null;
+  serveSizesInflight = null;
   suppliersCache = null;
   suppliersInflight = null;
   categoriesCache = null;
@@ -181,7 +191,7 @@ function ensureCacheInvalidationHooks(DB) {
   }
 
   const repos = [
-    DB.categories, DB.suppliers, DB.warehouses, DB.caseSizes,
+    DB.categories, DB.suppliers, DB.warehouses, DB.caseSizes, DB.serveSizes,
     DB.products, DB.productSuppliers, DB.warehouseStock,
     DB.events, DB.eventProducts, DB.bars, DB.recipients,
     DB.distribution, DB.barProducts, DB.stockCounts, DB.closing,
@@ -241,6 +251,27 @@ export async function loadCaseSizes() {
     }
   })();
   return caseSizesInflight;
+}
+
+export async function loadServeSizes() {
+  if (cacheFresh(serveSizesCache, REF_CACHE_TTL_MS)) return serveSizesCache.value;
+  if (serveSizesInflight) return serveSizesInflight;
+  const gen = serveSizesGen;
+  serveSizesInflight = (async () => {
+    const DB = getDB();
+    try {
+      const rows = await DB.serveSizes.list();
+      const value = rows || [];
+      if (gen === serveSizesGen) serveSizesCache = { at: Date.now(), value };
+      return value;
+    } catch {
+      if (gen === serveSizesGen) serveSizesCache = { at: Date.now(), value: [] };
+      return [];
+    } finally {
+      if (serveSizesInflight) serveSizesInflight = null;
+    }
+  })();
+  return serveSizesInflight;
 }
 
 export async function loadEventsList() {

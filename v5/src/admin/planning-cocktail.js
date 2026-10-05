@@ -17,6 +17,8 @@ import {
   replaceCocktailIngredients,
   updateEventCocktail,
 } from '../lib/planning-data.js';
+import { createServeSize, mergeServeSize } from '../lib/serve-sizes.js';
+import { closeServeSizeMenu, openServeSizeMenu } from './serve-size-menu.js';
 
 function money(n) {
   if (n == null || !Number.isFinite(Number(n))) return '—';
@@ -135,8 +137,8 @@ export function openCocktailEditor(opts) {
             <input class="admin-input" id="cocktailVariation" maxlength="80" value="${escapeHtml(draft.square_variation)}" placeholder="Optional" ${dis}></label>
         </div>
         <p class="muted plan-sheet-lead">Square sales on this event match this item. It starts as the drink name. Clear it to keep the drink off sales mapping. A variation is only needed when Square sells this drink under one specific variation.</p>
-        <label class="admin-field"><span class="admin-label">Serve label</span>
-          <input class="admin-input" id="cocktailServe" maxlength="40" value="${escapeHtml(draft.serve_label)}" placeholder="Optional, e.g. Coupe" ${dis}></label>
+        <label class="admin-field"><span class="admin-label">Serve size</span>
+          <button type="button" class="admin-input serve-size-field${draft.serve_label ? '' : ' is-empty'}" id="cocktailServe" ${dis}>${escapeHtml(draft.serve_label || 'Choose a size')}</button></label>
         <div class="plan-cocktail-ings" id="cocktailIngs"></div>
         <div id="cocktailAdd"></div>
         <div class="plan-cocktail-summary" id="cocktailSummary"></div>
@@ -307,8 +309,26 @@ export function openCocktailEditor(opts) {
   document.getElementById('cocktailVariation').addEventListener('input', (e) => {
     draft.square_variation = e.target.value;
   });
-  document.getElementById('cocktailServe').addEventListener('input', (e) => {
-    draft.serve_label = e.target.value;
+  const serveBtn = document.getElementById('cocktailServe');
+  serveBtn.addEventListener('click', () => {
+    if (locked) return;
+    openServeSizeMenu({
+      anchor: serveBtn,
+      sizes: ctx.serveSizes || [],
+      current: draft.serve_label || '',
+      onPick: (label) => {
+        draft.serve_label = label;
+        serveBtn.textContent = label;
+        serveBtn.classList.remove('is-empty');
+      },
+      onCreate: async (label) => {
+        const saved = await createServeSize(label, ctx.serveSizes || []);
+        ctx.serveSizes = mergeServeSize(ctx.serveSizes || [], saved);
+        draft.serve_label = saved.label;
+        serveBtn.textContent = saved.label;
+        serveBtn.classList.remove('is-empty');
+      },
+    });
   });
   document.querySelectorAll('input[name="drinkKind"]').forEach((input) => {
     input.addEventListener('change', () => {
@@ -327,7 +347,7 @@ export function openCocktailEditor(opts) {
     });
   });
 
-  document.getElementById('cocktailCancel').onclick = closeSheet;
+  document.getElementById('cocktailCancel').onclick = () => { closeServeSizeMenu(); closeSheet(); };
   const deleteBtn = document.getElementById('cocktailDelete');
   if (deleteBtn) {
     deleteBtn.onclick = async () => {
@@ -349,8 +369,8 @@ export function openCocktailEditor(opts) {
   }
 
   document.getElementById('cocktailSave').onclick = async () => {
+    closeServeSizeMenu();
     draft.name = document.getElementById('cocktailName').value;
-    draft.serve_label = document.getElementById('cocktailServe').value;
     const name = draft.name.trim();
     const square = (draft.squareFollowsName
       ? name

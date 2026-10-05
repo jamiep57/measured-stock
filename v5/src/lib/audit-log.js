@@ -21,6 +21,7 @@ export const AUDIT_TABLE_LABELS = {
   suppliers: 'Supplier',
   categories: 'Category',
   case_sizes: 'Case size',
+  serve_sizes: 'Serve size',
   organisation_members: 'Membership',
   organisations: 'Organisation',
 };
