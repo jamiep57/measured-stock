@@ -13,6 +13,7 @@ import { ADMIN_EVENTS_CHANGED } from './panels/home.js';
 import { syncBugOpenDot, mountBugReportFab, syncBugFabVisibility } from './panels/bugs.js';
 import { initGlobalSearch, applyGenericProductFilter, ADMIN_PRODUCT_FILTER } from './global-search.js';
 import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
+import { installGridContextMenu } from './grid-context-menu.js';
 import { syncAppPresence } from '../lib/app-presence.js';
 import { ensureAppAuth, signOutApp, getCachedProfile } from '../lib/auth.js';
 import { fallbackRoute, loadPermissions, routeAllowed } from '../lib/permissions.js';
@@ -328,6 +329,7 @@ async function boot() {
   // Mount early so the report button survives later boot failures.
   mountBugReportFab();
   initSpreadsheetCells(document.body);
+  installGridContextMenu();
   wireNav();
   initSidebar((opts = {}) => {
     if (opts.clearEvent) setEventId('');

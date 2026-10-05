@@ -679,12 +679,12 @@
 .plan-kpi.plan-row--mark-violet,
 .wst-stat.plan-row--mark-violet { background: #e7defb !important; }
 .plan-cell--menu { outline: 2px solid var(--foreground); outline-offset: -2px; }
-li.plan-row--mark-sand { background: #f3ead8 !important; }
-li.plan-row--mark-amber { background: #fde7c7 !important; }
-li.plan-row--mark-green { background: #d8f3e4 !important; }
-li.plan-row--mark-sky { background: #d9e9fb !important; }
-li.plan-row--mark-rose { background: #f8dbe3 !important; }
-li.plan-row--mark-violet { background: #e7defb !important; }
+:not(tr).plan-row--mark-sand { background: #f3ead8 !important; }
+:not(tr).plan-row--mark-amber { background: #fde7c7 !important; }
+:not(tr).plan-row--mark-green { background: #d8f3e4 !important; }
+:not(tr).plan-row--mark-sky { background: #d9e9fb !important; }
+:not(tr).plan-row--mark-rose { background: #f8dbe3 !important; }
+:not(tr).plan-row--mark-violet { background: #e7defb !important; }
 
 .plan-ctx {
   position: fixed;
