@@ -363,7 +363,7 @@ export function openCocktailEditor(opts) {
       }
       closeSheet();
       onSaved(saved);
-      toast(draft.id ? 'Cocktail saved' : `${name} added to the menu`);
+      if (!opts.quiet) toast(draft.id ? 'Cocktail saved' : `${name} added to the menu`);
     } catch (err) {
       btn.disabled = false;
       const msg = String(err?.message || '');
@@ -377,5 +377,9 @@ export function openCocktailEditor(opts) {
 
   paintIngs();
   mountAdd();
-  requestAnimationFrame(() => document.getElementById('cocktailName')?.focus());
+  requestAnimationFrame(() => {
+    const name = document.getElementById('cocktailName');
+    name?.focus();
+    if (!draft.id && name?.value) name.select();
+  });
 }

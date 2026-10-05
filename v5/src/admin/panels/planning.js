@@ -311,6 +311,32 @@ export function mountPlanningPanel(route) {
     return 1 + shownColumnIds().length;
   }
 
+  function markRowKey(line) {
+    return line.kind === 'cocktail' ? `c:${line.cocktailId}` : `p:${line.productId}`;
+  }
+
+  function markClasses(rowKey, colId) {
+    const color = planningCellMark(ctx.marks, rowKey, colId);
+    return color ? ` plan-cell--mark plan-cell--mark-${color}` : '';
+  }
+
+  function rowMarkClass(rowKey) {
+    const color = planningRowMark(ctx.marks, rowKey);
+    return color ? ` plan-row--mark plan-row--mark-${color}` : '';
+  }
+
+  function decorateCell(html, id, rowKey) {
+    if (!html) return '';
+    return html.replace(
+      /^<td class="([^"]*)"/,
+      `<td class="$1${markClasses(rowKey, id)}" data-col="${escapeHtml(id)}"`,
+    );
+  }
+
+  function rowMenuButton(name) {
+    return `<button type="button" class="plan-row-menu" data-row-menu aria-haspopup="menu" aria-label="Actions for ${escapeHtml(name)}">${icon('ellipsis', { size: 14 })}</button>`;
+  }
+
   function columnCell(id, line, item) {
     if (line.kind === 'cocktail') return cocktailColumnCell(id, line, item);
     const dis = locked() ? 'disabled' : '';
@@ -432,9 +458,10 @@ export function mountPlanningPanel(route) {
       ? `<span class="dist-item-meta">${escapeHtml(line.caseSize)}</span>` : '';
     const menuMeta = line.menuName && line.menuName !== line.name
       ? `<span class="dist-item-meta">${escapeHtml(line.menuName)}</span>` : '';
-    const cells = shownColumnIds().map((id) => columnCell(id, line, item)).join('');
-    return `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}" data-pid="${escapeHtml(pid)}">
-      <th class="dist-sticky plan-col-product" scope="row">
+    const rowKey = markRowKey(line);
+    const cells = shownColumnIds().map((id) => decorateCell(columnCell(id, line, item), id, rowKey)).join('');
+    return `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-pid="${escapeHtml(pid)}">
+      <th class="dist-sticky plan-col-product${markClasses(rowKey, 'product')}" scope="row" data-col="product">
         <div class="plan-item">
           <input type="checkbox" class="plan-include" data-field="included" ${line.included ? 'checked' : ''} ${dis}
             aria-label="${line.included ? 'Remove from' : 'Add to'} event menu" title="${line.included ? 'On the event menu — untick to take off (product stays in the library)' : 'Off the event menu — tick to add'}">
@@ -443,6 +470,7 @@ export function mountPlanningPanel(route) {
             ${packMeta}
             ${menuMeta}
           </div>
+          ${rowMenuButton(line.name)}
         </div>
       </th>${cells}</tr>`;
   }
@@ -454,9 +482,10 @@ export function mountPlanningPanel(route) {
       ? `<span class="dist-item-meta">${escapeHtml(line.ingredientSummary)}</span>` : '';
     const serve = line.serveLabel
       ? `<span class="dist-item-meta">${escapeHtml(line.serveLabel)}</span>` : '';
-    const cells = shownColumnIds().map((id) => cocktailColumnCell(id, line, item)).join('');
-    return `<tr class="dist-prod-row plan-row plan-row--cocktail${line.included ? '' : ' plan-row--off'}" data-cid="${escapeHtml(line.cocktailId)}">
-      <th class="dist-sticky plan-col-product" scope="row">
+    const rowKey = markRowKey(line);
+    const cells = shownColumnIds().map((id) => decorateCell(cocktailColumnCell(id, line, item), id, rowKey)).join('');
+    return `<tr class="dist-prod-row plan-row plan-row--cocktail${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-cid="${escapeHtml(line.cocktailId)}">
+      <th class="dist-sticky plan-col-product${markClasses(rowKey, 'product')}" scope="row" data-col="product">
         <div class="plan-item">
           <input type="checkbox" class="plan-include" data-field="included" ${line.included ? 'checked' : ''} ${dis}
             aria-label="${line.included ? 'Remove cocktail from' : 'Add cocktail to'} event menu" title="${line.included ? 'On the event menu' : 'Off the event menu'}">
@@ -466,6 +495,7 @@ export function mountPlanningPanel(route) {
             ${meta}
             ${serve}
           </button>
+          ${rowMenuButton(line.name)}
         </div>
       </th>${cells}</tr>`;
   }
@@ -548,6 +578,7 @@ export function mountPlanningPanel(route) {
   }
 
   function paint() {
+    closePlanningContextMenu();
     if (!ctx.items.size && !ctx.cocktails.size) {
       panel.innerHTML = emptyState({
         iconHtml: icon('calculator', { size: 22 }),
@@ -573,6 +604,7 @@ export function mountPlanningPanel(route) {
   }
 
   function paintGrid() {
+    closePlanningContextMenu();
     const head = $('planHead');
     const body = $('planBody');
     if (!head || !body) { paint(); return; }
@@ -707,7 +739,12 @@ export function mountPlanningPanel(route) {
       const saved = await upsertEventMenuItem(ctx.eventId, pid, { [field]: value });
       if (saved) ctx.items.set(pid, { ...ctx.items.get(pid), id: saved.id, org_id: saved.org_id });
     };
-    if (immediate) return save().catch((err) => toast(err.message || 'Save failed', true));
+    if (immediate) {
+      return save().then(() => true, (err) => {
+        toast(err.message || 'Save failed', true);
+        return false;
+      });
+    }
     queueSave(`${pid}:${field}`, save);
     return null;
   }
@@ -719,7 +756,12 @@ export function mountPlanningPanel(route) {
     refreshCocktailRow(id);
     paintKpis();
     const save = () => updateEventCocktail(id, { [field]: value });
-    if (immediate) return save().catch((err) => toast(err.message || 'Save failed', true));
+    if (immediate) {
+      return save().then(() => true, (err) => {
+        toast(err.message || 'Save failed', true);
+        return false;
+      });
+    }
     queueSave(`cocktail:${id}:${field}`, save);
     return null;
   }
@@ -925,9 +967,254 @@ export function mountPlanningPanel(route) {
     applyColumnMove(drag.id, drag.overId, drag.place);
   }
 
+  const CELL_MARK_CLASSES = PLANNING_MARK_IDS.map((id) => `plan-cell--mark-${id}`);
+  const ROW_MARK_CLASSES = PLANNING_MARK_IDS.map((id) => `plan-row--mark-${id}`);
+
+  function persistMarks() {
+    writePlanningMarks(typeof localStorage === 'undefined' ? null : localStorage, ctx.eventId, ctx.marks);
+  }
+
+  function applyMarks(row, rowKey) {
+    const rowColor = planningRowMark(ctx.marks, rowKey);
+    row.classList.remove('plan-row--mark', ...ROW_MARK_CLASSES);
+    if (rowColor) row.classList.add('plan-row--mark', `plan-row--mark-${rowColor}`);
+    row.querySelectorAll('[data-col]').forEach((cell) => {
+      const color = planningCellMark(ctx.marks, rowKey, cell.dataset.col);
+      cell.classList.remove('plan-cell--mark', ...CELL_MARK_CLASSES);
+      if (color) cell.classList.add('plan-cell--mark', `plan-cell--mark-${color}`);
+    });
+  }
+
+  function lineFromRow(row) {
+    if (row?.dataset.cid) {
+      const cocktail = ctx.cocktails.get(row.dataset.cid);
+      return cocktail ? cocktailLineFor(cocktail) : null;
+    }
+    if (row?.dataset.pid) return lineFor(row.dataset.pid);
+    return null;
+  }
+
+  function cellCopyText(row, line, colId) {
+    if (colId === 'product') return line.name || '';
+    const cell = row.querySelector(`[data-col="${CSS.escape(colId)}"]`);
+    if (!cell) return '';
+    const input = cell.querySelector('input');
+    if (input) return input.value.trim();
+    return cell.textContent.replace(/\s+/g, ' ').trim();
+  }
+
+  async function copyText(text) {
+    const value = String(text || '').trim();
+    if (!value || value === '—') {
+      toast('Nothing to copy', true);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      toast('Copied');
+    } catch {
+      toast('Couldn’t copy', true);
+    }
+  }
+
+  async function pasteCell(row, colId) {
+    if (locked()) return;
+    let text;
+    try {
+      text = String(await navigator.clipboard.readText()).trim();
+    } catch {
+      toast('Couldn’t read the clipboard', true);
+      return;
+    }
+    const input = row.querySelector(`[data-col="${CSS.escape(colId)}"] input`);
+    if (!input || input.disabled) return;
+    input.focus();
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function useRequiredPrice(row, line) {
+    const price = line.requiredPrice;
+    if (price == null || locked()) return;
+    const input = row.querySelector('[data-field="menu_price"]');
+    if (input) input.value = price.toFixed(2);
+    if (line.kind === 'cocktail') setCocktailField(line.cocktailId, 'menu_price', price);
+    else setItemField(line.productId, 'menu_price', price);
+  }
+
+  function clearPlanningCell(row, line, colId) {
+    if (locked()) return;
+    const kind = line.kind === 'cocktail' ? 'cocktail' : 'product';
+    const field = editablePlanningField(kind, colId);
+    if (!field) return;
+    const input = row.querySelector(`[data-col="${CSS.escape(colId)}"] input`);
+    if (input) {
+      input.value = '';
+      input.classList.remove('is-invalid');
+    }
+    if (field === 'scenario') {
+      const scenarioId = colId.slice('scenario:'.length);
+      const s = ctx.scenarios.find((x) => x.id === scenarioId);
+      if (!s || !line.productId) return;
+      s.scenario_prices = (s.scenario_prices || []).filter((r) => r.product_id !== line.productId);
+      refreshRow(line.productId);
+      queueSave(`${line.productId}:scenario:${s.id}`, () => setScenarioPrice(s.id, line.productId, null));
+      return;
+    }
+    if (line.kind === 'cocktail') setCocktailField(line.cocktailId, field, null);
+    else setItemField(line.productId, field, null);
+  }
+
+  function makeCocktailFromProduct(pid) {
+    if (!ensureCocktails()) return;
+    if (locked()) { toast('Pricing is locked for this event', true); return; }
+    const item = ctx.items.get(pid) || {};
+    const line = lineFor(pid);
+    const name = (line.menuName || line.name || 'Cocktail').trim().slice(0, 80);
+    openCocktail(null, {
+      seed: {
+        name,
+        square_item_name: name,
+        serve_label: item.serve_label || line.serveLabel || '',
+        menu_price: item.menu_price ?? null,
+        target_gp_pct: item.target_gp_pct ?? null,
+        projected_serves: item.projected_serves ?? null,
+        ingredients: [{ product_id: pid, measures: 1 }],
+      },
+      convertProductId: pid,
+    });
+  }
+
+  async function toggleOnMenu(line) {
+    const next = !line.included;
+    if (line.kind === 'cocktail') await setCocktailField(line.cocktailId, 'included', next, { immediate: true });
+    else await setItemField(line.productId, 'included', next, { immediate: true });
+    paintGrid();
+    const name = line.name || 'Item';
+    if (next) {
+      toast(`${name} is back on the menu`);
+      return;
+    }
+    toast(`${name} removed from the menu`, false, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          const put = line.kind === 'cocktail'
+            ? setCocktailField(line.cocktailId, 'included', true, { immediate: true })
+            : setItemField(line.productId, 'included', true, { immediate: true });
+          Promise.resolve(put).then(() => paintGrid());
+        },
+      },
+    });
+  }
+
+  async function deleteCocktailFromMenu(line) {
+    if (locked()) { toast('Pricing is locked for this event', true); return; }
+    const name = line.name || 'this cocktail';
+    const ok = await confirmDialog({
+      title: 'Delete cocktail',
+      message: `Remove “${name}” from this event? The stock products stay in the library.`,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+    try {
+      await deleteEventCocktail(line.cocktailId);
+      ctx.cocktails.delete(line.cocktailId);
+      ctx.lines.delete(cocktailLineKey(line.cocktailId));
+      showMenu();
+      toast('Cocktail removed');
+    } catch (err) {
+      toast(err.message || 'Could not delete cocktail', true);
+    }
+  }
+
+  async function runContextAction(id, row, line, colId) {
+    if (id === 'use-required') useRequiredPrice(row, line);
+    else if (id === 'copy') await copyText(cellCopyText(row, line, colId));
+    else if (id === 'copy-name') await copyText(line.name || '');
+    else if (id === 'paste') await pasteCell(row, colId);
+    else if (id === 'clear') clearPlanningCell(row, line, colId);
+    else if (id === 'make-cocktail') makeCocktailFromProduct(line.productId);
+    else if (id === 'edit-cocktail') openCocktail(line.cocktailId);
+    else if (id === 'toggle-menu') await toggleOnMenu(line);
+    else if (id === 'delete-cocktail') await deleteCocktailFromMenu(line);
+  }
+
+  function openRowMenu(row, colId, x, y, scope, anchor) {
+    const line = lineFromRow(row);
+    if (!line) return;
+    const rowKey = markRowKey(line);
+    const kind = line.kind === 'cocktail' ? 'cocktail' : 'product';
+    let columnLabel = planningColumnLabel(colId);
+    if (String(colId).startsWith('scenario:')) {
+      const scenario = ctx.scenarios.find((s) => scenarioColumnId(s.id) === colId);
+      if (scenario?.name) columnLabel = scenario.name;
+    }
+    const actions = planningContextActions({
+      kind,
+      included: !!line.included,
+      colId,
+      locked: locked(),
+      hasRequired: line.requiredPrice != null,
+    });
+    const use = actions.cell.find((action) => action.id === 'use-required');
+    if (use) use.hint = money(line.requiredPrice);
+    const cell = row.querySelector(`[data-col="${CSS.escape(colId)}"]`);
+    cell?.classList.add('plan-cell--menu');
+    openPlanningContextMenu({
+      x,
+      y,
+      title: line.name || 'Menu item',
+      columnLabel,
+      scope,
+      marks: {
+        cell: planningCellMark(ctx.marks, rowKey, colId),
+        row: planningRowMark(ctx.marks, rowKey),
+      },
+      actions,
+      anchor,
+      onClose: () => cell?.classList.remove('plan-cell--menu'),
+      onColor: (nextScope, color) => {
+        const target = nextScope === 'row' ? 'row' : colId;
+        ctx.marks = setPlanningMark(ctx.marks, rowKey, target, color);
+        persistMarks();
+        applyMarks(row, rowKey);
+      },
+      onAction: (id) => { void runContextAction(id, row, line, colId); },
+    });
+  }
+
+  function onContextMenu(e) {
+    const row = e.target.closest('tr.plan-row');
+    if (!row || !panel.contains(row)) return;
+    e.preventDefault();
+    const cell = e.target.closest('[data-col]');
+    const colId = cell?.dataset.col || 'product';
+    const fromKeyboard = e.button === 0 && e.clientX === 0 && e.clientY === 0 && !e.ctrlKey && !e.metaKey;
+    if (fromKeyboard) {
+      const box = (cell || row).getBoundingClientRect();
+      openRowMenu(row, colId, box.left, box.bottom + 4, 'cell', null);
+      return;
+    }
+    openRowMenu(row, colId, e.clientX, e.clientY, 'cell', null);
+  }
+
   function onPanelClick(e) {
     if (suppressHeaderClick) {
       suppressHeaderClick = false;
+      return;
+    }
+    const menuBtn = e.target.closest('[data-row-menu]');
+    if (menuBtn) {
+      e.preventDefault();
+      const row = menuBtn.closest('tr.plan-row');
+      if (!row) return;
+      if (menuBtn.getAttribute('aria-expanded') === 'true') {
+        closePlanningContextMenu();
+        return;
+      }
+      const rect = menuBtn.getBoundingClientRect();
+      openRowMenu(row, 'product', rect.left, rect.bottom + 4, 'row', menuBtn);
       return;
     }
     if (e.target.closest('[data-add-product]')) {
@@ -990,11 +1277,12 @@ export function mountPlanningPanel(route) {
     else paint();
   }
 
-  function openCocktail(id) {
+  function openCocktail(id, extra = {}) {
     if (!ensureCocktails()) return;
     if (!id && locked()) { toast('Pricing is locked for this event', true); return; }
-    const cocktail = id ? ctx.cocktails.get(id) : null;
+    const cocktail = id ? ctx.cocktails.get(id) : (extra.seed || null);
     if (id && !cocktail) return;
+    const convertProductId = extra.convertProductId || null;
     openCocktailEditor({
       cocktail,
       ctx,
@@ -1012,8 +1300,16 @@ export function mountPlanningPanel(route) {
           return String(c.square_variation || '').trim().toLowerCase() === variant;
         });
       },
-      onSaved: (saved) => {
+      quiet: !!convertProductId,
+      onSaved: async (saved) => {
         ctx.cocktails.set(saved.id, normaliseCocktail(saved));
+        if (convertProductId) {
+          const productName = ctx.productById.get(convertProductId)?.name || 'The product';
+          const removed = await setItemField(convertProductId, 'included', false, { immediate: true });
+          if (removed) {
+            toast(`${saved.name || 'Cocktail'} is on the menu. ${productName} was taken off so it isn’t counted twice.`);
+          }
+        }
         showMenu();
       },
       onDeleted: (cid) => {
@@ -1507,6 +1803,7 @@ export function mountPlanningPanel(route) {
     if (!e.target.closest('#planSettings')) void onGridChange(e);
   });
   panel.addEventListener('click', onPanelClick);
+  panel.addEventListener('contextmenu', onContextMenu);
   panel.addEventListener('pointerdown', onColPointerDown);
   document.addEventListener('pointermove', onColPointerMove, { passive: false });
   document.addEventListener('pointerup', endColDrag);
@@ -1519,11 +1816,13 @@ export function mountPlanningPanel(route) {
 
   return () => {
     ctx.abort = true;
+    closePlanningContextMenu();
     void flushSaves();
     if (colDrag?.raf) cancelAnimationFrame(colDrag.raf);
     colDrag = null;
     panel.classList.remove('plan-col-dragging');
     panel.removeEventListener('click', onPanelClick);
+    panel.removeEventListener('contextmenu', onContextMenu);
     panel.removeEventListener('pointerdown', onColPointerDown);
     document.removeEventListener('pointermove', onColPointerMove);
     document.removeEventListener('pointerup', endColDrag);
