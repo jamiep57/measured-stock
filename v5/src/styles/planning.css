@@ -473,20 +473,20 @@
 }
 .plan-grid .plan-cell-affix--money {
   display: flex;
-  justify-content: flex-start;
-  gap: 4px;
+  justify-content: center;
+  gap: 2px;
   width: 100%;
   min-width: 76px;
   padding: 0 8px;
   box-sizing: border-box;
 }
 .plan-grid .plan-cell-affix--money .plan-cell-input {
-  field-sizing: fixed;
-  flex: 1 1 auto;
-  width: 100%;
+  field-sizing: content;
+  flex: 0 1 auto;
+  width: auto;
   max-width: none;
-  min-width: 4.5ch;
-  text-align: right;
+  min-width: 1ch;
+  text-align: center;
 }
 .plan-grid .plan-scenario-cell .plan-cell-input {
   height: 24px;
