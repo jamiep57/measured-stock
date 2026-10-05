@@ -4,6 +4,7 @@
  */
 
 import { getDB } from '../db.js';
+import { drinkKindOf } from './menu-cocktails.js';
 
 const enc = (v) => encodeURIComponent(v);
 
@@ -227,7 +228,7 @@ export function normaliseCocktail(row) {
     }))
     .filter((ing) => ing.product_id)
     .sort((a, b) => a.position - b.position || String(a.product_id).localeCompare(String(b.product_id)));
-  return { ...row, ingredients };
+  return { ...row, drink_kind: drinkKindOf(row?.drink_kind), ingredients };
 }
 
 export async function listEventCocktails(eventId) {

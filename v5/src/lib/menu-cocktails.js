@@ -1,16 +1,51 @@
 /**
- * Cocktails on Menu & GP.
+ * Recipe drinks on Menu & GP.
  *
- * A cocktail is sold as one drink. Its cost is the stock products in the
+ * A drink is sold as one price. Its cost is the stock products in the
  * recipe added together: one measure is one serve of that product, using
  * the same cost and serves-per-unit as that product’s own menu line.
+ *
+ * Cocktails and spirit & mixers share that recipe. They sit in different
+ * menu sections: a vodka and Red Bull is a spirit & mixer, not a cocktail.
  */
 
 import { gpPct, gpPerServe, gpStatus, netFromGross, requiredPrice } from './gp.js';
 import { eventTargetGp, eventVatRate, resolveMenuLine } from './planning-menu.js';
 
 export const COCKTAIL_CATEGORY = 'Cocktails';
+export const SPIRIT_MIXER_CATEGORY = 'Spirit & mixers';
 export const MAX_COCKTAIL_INGREDIENTS = 8;
+
+export const DRINK_KINDS = {
+  cocktail: {
+    id: 'cocktail',
+    category: COCKTAIL_CATEGORY,
+    label: 'Cocktail',
+    namePlaceholder: 'e.g. Margarita',
+    lead: 'Sold as one drink under Cocktails. The cost is the stock products below added together — one measure is one serve of that product, the same serve its own GP uses. A double is 2. Four or five ingredients is typical.',
+    emptyIngredients: 'Add the stock products in this drink. Four or five is typical.',
+    costNoun: 'cocktail',
+  },
+  spirit_mixer: {
+    id: 'spirit_mixer',
+    category: SPIRIT_MIXER_CATEGORY,
+    label: 'Spirit & mixer',
+    namePlaceholder: 'e.g. Vodka Red Bull',
+    lead: 'Sold as one drink under Spirit & mixers. Add the spirit and what it is mixed with — two or three ingredients is typical. One measure is one serve of that product. A double is 2.',
+    emptyIngredients: 'Add the spirit and what it is mixed with. Two or three ingredients is typical.',
+    costNoun: 'drink',
+  },
+};
+
+/** @param {string|null|undefined} value */
+export function drinkKindOf(value) {
+  return value === 'spirit_mixer' ? 'spirit_mixer' : 'cocktail';
+}
+
+/** @param {string|null|undefined} value */
+export function drinkKindMeta(value) {
+  return DRINK_KINDS[drinkKindOf(value)];
+}
 
 function num(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -116,9 +151,11 @@ export function resolveCocktailLine(cocktail, ingredients, ctx = {}) {
   const amberBand = num(event?.gp_amber_band) ?? 5;
   const revenueGross = menuPrice != null && serves != null ? menuPrice * serves : null;
   const perServe = gpPerServe(menuPrice, costPerServe, vatRate);
+  const drink = drinkKindMeta(cocktail?.drink_kind);
 
   return {
     kind: 'cocktail',
+    drinkKind: drink.id,
     cocktailId: cocktail?.id || null,
     productId: null,
     name: String(cocktail?.name || '').trim(),
@@ -126,7 +163,7 @@ export function resolveCocktailLine(cocktail, ingredients, ctx = {}) {
     caseSize: '',
     stockUnit: null,
     abv: null,
-    category: COCKTAIL_CATEGORY,
+    category: drink.category,
     included: cocktail?.included !== false,
     serveLabel: cocktail?.serve_label || null,
     ingredientSummary: parts.map((p) => p.name).filter((n) => n && n !== 'Removed product').join(' · '),

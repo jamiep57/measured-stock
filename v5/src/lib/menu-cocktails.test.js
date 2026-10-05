@@ -57,6 +57,7 @@ describe('resolveCocktailLine', () => {
   it('adds the ingredient costs and prices the drink as one', () => {
     const line = resolveCocktailLine(cocktail, ingredients, ctx);
     expect(line.kind).toBe('cocktail');
+    expect(line.drinkKind).toBe('cocktail');
     expect(line.category).toBe('Cocktails');
     expect(line.costPerServe).toBeCloseTo(5.5, 10);
     expect(line.gpPct).toBeCloseTo(45, 10);
@@ -75,6 +76,18 @@ describe('resolveCocktailLine', () => {
       },
     );
     expect(line.costPerServe).toBeCloseTo(2, 10);
+  });
+
+  it('files a spirit and mixer in its own section', () => {
+    const line = resolveCocktailLine(
+      { id: 'c2', name: 'Vodka Red Bull', drink_kind: 'spirit_mixer', menu_price: 8 },
+      [{ product_id: 'teq', measures: 1 }, { product_id: 'lime', measures: 1 }],
+      ctx,
+    );
+    expect(line.kind).toBe('cocktail');
+    expect(line.drinkKind).toBe('spirit_mixer');
+    expect(line.category).toBe('Spirit & mixers');
+    expect(line.ingredientSummary).toBe('Tequila · Lime juice');
   });
 
   it('leaves the cost empty when an ingredient has no price', () => {

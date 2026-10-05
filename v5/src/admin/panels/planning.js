@@ -43,7 +43,7 @@ import {
   scenarioColumnId,
   writePlanningColumnOrder,
 } from '../../lib/planning-columns.js';
-import { cocktailLineKey, resolveCocktailLine } from '../../lib/menu-cocktails.js';
+import { cocktailLineKey, drinkKindMeta, resolveCocktailLine } from '../../lib/menu-cocktails.js';
 import {
   PLANNING_MARK_IDS,
   planningCellMark,
@@ -450,7 +450,7 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell plan-cell--key plan-out" data-out="gp">${gpBadge(line.gpPct, line.status)}</td>`;
     }
     if (id.startsWith('scenario:')) {
-      return `<td class="plan-cell plan-cell--scenario" title="Cocktails keep their menu price in scenarios"><span class="plan-scenario-gp ${statusClass(line.status)}">${escapeHtml(formatGpPct(line.gpPct))}</span></td>`;
+      return `<td class="plan-cell plan-cell--scenario" title="Recipe drinks keep their menu price in scenarios"><span class="plan-scenario-gp ${statusClass(line.status)}">${escapeHtml(formatGpPct(line.gpPct))}</span></td>`;
     }
     if (id === 'serves') {
       return `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Target serves' })}</td>`;
@@ -462,7 +462,7 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell plan-out" data-out="gp-amount">${money(line.gpAmount, 0)}</td>`;
     }
     if (id === 'deal' || id === 'deal-ref') {
-      return `<td class="plan-cell plan-out" title="A cocktail’s cost comes from its ingredients">—</td>`;
+      return `<td class="plan-cell plan-out" title="This drink’s cost comes from its ingredients">—</td>`;
     }
     return '';
   }
@@ -525,7 +525,7 @@ export function mountPlanningPanel(route) {
         <div class="plan-item">
           <button type="button" class="plan-cocktail-open" data-edit-cocktail="${escapeHtml(line.cocktailId)}">
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
-            <span class="dist-item-meta">Cocktail</span>
+            <span class="dist-item-meta">${escapeHtml(drinkKindMeta(line.drinkKind).label)}</span>
             ${serve}
           </button>
           ${rowMenuButton(line.name)}
@@ -617,9 +617,9 @@ export function mountPlanningPanel(route) {
       panel.innerHTML = emptyState({
         iconHtml: icon('calculator', { size: 22 }),
         title: 'Plan this event’s menu',
-        copy: 'Add products and set prices here, or build a cocktail from several stock products and sell it as one. Save the menu when you want to reuse it on another event.',
+        copy: 'Add products and set prices here, or sell a cocktail or a spirit and mixer as one drink costed from its ingredients. Save the menu when you want to reuse it on another event.',
         variant: 'admin',
-        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-add-product>Add product</button> <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-add-cocktail>Create cocktail</button>',
+        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-add-product>Add product</button> <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-add-cocktail>Create cocktail</button> <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-add-spirit-mixer>Spirit & mixer</button>',
       });
       return;
     }
@@ -1088,15 +1088,17 @@ export function mountPlanningPanel(route) {
     else setItemField(line.productId, field, null);
   }
 
-  function makeCocktailFromProduct(pid) {
+  function makeCocktailFromProduct(pid, drinkKind) {
     if (!ensureCocktails()) return;
     if (locked()) { toast('Pricing is locked for this event', true); return; }
     const item = ctx.items.get(pid) || {};
     const line = lineFor(pid);
-    const name = (line.menuName || line.name || 'Cocktail').trim().slice(0, 80);
+    const name = (line.menuName || line.name || drinkKindMeta(drinkKind).label).trim().slice(0, 80);
     openCocktail(null, {
+      drinkKind,
       seed: {
         name,
+        drink_kind: drinkKind,
         square_item_name: name,
         serve_label: item.serve_label || line.serveLabel || '',
         menu_price: item.menu_price ?? null,
@@ -1133,9 +1135,10 @@ export function mountPlanningPanel(route) {
 
   async function deleteCocktailFromMenu(line) {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
-    const name = line.name || 'this cocktail';
+    const drink = drinkKindMeta(line.drinkKind).label.toLowerCase();
+    const name = line.name || `this ${drink}`;
     const ok = await confirmDialog({
-      title: 'Delete cocktail',
+      title: `Delete ${drink}`,
       message: `Remove “${name}” from this event? The stock products stay in the library.`,
       confirmLabel: 'Delete',
     });
@@ -1145,7 +1148,7 @@ export function mountPlanningPanel(route) {
       ctx.cocktails.delete(line.cocktailId);
       ctx.lines.delete(cocktailLineKey(line.cocktailId));
       showMenu();
-      toast('Cocktail removed');
+      toast(`${drinkKindMeta(line.drinkKind).label} removed`);
     } catch (err) {
       toast(err.message || 'Could not delete cocktail', true);
     }
@@ -1157,7 +1160,8 @@ export function mountPlanningPanel(route) {
     else if (id === 'copy-name') await copyText(line.name || '');
     else if (id === 'paste') await pasteCell(row, colId);
     else if (id === 'clear') clearPlanningCell(row, line, colId);
-    else if (id === 'make-cocktail') makeCocktailFromProduct(line.productId);
+    else if (id === 'make-cocktail') makeCocktailFromProduct(line.productId, 'cocktail');
+    else if (id === 'make-spirit-mixer') makeCocktailFromProduct(line.productId, 'spirit_mixer');
     else if (id === 'edit-cocktail') openCocktail(line.cocktailId);
     else if (id === 'toggle-menu') await toggleOnMenu(line);
     else if (id === 'delete-cocktail') await deleteCocktailFromMenu(line);
@@ -1175,6 +1179,7 @@ export function mountPlanningPanel(route) {
     }
     const actions = planningContextActions({
       kind,
+      drinkKind: line.drinkKind,
       included: !!line.included,
       colId,
       locked: locked(),
@@ -1245,7 +1250,11 @@ export function mountPlanningPanel(route) {
       return;
     }
     if (e.target.closest('[data-add-cocktail]')) {
-      openCocktail(null);
+      openCocktail(null, { drinkKind: 'cocktail' });
+      return;
+    }
+    if (e.target.closest('[data-add-spirit-mixer]')) {
+      openCocktail(null, { drinkKind: 'spirit_mixer' });
       return;
     }
     const edit = e.target.closest('[data-edit-cocktail]');
@@ -1308,6 +1317,7 @@ export function mountPlanningPanel(route) {
     const convertProductId = extra.convertProductId || null;
     openCocktailEditor({
       cocktail,
+      drinkKind: extra.drinkKind,
       ctx,
       locked: locked(),
       nameTaken: (name, exceptId) => {
@@ -1330,7 +1340,7 @@ export function mountPlanningPanel(route) {
           const productName = ctx.productById.get(convertProductId)?.name || 'The product';
           const removed = await setItemField(convertProductId, 'included', false, { immediate: true });
           if (removed) {
-            toast(`${saved.name || 'Cocktail'} is on the menu. ${productName} was taken off so it isn’t counted twice.`);
+            toast(`${saved.name || drinkKindMeta(saved.drink_kind).label} is on the menu. ${productName} was taken off so it isn’t counted twice.`);
           }
         }
         showMenu();
@@ -1730,7 +1740,8 @@ export function mountPlanningPanel(route) {
       'plan-save-menu': () => { void openSaveMenu(); },
       'plan-apply-menu': () => { void openApplyMenu(); },
       'plan-add-product': openAddProduct,
-      'plan-add-cocktail': () => openCocktail(null),
+      'plan-add-cocktail': () => openCocktail(null, { drinkKind: 'cocktail' }),
+      'plan-add-spirit-mixer': () => openCocktail(null, { drinkKind: 'spirit_mixer' }),
       'plan-add-scenario': openAddScenario,
       'plan-costs': toggleCostLock,
       'plan-export': () => {

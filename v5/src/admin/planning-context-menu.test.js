@@ -16,8 +16,9 @@ describe('planning context actions', () => {
       hasRequired: true,
     });
     expect(actions.cell.map((a) => a.id)).toEqual(['use-required', 'paste', 'copy', 'copy-name', 'clear']);
-    expect(actions.item.map((a) => a.id)).toEqual(['make-cocktail', 'toggle-menu']);
-    expect(actions.item[1].label).toBe('Remove from menu');
+    expect(actions.item.map((a) => a.id)).toEqual(['make-cocktail', 'make-spirit-mixer', 'toggle-menu']);
+    expect(actions.item[1].label).toBe('Make into spirit & mixer');
+    expect(actions.item[2].label).toBe('Remove from menu');
   });
 
   it('hides edits when pricing is locked and still allows copy', () => {
@@ -42,7 +43,22 @@ describe('planning context actions', () => {
     });
     expect(actions.cell.map((a) => a.id)).toEqual(['copy', 'copy-name']);
     expect(actions.item.map((a) => a.id)).toEqual(['edit-cocktail', 'toggle-menu', 'delete-cocktail']);
+    expect(actions.item[0].label).toBe('Edit cocktail');
     expect(actions.item[1].label).toBe('Put back on menu');
+    expect(actions.item[2].label).toBe('Delete cocktail');
+  });
+
+  it('names a spirit and mixer as its own drink', () => {
+    const actions = planningContextActions({
+      kind: 'cocktail',
+      drinkKind: 'spirit_mixer',
+      included: true,
+      colId: 'menu',
+      locked: false,
+      hasRequired: false,
+    });
+    expect(actions.item[0].label).toBe('Edit spirit & mixer');
+    expect(actions.item.find((a) => a.id === 'delete-cocktail').label).toBe('Delete spirit & mixer');
     expect(editablePlanningField('cocktail', 'deal')).toBeNull();
     expect(editablePlanningField('product', 'scenario:abc')).toBe('scenario');
     expect(planningColumnLabel('menu')).toBe('Menu £');

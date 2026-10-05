@@ -749,6 +749,48 @@
 }
 .plan-sheet-lead { margin: 0 0 10px; font-size: 13px; }
 
+.plan-drink-kind {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.plan-drink-kind-opt {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.plan-drink-kind-opt.is-selected {
+  border-color: var(--foreground);
+  background: var(--secondary);
+}
+.plan-drink-kind-opt input {
+  width: auto;
+  flex: none;
+  margin: 3px 0 0;
+}
+.plan-drink-kind-opt span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.plan-drink-kind-opt strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.plan-drink-kind-opt small {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+
 /* Export dialog — wider than the default 400px modal so the type copy isn't clipped. */
 .admin-modal:has(.plan-export) {
   width: min(520px, calc(100vw - 32px));

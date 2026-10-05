@@ -62,6 +62,12 @@ export const PANEL_TOOLBAR = {
           title: 'Create a cocktail sold as one drink, costed from its stock products',
         },
         {
+          id: 'plan-add-spirit-mixer',
+          icon: 'glass-water',
+          label: 'Spirit & mixer',
+          title: 'Spirit plus mixer, sold as one drink and costed from its stock products. Sits under Spirit & mixers.',
+        },
+        {
           id: 'plan-add-scenario',
           icon: 'target',
           label: 'Scenario',

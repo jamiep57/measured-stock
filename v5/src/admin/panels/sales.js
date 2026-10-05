@@ -17,6 +17,7 @@ import {
 } from '../../lib/cocktail-square.js';
 import { isEventPricingLocked, loadEventCocktailMapping, normaliseCocktail } from '../../lib/planning-data.js';
 import { openCocktailEditor } from '../planning-cocktail.js';
+import { drinkKindMeta } from '../../lib/menu-cocktails.js';
 import { parseFractionQty, displayFractionQty, formatQtyAsFraction } from '../../components/fraction-input.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { groupProductsByPool, poolSummary } from '../../lib/volume-pools.js';
@@ -150,7 +151,7 @@ function renderCocktailColumns(resolved, ctx) {
   const missing = (resolved.incomplete || []).map((part) =>
     `<p class="mod-cocktail-note">Set serves per unit on ${escapeHtml(part.name)} before this can deplete stock.</p>`).join('');
   const shared = resolved.sharedIgnored
-    ? '<p class="mod-cocktail-note">Using this event’s cocktail. The shared recipe is not used here.</p>'
+    ? '<p class="mod-cocktail-note">Using this event’s drink. The shared recipe is not used here.</p>'
     : '';
   const id = escapeHtml(resolved.cocktail?.id || resolved.recipe?.cocktailId || '');
   const productHtml = `
@@ -158,7 +159,7 @@ function renderCocktailColumns(resolved, ctx) {
       <div class="mod-cocktail-ings">${names || '<span class="muted">No stock portions yet</span>'}</div>
       ${missing}
       ${shared}
-      <button type="button" class="mod-cocktail-edit" data-edit-cocktail="${id}">Edit cocktail</button>
+      <button type="button" class="mod-cocktail-edit" data-edit-cocktail="${id}">Edit ${escapeHtml(drinkKindMeta(resolved.cocktail?.drink_kind).label.toLowerCase())}</button>
     </div>`;
   return { portionHtml, productHtml };
 }
@@ -289,7 +290,7 @@ function tillDisplayRows(ctx) {
     name: squareItemName(cocktail),
     variation: String(cocktail.square_variation || '').trim() || 'Regular',
     items_sold: null,
-    category: 'Cocktails',
+    category: drinkKindMeta(cocktail.drink_kind).category,
     waiting: true,
     cocktailId: cocktail.id,
     cocktailName: cocktail.name || '',

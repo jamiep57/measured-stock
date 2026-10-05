@@ -1,6 +1,7 @@
 /**
- * Create / edit a cocktail from Menu & GP.
- * The drink is one selling price. Cost is the stock measures added together.
+ * Create / edit a recipe drink from Menu & GP.
+ * A cocktail and a spirit & mixer share one selling price. Cost is the stock
+ * measures added together. The section they sit in is chosen in the editor.
  */
 
 import { escapeHtml, toast } from '../lib/util.js';
@@ -9,7 +10,7 @@ import { openSheet, closeSheet } from '../components/sheet.js';
 import { confirmDialog } from '../components/modal.js';
 import { mountProductSearch } from '../components/product-search.js';
 import { parsePlanningNumber } from '../lib/planning-menu.js';
-import { MAX_COCKTAIL_INGREDIENTS, resolveCocktailLine } from '../lib/menu-cocktails.js';
+import { drinkKindMeta, drinkKindOf, MAX_COCKTAIL_INGREDIENTS, resolveCocktailLine } from '../lib/menu-cocktails.js';
 import {
   createEventCocktail,
   deleteEventCocktail,
@@ -38,10 +39,12 @@ function pourWarning(part) {
   return 'Costed as one serve for the whole unit. Set Serves on that product if a bottle or keg pours more than once.';
 }
 
-function draftFrom(cocktail) {
+function draftFrom(cocktail, drinkKind) {
+  const kind = drinkKindOf(cocktail?.drink_kind || drinkKind);
   if (!cocktail) {
     return {
       id: null,
+      drink_kind: kind,
       name: '',
       serve_label: '',
       square_item_name: '',
@@ -57,6 +60,7 @@ function draftFrom(cocktail) {
   const square = cocktail.square_item_name || '';
   return {
     id: cocktail.id,
+    drink_kind: kind,
     name,
     serve_label: cocktail.serve_label || '',
     square_item_name: square,
@@ -70,6 +74,14 @@ function draftFrom(cocktail) {
       measures: ing.measures,
     })),
   };
+}
+
+function kindOption(id, checked, disabled) {
+  const meta = drinkKindMeta(id);
+  return `<label class="plan-drink-kind-opt${checked ? ' is-selected' : ''}">
+    <input type="radio" name="drinkKind" value="${id}" ${checked ? 'checked' : ''} ${disabled}>
+    <span><strong>${escapeHtml(meta.label)}</strong><small>Sits under ${escapeHtml(meta.category)}</small></span>
+  </label>`;
 }
 
 function readNumber(input, { max, required } = {}) {
@@ -93,26 +105,36 @@ function readNumber(input, { max, required } = {}) {
  *   onDeleted: (id: string) => void,
  * }} opts
  */
+function sheetTitle(draft) {
+  const label = drinkKindMeta(draft.drink_kind).label.toLowerCase();
+  return draft.id ? `Edit ${label}` : `New ${label}`;
+}
+
 export function openCocktailEditor(opts) {
   const { ctx, locked, nameTaken, squareTaken, onSaved, onDeleted } = opts;
-  const draft = draftFrom(opts.cocktail);
+  const draft = draftFrom(opts.cocktail, opts.drinkKind);
   const dis = locked ? 'disabled' : '';
+  const meta = () => drinkKindMeta(draft.drink_kind);
 
   openSheet({
-    title: draft.id ? 'Edit cocktail' : 'New cocktail',
+    title: sheetTitle(draft),
     variant: 'admin-full',
     bodyHtml: `
-      <p class="muted plan-sheet-lead">Sold as one drink. The cost is the stock products below added together — one measure is one serve of that product, the same serve its own GP uses. A double is 2.</p>
+      <p class="muted plan-sheet-lead" id="cocktailLead">${escapeHtml(meta().lead)}</p>
       <div class="admin-drawer-form">
+        <div class="plan-drink-kind" role="radiogroup" aria-label="Menu section">
+          ${kindOption('cocktail', draft.drink_kind === 'cocktail', dis)}
+          ${kindOption('spirit_mixer', draft.drink_kind === 'spirit_mixer', dis)}
+        </div>
         <label class="admin-field"><span class="admin-label">Name</span>
-          <input class="admin-input" id="cocktailName" maxlength="80" value="${escapeHtml(draft.name)}" placeholder="e.g. Margarita" ${dis}></label>
+          <input class="admin-input" id="cocktailName" maxlength="80" value="${escapeHtml(draft.name)}" placeholder="${escapeHtml(meta().namePlaceholder)}" ${dis}></label>
         <div class="plan-form-row">
           <label class="admin-field"><span class="admin-label">Square item</span>
             <input class="admin-input" id="cocktailSquare" maxlength="200" value="${escapeHtml(draft.square_item_name)}" placeholder="Till name, if different" ${dis}></label>
           <label class="admin-field"><span class="admin-label">Variation</span>
             <input class="admin-input" id="cocktailVariation" maxlength="80" value="${escapeHtml(draft.square_variation)}" placeholder="Optional" ${dis}></label>
         </div>
-        <p class="muted plan-sheet-lead">Square sales on this event match this item. It starts as the cocktail name. Clear it to keep the drink off sales mapping. A variation is only needed when Square sells this drink under one specific variation.</p>
+        <p class="muted plan-sheet-lead">Square sales on this event match this item. It starts as the drink name. Clear it to keep the drink off sales mapping. A variation is only needed when Square sells this drink under one specific variation.</p>
         <label class="admin-field"><span class="admin-label">Serve label</span>
           <input class="admin-input" id="cocktailServe" maxlength="40" value="${escapeHtml(draft.serve_label)}" placeholder="Optional, e.g. Coupe" ${dis}></label>
         <div class="plan-cocktail-ings" id="cocktailIngs"></div>
@@ -150,7 +172,8 @@ export function openCocktailEditor(opts) {
   function lineNow() {
     return resolveCocktailLine({
       id: draft.id,
-      name: draft.name || 'Cocktail',
+      name: draft.name || meta().label,
+      drink_kind: draft.drink_kind,
       included: true,
       menu_price: draft.menu_price,
       target_gp_pct: draft.target_gp_pct,
@@ -162,7 +185,7 @@ export function openCocktailEditor(opts) {
   function paintSummary() {
     const line = lineNow();
     if (!draft.ingredients.length) {
-      summaryEl.innerHTML = '<p class="muted">Add the stock products in this drink. Four or five is typical.</p>';
+      summaryEl.innerHTML = `<p class="muted">${escapeHtml(meta().emptyIngredients)}</p>`;
       return;
     }
     if (line.costPerServe == null) {
@@ -171,7 +194,7 @@ export function openCocktailEditor(opts) {
     }
     const gp = line.menuPrice == null ? 'Set a menu price to see GP' : `GP ${formatGpPct(line.gpPct)}`;
     const required = line.requiredPrice != null ? ` · required ${money(line.requiredPrice)}` : '';
-    summaryEl.innerHTML = `<p><strong>${money(line.costPerServe)}</strong> cost per cocktail · ${gp}${required}</p>`;
+    summaryEl.innerHTML = `<p><strong>${money(line.costPerServe)}</strong> cost per ${escapeHtml(meta().costNoun)} · ${gp}${required}</p>`;
   }
 
   function paintIngs() {
@@ -219,11 +242,11 @@ export function openCocktailEditor(opts) {
       onSelect: ({ productId }) => {
         if (!productId) return;
         if (draft.ingredients.some((ing) => ing.product_id === productId)) {
-          showErr('That product is already in the cocktail. Change its measures instead.');
+          showErr('That product is already in this drink. Change its measures instead.');
           return;
         }
         if (draft.ingredients.length >= MAX_COCKTAIL_INGREDIENTS) {
-          showErr(`A cocktail can use up to ${MAX_COCKTAIL_INGREDIENTS} products.`);
+          showErr(`A drink can use up to ${MAX_COCKTAIL_INGREDIENTS} products.`);
           return;
         }
         showErr('');
@@ -287,14 +310,30 @@ export function openCocktailEditor(opts) {
   document.getElementById('cocktailServe').addEventListener('input', (e) => {
     draft.serve_label = e.target.value;
   });
+  document.querySelectorAll('input[name="drinkKind"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      if (!input.checked || locked) return;
+      draft.drink_kind = drinkKindOf(input.value);
+      document.querySelectorAll('.plan-drink-kind-opt').forEach((opt) => {
+        opt.classList.toggle('is-selected', !!opt.querySelector('input[name="drinkKind"]')?.checked);
+      });
+      const title = document.getElementById('sheetTitle');
+      if (title) title.textContent = sheetTitle(draft);
+      const lead = document.getElementById('cocktailLead');
+      if (lead) lead.textContent = meta().lead;
+      const name = document.getElementById('cocktailName');
+      if (name) name.placeholder = meta().namePlaceholder;
+      paintSummary();
+    });
+  });
 
   document.getElementById('cocktailCancel').onclick = closeSheet;
   const deleteBtn = document.getElementById('cocktailDelete');
   if (deleteBtn) {
     deleteBtn.onclick = async () => {
       const ok = await confirmDialog({
-        title: 'Delete cocktail',
-        message: `Remove “${draft.name || 'this cocktail'}” from this event’s menu? The stock products stay in the library.`,
+        title: `Delete ${meta().label.toLowerCase()}`,
+        message: `Remove “${draft.name || 'this drink'}” from this event’s menu? The stock products stay in the library.`,
         confirmLabel: 'Delete',
       });
       if (!ok) return;
@@ -302,9 +341,9 @@ export function openCocktailEditor(opts) {
         await deleteEventCocktail(draft.id);
         closeSheet();
         onDeleted(draft.id);
-        toast('Cocktail removed');
+        toast(`${meta().label} removed`);
       } catch (err) {
-        showErr(err.message || 'Could not delete cocktail');
+        showErr(err.message || 'Could not delete this drink');
       }
     };
   }
@@ -321,9 +360,9 @@ export function openCocktailEditor(opts) {
     if (name.length > 80) { showErr('Name must be 80 characters or fewer'); return; }
     if (square.length > 200) { showErr('Square item must be 200 characters or fewer'); return; }
     if (variation.length > 80) { showErr('Variation must be 80 characters or fewer'); return; }
-    if (nameTaken(name, draft.id)) { showErr('This event already has a cocktail with that name'); return; }
+    if (nameTaken(name, draft.id)) { showErr('This event already has a drink with that name'); return; }
     if (square && squareTaken?.(square, variation, draft.id)) {
-      showErr('Another cocktail on this event already uses that Square item');
+      showErr('Another drink on this event already uses that Square item');
       return;
     }
     if (!draft.ingredients.length) { showErr('Add at least one stock product'); return; }
@@ -343,6 +382,7 @@ export function openCocktailEditor(opts) {
     if (!price || !target || !projected) { showErr('Check the price, target and projected serves'); return; }
     const fields = {
       name,
+      drink_kind: drinkKindOf(draft.drink_kind),
       serve_label: draft.serve_label.trim() || null,
       square_item_name: square || null,
       square_variation: variation || null,
@@ -363,15 +403,15 @@ export function openCocktailEditor(opts) {
       }
       closeSheet();
       onSaved(saved);
-      if (!opts.quiet) toast(draft.id ? 'Cocktail saved' : `${name} added to the menu`);
+      if (!opts.quiet) toast(draft.id ? `${meta().label} saved` : `${name} added to the menu`);
     } catch (err) {
       btn.disabled = false;
       const msg = String(err?.message || '');
       showErr(/event_cocktails_square_key|saved_menu_cocktails_square_key/i.test(msg)
-        ? 'Another cocktail on this event already uses that Square item'
+        ? 'Another drink on this event already uses that Square item'
         : /event_cocktails_event_name_key|already exists|23505/i.test(msg)
-          ? 'This event already has a cocktail with that name'
-          : (err.message || 'Could not save cocktail'));
+          ? 'This event already has a drink with that name'
+          : (err.message || 'Could not save this drink'));
     }
   };
 

@@ -7,6 +7,8 @@
  * SOR exports never carry internal fields.
  */
 
+import { drinkKindMeta } from './menu-cocktails.js';
+
 export const EXPORT_TYPES = {
   designer: {
     label: 'Designer',
@@ -58,11 +60,12 @@ export function formatAbv(value) {
 /**
  * Serve printed on a designer menu. An explicit serve label wins; otherwise
  * the unit in the pack (440ml, 330ml, 70cl). Draught packs are a pint.
+ * A recipe drink uses its section name when it has no serve label.
  */
 export function serveSizeOf(line) {
   const explicit = String(line?.serveLabel || '').trim();
   if (explicit) return explicit;
-  if (line?.kind === 'cocktail') return 'Cocktail';
+  if (line?.kind === 'cocktail') return drinkKindMeta(line.drinkKind).label;
   const label = String(line?.caseSize || '').trim();
   const stockUnit = String(line?.stockUnit || '').toLowerCase();
   if (stockUnit === 'keg' || /\b(keg|keykeg|cask)\b/i.test(label) || /\d\s*gal\b/i.test(label)) return 'Pint';

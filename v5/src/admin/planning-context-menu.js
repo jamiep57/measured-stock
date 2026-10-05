@@ -4,6 +4,7 @@
  */
 
 import { escapeHtml } from '../lib/util.js';
+import { drinkKindMeta } from '../lib/menu-cocktails.js';
 import { PLANNING_MARK_IDS } from '../lib/planning-marks.js';
 
 const COLUMN_LABELS = {
@@ -66,10 +67,11 @@ export function editablePlanningField(kind, colId) {
 /**
  * @returns {{ cell: object[], item: object[] }}
  */
-export function planningContextActions({ kind, included, colId, locked, hasRequired }) {
+export function planningContextActions({ kind, drinkKind, included, colId, locked, hasRequired }) {
   const cell = [];
   const item = [];
   const editable = !locked && !!editablePlanningField(kind, colId);
+  const drink = drinkKindMeta(drinkKind).label.toLowerCase();
   if (!locked && hasRequired) {
     cell.push({ id: 'use-required', label: 'Use required price' });
   }
@@ -79,12 +81,17 @@ export function planningContextActions({ kind, included, colId, locked, hasRequi
   if (editable) cell.push({ id: 'clear', label: 'Clear cell' });
 
   if (kind === 'cocktail') {
-    item.push({ id: 'edit-cocktail', label: 'Edit cocktail', note: 'Recipe, price and serve' });
+    item.push({ id: 'edit-cocktail', label: `Edit ${drink}`, note: 'Recipe, price and section' });
   } else if (!locked) {
     item.push({
       id: 'make-cocktail',
       label: 'Make into cocktail',
       note: 'One measure of this product. This line comes off the menu.',
+    });
+    item.push({
+      id: 'make-spirit-mixer',
+      label: 'Make into spirit & mixer',
+      note: 'Spirit plus what it’s mixed with. This line comes off the menu.',
     });
   }
   if (!locked) {
@@ -97,7 +104,7 @@ export function planningContextActions({ kind, included, colId, locked, hasRequi
         : '',
     });
     if (kind === 'cocktail') {
-      item.push({ id: 'delete-cocktail', label: 'Delete cocktail', danger: true, note: 'Removes the recipe from this event.' });
+      item.push({ id: 'delete-cocktail', label: `Delete ${drink}`, danger: true, note: 'Removes the recipe from this event.' });
     }
   }
   return { cell, item };
