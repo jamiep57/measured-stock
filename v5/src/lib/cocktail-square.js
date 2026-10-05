@@ -7,8 +7,8 @@
  */
 
 import { formatQtyAsFraction } from '../components/fraction-input.js';
-import { resolveStockCaseSize } from '../pack-metrics.js';
 import { resolveCocktailLine } from './menu-cocktails.js';
+import { resolveMenuLine } from './planning-menu.js';
 import { recipeStoredProductName } from './recipe-stock.js';
 import { findRecipe, normVariation, recipeIsMapped } from './square-recipes.js';
 
@@ -34,19 +34,18 @@ export function squareItemName(cocktail) {
 }
 
 /**
- * Serves the cocktail cost already uses, when that number was actually set.
- * A bare default of 1 (no menu serves, no pool, no case-size servings) is
- * treated as missing so depletion does not guess a whole unit per sale.
+ * The Serves figure Menu & GP shows beside Cost. A blank menu row uses
+ * the same case default the grid shows, so cocktail cost and the Square
+ * stock fraction divide that one number and nothing else.
  */
 export function knownServesPerUnit(product, menuItem, caseSizes = []) {
-  const fromMenu = num(menuItem?.serves_per_unit);
-  if (fromMenu > 0) return fromMenu;
-  const fromPool = num(product?.pool_servings_per_unit);
-  if (fromPool > 0) return fromPool;
-  const row = resolveStockCaseSize(product, caseSizes);
-  const fromPack = num(row?.servings_per_unit);
-  if (fromPack > 0) return fromPack;
-  return null;
+  if (!product && !menuItem) return null;
+  const line = resolveMenuLine(menuItem || { product_id: product?.id, included: true }, {
+    product: product || null,
+    caseSizes,
+  });
+  const serves = num(line.servesPerUnit);
+  return serves > 0 ? serves : null;
 }
 
 function portionText(measures, serves) {

@@ -221,16 +221,18 @@ export function mountPlanningPanel(route) {
 
   // ---------- rendering ----------------------------------------------
 
-  function cellInput(field, value, { placeholder = '', label = '', text = false, width = '' } = {}) {
+  function cellInput(field, value, { placeholder = '', label = '', text = false, width = '', suffix = '' } = {}) {
     const dis = locked() ? 'disabled' : '';
     if (text) {
       return `<input type="text" class="plan-cell-input plan-cell-input--text" data-field="${field}"
         value="${escapeHtml(value ?? '')}" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(label)}"
         maxlength="120" autocomplete="off" ${dis}>`;
     }
-    return `<input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input${width ? ` plan-cell-input--${width}` : ''}"
+    const input = `<input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input${width ? ` plan-cell-input--${width}` : ''}"
       data-field="${field}" value="${escapeHtml(inputValue(value))}" placeholder="${escapeHtml(placeholder)}"
       aria-label="${escapeHtml(label)}" ${dis}>`;
+    if (!suffix) return input;
+    return `<span class="plan-cell-affix">${input}<span class="plan-cell-suffix" aria-hidden="true">${escapeHtml(suffix)}</span></span>`;
   }
 
   function columnShown(id) {
@@ -255,7 +257,7 @@ export function mountPlanningPanel(route) {
   }
 
   function columnHead(id) {
-    if (id === 'serve') return th(id, 'Serves', 'Serves per stock unit (e.g. 88 pints per keg)');
+    if (id === 'serve') return th(id, 'Serves', 'Serves from one case (e.g. 24 cans, or 88 pints from a keg)');
     if (id === 'cost') return th(id, 'Cost', 'Cost per serve (ex VAT)');
     if (id === 'menu') return th(id, 'Menu £', 'Event menu price inc VAT', 'plan-th--key');
     if (id === 'target') return th(id, 'Target', 'Target GP %');
@@ -265,7 +267,7 @@ export function mountPlanningPanel(route) {
     if (id === 'serves') return th(id, 'Target serves', 'Target serves for the event', 'plan-th--wide');
     if (id === 'revenue') return th(id, 'Revenue', 'Projected revenue inc VAT');
     if (id === 'gp-amount') return th(id, 'GP £', 'Projected GP £ (ex VAT)');
-    if (id === 'deal') return th(id, 'Deal cost', 'Agreed deal cost per stock unit — replaces the supplier cost');
+    if (id === 'deal') return th(id, 'Deal cost', 'Agreed price of one can, bottle or keg. Cost per serve is this times the units in the case, divided once by Serves');
     if (id === 'deal-ref') return th(id, 'Deal ref', 'Deal or agreement reference');
     if (id.startsWith('scenario:')) {
       const s = ctx.scenarios.find((x) => scenarioColumnId(x.id) === id);
@@ -295,10 +297,13 @@ export function mountPlanningPanel(route) {
     if (line.kind === 'cocktail') return cocktailColumnCell(id, line, item);
     const dis = locked() ? 'disabled' : '';
     if (id === 'serve') {
-      return `<td class="plan-cell">${cellInput('serves_per_unit', item.serves_per_unit, { placeholder: line.servesPerUnit ?? '', label: 'Serves per unit', width: 'sm' })}</td>`;
+      return `<td class="plan-cell">${cellInput('serves_per_unit', item.serves_per_unit, { placeholder: line.servesPerUnit ?? '', label: 'Serves from one case', width: 'sm' })}</td>`;
     }
     if (id === 'cost') {
-      return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(`${costSourceLabel(line.costSource)} · ${money(line.unitCost)} per unit`)}">
+      const split = line.caseCost != null && line.servesPerUnit
+        ? `${money(line.caseCost)} ÷ ${line.servesPerUnit} serves`
+        : `${money(line.unitCost)} per unit`;
+      return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(`${costSourceLabel(line.costSource)} · ${split}`)}">
         ${money(line.costPerServe)}${line.costSource === 'locked' ? ` <span class="plan-lock">${icon('lock', { size: 11 })}</span>` : ''}
       </td>`;
     }
@@ -306,7 +311,7 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
     }
     if (id === 'target') {
-      return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm' })}</td>`;
+      return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm', suffix: '%' })}</td>`;
     }
     if (id === 'required') {
       return `<td class="plan-cell plan-out" data-out="required">${line.requiredPrice != null && !locked()
@@ -369,7 +374,7 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
     }
     if (id === 'target') {
-      return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm' })}</td>`;
+      return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm', suffix: '%' })}</td>`;
     }
     if (id === 'required') {
       return `<td class="plan-cell plan-out" data-out="required">${line.requiredPrice != null && !locked()

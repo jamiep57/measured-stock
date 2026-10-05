@@ -11,7 +11,7 @@
  * None of these create stock — only deliveries do.
  */
 
-import { productStockPack, findOfferForSupplier } from '../pack-metrics.js';
+import { findOfferForSupplier } from '../pack-metrics.js';
 
 function num(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -21,12 +21,14 @@ function num(v) {
 
 const EPS = 1e-9;
 
-/** Servings in one stock case (serves per unit × units per case). */
-export function servesPerCase(servesPerUnit, product, caseSizes = []) {
+/**
+ * Serves in one case. Menu & GP already stores that number (24 cans, 88
+ * pints), so it is not multiplied by units per case again.
+ */
+export function servesPerCase(servesPerUnit) {
   const spu = num(servesPerUnit);
   if (spu == null || spu <= 0) return null;
-  const upc = productStockPack(product, caseSizes).unitsPerCase || num(product?.units_per_case) || 1;
-  return spu * upc;
+  return spu;
 }
 
 /**

@@ -237,6 +237,59 @@
   background: color-mix(in srgb, var(--danger) 6%, var(--card));
 }
 
+.plan-cell-affix {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding-right: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.plan-cell-affix .plan-cell-input {
+  width: 42px;
+  height: 28px;
+  padding: 0 1px 0 6px;
+  border: none;
+  background: transparent;
+  text-align: right;
+  box-shadow: none;
+}
+.plan-cell-affix .plan-cell-input:hover:not(:disabled),
+.plan-cell-affix .plan-cell-input:focus,
+.plan-cell-affix .plan-cell-input.is-invalid {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+.plan-cell-affix:hover {
+  border-color: var(--border);
+  background: var(--card);
+}
+.plan-cell-affix:has(:disabled),
+.plan-cell-affix:has(:disabled):hover {
+  border-color: transparent;
+  background: transparent;
+  cursor: not-allowed;
+}
+.plan-cell-affix:focus-within {
+  border-color: var(--muted-foreground);
+  background: var(--card);
+  box-shadow: 0 0 0 2px rgb(24 24 27 / 0.06);
+}
+.plan-cell-affix:has(.is-invalid),
+.plan-cell-affix:has(.is-invalid):hover,
+.plan-cell-affix:has(.is-invalid):focus-within {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--card));
+  box-shadow: none;
+}
+.plan-cell-suffix {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  line-height: 1;
+}
+
 .plan-use-price {
   padding: 3px 8px;
   border: 1px dashed var(--border);

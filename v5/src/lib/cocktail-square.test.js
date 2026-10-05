@@ -78,10 +78,21 @@ describe('cocktailToRecipe', () => {
     expect(recipe.incomplete).toEqual([]);
   });
 
-  it('leaves an ingredient unmapped when serves per unit was never set', () => {
+  it('uses the same serves default the menu grid shows when the row is blank', () => {
     const recipe = cocktailToRecipe(spritz(), ctxFor([spritz()], []));
+    expect(recipe.incomplete).toEqual([]);
+    expect(recipe.ingredients[0].qty).toBeCloseTo(1);
+  });
+
+  it('leaves an ingredient unmapped when the product is gone', () => {
+    const recipe = cocktailToRecipe(spritz(), saleCtxFrom({
+      cocktails: [spritz()],
+      menuItems: [],
+      products: [],
+      caseSizes: [],
+    }));
     expect(recipe.ingredients).toEqual([]);
-    expect(recipe.incomplete).toEqual([{ productId: 'ap', name: 'Aperol' }]);
+    expect(recipe.incomplete).toEqual([{ productId: 'ap', name: 'Product' }]);
   });
 });
 
@@ -168,5 +179,75 @@ describe('computePluByProductId cocktail mapping', () => {
       ctxFor([spritz()]),
     );
     expect(plu.ap).toBe(0);
+  });
+});
+
+const camdenCase = {
+  id: 'cs24',
+  label: '24×330ml',
+  units_per_case: 24,
+  stock_unit: 'case',
+  servings_per_unit: 1,
+};
+const camden = {
+  id: 'camden',
+  name: 'Camden Pale Ale',
+  case_size: '24×330ml',
+  stock_case_size_id: 'cs24',
+  units_per_case: 24,
+  stock_unit: 'case',
+  unit_price: 1.375,
+  product_suppliers: [{ unit_price: 1.375, case_price: 33, is_preferred: true }],
+};
+
+function pale(overrides = {}) {
+  return {
+    id: 'pale',
+    name: 'Camden Pale',
+    included: true,
+    square_item_name: 'CAMDEN PALE',
+    square_variation: null,
+    ingredients: [{ product_id: 'camden', measures: 1, position: 0 }],
+    ...overrides,
+  };
+}
+
+function camdenCtx(menuItems = []) {
+  return saleCtxFrom({
+    cocktails: [pale()],
+    menuItems,
+    products: [camden],
+    caseSizes: [camdenCase],
+    event: { event_products: [{ product_id: 'camden', product: camden }] },
+  });
+}
+
+describe('Camden Pale Ale serves', () => {
+  it('uses the 24 serves the menu grid shows when the row is blank', () => {
+    const recipe = cocktailToRecipe(pale(), camdenCtx());
+    expect(recipe.incomplete).toEqual([]);
+    expect(recipe.ingredients[0].qty).toBeCloseTo(1 / 24);
+    expect(recipe.ingredients[0].qty_text).toBe('1/24');
+  });
+
+  it('does not divide twice when the menu row already says 24', () => {
+    const recipe = cocktailToRecipe(pale(), camdenCtx([
+      { product_id: 'camden', serves_per_unit: 24, included: true },
+    ]));
+    expect(recipe.ingredients[0].qty).toBeCloseTo(1 / 24);
+  });
+
+  it('turns 24 sales into one case', () => {
+    const plu = computePluByProductId(
+      [{ product_id: 'camden', product: camden, delivered_qty: 10, damaged_qty: 0 }],
+      [{ name: 'CAMDEN PALE', variation: 'Regular', items_sold: 24 }],
+      [],
+      [camden],
+      [camdenCase],
+      null,
+      null,
+      camdenCtx(),
+    );
+    expect(plu.camden).toBe(1);
   });
 });

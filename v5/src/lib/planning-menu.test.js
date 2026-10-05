@@ -54,6 +54,8 @@ describe('resolveMenuLine', () => {
     expect(line.menuName).toBe('Utopian Premium British Lager');
     expect(line.caseSize).toBe('50L Keg');
     expect(line.abv).toBeNull();
+    expect(line.servesPerUnit).toBe(88);
+    expect(line.caseCost).toBe(88);
     expect(line.costPerServe).toBe(1);
     expect(line.targetGpPct).toBe(72);
     expect(line.gpPct).toBeCloseTo(80, 10);
@@ -84,6 +86,49 @@ describe('resolveMenuLine', () => {
     const repriced = { ...keg, product_suppliers: [{ supplier_id: 's1', unit_price: 140, is_preferred: true }] };
     const after = resolveMenuLine(item, { product: repriced, year, event });
     expect(after.gpPct).toBe(before.gpPct);
+  });
+});
+
+const canCase = {
+  id: 'cs24',
+  label: '24×330ml',
+  units_per_case: 24,
+  stock_unit: 'case',
+  servings_per_unit: 1,
+};
+const camden = {
+  id: 'camden',
+  name: 'Camden Pale Ale',
+  case_size: '24×330ml',
+  stock_case_size_id: 'cs24',
+  units_per_case: 24,
+  stock_unit: 'case',
+  unit_price: 1.375,
+  product_suppliers: [{ supplier_id: 'tesco', unit_price: 1.375, case_price: 33, is_preferred: true }],
+};
+
+describe('Camden Pale Ale 24×330ml', () => {
+  const ctx = { product: camden, caseSizes: [canCase], year, event };
+
+  it('pulls 24 serves from the case and divides the £33 case price once', () => {
+    const line = resolveMenuLine({ product_id: 'camden' }, ctx);
+    expect(line.servesPerUnit).toBe(24);
+    expect(line.unitCost).toBeCloseTo(1.375, 10);
+    expect(line.caseCost).toBeCloseTo(33, 10);
+    expect(line.costPerServe).toBeCloseTo(1.375, 10);
+  });
+
+  it('does not divide again when Serves is saved as 24', () => {
+    const blank = resolveMenuLine({ product_id: 'camden' }, ctx);
+    const typed = resolveMenuLine({ product_id: 'camden', serves_per_unit: 24 }, ctx);
+    expect(typed.servesPerUnit).toBe(24);
+    expect(typed.costPerServe).toBeCloseTo(blank.costPerServe, 10);
+    expect(typed.costPerServe).toBeCloseTo(33 / 24, 10);
+  });
+
+  it('still divides the case price once when Serves is changed', () => {
+    const line = resolveMenuLine({ product_id: 'camden', serves_per_unit: 12 }, ctx);
+    expect(line.costPerServe).toBeCloseTo(33 / 12, 10);
   });
 });
 

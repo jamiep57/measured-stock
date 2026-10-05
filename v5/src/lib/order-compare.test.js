@@ -15,8 +15,8 @@ const cans = { id: 'cans', units_per_case: 24, supplier_id: 's2' };
 const loose = { id: 'loose', units_per_case: 6 };
 
 describe('servesPerCase', () => {
-  it('multiplies serves per unit by units per case', () => {
-    expect(servesPerCase(1, cans)).toBe(24);
+  it('uses the menu Serves figure as the serves in one case', () => {
+    expect(servesPerCase(24, cans)).toBe(24);
     expect(servesPerCase(88, keg)).toBe(88);
     expect(servesPerCase(null, keg)).toBeNull();
   });
@@ -30,7 +30,7 @@ describe('plannedCases', () => {
     expect(plannedCases({}, { projectedServes: 880, servesPerUnit: 88 }, keg, [], 10).cases).toBe(11);
   });
   it('does not round an exact multiple up', () => {
-    expect(plannedCases({}, { projectedServes: 240, servesPerUnit: 1 }, cans).cases).toBe(10);
+    expect(plannedCases({}, { projectedServes: 240, servesPerUnit: 24 }, cans).cases).toBe(10);
   });
   it('override wins, even for items taken off the menu', () => {
     expect(plannedCases({ planned_qty_override: 3, included: false }, {}, keg)).toEqual({ cases: 3, source: 'override' });

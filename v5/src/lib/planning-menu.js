@@ -3,12 +3,15 @@
  *
  * Precedence:
  *   cost/unit   snapshot (locked) → deal override → supplier offer → product
- *   serves/unit item → house menu → product pool servings / case size
+ *               (this is the price of one inner unit: a can, bottle, or keg)
+ *   serves      item → house menu → serves in one case
+ *               (pack servings × units in the case, so a 24×330ml case is 24)
+ *   cost/serve  case price ÷ serves, and the case price is unit cost × units
  *   target GP   item → house menu → event → price year → default
  */
 
 import { productStockPack, unitCostFromOffer } from '../pack-metrics.js';
-import { defaultPoolServings } from './volume-pools.js';
+import { servingsPerCase } from './volume-pools.js';
 import { menuNameOf } from './product-attributes.js';
 import {
   DEFAULT_AMBER_BAND,
@@ -74,13 +77,18 @@ export function eventTargetGp(event, year) {
 export function resolveMenuLine(item, ctx = {}) {
   const { product, house, year, event, caseSizes = [] } = ctx;
   const vatRate = eventVatRate(year);
+  const pack = product ? productStockPack(product, caseSizes) : null;
+  const unitsPerCase = pack?.unitsPerCase > 0 ? pack.unitsPerCase : 1;
+  // Serves is how many pours you get from one case. A stored 24 on a
+  // 24-can case is that same number, not a second split of the can price.
   const servesPerUnit = firstNum(
     item?.serves_per_unit,
     house?.serves_per_unit,
-    product ? defaultPoolServings(product, caseSizes) : null,
+    product ? servingsPerCase(product, caseSizes) : null,
   );
   const { unitCost, source: costSource } = resolveUnitCost(item, product);
-  const cps = costPerServe(unitCost, servesPerUnit);
+  const caseCost = unitCost != null ? unitCost * unitsPerCase : null;
+  const cps = costPerServe(caseCost, servesPerUnit);
   const targetGpPct = firstNum(item?.target_gp_pct, house?.target_gp_pct, eventTargetGp(event, year));
   const menuPrice = num(item?.menu_price);
   const required = requiredPrice(cps, targetGpPct, vatRate);
@@ -91,7 +99,6 @@ export function resolveMenuLine(item, ctx = {}) {
   const revenueGross = menuPrice != null && serves != null ? menuPrice * serves : null;
   const perServe = gpPerServe(menuPrice, cps, vatRate);
 
-  const pack = product ? productStockPack(product, caseSizes) : null;
   const caseSize = (pack?.label || product?.case_size || '').trim();
 
   return {
@@ -106,7 +113,9 @@ export function resolveMenuLine(item, ctx = {}) {
     serveLabel: item?.serve_label || house?.serve_label || null,
     vatRate,
     servesPerUnit,
+    unitsPerCase,
     unitCost,
+    caseCost,
     costSource,
     costPerServe: cps,
     targetGpPct,
