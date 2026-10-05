@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<!--
+  Measured — Kit companion scanner.
+  /scan/?s=<sessionId>  — phone companion for event Kit scan mode
+  Bare /scan redirects to /app/?tab=kit
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f1115">
+  <title>Kit scanner</title>
+  <link rel="icon" type="image/png" href="/kit-count-icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+
+    :root {
+      --bg: #0f1115;
+      --fg: #f4f4f5;
+      --muted: #a1a1aa;
+      --card: #1a1d24;
+      --card-2: #22262f;
+      --ok: #22c55e;
+      --err: #ef4444;
+      --border: #2a2f3a;
+      --accent: #e8c47c;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: 'Outfit', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100%;
+    }
+    #app {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: var(--safe-bottom);
+    }
+
+    /* —— Companion scanner (session mode) —— */
+    .scan-top {
+      padding: calc(12px + var(--safe-top)) 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .scan-brand {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .scan-mode { font-size: 22px; font-weight: 700; }
+    .scan-hint { font-size: 13px; color: var(--muted); line-height: 1.35; }
+    .scan-stage {
+      flex: 1;
+      position: relative;
+      margin: 0 12px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      border: 1px solid var(--border);
+      min-height: 240px;
+    }
+    .scan-stage video,
+    .scan-stage canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .scan-stage canvas { opacity: 0; pointer-events: none; }
+    .scan-reticle {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: min(78%, 280px);
+      aspect-ratio: 3 / 2;
+      transform: translate(-50%, -50%);
+      border: 2px solid rgba(255,255,255,0.75);
+      border-radius: 12px;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
+      pointer-events: none;
+    }
+    .scan-stage-hint {
+      position: absolute;
+      left: 0; right: 0; bottom: 10px;
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255,255,255,0.85);
+      pointer-events: none;
+    }
+    .scan-feedback {
+      margin: 12px 16px 0;
+      min-height: 48px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .scan-feedback.is-ok { border-color: var(--ok); color: #bbf7d0; }
+    .scan-feedback.is-err { border-color: var(--err); color: #fecaca; }
+    .scan-manual {
+      margin: 12px 16px calc(16px + var(--safe-bottom));
+      display: flex;
+      gap: 8px;
+    }
+    .scan-manual input {
+      flex: 1;
+      min-width: 0;
+      height: 48px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--fg);
+      padding: 0 14px;
+      font: inherit;
+      font-size: 16px;
+    }
+    .scan-manual button {
+      height: 48px;
+      padding: 0 16px;
+      border-radius: 10px;
+      border: none;
+      background: var(--fg);
+      color: var(--bg);
+      font: inherit;
+      font-weight: 600;
+    }
+    .scan-error {
+      margin: 24px 16px;
+      padding: 16px;
+      border-radius: 12px;
+      background: var(--card);
+      border: 1px solid var(--err);
+      color: #fecaca;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/scan-app.js"></script>
+</body>
+</html>

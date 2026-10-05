@@ -32,17 +32,35 @@ Recipe = {
   ingredients: [
     { productName: "Finlandia Vodka 1L", qty: 0.0139 }, // 2/(6×24) = 2 shots from a 6-bottle case
     { productName: "Red Bull (Can)",     qty: 0.0417 }, // 1/24 = 1 can from a 24-can case
+    { poolName: "House Vodka",            qty: 1 },       // pool: servings per sale (combines 70cl + 1L SKUs)
   ],
   notes:         "",
 }
 ```
 
-`qty` is the fraction of one **case/SKU** consumed per sale. For a 24-can case
-where one can is sold, `qty = 1/24`. For a single shot from a 6-bottle case
-with 24 shots per bottle, `qty = 1/(6 × 24) = 1/144`. A whole case is `qty = 1`.
-Recipes saved in this format carry `_unitModel: "case"`; older recipes (without
-that flag) used `qty = fraction of one bottle/can` and can be one-click migrated
-from the COGS panel.
+`qty` is the fraction of one **case/SKU** consumed per sale for product ingredients.
+For a 24-can case where one can is sold, `qty = 1/24`. For a single shot from a
+6-bottle case with 24 shots per bottle, `qty = 1/(6 × 24) = 1/144`. A whole case
+is `qty = 1`.
+
+**Volume pools** combine interchangeable SKUs (e.g. Vodka 70cl + Vodka 1L) into
+one stock pool for till mapping. Tag each product with `pool_name` and
+`pool_servings_per_unit` (servings one bottle yields — e.g. 24 for 70cl, 22.5 for
+1L). A pool ingredient uses `poolName` instead of `productName`; its `qty` is
+**servings consumed per till sale** (single = 1, double = 2). The run-out
+projection sums every pool member's stock into total servings.
+
+```js
+Product (pool member) = {
+  name: "Finlandia Vodka 70cl",
+  pool_name: "House Vodka",
+  pool_servings_per_unit: 24,   // servings per bottle (1/24 of a bottle per serving)
+}
+```
+
+Recipes saved in case-fraction format carry `_unitModel: "case"`; older recipes
+(without that flag) used `qty = fraction of one bottle/can` and can be one-click
+migrated from the COGS panel.
 
 `state` is a live reference into `appData.events[currentEventId]`. Modifying `state` modifies the event directly.
 
@@ -76,6 +94,8 @@ state = {
       sku:         "JBL001",          // string — optional SKU code
       size:        "12 x 440ml Cans", // string — pack size description
       unitsPerSku: 12,                // number — individual units per case/SKU
+      poolName:    null,              // optional — groups interchangeable SKUs (e.g. "House Vodka")
+      poolServingsPerUnit: null,      // servings one bottle yields when in a pool (e.g. 24 for 70cl)
       qtyOrdered:  77,                // number — cases/SKUs ordered
       orderPrice:  17.50,             // number — £ per SKU
       arrival:     "Wednesday",       // string — arrival day label

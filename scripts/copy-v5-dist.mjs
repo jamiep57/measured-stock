@@ -1,0 +1,69 @@
+/**
+ * Copy Vite build output from v5/dist to the repo root for Vercel.
+ *
+ * - Publishes admin/app/scan shells + /static assets at the repo root
+ * - Writes admin.html as index.html so `/` serves V5 (filesystem wins over rewrites)
+ * - On Vercel only, stubs v5/*.html so clean-URLs cannot keep serving /v5/admin
+ */
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
+const dist = path.join(repoRoot, 'v5', 'dist');
+const v5Dir = path.join(repoRoot, 'v5');
+
+if (!fs.existsSync(dist)) {
+  console.error('Missing v5/dist — run vite build first');
+  process.exit(1);
+}
+
+for (const name of fs.readdirSync(dist)) {
+  // Never publish Vite's index.html name as site root — we map admin → index below.
+  if (name === 'index.html') {
+    console.warn('skipping dist/index.html (admin is published as /index.html)');
+    continue;
+  }
+  const src = path.join(dist, name);
+  const dest = path.join(repoRoot, name);
+  fs.rmSync(dest, { recursive: true, force: true });
+  fs.cpSync(src, dest, { recursive: true });
+}
+
+const adminHtml = path.join(repoRoot, 'admin.html');
+if (!fs.existsSync(adminHtml)) {
+  console.error('Missing admin.html after dist copy');
+  process.exit(1);
+}
+fs.copyFileSync(adminHtml, path.join(repoRoot, 'index.html'));
+console.log('Published admin.html as /index.html for site root');
+
+function redirectStub(to) {
+  const safe = String(to).replace(/"/g, '&quot;');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="0;url=${safe}">
+  <link rel="canonical" href="${safe}">
+  <title>Redirecting…</title>
+  <script>location.replace(${JSON.stringify(to)});</script>
+</head>
+<body>
+  <p>Moved to <a href="${safe}">${safe}</a>.</p>
+</body>
+</html>
+`;
+}
+
+if (process.env.VERCEL) {
+  fs.writeFileSync(path.join(v5Dir, 'admin.html'), redirectStub('/'));
+  fs.writeFileSync(path.join(v5Dir, 'scan.html'), redirectStub('/scan'));
+  fs.writeFileSync(path.join(v5Dir, 'app.html'), redirectStub('/app/'));
+  fs.writeFileSync(path.join(v5Dir, 'index.html'), redirectStub('/app/'));
+  console.log('Stubbed legacy /v5/*.html shells for clean-URL safety');
+}
+
+fs.rmSync(dist, { recursive: true, force: true });
+console.log('Copied v5/dist → repo root');

@@ -1,0 +1,14 @@
+---
+description: Ship in-progress work on the dev branch so the Vercel preview stays current
+alwaysApply: true
+---
+
+# Dev branch preview
+
+Day-to-day work happens on `dev`, not `main`. The user watches the Vercel preview for `dev`.
+
+- Before the first commit in a session, check out `dev`. If it does not exist locally, create it from `origin/dev` or from `main` if the remote branch is missing.
+- After a change the user should be able to see, commit it on `dev` and push to `origin/dev` without waiting to be asked. Push again when a later change in the same task is ready to look at.
+- Do not commit or push to `main` unless the user explicitly asks to update main.
+- Never force-push. Never skip hooks.
+- Leave unrelated dirty files out of the commit.

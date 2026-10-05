@@ -20,7 +20,7 @@
   ║  v1.2  Full-width layout, Outfit font, reduced border radius.        ║
   ║        File renamed to Measured-Stock-System.html.                   ║
   ║        Supabase migration tool (supabase_migrate.html) added.        ║
-  ║        Sample data auto-populated on first load.                     ║
+  ║        Starts with a blank event on first load (no sample data).     ║
   ║                                                                      ║
   ║  v1.3  Sticky table headers (frozen panes).                          ║
   ║        Product sort: canonical category order (Beer → Cider →        ║
@@ -123,15 +123,30 @@
   ║        (id = "__recipes__"), so no extra SQL setup is needed —       ║
   ║        the user can do everything from inside the app.               ║
   ║                                                                      ║
+  ║  v4.2  Spreadsheet-style keyboard navigation in every table.         ║
+  ║        Arrow Up/Down jumps between the cell above/below in the       ║
+  ║        same column. Arrow Left/Right jumps to the previous/next      ║
+  ║        cell in the same row (at the edge of the value, so in-cell    ║
+  ║        text editing still works). Enter moves down one row,          ║
+  ║        Shift+Enter moves up. Date/time/select inputs keep their      ║
+  ║        native arrow behaviour; hold Alt with arrows on a select to   ║
+  ║        step out of it. Focus auto-selects the cell's value so        ║
+  ║        typing immediately replaces it.                               ║
+  ║                                                                      ║
+  ║  v4.3  Closing Stock: Return Amount now capped at the closing count  ║
+  ║        (cases). You can't quote a return larger than what's          ║
+  ║        physically on the shelf — Return Amount = min(Invoice × SOR%, ║
+  ║        Closing Count Cases). Summary panel return totals match.      ║
+  ║                                                                      ║
   ╚══════════════════════════════════════════════════════════════════════╝
 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Measured Stock System v4.1</title>
+  <title>Measured Stock System v4.3</title>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/style.css?v=20260529-1844-fielderrors">
+  <link rel="stylesheet" href="assets/css/style.css?v=20260601-1228-returncap">
 </head>
 <body>
 
@@ -143,6 +158,7 @@
       <div class="logo">
         <img src="assets/img/logo.png" alt="Measured">
       </div>
+      <span class="sidebar-version" id="appVersion" title="App version"></span>
     </div>
 
     <div class="sidebar-event">
@@ -267,6 +283,11 @@
         <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         Settings
       </button>
+
+      <a class="nav-item nav-item-bottom" href="/" style="text-decoration:none;color:inherit" title="Current app (relational)">
+        <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Main app
+      </a>
     </nav>
   </aside>
 
@@ -397,7 +418,6 @@
           <div class="card">
             <div class="card-title" style="margin-bottom:14px">Data & Backup</div>
             <div class="btn-row" style="margin-top:0">
-              <button class="btn btn-outline btn-sm" onclick="loadSampleData()">Load Sample Data</button>
               <button class="btn btn-outline btn-sm" onclick="exportData()">Export JSON</button>
               <label class="btn btn-outline btn-sm" style="cursor:pointer">
                 Import JSON
@@ -409,44 +429,13 @@
           <!-- Cloud Sync -->
           <div class="card" id="cloudCard" style="grid-column:1/-1">
             <div class="card-title" style="margin-bottom:6px">☁ Cloud Sync (Multi-Device)</div>
-            <p style="font-size:12px;color:var(--muted-foreground);margin-bottom:16px;line-height:1.6">
-              Connect to <strong>Supabase</strong> for real-time sync across all devices.
+            <p style="font-size:12px;color:var(--muted-foreground);margin-bottom:14px;line-height:1.6">
+              Cloud sync is <strong>built in</strong> and always on. Every change you make is saved to the cloud and appears on your other devices within a few seconds — no setup required.
             </p>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div class="form-row">
-                <label>Supabase Project URL</label>
-                <input type="text" id="cloudUrl" placeholder="https://xxxxxxxxxxxx.supabase.co" oninput="previewCloudConfig()">
-              </div>
-              <div class="form-row">
-                <label>Supabase Anon Key</label>
-                <input type="text" id="cloudKey" placeholder="eyJhbGciOi..." oninput="previewCloudConfig()">
-              </div>
-            </div>
-            <div class="btn-row" style="margin-top:8px">
-              <button class="btn btn-primary btn-sm" onclick="connectCloud()">Connect & Sync</button>
-              <button class="btn btn-outline btn-sm" onclick="testCloud()">Test Connection</button>
-              <button class="btn btn-danger btn-sm" onclick="disconnectCloud()" id="disconnectBtn" style="display:none">Disconnect</button>
+            <div class="btn-row" style="margin-top:4px">
+              <button class="btn btn-outline btn-sm" onclick="forceResync()">↻ Force resync</button>
             </div>
             <div id="cloudStatusMsg" style="font-size:12px;margin-top:10px;color:var(--muted-foreground)"></div>
-            <details style="margin-top:16px">
-              <summary>Settings Instructions (5 minutes)</summary>
-              <div style="font-size:12px;color:var(--muted-foreground);margin-top:10px;line-height:1.8;background:var(--muted);padding:14px;border-radius:var(--radius);border:1px solid var(--border)">
-                <strong>1.</strong> Go to <a href="https://supabase.com" target="_blank" style="color:var(--foreground)">supabase.com</a> → New Project<br>
-                <strong>2.</strong> Go to <strong>SQL Editor</strong> and run:<br>
-                <pre id="sqlSnippet" style="background:var(--foreground);color:#d4d4d8;padding:10px;border-radius:var(--radius);font-size:11px;margin:8px 0;font-family:monospace;overflow-x:auto">create table if not exists stock_events (
-  id text primary key,
-  name text,
-  data jsonb,
-  updated_at timestamptz default now()
-);
-alter table stock_events enable row level security;
-create policy "anon read write" on stock_events
-  for all using (true) with check (true);</pre>
-                <button class="btn btn-outline btn-sm" onclick="copySQL()">Copy SQL</button><br><br>
-                <strong>3.</strong> Project Settings → API → copy URL and anon key above<br>
-                <strong>4.</strong> Click <strong>Connect & Sync</strong>
-              </div>
-            </details>
           </div>
         </div>
       </div>
@@ -472,7 +461,7 @@ create policy "anon read write" on stock_events
         <div class="card" style="margin-bottom:14px">
           <div class="card-title" style="margin-bottom:6px">Report a Bug</div>
           <p style="font-size:12px;color:var(--muted-foreground);margin-bottom:14px">
-            Found something broken or weird? Log it here. Bug reports are stored locally on this device.
+            Found something broken or weird? Log it here. Bug reports sync to the cloud when connected, and are saved locally otherwise.
           </p>
           <div style="display:grid;grid-template-columns:1fr 220px;gap:12px">
             <div class="form-row" style="margin-bottom:0">
@@ -768,13 +757,15 @@ create policy "anon read write" on stock_events
       <div id="panel-closing" class="panel">
         <div class="card" style="margin-bottom:14px">
           <div class="card-title">Closing Stock &amp; Financial Reconciliation</div>
-          <p style="font-size:13px;color:var(--muted-foreground);margin-top:2px">Full close count, financial reconciliation, and supplier returns.</p>
+          <p style="font-size:13px;color:var(--muted-foreground);margin-top:2px">Full close count, financial reconciliation, and supplier returns. Click <strong>Product</strong> or <strong>Category</strong> headers to sort.</p>
         </div>
         <div class="table-wrap">
           <div class="table-scroll"><table>
             <thead>
               <tr>
-                <th>Product</th><th>Category</th><th>Pack Size</th><th>Supplier</th><th>SOR %</th><th>Invoice Qty</th>
+                <th class="closing-sort-th" data-sort="name" onclick="setClosingSort('name')" style="cursor:pointer;user-select:none">Product <span class="closing-sort-arrow" id="closingSortArrow-name"></span></th>
+                <th class="closing-sort-th" data-sort="category" onclick="setClosingSort('category')" style="cursor:pointer;user-select:none">Category <span class="closing-sort-arrow" id="closingSortArrow-category"></span></th>
+                <th>Pack Size</th><th>Supplier</th><th>SOR %</th><th>Invoice Qty</th>
                 <th>Closing Count (Cases)</th><th>Closing Count (Singles)</th><th>Max Returnable</th><th>Return Amount</th><th>Carried Over</th>
               </tr>
             </thead>
@@ -1188,7 +1179,7 @@ create policy "anon read write" on stock_events
 <!-- ========== SCRIPTS ========== -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="assets/js/app.js?v=20260529-1844-fielderrors"></script>
+<script src="assets/js/app.js?v=20261002-no-sample-data"></script>
 
 </body>
 </html>

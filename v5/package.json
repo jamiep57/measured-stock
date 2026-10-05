@@ -1,0 +1,30 @@
+{
+  "name": "measured-stock-v5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "eslint": "^10.11.0",
+    "globals": "^17.13.0",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.2",
+    "@thermal-label/brother-ql-web": "^0.6.1",
+    "@zxing/browser": "^0.2.1",
+    "fflate": "^0.8.3",
+    "html-to-image": "^1.11.13",
+    "idb": "^8.0.2",
+    "lucide": "^1.21.0",
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,4 +1,9 @@
 // ============================================================
+// APP VERSION (single source of truth — update here on each release)
+// ============================================================
+const APP_VERSION = 'v4.3';
+
+// ============================================================
 // DATA STORE — MULTI-EVENT + CLOUD SYNC
 // ============================================================
 const DEFAULT_CATEGORIES = ['Beer','Cider','Wine','Sparkling Wine','Spirit & Mixer','RTDs','Canned Cocktails','Hard Seltzer','Shots','Cocktails','Soft Drinks'];
@@ -82,8 +87,12 @@ function getEventPairs() {
 let appData = { currentEventId: null, events: {}, recipes: [] };
 let state = blankEvent('My First Event'); // active event — alias into appData.events[currentId]
 
-// Reserved row id used to store the global recipe library inside stock_events
+// Reserved row ids used to store global (non-event) data inside stock_events.
+// Any row whose id starts with `__` is treated as reserved and never shown
+// in the event switcher / event list. This lets us sync app-wide data
+// (recipes, bug reports, …) without creating extra Supabase tables.
 const RECIPES_ROW_ID = '__recipes__';
+const BUGS_ROW_ID    = '__bugs__';
 function isReservedRow(id) { return typeof id === 'string' && id.startsWith('__'); }
 
 let editingProductId = null;
@@ -236,19 +245,52 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 // ============================================================
 // CLOUD CONFIG (Supabase)
 // ============================================================
+// Built-in Supabase project. The anon key is a public JWT — Row Level
+// Security on the `stock_events` table is what actually protects the data.
+// To rotate: replace the values below and ship a new build. Users do not
+// need to (and cannot) enter their own credentials.
+const BUILTIN_CLOUD_CONFIG = {
+  url: 'https://qqdvzcaukstfdixnfuqq.supabase.co',
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxZHZ6Y2F1a3N0ZmRpeG5mdXFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3OTg2NzQsImV4cCI6MjA5MjM3NDY3NH0.pEli5ZEliJIwBTsNLb5JW4mFW1nV1TAnUO0f5_1UhGU',
+};
+
 let cloudConfig = { url: '', key: '' };
 
 function loadCloudConfig() {
+  // Built-in config wins — we ignore any stale localStorage value so that
+  // rotating credentials in a future build takes effect immediately for
+  // every device, with no "Disconnect & reconnect" dance.
+  if (BUILTIN_CLOUD_CONFIG.url && BUILTIN_CLOUD_CONFIG.key) {
+    cloudConfig = { url: BUILTIN_CLOUD_CONFIG.url.replace(/\/$/, ''), key: BUILTIN_CLOUD_CONFIG.key };
+    syncDbConfig();
+    return;
+  }
   const raw = localStorage.getItem('measured_stock_cloud');
   if (raw) { try { cloudConfig = JSON.parse(raw); } catch(e) {} }
+  syncDbConfig();
 }
 
 function saveCloudConfig() {
+  // Persist a copy as a fallback if the built-in is ever cleared. Harmless
+  // either way since loadCloudConfig() prefers the built-in.
   localStorage.setItem('measured_stock_cloud', JSON.stringify(cloudConfig));
 }
 
 function hasCloud() {
   return !!(cloudConfig.url && cloudConfig.key);
+}
+
+// Share the active cloud config with the v2 relational data layer (db.js)
+// so both paths use one source of truth. Safe no-op if db.js isn't loaded.
+function syncDbConfig() {
+  try {
+    if (global_DB() && cloudConfig.url && cloudConfig.key) {
+      window.DB.configure({ url: cloudConfig.url, key: cloudConfig.key });
+    }
+  } catch (_) { /* db.js falls back to its builtin config */ }
+}
+function global_DB() {
+  return typeof window !== 'undefined' && window.DB;
 }
 
 function setSyncStatus(status) {
@@ -302,12 +344,39 @@ async function cloudPush(eventObj) {
     });
     _localDirty = false;
     setSyncStatus('synced');
+    triggerSyncEvent(eventObj.id);
     return true;
   } catch(err) {
     console.error('[Sync] Push failed:', err.message);
     setSyncStatus('error');
     return false;
   }
+}
+
+// Fire-and-forget POST to /api/sync-event so the server-side projection
+// to the v2 relational tables stays current. Failures are silent — the
+// /api/sync-catchup cron picks up any rows whose blob updated_at is
+// ahead of events.source_updated_at within ~5 minutes.
+//
+// Coalesces rapid successive saves of the same event into a single
+// trailing call (200ms debounce per event id) so a burst of typing
+// doesn't fan out into N rebuilds.
+const _syncTriggerTimers = {};
+function triggerSyncEvent(id) {
+  if (!id) return;
+  if (_syncTriggerTimers[id]) clearTimeout(_syncTriggerTimers[id]);
+  _syncTriggerTimers[id] = setTimeout(() => {
+    delete _syncTriggerTimers[id];
+    try {
+      fetch('/api/sync-event', {
+        method:      'POST',
+        headers:     {'Content-Type': 'application/json'},
+        body:        JSON.stringify({ event_id: id }),
+        keepalive:   true,
+        credentials: 'same-origin',
+      }).catch(() => { /* catch-up worker will retry */ });
+    } catch (_) { /* offline / aborted — catch-up worker will retry */ }
+  }, 200);
 }
 
 async function cloudPull() {
@@ -358,6 +427,7 @@ async function pollForChanges() {
 
   let anyChanged = false;
   let recipesChanged = false;
+  let bugsChanged = false;
 
   rows.forEach(row => {
     const remote = row.data;
@@ -369,7 +439,7 @@ async function pollForChanges() {
 
     lastKnownRemoteTs[remote.id] = serverTs;
 
-    // Reserved rows (e.g. global recipes) — not real events
+    // Reserved rows (e.g. global recipes / bug reports) — not real events
     if (isReservedRow(remote.id)) {
       if (remote.id === RECIPES_ROW_ID) {
         const remoteSavedAt = remote._savedAt || 0;
@@ -379,6 +449,8 @@ async function pollForChanges() {
           appData._recipesSavedAt = remoteSavedAt;
           recipesChanged = true;
         }
+      } else if (remote.id === BUGS_ROW_ID) {
+        if (mergeRemoteBugs(remote)) bugsChanged = true;
       }
       return;
     }
@@ -431,6 +503,12 @@ async function pollForChanges() {
     toast('↓ Recipes updated from another device', 'success');
   }
 
+  if (bugsChanged) {
+    updateBugCountBadge();
+    if (document.getElementById('bugList')) renderBugs();
+    toast('↓ Bug reports updated from another device', 'success');
+  }
+
   if (anyChanged) {
     localStorage.setItem('measured_stock_app', JSON.stringify(appData));
     renderEventSwitcher();
@@ -453,8 +531,9 @@ async function syncOnConnect() {
   const rows = await cloudPull();
   if (!rows) return false;
 
-  // Split out the reserved recipes row first
+  // Split out reserved rows first (recipes + bugs are app-wide, not per event)
   const recipeRow = rows.find(r => r.data && r.data.id === RECIPES_ROW_ID);
+  const bugsRow   = rows.find(r => r.data && r.data.id === BUGS_ROW_ID);
   const eventRows = rows.filter(r => r.data && r.data.id && !isReservedRow(r.data.id));
 
   if (recipeRow) {
@@ -465,6 +544,11 @@ async function syncOnConnect() {
       appData._recipesSavedAt = remoteSavedAt;
     }
     lastKnownRemoteTs[RECIPES_ROW_ID] = recipeRow.updated_at;
+  }
+
+  if (bugsRow) {
+    mergeRemoteBugs(bugsRow.data);
+    lastKnownRemoteTs[BUGS_ROW_ID] = bugsRow.updated_at;
   }
 
   if (eventRows.length > 0) {
@@ -512,6 +596,12 @@ async function syncOnConnect() {
   // Push our local recipes back if we have any but the cloud didn't
   if ((appData.recipes || []).length > 0 && !recipeRow) {
     cloudPushRecipes();
+  }
+
+  // Same for bug reports — push local-only bugs up to the cloud on first connect
+  if (!bugsRow) {
+    const localBugs = loadBugs();
+    if ((localBugs.items || []).length > 0) cloudPushBugs();
   }
 
   renderAll();
@@ -3359,9 +3449,52 @@ function saveTransfers() { save(); toast('Saved', 'success'); }
 // ============================================================
 // CLOSING STOCK
 // ============================================================
+// Sort state for the Closing Stock table.
+// mode: 'name' | 'category'   dir: 'asc' | 'desc'
+let closingSortMode = 'name';
+let closingSortDir  = 'asc';
+
+function setClosingSort(mode) {
+  if (closingSortMode === mode) {
+    closingSortDir = closingSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    closingSortMode = mode;
+    closingSortDir  = 'asc';
+  }
+  renderClosing();
+}
+
+function updateClosingSortArrows() {
+  ['name','category'].forEach(m => {
+    const el = document.getElementById('closingSortArrow-' + m);
+    if (!el) return;
+    if (closingSortMode === m) {
+      el.textContent = closingSortDir === 'asc' ? ' \u25B2' : ' \u25BC';
+      el.style.color = 'var(--foreground)';
+      el.style.opacity = '1';
+    } else {
+      el.textContent = ' \u2195';
+      el.style.color = 'var(--muted-foreground)';
+      el.style.opacity = '0.4';
+    }
+  });
+}
+
 function renderClosing() {
   const body = document.getElementById('closingTableBody');
-  const products = [...state.products.filter(p => p.name)].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const dir = closingSortDir === 'desc' ? -1 : 1;
+  const products = [...state.products.filter(p => p.name)].sort((a,b) => {
+    if (closingSortMode === 'category') {
+      const ca = (a.category || '\uffff').toLowerCase();
+      const cb = (b.category || '\uffff').toLowerCase();
+      if (ca !== cb) return ca.localeCompare(cb) * dir;
+      // tie-breaker: name always ascending so rows within a category read naturally
+      return (a.name||'').localeCompare(b.name||'');
+    }
+    return (a.name||'').localeCompare(b.name||'') * dir;
+  });
+
+  updateClosingSortArrows();
 
   if (!products.length) {
     body.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="icon">📊</div><p>Add products first.</p></div></td></tr>`;
@@ -3378,9 +3511,13 @@ function renderClosing() {
     const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
     const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
     const sorDisplay = sor != null ? sor + '%' : '—';
-    // Max returnable = Invoice QTY × SOR%, rounded DOWN to the nearest whole integer.
+    // Max returnable = Invoice QTY × SOR%, rounded UP to the nearest whole integer.
     const invForCalc = invoiceQty !== '' ? parseFloat(invoiceQty) : (o.deliveredQty ?? p.qtyOrdered ?? 0);
-    const maxReturn = sor != null ? Math.floor((invForCalc || 0) * sor / 100) : '—';
+    const maxReturn = sor != null ? Math.ceil((invForCalc || 0) * sor / 100) : '—';
+    // Return amount is capped at what's physically left in the closing count —
+    // you can't return more cases than you've actually got on the shelf.
+    const closingCasesNum = closingCases !== '' ? parseFloat(closingCases) || 0 : 0;
+    const returnAmount = maxReturn === '—' ? '—' : Math.min(maxReturn, closingCasesNum);
 
     return `
       <tr>
@@ -3389,12 +3526,12 @@ function renderClosing() {
         <td style="font-size:12px;color:var(--muted-foreground)">${p.size || '—'}</td>
         <td style="color:var(--muted-foreground)">${p.supplier || '—'}</td>
         <td style="font-weight:600">${sorDisplay}</td>
-        <td><input type="text" value="${invoiceQty}" placeholder="" style="width:90px" id="cl-inv-${p.id}" onblur="evalMathInput(this)" onchange="recalcClosing('${p.id}')"></td>
-        <td><input type="number" min="0" value="${closingCases}" placeholder="" style="width:90px" id="cl-cases-${p.id}" onchange="recalcClosing('${p.id}')"></td>
-        <td><input type="number" min="0" value="${closingSingles}" placeholder="" style="width:90px" id="cl-singles-${p.id}" onchange="recalcClosing('${p.id}')"></td>
+        <td><input type="text" value="${invoiceQty}" placeholder="" style="width:90px" id="cl-inv-${p.id}" oninput="recalcClosing('${p.id}')" onblur="evalMathInput(this); flushClosing('${p.id}')"></td>
+        <td><input type="number" min="0" value="${closingCases}" placeholder="" style="width:90px" id="cl-cases-${p.id}" oninput="recalcClosing('${p.id}')" onblur="flushClosing('${p.id}')"></td>
+        <td><input type="number" min="0" value="${closingSingles}" placeholder="" style="width:90px" id="cl-singles-${p.id}" oninput="recalcClosing('${p.id}')" onblur="flushClosing('${p.id}')"></td>
         <td style="font-weight:700" id="cl-maxret-${p.id}">${maxReturn}</td>
-        <td style="font-weight:700" id="cl-return-${p.id}">${maxReturn !== '—' ? maxReturn : '—'}</td>
-        <td><input type="number" value="${cl.carriedOver ?? ''}" placeholder="" style="width:80px" id="cl-carry-${p.id}" onchange="recalcClosing('${p.id}')"></td>
+        <td style="font-weight:700" id="cl-return-${p.id}">${returnAmount}</td>
+        <td><input type="number" value="${cl.carriedOver ?? ''}" placeholder="" style="width:80px" id="cl-carry-${p.id}" oninput="recalcClosing('${p.id}')" onblur="flushClosing('${p.id}')"></td>
       </tr>
     `;
   }).join('');
@@ -3406,25 +3543,30 @@ function recalcClosing(id) {
   const invRaw = invEl ? invEl.value.trim() : '';
   const invoiceQty = invRaw !== '' ? parseFloat(invRaw) : (state.opening[id]?.invoiceQty ?? state.opening[id]?.deliveredQty ?? p.qtyOrdered ?? 0);
 
-  // Persist invoice qty back to opening state so other tabs can use it
+  // Persist invoice qty back to opening state so other tabs can use it.
+  // An empty field clears the stored value so the user can blank it out.
   if (!state.opening[id]) state.opening[id] = {};
-  state.opening[id].invoiceQty = invRaw !== '' ? parseFloat(invRaw) : state.opening[id].invoiceQty ?? null;
+  state.opening[id].invoiceQty = invRaw !== '' ? parseFloat(invRaw) : null;
 
   const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
   const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
-  // Max returnable = Invoice QTY × SOR%, rounded DOWN to the nearest whole integer.
-  const maxReturn = sor != null ? Math.floor((invoiceQty || 0) * sor / 100) : '—';
-
-  const maxRetEl = document.getElementById('cl-maxret-' + id);
-  const retEl    = document.getElementById('cl-return-'  + id);
-  if (maxRetEl) maxRetEl.textContent = maxReturn;
-  if (retEl)    retEl.textContent    = maxReturn;
+  // Max returnable = Invoice QTY × SOR%, rounded UP to the nearest whole integer.
+  const maxReturn = sor != null ? Math.ceil((invoiceQty || 0) * sor / 100) : '—';
 
   const casesEl   = document.getElementById('cl-cases-'   + id);
   const singlesEl = document.getElementById('cl-singles-' + id);
   const carryEl   = document.getElementById('cl-carry-'   + id);
   const cases   = casesEl   ? (parseFloat(casesEl.value)   || 0) : 0;
   const singles = singlesEl ? (parseFloat(singlesEl.value) || 0) : 0;
+
+  // Return amount is capped at the physical closing count (cases) — you can't
+  // return more than you actually have.
+  const returnAmount = maxReturn === '—' ? '—' : Math.min(maxReturn, cases);
+
+  const maxRetEl = document.getElementById('cl-maxret-' + id);
+  const retEl    = document.getElementById('cl-return-'  + id);
+  if (maxRetEl) maxRetEl.textContent = maxReturn;
+  if (retEl)    retEl.textContent    = returnAmount;
   const ups     = p.unitsPerSku || 1;
   state.closing[id] = {
     closingCases:   cases,
@@ -3436,14 +3578,33 @@ function recalcClosing(id) {
   save();
 }
 
+// Called on blur from any closing-stock input. recalcClosing has already
+// written the latest value to state and scheduled a debounced cloud push;
+// this flushes that debounce so the user-finished value reaches Supabase
+// immediately even if they navigate away before the 1.2s timer fires.
+function flushClosing(id) {
+  recalcClosing(id);
+  clearTimeout(save._cloudTimer);
+  cloudUpsertEvent(state);
+}
+
 function saveClosing() {
   state.products.forEach(p => {
+    const invEl     = document.getElementById('cl-inv-'     + p.id);
     const casesEl   = document.getElementById('cl-cases-'   + p.id);
     const singlesEl = document.getElementById('cl-singles-' + p.id);
     const carryEl   = document.getElementById('cl-carry-'   + p.id);
     const cases   = casesEl   ? (parseFloat(casesEl.value)   || 0) : 0;
     const singles = singlesEl ? (parseFloat(singlesEl.value) || 0) : 0;
     const ups     = p.unitsPerSku || 1;
+    // Invoice qty lives on state.opening so other tabs can read it. Capture it
+    // here too — relying solely on the input's onchange means a value that was
+    // typed-but-never-blurred (or cleared) would be silently dropped.
+    if (!state.opening[p.id]) state.opening[p.id] = {};
+    if (invEl) {
+      const invRaw = invEl.value.trim();
+      state.opening[p.id].invoiceQty = invRaw !== '' ? parseFloat(invRaw) : null;
+    }
     state.closing[p.id] = {
       closingCases:   cases,
       closingSingles: singles,
@@ -3451,7 +3612,7 @@ function saveClosing() {
       carriedOver:    carryEl ? (parseFloat(carryEl.value) || 0) : 0,
     };
   });
-  save();
+  save({ immediate: true });
   toast('Closing stock saved', 'success');
 }
 
@@ -3477,10 +3638,13 @@ function renderSummary() {
       .reduce((s, w) => s + (w.unit === 'units' && ups > 0 ? (w.qty || 0) / ups : (w.qty || 0)), 0);
     const supplier = state.suppliers.find(s => s.name === p.supplier) || {};
     const sor = (supplier.sor != null && supplier.sor !== '') ? parseFloat(supplier.sor) : null;
-    // Return amount = Invoice QTY × SOR%, rounded down.
+    // Return amount = min(Invoice QTY × SOR%, closing cases). Capped at the
+    // physical closing count so we never quote a return larger than we hold.
     const o = state.opening[p.id] || {};
     const invoiceQty = o.invoiceQty != null ? o.invoiceQty : (o.deliveredQty ?? p.qtyOrdered ?? 0);
-    const returnAmt = sor != null ? Math.floor((invoiceQty || 0) * sor / 100) : 0;
+    const maxReturnSor = sor != null ? Math.ceil((invoiceQty || 0) * sor / 100) : 0;
+    const closingCasesForReturn = cl.closingCases ?? cl.fullCount ?? 0;
+    const returnAmt = sor != null ? Math.min(maxReturnSor, closingCasesForReturn) : 0;
     const consumed = opening - transferred - wastage - closing;
 
     totalOrdered += p.qtyOrdered || 0;
@@ -3693,13 +3857,20 @@ function sortAllLists() {
 // ============================================================
 // LOAD / SAVE
 // ============================================================
-function save() {
+function save(opts) {
   appData.events[appData.currentEventId] = state;
   localStorage.setItem('measured_stock_app', JSON.stringify(appData));
   _localDirty = true;
   updateStats();
   clearTimeout(save._cloudTimer);
-  save._cloudTimer = setTimeout(() => cloudUpsertEvent(state), 1200);
+  // `immediate: true` is used by explicit Save buttons (e.g. Save Closing Stock)
+  // so the user-initiated push isn't lost if they navigate away inside the
+  // debounce window. Background autosaves stay debounced to avoid spam.
+  if (opts && opts.immediate) {
+    cloudUpsertEvent(state);
+  } else {
+    save._cloudTimer = setTimeout(() => cloudUpsertEvent(state), 1200);
+  }
 }
 
 function load() {
@@ -3776,9 +3947,17 @@ let _autoLoadSample = false;
 load();
 sortAllLists();
 save(); // persist the sorted order so it survives next load
-if (_autoLoadSample) loadSampleData(true);
-else renderAll();
+// Auto-loading sample data is disabled: it saved a "Highlights 2025" sample
+// event to the cloud from every fresh browser, creating duplicate events.
+renderAll();
 initPillDelegation();
+applyAppVersion();
+
+function applyAppVersion() {
+  const el = document.getElementById('appVersion');
+  if (el) el.textContent = APP_VERSION;
+  document.title = `Measured Stock System ${APP_VERSION}`;
+}
 
 // Defer cloud init until all scripts have loaded
 window.addEventListener('load', () => {
@@ -3968,107 +4147,49 @@ function closeImportModal() {
 // ============================================================
 // CLOUD UI HELPERS
 // ============================================================
-function previewCloudConfig() {
-  const url = document.getElementById('cloudUrl').value.trim();
-  const key = document.getElementById('cloudKey').value.trim();
+// Manual resync button on the Cloud Sync card. Handy if the user thinks
+// another device has changed something and doesn't want to wait for the
+// 8s poll, or if a previous push failed (sync status shows ✕).
+async function forceResync() {
   const msg = document.getElementById('cloudStatusMsg');
-  if (url && key) {
-    msg.textContent = 'Ready to connect — click Connect & Sync.';
-    msg.style.color = 'var(--text-muted)';
-  }
-}
-
-async function connectCloud() {
-  const url = document.getElementById('cloudUrl').value.trim().replace(/\/$/, '');
-  const key = document.getElementById('cloudKey').value.trim();
-  const msg = document.getElementById('cloudStatusMsg');
-
-  if (!url || !key) { toast('Enter both URL and key', 'error'); return; }
-
-  // Save config so hasCloud() returns true during the test
-  cloudConfig = { url, key };
-  saveCloudConfig();
-
-  msg.textContent = 'Testing connection…';
-  msg.style.color = 'var(--muted-foreground)';
-  setSyncStatus('syncing');
-
-  // Step 1: verify we can reach the table
-  try {
-    await supabaseFetch('/rest/v1/stock_events?select=id&limit=1');
-  } catch(err) {
-    msg.textContent = '✗ ' + err.message + ' — check URL/key, and make sure you\'ve run the SQL setup.';
-    msg.style.color = 'var(--danger)';
-    toast('Connection failed', 'error');
-    setSyncStatus('error');
-    cloudConfig = { url: '', key: '' };
-    saveCloudConfig();
+  if (!hasCloud()) {
+    if (msg) {
+      msg.textContent = '✗ No cloud config baked into this build.';
+      msg.style.color = 'var(--danger)';
+    }
     return;
   }
-
-  msg.textContent = '✓ Connected — syncing data…';
-  msg.style.color = 'var(--success)';
-  document.getElementById('disconnectBtn').style.display = 'inline-flex';
-
-  // Step 2: full sync
+  if (msg) {
+    msg.textContent = 'Resyncing…';
+    msg.style.color = 'var(--muted-foreground)';
+  }
+  setSyncStatus('syncing');
   const ok = await syncOnConnect();
   if (ok) {
-    msg.textContent = '✓ Connected and syncing.';
-    msg.style.color = 'var(--success)';
-    toast('Cloud sync active!', 'success');
+    if (msg) {
+      msg.textContent = '✓ Resynced from cloud.';
+      msg.style.color = 'var(--success)';
+    }
+    toast('Resynced from cloud', 'success');
   } else {
-    msg.textContent = '✗ Connected but sync failed — check console for details.';
-    msg.style.color = 'var(--danger)';
-    toast('Sync failed after connecting', 'error');
+    if (msg) {
+      msg.textContent = '✗ Resync failed — check console for details.';
+      msg.style.color = 'var(--danger)';
+    }
+    toast('Resync failed', 'error');
   }
-}
-
-async function testCloud() {
-  const url = document.getElementById('cloudUrl').value.trim().replace(/\/$/, '');
-  const key = document.getElementById('cloudKey').value.trim();
-  if (!url || !key) { toast('Enter URL and key first', 'error'); return; }
-  const msg = document.getElementById('cloudStatusMsg');
-  msg.textContent = 'Testing…';
-  try {
-    const res = await fetch(`${url}/rest/v1/stock_events?select=id&limit=1`, {
-      headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    msg.textContent = '✓ Connection successful — click Connect & Sync to activate.';
-    msg.style.color = 'var(--success)';
-  } catch(err) {
-    msg.textContent = `✗ Failed: ${err.message}`;
-    msg.style.color = 'var(--danger)';
-  }
-}
-
-function disconnectCloud() {
-  if (!confirm('Disconnect cloud sync? Your data stays saved in the browser.')) return;
-  stopPolling();
-  cloudConfig = { url: '', key: '' };
-  saveCloudConfig();
-  _localDirty = false;
-  lastKnownRemoteTs = {};
-  setSyncStatus('offline');
-  document.getElementById('disconnectBtn').style.display = 'none';
-  document.getElementById('cloudStatusMsg').textContent = 'Disconnected. Data saved locally.';
-  document.getElementById('cloudStatusMsg').style.color = 'var(--muted-foreground)';
-  toast('Cloud sync disconnected', 'success');
-}
-
-function copySQL() {
-  const sql = document.getElementById('sqlSnippet').textContent;
-  navigator.clipboard.writeText(sql).then(() => toast('SQL copied!', 'success'));
 }
 
 function initCloudUI() {
   loadCloudConfig();
-  if (cloudConfig.url) {
-    document.getElementById('cloudUrl').value = cloudConfig.url;
-    document.getElementById('cloudKey').value = cloudConfig.key;
-    document.getElementById('disconnectBtn').style.display = 'inline-flex';
-    document.getElementById('cloudStatusMsg').textContent = '✓ Cloud credentials loaded.';
-    document.getElementById('cloudStatusMsg').style.color = 'var(--success)';
+  const msg = document.getElementById('cloudStatusMsg');
+  if (!msg) return;
+  if (hasCloud()) {
+    msg.textContent = '✓ Built-in cloud sync is active. Data syncs across all devices automatically.';
+    msg.style.color = 'var(--success)';
+  } else {
+    msg.textContent = '✗ No cloud config baked into this build — running in local-only mode.';
+    msg.style.color = 'var(--danger)';
   }
 }
 
@@ -4193,8 +4314,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ============================================================
 // BUG REPORTS
-// Stored app-wide (not per event) under localStorage key 'measured_stock_bugs'.
-// Shape: { items: [ { id, title, description, area, status, createdAt, resolvedAt } ] }
+// Stored app-wide (not per event). localStorage key 'measured_stock_bugs'
+// is the offline source of truth; if cloud sync is connected the same
+// payload also lives in the existing `stock_events` table as a reserved
+// row (id = '__bugs__'), following the same pattern as the global recipes
+// library. No SQL setup required.
+// Shape: { items: [ { id, title, description, area, status, createdAt, resolvedAt } ], _savedAt }
 // ============================================================
 const BUGS_STORAGE_KEY = 'measured_stock_bugs';
 let bugFilter = 'open';
@@ -4202,19 +4327,63 @@ let bugFilter = 'open';
 function loadBugs() {
   try {
     const raw = localStorage.getItem(BUGS_STORAGE_KEY);
-    if (!raw) return { items: [] };
+    if (!raw) return { items: [], _savedAt: 0 };
     const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.items)) return { items: [] };
+    if (!parsed || !Array.isArray(parsed.items)) return { items: [], _savedAt: 0 };
+    if (typeof parsed._savedAt !== 'number') parsed._savedAt = 0;
     return parsed;
   } catch (err) {
     console.warn('loadBugs() error:', err);
-    return { items: [] };
+    return { items: [], _savedAt: 0 };
   }
 }
 
 function saveBugs(data) {
+  data._savedAt = Date.now();
   localStorage.setItem(BUGS_STORAGE_KEY, JSON.stringify(data));
   updateBugCountBadge();
+  // Debounced cloud push — same pattern as the recipes library so
+  // rapid edits coalesce into a single request.
+  clearTimeout(saveBugs._timer);
+  saveBugs._timer = setTimeout(() => cloudPushBugs(), 600);
+}
+
+// Push the local bug list up to Supabase. No-op if cloud isn't configured.
+async function cloudPushBugs() {
+  if (!hasCloud()) return false;
+  try {
+    const data = loadBugs();
+    const payload = {
+      id:       BUGS_ROW_ID,
+      _savedAt: data._savedAt || Date.now(),
+      items:    data.items || [],
+    };
+    await supabaseFetch('/rest/v1/stock_events', {
+      method:  'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates' },
+      body:    JSON.stringify({ id: BUGS_ROW_ID, name: '__bugs__', data: payload }),
+    });
+    triggerSyncEvent(BUGS_ROW_ID);
+    return true;
+  } catch (err) {
+    console.error('[Sync] Bugs push failed:', err.message);
+    return false;
+  }
+}
+
+// Merge a remote bugs payload into localStorage using last-write-wins
+// on the whole list (same strategy as recipes). Returns true if local
+// bugs actually changed, so callers can re-render.
+function mergeRemoteBugs(remote) {
+  if (!remote || !Array.isArray(remote.items)) return false;
+  const local = loadBugs();
+  const remoteSavedAt = remote._savedAt || 0;
+  const localSavedAt  = local._savedAt  || 0;
+  if (remoteSavedAt < localSavedAt) return false;
+  if (remoteSavedAt === localSavedAt && remote.items.length === local.items.length) return false;
+  const next = { items: remote.items, _savedAt: remoteSavedAt };
+  localStorage.setItem(BUGS_STORAGE_KEY, JSON.stringify(next));
+  return true;
 }
 
 function escapeHtml(str) {
@@ -4427,6 +4596,7 @@ async function cloudPushRecipes() {
       headers: { 'Prefer': 'resolution=merge-duplicates' },
       body:    JSON.stringify({ id: RECIPES_ROW_ID, name: '__recipes__', data: payload }),
     });
+    triggerSyncEvent(RECIPES_ROW_ID);
     return true;
   } catch(err) {
     console.error('[Sync] Recipe push failed:', err.message);
@@ -6060,3 +6230,174 @@ function renderModifierReport() {
     `;
   }).join('');
 }
+
+// ============================================================
+// SPREADSHEET-STYLE KEYBOARD NAVIGATION
+// ------------------------------------------------------------
+// Within any <table>, treat input/select cells like spreadsheet
+// cells:
+//   ArrowUp / ArrowDown  → move to the cell above / below in the
+//                          same column (skips rows with no input
+//                          in that column).
+//   ArrowLeft / ArrowRight → move to the previous / next focusable
+//                          cell in the same row. For text inputs
+//                          this only fires when the caret is at
+//                          the start (left) or end (right) of the
+//                          value, so in-cell text editing still
+//                          works normally.
+//   Enter                → move down one row, same column.
+//   Shift+Enter          → move up one row, same column.
+//   Tab / Shift+Tab      → native browser behaviour (untouched).
+//
+// Date/time/file/checkbox/radio inputs keep their native arrow-key
+// behaviour. <select> keeps native up/down for choosing an option
+// (use Alt+Up/Down to step between cells from a select).
+// ============================================================
+(function setupSpreadsheetNav() {
+  const NAV_SELECTOR = [
+    'input:not([type="date"])',
+    ':not([type="time"])',
+    ':not([type="datetime-local"])',
+    ':not([type="file"])',
+    ':not([type="checkbox"])',
+    ':not([type="radio"])',
+    ':not([type="color"])',
+    ':not([type="range"])',
+    ':not([disabled])',
+    ':not([readonly])'
+  ].join('') + ', select:not([disabled])';
+
+  function isTextLikeInput(el) {
+    if (!el || el.tagName !== 'INPUT') return false;
+    const t = (el.type || 'text').toLowerCase();
+    return t === 'text' || t === 'number' || t === 'search' || t === 'tel' || t === 'url' || t === 'email' || t === 'password' || t === '';
+  }
+
+  function caretAtStart(el) {
+    if (!isTextLikeInput(el)) return true;
+    try {
+      if (typeof el.selectionStart !== 'number') return true;
+      return el.selectionStart === 0 && el.selectionEnd === 0;
+    } catch (_) { return true; }
+  }
+
+  function caretAtEnd(el) {
+    if (!isTextLikeInput(el)) return true;
+    try {
+      if (typeof el.selectionStart !== 'number') return true;
+      const len = (el.value || '').length;
+      return el.selectionStart === len && el.selectionEnd === len;
+    } catch (_) { return true; }
+  }
+
+  function getCellInfo(el) {
+    const cell = el.closest('td, th');
+    if (!cell) return null;
+    const row = cell.parentElement;
+    if (!row || row.tagName !== 'TR') return null;
+    const cells = Array.from(row.children);
+    return { row, cell, colIndex: cells.indexOf(cell) };
+  }
+
+  function focusableIn(cell) {
+    if (!cell) return null;
+    const list = cell.querySelectorAll(NAV_SELECTOR);
+    for (const el of list) {
+      // Skip hidden elements (display:none, visibility:hidden, zero size)
+      if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') continue;
+      return el;
+    }
+    return null;
+  }
+
+  function findInColumn(startRow, colIndex, direction) {
+    let row = startRow;
+    // Walk row-by-row in the same parent (tbody/thead/tfoot)
+    while (true) {
+      row = direction > 0 ? row.nextElementSibling : row.previousElementSibling;
+      if (!row) return null;
+      if (row.tagName !== 'TR') continue;
+      const cell = row.children[colIndex];
+      const target = focusableIn(cell);
+      if (target) return target;
+    }
+  }
+
+  function findInRow(row, startCol, direction) {
+    const cells = Array.from(row.children);
+    let i = startCol + direction;
+    while (i >= 0 && i < cells.length) {
+      const target = focusableIn(cells[i]);
+      if (target) return target;
+      i += direction;
+    }
+    return null;
+  }
+
+  function focusAndSelect(el) {
+    if (!el) return;
+    el.focus();
+    if (isTextLikeInput(el)) {
+      try { el.select(); } catch (_) {}
+    }
+    const cell = el.closest('td, th');
+    if (cell && cell.scrollIntoView) {
+      cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }
+
+  document.addEventListener('keydown', function (e) {
+    const el = e.target;
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'SELECT')) return;
+    if (el.tagName === 'INPUT') {
+      const t = (el.type || '').toLowerCase();
+      if (t === 'date' || t === 'time' || t === 'datetime-local' || t === 'file' || t === 'checkbox' || t === 'radio' || t === 'color' || t === 'range') return;
+    }
+    // Ignore modifier combos we don't handle (Ctrl/Cmd+arrow used by OS for word/line jumps).
+    if (e.ctrlKey || e.metaKey) return;
+
+    const info = getCellInfo(el);
+    if (!info) return;
+
+    const key = e.key;
+
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      // For <select>, only nav cells if Alt is held; otherwise native option step.
+      if (el.tagName === 'SELECT' && !e.altKey) return;
+      const target = findInColumn(info.row, info.colIndex, key === 'ArrowDown' ? 1 : -1);
+      if (target) {
+        e.preventDefault();
+        focusAndSelect(target);
+      }
+      return;
+    }
+
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+      const direction = key === 'ArrowRight' ? 1 : -1;
+      // Inside a text-like input, only jump cells when caret is at the edge.
+      if (isTextLikeInput(el)) {
+        if (direction < 0 && !caretAtStart(el)) return;
+        if (direction > 0 && !caretAtEnd(el)) return;
+      }
+      const target = findInRow(info.row, info.colIndex, direction);
+      if (target) {
+        e.preventDefault();
+        focusAndSelect(target);
+      }
+      return;
+    }
+
+    if (key === 'Enter') {
+      // Don't hijack Enter inside selects (it confirms the option) or when
+      // the input lives inside a form that wants Enter to submit. Tables
+      // here are autosave so Enter = move down is the safer default.
+      if (el.tagName === 'SELECT') return;
+      const target = findInColumn(info.row, info.colIndex, e.shiftKey ? -1 : 1);
+      if (target) {
+        e.preventDefault();
+        focusAndSelect(target);
+      }
+      return;
+    }
+  }, false);
+})();

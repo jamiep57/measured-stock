@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<!--
+  Measured Stock V5 — admin (desktop)
+  Event setup, distribution, sales mapping, recon.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fafafa">
+  <title>Measured Stock Admin</title>
+  <link rel="icon" type="image/png" href="/assets/img/favicon.png?v=2">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="admin-offline-banner" id="adminOfflineBanner" hidden role="status">
+    You’re offline — changes will sync when you’re back online.
+  </div>
+  <div class="admin-app" id="adminApp">
+    <aside class="admin-sidebar" id="adminSidebar">
+      <div class="sidebar-brand">
+        <img src="/assets/img/logolarge.png" alt="Measured">
+      </div>
+      <div class="sidebar-inner">
+        <div class="sidebar-workspace-wrap">
+          <button type="button" class="sidebar-workspace" id="sidebarWorkspace"
+            aria-haspopup="listbox" aria-expanded="false" aria-controls="sidebarWorkspaceMenu">
+            <span class="sidebar-workspace-mark" id="sidebarWorkspaceMark">
+              <img src="/assets/img/logomark.png" alt="" id="sidebarWorkspaceMarkImg">
+            </span>
+            <span class="sidebar-workspace-text">
+              <span class="sidebar-workspace-name" id="sidebarWorkspaceName">Measured Stock</span>
+              <span class="sidebar-workspace-sub" id="sidebarWorkspaceSub">Admin</span>
+            </span>
+            <i data-lucide="chevrons-up-down" aria-hidden="true"></i>
+          </button>
+          <div class="sidebar-workspace-menu" id="sidebarWorkspaceMenu" role="listbox" hidden></div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <div class="sidebar-section" data-section="catalog">
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Home</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarGlobal">
+                <div class="nav-link-row" id="sidebarCatalogDashboard" hidden>
+                  <a class="nav-link nav-link-row-main" data-route="dashboard" data-event data-feature="home.dashboard"><i data-lucide="gauge"></i> Dashboard</a>
+                  <a class="nav-link-cog" data-route="setup" data-event data-feature="home.event_setup" href="#" title="Event setup" aria-label="Event setup"><i data-lucide="settings"></i></a>
+                </div>
+                <a class="nav-link" href="/library" data-route="library" data-feature="home.library"><i data-lucide="library"></i> Library</a>
+                <a class="nav-link" href="/accounts" data-route="accounts" data-feature="home.accounts"><i data-lucide="building-2"></i> Accounts</a>
+                <a class="nav-link" href="/suppliers" data-route="suppliers" data-feature="home.suppliers"><i data-lucide="truck"></i> Suppliers</a>
+                <a class="nav-link" href="/warehouses" data-route="warehouses" data-feature="home.warehouses"><i data-lucide="warehouse"></i> Warehouses</a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="event-planning" hidden>
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Planning</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventPlanning">
+                <a class="nav-link" data-route="planning" data-event data-feature="planning.menu_gp"><i data-lucide="calculator"></i> Menu &amp; GP</a>
+                <a class="nav-link" data-route="orders" data-event data-feature="planning.orders"><i data-lucide="clipboard-list"></i> Orders</a>
+                <a class="nav-link" data-route="distribution" data-event data-feature="planning.distribution"><i data-lucide="share-2"></i> Distribution</a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="event-stock" hidden>
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Stock</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventStock">
+                <a class="nav-link" data-route="products" data-event data-feature="stock.products_view"><i data-lucide="list"></i> Products</a>
+                <a class="nav-link" data-route="deliveries" data-event data-feature="stock.deliveries"><i data-lucide="container"></i> Deliveries</a>
+                <a class="nav-link" data-route="counts" data-event data-feature="stock.counts"><i data-lucide="clipboard-list"></i> Counts</a>
+                <a class="nav-link" data-route="transfers" data-event data-feature="stock.transfers"><i data-lucide="arrow-left-right"></i> Transfers</a>
+                <a class="nav-link" data-route="wastage" data-event data-feature="stock.wastage"><i data-lucide="trash"></i> Wastage</a>
+                <a class="nav-link" data-route="closing" data-event data-feature="stock.closing"><i data-lucide="lock"></i> Closing</a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="kit">
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Kit library</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventKit">
+                <a class="nav-link" href="/kit-library" data-route="kit-library" data-feature="kit.library"><i data-lucide="boxes"></i> Kit library</a>
+                <a class="nav-link" id="sidebarEventKitLink" data-route="kit" data-event data-feature="kit.event" hidden><i data-lucide="package"></i> Kit</a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="event-sales" hidden>
+            <button type="button" class="sidebar-section-toggle" aria-expanded="true">
+              <span>Square and Mapping</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventSales">
+                <a class="nav-link" data-route="sales" data-event data-feature="square.modifiers"><i data-lucide="store"></i> Square &amp; modifiers</a>
+                <a class="nav-link" href="/volume-pools" data-route="volume-pools" data-feature="square.volume_pools"><i data-lucide="layers"></i> Volume pools</a>
+              </nav>
+            </div>
+          </div>
+
+          <div class="sidebar-section" data-section="event-reports" hidden>
+            <button type="button" class="sidebar-section-toggle" data-nav-panel="reports" aria-expanded="true" title="Open reports">
+              <span>Reports</span>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="sidebar-section-body">
+              <nav class="sidebar-nav" id="sidebarEventReports">
+                <a class="nav-link" data-route="reports" data-event data-feature="finance.reports"><i data-lucide="pie-chart"></i> Reports</a>
+                <a class="nav-link" data-route="recon" data-event data-feature="finance.recon"><i data-lucide="pound-sterling"></i> Recon</a>
+              </nav>
+            </div>
+          </div>
+        </div>
+
+        <footer class="sidebar-footer">
+          <div class="sidebar-footer-row">
+            <div class="bug-fab" id="bugReportFab">
+              <button type="button" class="bug-fab-btn" id="bugReportFabBtn"
+                title="Report a bug or idea" aria-label="Report a bug or idea">
+                <i data-lucide="bug" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div class="sidebar-presence" id="sidebarPresence" hidden>
+              <span class="sidebar-presence-dot" aria-hidden="true"></span>
+              <span class="sidebar-presence-text" id="sidebarPresenceText">Just you here</span>
+            </div>
+          </div>
+        </footer>
+      </div>
+    </aside>
+
+    <div class="admin-main">
+      <div class="admin-shell">
+        <header class="admin-topbar">
+          <div class="topbar-title" id="pageTitle">Events</div>
+          <div class="topbar-end">
+            <div class="topbar-tools" id="topbarTools" hidden>
+              <div class="topbar-toolbar" id="topbarEditStrip" role="group" aria-label="Edit">
+                <button type="button" class="topbar-tool field-undo-btn" id="topbarUndoBtn"
+                  disabled title="Undo last number change" aria-label="Undo last number change">
+                  <i data-lucide="undo-2" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="topbar-tool field-redo-btn" id="topbarRedoBtn"
+                  disabled title="Redo number change" aria-label="Redo number change">
+                  <i data-lucide="redo-2" aria-hidden="true"></i>
+                </button>
+              </div>
+              <div class="topbar-toolbar-strips" id="topbarToolbarStrips" hidden></div>
+              <div class="topbar-toolbar" id="topbarFilterStrip" hidden>
+                <div class="topbar-tool-wrap">
+                  <button type="button" class="topbar-tool" id="topbarTableFilterBtn"
+                    aria-expanded="false" aria-haspopup="true" aria-controls="topbarTableFilterPanel"
+                    title="Filter & columns" aria-label="Filter & columns">
+                    <i data-lucide="funnel" aria-hidden="true"></i>
+                  </button>
+                  <div class="tfp-dropdown" id="topbarTableFilterPanel" hidden></div>
+                </div>
+              </div>
+              <div class="topbar-search" id="topbarSearch"></div>
+            </div>
+            <div class="topbar-sync" id="adminSyncStatus">
+              <span class="sync-badge sync-badge--admin" id="adminSyncBadge" hidden role="status" aria-live="polite"></span>
+              <span class="admin-last-sync" id="adminLastSync" hidden></span>
+            </div>
+            <div class="topbar-profile-wrap" id="topbarProfileWrap">
+              <button type="button" class="topbar-profile" id="topbarProfileBtn"
+                aria-expanded="false" aria-haspopup="true" aria-controls="topbarProfileMenu"
+                title="Account" aria-label="Account menu">
+                <i data-lucide="user" aria-hidden="true"></i>
+              </button>
+              <div class="topbar-menu topbar-profile-menu" id="topbarProfileMenu" role="menu" hidden>
+                <div class="topbar-menu-label" id="topbarProfileLabel">Account</div>
+                <div class="topbar-menu-section">
+                  <button type="button" class="topbar-menu-item" role="menuitem" data-profile-action="profile">
+                    Profile
+                  </button>
+                  <a class="topbar-menu-item" role="menuitem" href="/settings/users"
+                    data-profile-action="settings" data-route="settings">
+                    Workspace settings
+                  </a>
+                  <a class="topbar-menu-item" role="menuitem" href="/dev" data-dev-tools hidden>
+                    Developer tools
+                  </a>
+                </div>
+                <div class="topbar-menu-section">
+                  <button type="button" class="topbar-menu-item topbar-menu-item--danger" role="menuitem"
+                    id="topbarLogout" data-profile-action="logout">
+                    Log out
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+        <main class="admin-content" id="adminContent"></main>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-head">
+      <button class="icon-btn" type="button" id="sheetClose" aria-label="Close"><i data-lucide="x"></i></button>
+      <div class="sheet-title" id="sheetTitle"></div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+    <div class="sheet-foot" id="sheetFoot"></div>
+  </div>
+
+  <div class="sheet sheet--bug-left" id="bugSheet" hidden>
+    <div class="sheet-head">
+      <button class="icon-btn" type="button" id="bugSheetClose" aria-label="Close"><i data-lucide="x"></i></button>
+      <div class="sheet-title" id="bugSheetTitle"></div>
+    </div>
+    <div class="sheet-body" id="bugSheetBody"></div>
+    <div class="sheet-foot" id="bugSheetFoot"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script type="module" src="/src/admin/main.js"></script>
+</body>
+</html>
