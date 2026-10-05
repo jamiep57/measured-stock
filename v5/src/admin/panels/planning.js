@@ -108,6 +108,12 @@ function money(n, dp = 2) {
   return `£${v.toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 }
 
+function formatMeasures(n) {
+  const v = Number(n);
+  if (n == null || !Number.isFinite(v)) return '—';
+  return v.toFixed(4).replace(/\.?0+$/, '');
+}
+
 function inputValue(n) {
   return n == null ? '' : String(n);
 }
@@ -417,9 +423,7 @@ export function mountPlanningPanel(route) {
 
   function cocktailColumnCell(id, line, item) {
     if (id === 'serve') {
-      const n = (line.ingredients || []).length;
-      const label = n ? `${n} product${n === 1 ? '' : 's'}` : 'Recipe';
-      return `<td class="plan-cell"><button type="button" class="plan-cocktail-recipe" data-edit-cocktail="${escapeHtml(line.cocktailId)}">${escapeHtml(label)}</button></td>`;
+      return '<td class="plan-cell"></td>';
     }
     if (id === 'cost') {
       const detail = (line.ingredients || []).map((p) => {
@@ -489,16 +493,38 @@ export function mountPlanningPanel(route) {
       </th>${cells}</tr>`;
   }
 
+  function renderIngredientSubRow(line, part) {
+    const cells = shownColumnIds().map((id) => {
+      if (id === 'serve') {
+        return `<td class="plan-cell plan-sub-num">${escapeHtml(formatMeasures(part.measures))}</td>`;
+      }
+      if (id === 'cost') {
+        const title = part.costPerMeasure == null
+          ? 'No cost for this product'
+          : `${formatMeasures(part.measures)} × ${money(part.costPerMeasure)}`;
+        return `<td class="plan-cell plan-sub-num" data-out="ing-cost" data-ing="${escapeHtml(part.productId || '')}" title="${escapeHtml(title)}">${money(part.cost)}</td>`;
+      }
+      return '<td class="plan-cell"></td>';
+    }).join('');
+    const pack = part.pack ? `<span class="dist-item-meta">${escapeHtml(part.pack)}</span>` : '';
+    return `<tr class="plan-sub-row${line.included ? '' : ' plan-row--off'}" data-cid-sub="${escapeHtml(line.cocktailId)}">
+      <th class="dist-sticky plan-col-product" scope="row">
+        <button type="button" class="plan-sub-open" data-edit-cocktail="${escapeHtml(line.cocktailId)}">
+          <span class="plan-sub-label">↳ ${escapeHtml(part.name || 'Product')}</span>
+          ${pack}
+        </button>
+      </th>${cells}</tr>`;
+  }
+
   function renderCocktailRow(line) {
     const item = ctx.cocktails.get(line.cocktailId) || {};
     const dis = locked() ? 'disabled' : '';
-    const meta = line.ingredientSummary
-      ? `<span class="dist-item-meta">${escapeHtml(line.ingredientSummary)}</span>` : '';
     const serve = line.serveLabel
       ? `<span class="dist-item-meta">${escapeHtml(line.serveLabel)}</span>` : '';
+    const parts = line.ingredients || [];
     const rowKey = markRowKey(line);
     const cells = shownColumnIds().map((id) => decorateCell(cocktailColumnCell(id, line, item), id, rowKey)).join('');
-    return `<tr class="dist-prod-row plan-row plan-row--cocktail${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-cid="${escapeHtml(line.cocktailId)}">
+    const parent = `<tr class="dist-prod-row plan-row plan-row--cocktail${parts.length ? ' plan-row--has-subs' : ''}${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-cid="${escapeHtml(line.cocktailId)}">
       <th class="dist-sticky plan-col-product${markClasses(rowKey, 'product')}" scope="row" data-col="product">
         <div class="plan-item">
           <input type="checkbox" class="plan-include" data-field="included" ${line.included ? 'checked' : ''} ${dis}
@@ -506,12 +532,12 @@ export function mountPlanningPanel(route) {
           <button type="button" class="plan-cocktail-open" data-edit-cocktail="${escapeHtml(line.cocktailId)}">
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
             <span class="dist-item-meta">Cocktail</span>
-            ${meta}
             ${serve}
           </button>
           ${rowMenuButton(line.name)}
         </div>
       </th>${cells}</tr>`;
+    return parent + parts.map((part) => renderIngredientSubRow(line, part)).join('');
   }
 
   function renderBody() {
@@ -706,6 +732,11 @@ export function mountPlanningPanel(route) {
         el.className = `plan-scenario-gp ${statusClass(line.status)}`;
       });
     }
+    panel.querySelectorAll(`tr.plan-sub-row[data-cid-sub="${CSS.escape(id)}"]`).forEach((sub) => {
+      const cell = sub.querySelector('[data-out="ing-cost"]');
+      const part = (line.ingredients || []).find((p) => p.productId === cell?.dataset.ing);
+      if (cell && part) cell.textContent = money(part.cost);
+    });
   }
 
   function refreshCocktailsUsing(pid) {

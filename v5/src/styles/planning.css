@@ -203,6 +203,48 @@
 }
 .plan-row--off .dist-item-name { color: var(--muted-foreground); }
 
+.plan-grid .plan-row--has-subs > th,
+.plan-grid .plan-row--has-subs > td {
+  border-bottom-color: transparent;
+}
+.plan-grid .plan-sub-row > th,
+.plan-grid .plan-sub-row > td {
+  height: 32px;
+  background: color-mix(in srgb, var(--secondary) 55%, transparent);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+}
+.plan-grid .plan-sub-row > th.plan-col-product {
+  background: color-mix(in srgb, var(--secondary) 55%, var(--background));
+}
+.plan-grid .plan-sub-row:hover > th,
+.plan-grid .plan-sub-row:hover > td {
+  background: var(--secondary);
+}
+.plan-sub-open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 0 22px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.plan-sub-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-sub-open:hover .plan-sub-label { text-decoration: underline; }
+.plan-sub-num { font-variant-numeric: tabular-nums; }
+
 .plan-cell {
   height: 40px;
   padding: 3px 4px !important;
