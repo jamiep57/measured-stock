@@ -35,12 +35,12 @@ const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <numFmt numFmtId="165" formatCode="0.0&quot;%&quot;"/>
   </numFmts>
   <fonts count="6">
-    <font><sz val="11"/><color rgb="FF18181B"/><name val="Helvetica"/></font>
-    <font><b/><sz val="18"/><color rgb="FF18181B"/><name val="Helvetica"/></font>
-    <font><sz val="10"/><color rgb="FF52525B"/><name val="Helvetica"/></font>
-    <font><b/><sz val="9"/><color rgb="FF82828A"/><name val="Helvetica"/></font>
-    <font><b/><sz val="10"/><color rgb="FFB45309"/><name val="Helvetica"/></font>
-    <font><i/><sz val="9"/><color rgb="FF82828A"/><name val="Helvetica"/></font>
+    <font><sz val="11"/><color rgb="FF18181B"/><name val="Outfit"/></font>
+    <font><b/><sz val="22"/><color rgb="FF18181B"/><name val="Outfit"/></font>
+    <font><sz val="10"/><color rgb="FF71717A"/><name val="Outfit"/></font>
+    <font><b/><sz val="9"/><color rgb="FF71717A"/><name val="Outfit"/></font>
+    <font><b/><sz val="13"/><color rgb="FF18181B"/><name val="Outfit"/></font>
+    <font><sz val="9"/><color rgb="FF71717A"/><name val="Outfit"/></font>
   </fonts>
   <fills count="3">
     <fill><patternFill patternType="none"/></fill>
@@ -59,9 +59,9 @@ const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
     <xf numFmtId="0" fontId="3" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1"><alignment vertical="center"/></xf>
     <xf numFmtId="0" fontId="4" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment vertical="center"/></xf>
-    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment vertical="center"/></xf>
-    <xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"><alignment vertical="center"/></xf>
     <xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
@@ -85,7 +85,7 @@ export function buildMenuExportXlsx({ model, title, meta = [], notes = [], sheet
   const out = [];
   const merges = [`A1:${last}1`, `A2:${last}2`];
   let r = 1;
-  out.push(`<row r="1" ht="30" customHeight="1">${text('A1', title, S.title)}</row>`);
+  out.push(`<row r="1" ht="34" customHeight="1">${text('A1', title, S.title)}</row>`);
   out.push(`<row r="2" ht="18" customHeight="1">${text('A2', meta.filter(Boolean).join('   ·   '), S.meta)}</row>`);
   r = 4;
   const headRow = r;
@@ -93,10 +93,10 @@ export function buildMenuExportXlsx({ model, title, meta = [], notes = [], sheet
   r += 1;
   model.groups.forEach((g) => {
     merges.push(`A${r}:${last}${r}`);
-    out.push(`<row r="${r}" ht="20" customHeight="1">${text(`A${r}`, g.category.toUpperCase(), S.group)}</row>`);
+    out.push(`<row r="${r}" ht="24" customHeight="1">${text(`A${r}`, g.category, S.group)}</row>`);
     r += 1;
     g.rows.forEach((row) => {
-      out.push(`<row r="${r}">${cols.map((c, i) => {
+      out.push(`<row r="${r}" ht="22" customHeight="1">${cols.map((c, i) => {
         const ref = `${colRef(i)}${r}`;
         const v = cellValue(row, c);
         if (v == null || v === '') return text(ref, '', S.text);

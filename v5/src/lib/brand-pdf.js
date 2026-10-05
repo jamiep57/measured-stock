@@ -53,21 +53,34 @@ export function fitText(doc, text, maxW) {
 }
 
 /**
- * @param {{ orientation?: 'portrait'|'landscape', title: string }} opts
+ * @param {{ orientation?: 'portrait'|'landscape', title: string, typeface?: 'helvetica'|'outfit' }} opts
  */
-export async function createBrandDoc({ orientation = 'portrait', title = '' } = {}) {
+export async function createBrandDoc({ orientation = 'portrait', title = '', typeface = 'helvetica' } = {}) {
   const [jspdf, logo] = await Promise.all([loadJsPdf(), loadLogoForPdf()]);
   const doc = new jspdf.jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
+  let family = 'helvetica';
+  if (typeface === 'outfit') {
+    try {
+      const { registerOutfit } = await import('./pdf-fonts.js');
+      family = await registerOutfit(doc);
+    } catch {
+      family = 'helvetica';
+    }
+  }
   const pageW = orientation === 'landscape' ? 297 : 210;
   const pageH = orientation === 'landscape' ? 210 : 297;
   const ml = 18;
   const mr = 18;
   const bottom = 20;
   const contentW = pageW - ml - mr;
-  const ctx = { doc, pageW, pageH, ml, mr, contentW, y: 18, title, footerNote: '', continuationNote: '' };
+  const ctx = {
+    doc, pageW, pageH, ml, mr, contentW, y: 18, title, logo, family,
+    footerNote: '', footerLeft: '', continuationNote: '', pageLabel: null,
+  };
 
   ctx.setFont = (style, size, color = BRAND.ink) => {
-    doc.setFont('helvetica', style);
+    const weight = style === 'bold' ? 'bold' : (family === 'helvetica' ? style : 'normal');
+    doc.setFont(family, weight || 'normal');
     doc.setFontSize(size);
     doc.setTextColor(...color);
   };
@@ -256,17 +269,19 @@ export async function createBrandDoc({ orientation = 'portrait', title = '' } = 
     ctx.y += 24;
   };
 
-  ctx.finish = (filename) => {
+  ctx.finish = (filename, { download = true } = {}) => {
     const pages = doc.getNumberOfPages();
     for (let p = 1; p <= pages; p++) {
       doc.setPage(p);
       ctx.setFont('normal', 7, BRAND.muted);
-      doc.text(`${INVOICE_FROM.name} · ${INVOICE_FROM.website}`, ml, pageH - 9);
+      const left = ctx.footerLeft || `${INVOICE_FROM.name} · ${INVOICE_FROM.website}`;
+      doc.text(fitText(doc, left, contentW - 28), ml, pageH - 9);
       if (ctx.footerNote) doc.text(ctx.footerNote, pageW / 2, pageH - 9, { align: 'center' });
-      doc.text(`${p} / ${pages}`, pageW - mr, pageH - 9, { align: 'right' });
+      const pageText = ctx.pageLabel ? ctx.pageLabel(p, pages) : `${p} / ${pages}`;
+      doc.text(pageText, pageW - mr, pageH - 9, { align: 'right' });
     }
-    doc.save(filename);
-    return { filename, pages };
+    if (download) doc.save(filename);
+    return { filename, pages, doc };
   };
 
   return ctx;

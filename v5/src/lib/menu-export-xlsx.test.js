@@ -20,7 +20,7 @@ describe('menu export xlsx', () => {
     expect(xml).toContain('Hells &lt;Lager&gt; &amp; co');
     expect(xml).toContain('Client &amp; Co');
     expect(xml).toContain('<v>6.5</v>');
-    expect(xml).toContain('DRAUGHT');
+    expect(xml).toContain('Draught');
   });
   it('contains no cost or GP for client-facing exports', () => {
     const model = buildMenuExport('client', { lines, includeInternal: false });
