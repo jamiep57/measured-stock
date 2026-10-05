@@ -121,9 +121,9 @@
   text-align: left;
   box-shadow: 6px 0 10px -6px rgb(0 0 0 / 0.1);
 }
-.dist-grid.plan-grid { width: max-content; }
-.plan-th { width: 78px; min-width: 78px; max-width: 78px; }
-.plan-th--wide { width: 108px; min-width: 108px; max-width: 108px; }
+.dist-grid.plan-grid { width: 100%; }
+.plan-th { width: 78px; min-width: 78px; }
+.plan-th--wide { width: 108px; min-width: 108px; }
 .plan-th .dist-bar-name {
   display: block;
   max-width: 100%;
