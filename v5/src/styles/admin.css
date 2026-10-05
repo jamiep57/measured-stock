@@ -434,6 +434,14 @@ body:has(.admin-app) .toast.err {
   flex: 1;
 }
 
+/* Author display overrides the UA [hidden] rule, so a denied feature stayed on screen. */
+.nav-link[hidden],
+.nav-link-row[hidden],
+.nav-link-cog[hidden],
+.topbar-menu-item[hidden] {
+  display: none !important;
+}
+
 .nav-link {
   display: flex;
   align-items: center;
