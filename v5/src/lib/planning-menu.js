@@ -7,7 +7,7 @@
  *   target GP   item → house menu → event → price year → default
  */
 
-import { unitCostFromOffer } from '../pack-metrics.js';
+import { productStockPack, unitCostFromOffer } from '../pack-metrics.js';
 import { defaultPoolServings } from './volume-pools.js';
 import { menuNameOf } from './product-attributes.js';
 import {
@@ -91,10 +91,14 @@ export function resolveMenuLine(item, ctx = {}) {
   const revenueGross = menuPrice != null && serves != null ? menuPrice * serves : null;
   const perServe = gpPerServe(menuPrice, cps, vatRate);
 
+  const pack = product ? productStockPack(product, caseSizes) : null;
+  const caseSize = (pack?.label || product?.case_size || '').trim();
+
   return {
     productId: item?.product_id || product?.id || null,
     name: product?.name || '',
     menuName: menuNameOf(product),
+    caseSize,
     category: product?.category?.name || 'Uncategorised',
     included: item?.included !== false,
     serveLabel: item?.serve_label || house?.serve_label || null,
@@ -106,7 +110,6 @@ export function resolveMenuLine(item, ctx = {}) {
     targetGpPct,
     menuPrice,
     housePrice: num(house?.menu_price),
-    otherEventPrice: num(item?.other_event_price),
     requiredPrice: required,
     suggestedPrice: suggested,
     gpPct: gp,

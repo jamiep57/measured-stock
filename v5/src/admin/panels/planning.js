@@ -57,7 +57,6 @@ const NUMERIC_FIELDS = {
   menu_price: {},
   target_gp_pct: { max: 100 },
   suggested_price: {},
-  other_event_price: {},
   projected_serves: {},
   unit_cost_override: {},
 };
@@ -67,7 +66,6 @@ export const PLANNING_COLUMNS = [
   { key: 'cost', label: 'Cost / serve' },
   { key: 'required', label: 'Required £' },
   { key: 'suggested', label: 'Suggested £' },
-  { key: 'other', label: 'Other event £' },
   { key: 'scenarios', label: 'Scenarios' },
   { key: 'serves', label: 'Projected serves' },
   { key: 'revenue', label: 'Revenue / GP £' },
@@ -178,7 +176,7 @@ export function mountPlanningPanel(route) {
       if (cat && l.category !== cat) return false;
       if (q) {
         const p = ctx.productById.get(l.productId);
-        const hay = [l.name, l.menuName, l.category, p?.sku, productSupplierSearchText(p)].join(' ').toLowerCase();
+        const hay = [l.name, l.menuName, l.caseSize, l.category, p?.sku, productSupplierSearchText(p)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -221,7 +219,6 @@ export function mountPlanningPanel(route) {
     if (colOn('required')) html += th('Required', 'Price inc VAT needed to hit the target GP — click to use');
     if (colOn('suggested')) html += th('Suggested', 'Suggested selling price (defaults to required)');
     html += th('GP', 'Projected GP % at the menu price', 'plan-th--key');
-    if (colOn('other')) html += th('Other event', 'Price charged at another event, for comparison');
     if (colOn('scenarios')) {
       ctx.scenarios.forEach((s) => {
         html += `<th class="dist-th plan-th plan-th--scenario" title="Scenario — click to edit">
@@ -246,7 +243,7 @@ export function mountPlanningPanel(route) {
 
   function colCount() {
     let n = 4;
-    ['serve', 'cost', 'required', 'suggested', 'other', 'serves'].forEach((k) => { if (colOn(k)) n += 1; });
+    ['serve', 'cost', 'required', 'suggested', 'serves'].forEach((k) => { if (colOn(k)) n += 1; });
     if (colOn('scenarios')) n += ctx.scenarios.length;
     if (colOn('revenue')) n += 2;
     if (colOn('deal')) n += 2;
@@ -257,6 +254,8 @@ export function mountPlanningPanel(route) {
     const pid = line.productId;
     const item = ctx.items.get(pid) || {};
     const dis = locked() ? 'disabled' : '';
+    const packMeta = line.caseSize
+      ? `<span class="dist-item-meta">${escapeHtml(line.caseSize)}</span>` : '';
     const menuMeta = line.menuName && line.menuName !== line.name
       ? `<span class="dist-item-meta">${escapeHtml(line.menuName)}</span>` : '';
     let html = `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}" data-pid="${escapeHtml(pid)}">
@@ -266,6 +265,7 @@ export function mountPlanningPanel(route) {
             aria-label="${line.included ? 'Remove from' : 'Add to'} event menu" title="${line.included ? 'On the event menu — untick to take off (product stays in the library)' : 'Off the event menu — tick to add'}">
           <div class="dist-item">
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
+            ${packMeta}
             ${menuMeta}
           </div>
         </div>
@@ -289,9 +289,6 @@ export function mountPlanningPanel(route) {
       html += `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '', label: 'Suggested price' })}</td>`;
     }
     html += `<td class="plan-cell plan-cell--key plan-out" data-out="gp">${gpBadge(line.gpPct, line.status)}</td>`;
-    if (colOn('other')) {
-      html += `<td class="plan-cell">${cellInput('other_event_price', item.other_event_price, { label: 'Other event price' })}</td>`;
-    }
     if (colOn('scenarios')) {
       ctx.scenarios.forEach((s) => {
         const price = scenarioPrice(s, pid);

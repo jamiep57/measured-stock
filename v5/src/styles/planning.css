@@ -157,7 +157,9 @@
   text-overflow: ellipsis;
 }
 .plan-item .dist-item-meta {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
   color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;

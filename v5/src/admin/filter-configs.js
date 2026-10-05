@@ -1435,7 +1435,6 @@ const PLANNING_COLUMN_OPTIONS = [
   { value: 'cost', label: 'Cost / serve' },
   { value: 'required', label: 'Required price' },
   { value: 'suggested', label: 'Suggested price' },
-  { value: 'other', label: 'Other event price' },
   { value: 'scenarios', label: 'Scenarios' },
   { value: 'serves', label: 'Projected serves' },
   { value: 'revenue', label: 'Revenue & GP £' },

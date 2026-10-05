@@ -24,6 +24,7 @@ const keg = {
   id: 'p1',
   name: 'Utopian',
   menu_name: 'Utopian Premium British Lager',
+  case_size: '50L Keg',
   units_per_case: 1,
   unit_price: 100,
   pool_servings_per_unit: 88,
@@ -51,6 +52,7 @@ describe('resolveMenuLine', () => {
       { product: keg, year, event },
     );
     expect(line.menuName).toBe('Utopian Premium British Lager');
+    expect(line.caseSize).toBe('50L Keg');
     expect(line.costPerServe).toBe(1);
     expect(line.targetGpPct).toBe(72);
     expect(line.gpPct).toBeCloseTo(80, 10);
