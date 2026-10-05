@@ -139,7 +139,7 @@ async function finishSignIn(session) {
         setMsg('Your account is disabled. Contact an admin.', 'error');
         return;
       }
-      const next = profile.role === 'staff' ? '/app/' : '/';
+      const next = profile.role === 'staff' || profile.role === 'user' ? '/app/' : '/';
       window.location.href = next;
       return;
     }

@@ -37,6 +37,7 @@ describe('admin router', () => {
     expect(parseRoute('/settings/warehouses')).toEqual({ view: 'settings', section: 'warehouses' });
     expect(parseRoute('/settings/categories')).toEqual({ view: 'settings', section: 'categories' });
     expect(parseRoute('/settings/case-sizes')).toEqual({ view: 'settings', section: 'case-sizes' });
+    expect(parseRoute('/settings/access')).toEqual({ view: 'settings', section: 'access' });
   });
 
   it('rejects unknown settings sections', () => {
@@ -52,6 +53,7 @@ describe('admin router', () => {
     expect(parseRoute('/dev')).toEqual({ view: 'dev' });
     expect(parseRoute('/dev/bugs')).toEqual({ view: 'bugs' });
     expect(parseRoute('/dev/audit')).toEqual({ view: 'audit' });
+    expect(parseRoute('/dev/backup')).toEqual({ view: 'backup' });
   });
 
   it('aliases legacy /bugs to bugs view', () => {
@@ -122,6 +124,8 @@ describe('admin router', () => {
     expect(hrefForRoute({ view: 'dev' })).toBe('/dev');
     expect(hrefForRoute({ view: 'bugs' })).toBe('/dev/bugs');
     expect(hrefForRoute({ view: 'audit' })).toBe('/dev/audit');
+    expect(hrefForRoute({ view: 'backup' })).toBe('/dev/backup');
+    expect(hrefForRoute({ view: 'settings', section: 'access' })).toBe('/settings/access');
     expect(hrefForRoute({ view: 'settings' })).toBe('/settings/users');
     expect(hrefForRoute({ view: 'settings', section: 'case-sizes' })).toBe('/settings/case-sizes');
   });

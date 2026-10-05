@@ -15,6 +15,7 @@ import { initGlobalSearch, applyGenericProductFilter, ADMIN_PRODUCT_FILTER } fro
 import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
 import { syncAppPresence } from '../lib/app-presence.js';
 import { ensureAppAuth, signOutApp, getCachedProfile } from '../lib/auth.js';
+import { fallbackRoute, loadPermissions, routeAllowed } from '../lib/permissions.js';
 import { openOwnProfileEditor } from './panels/users.js';
 import { initClientErrorReporting } from '../lib/client-errors.js';
 import { initSyncStatus } from '../components/sync-status.js';
@@ -64,6 +65,18 @@ async function render(route) {
     if (current !== canonical) {
       navigate(route, { replace: true });
       route = parseRoute();
+    }
+  }
+
+  if (!routeAllowed(route)) {
+    const next = fallbackRoute(route);
+    const same = next.view === route.view
+      && next.panel === route.panel
+      && next.section === route.section
+      && next.eventId === route.eventId;
+    if (!same) {
+      navigate(next, { replace: true });
+      return render(parseRoute());
     }
   }
 
@@ -289,8 +302,9 @@ async function boot() {
     return;
   }
 
-  const auth = await ensureAppAuth({ requireAdmin: true });
+  const auth = await ensureAppAuth({ requireDesktop: true });
   if (!auth) return;
+  await loadPermissions(auth.profile?.active_org_id);
 
   syncProfileMenuLabel();
   initSyncStatus({

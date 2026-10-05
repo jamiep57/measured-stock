@@ -7,6 +7,7 @@ import { getDB } from '../../db.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { getActiveOrganisation, isOrgAdmin } from '../../lib/organisations.js';
+import { roleLabel } from '../../lib/permissions.js';
 import { describeAuditRow, AUDIT_TABLE_LABELS } from '../../lib/audit-log.js';
 
 const PAGE_SIZE = 100;
@@ -28,7 +29,7 @@ export function renderOrganisationSection() {
           <input type="text" class="admin-input" id="settingsOrgName" maxlength="80"
             value="${escapeHtml(org?.name || '')}" ${admin ? '' : 'disabled'} />
         </label>
-        <p class="muted settings-org-role">Your role: <strong>${org?.role === 'admin' ? 'Admin' : 'Staff'}</strong></p>
+        <p class="muted settings-org-role">Your role: <strong>${escapeHtml(roleLabel(org?.role))}</strong></p>
         ${admin ? '<div><button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsOrgSave">Save</button></div>' : ''}
       </div>
     </section>`;

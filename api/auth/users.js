@@ -8,11 +8,17 @@ import {
   adminUpdateUser,
   adminDeleteUser,
   countActiveOrgAdmins,
+  countActiveOrgSysadmins,
   listOrgProfiles,
   listMembershipsForProfile,
   upsertMembership,
   removeMembership,
 } from '../../lib/supabase-auth-admin.js';
+import {
+  isOrgAdminRole,
+  isSysadminRole,
+  normalizeRole,
+} from '../../lib/access-model.js';
 import { sendAccountApprovedEmail } from '../../lib/postmark.js';
 import { appLoginUrl, appOnboardUrl } from '../../lib/app-url.js';
 import { createInviteToken } from '../../lib/invite-token.js';
@@ -47,10 +53,19 @@ async function requireAdmin(req) {
   if (!user) return { error: 'unauthorized', status: 401 };
   const profile = await getProfileById(user.id);
   // profiles.role mirrors the role in the active organisation.
-  if (!profile || profile.status !== 'active' || profile.role !== 'admin' || !profile.active_org_id) {
+  if (!profile || profile.status !== 'active' || !isOrgAdminRole(profile.role) || !profile.active_org_id) {
     return { error: 'forbidden', status: 403 };
   }
   return { user, profile, orgId: profile.active_org_id };
+}
+
+function callerIsSysadmin(auth) {
+  return isSysadminRole(auth?.profile?.role);
+}
+
+/** Admins get a not-found for sysadmin accounts so the role stays hidden. */
+function hiddenSysadmin(auth, memberRole) {
+  return memberRole === 'sysadmin' && !callerIsSysadmin(auth);
 }
 
 /**
@@ -74,17 +89,28 @@ function randomPassword() {
 }
 
 async function assertNotLastAdmin(orgId, target, memberRole, nextRole, nextStatus) {
-  const wasActiveAdmin = memberRole === 'admin' && target.status === 'active';
-  if (!wasActiveAdmin) return null;
-
-  const role = nextRole != null ? nextRole : memberRole;
+  const role = nextRole != null ? normalizeRole(nextRole) : memberRole;
   const status = nextStatus != null ? nextStatus : target.status;
-  const stillActiveAdmin = role === 'admin' && status === 'active';
-  if (stillActiveAdmin) return null;
 
-  const admins = await countActiveOrgAdmins(orgId);
-  if (admins <= 1) {
-    return { error: 'last_admin', message: 'Cannot remove or demote the last active admin', status: 400 };
+  const wasActiveAdmin = memberRole === 'admin' && target.status === 'active';
+  const stillActiveAdmin = role === 'admin' && status === 'active';
+  if (wasActiveAdmin && !stillActiveAdmin) {
+    const admins = await countActiveOrgAdmins(orgId);
+    if (admins <= 1) {
+      const sysadmins = await countActiveOrgSysadmins(orgId);
+      if (sysadmins < 1) {
+        return { error: 'last_admin', message: 'Cannot remove or demote the last active admin', status: 400 };
+      }
+    }
+  }
+
+  const wasActiveSysadmin = memberRole === 'sysadmin' && target.status === 'active';
+  const stillActiveSysadmin = role === 'sysadmin' && status === 'active';
+  if (wasActiveSysadmin && !stillActiveSysadmin) {
+    const sysadmins = await countActiveOrgSysadmins(orgId);
+    if (sysadmins <= 1) {
+      return { error: 'last_sysadmin', message: 'Cannot remove the last sysadmin', status: 400 };
+    }
   }
   return null;
 }
@@ -109,11 +135,11 @@ async function createAppInvite({ orgId, email, role, meta, secret, onboardUrl })
   await ensureProfile(userId, {
     email,
     display_name: email.split('@')[0],
-    role: role === 'admin' ? 'admin' : 'staff',
+    role: normalizeRole(role),
     status: 'active',
   });
   await updateProfile(userId, { status: 'active', email });
-  await upsertMembership(orgId, userId, role === 'admin' ? 'admin' : 'staff');
+  await upsertMembership(orgId, userId, normalizeRole(role));
 
   const token = await createInviteToken(secret, { userId, email, role });
   return {
@@ -139,7 +165,10 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const profiles = await listOrgProfiles(auth.orgId);
+      let profiles = await listOrgProfiles(auth.orgId);
+      if (!callerIsSysadmin(auth)) {
+        profiles = profiles.filter((profile) => profile.role !== 'sysadmin');
+      }
       res.status(200).json({ profiles });
       return;
     }
@@ -159,6 +188,10 @@ export default async function handler(req, res) {
       }
       const rel = await orgRelation(auth.orgId, id);
       if (!rel.member && !rel.unassigned) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      if (hiddenSysadmin(auth, rel.member?.role)) {
         res.status(404).json({ error: 'not_found' });
         return;
       }
@@ -199,7 +232,7 @@ export default async function handler(req, res) {
 
       /** @type {Record<string, unknown>} */
       const patch = {};
-      /** @type {'admin'|'staff'|undefined} */
+      /** @type {string|undefined} */
       let nextRole;
       if (body.status != null) {
         const status = String(body.status);
@@ -210,12 +243,16 @@ export default async function handler(req, res) {
         patch.status = status;
       }
       if (body.role != null) {
-        const role = String(body.role);
-        if (!['admin', 'staff'].includes(role)) {
+        const role = normalizeRole(body.role);
+        if (!['sysadmin', 'admin', 'manager', 'user'].includes(String(body.role)) && String(body.role) !== 'staff') {
           res.status(400).json({ error: 'invalid_role' });
           return;
         }
-        nextRole = /** @type {'admin'|'staff'} */ (role);
+        if (role === 'sysadmin' && !callerIsSysadmin(auth)) {
+          res.status(400).json({ error: 'invalid_role' });
+          return;
+        }
+        nextRole = role;
       }
       if (body.display_name != null) {
         patch.display_name = String(body.display_name).trim().slice(0, 40) || null;
@@ -245,7 +282,7 @@ export default async function handler(req, res) {
       }
 
       if (id === auth.user.id) {
-        if (nextRole === 'staff' || (patch.status && patch.status !== 'active')) {
+        if ((nextRole && nextRole !== normalizeRole(auth.profile.role)) || (patch.status && patch.status !== 'active')) {
           res.status(400).json({
             error: 'cannot_demote_self',
             message: 'You cannot demote or disable your own account',
@@ -267,7 +304,7 @@ export default async function handler(req, res) {
       }
 
       // Approving an unassigned signup adds them to this organisation.
-      const memberRole = nextRole || (rel.member?.role === 'admin' ? 'admin' : 'staff');
+      const memberRole = nextRole || normalizeRole(rel.member?.role || 'user');
       if (nextRole || (!rel.member && patch.status === 'active')) {
         await upsertMembership(auth.orgId, id, memberRole);
       }
@@ -350,8 +387,12 @@ export default async function handler(req, res) {
         res.status(404).json({ error: 'not_found' });
         return;
       }
+      if (hiddenSysadmin(auth, rel.member?.role)) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
 
-      const guard = await assertNotLastAdmin(auth.orgId, before, rel.member?.role, 'staff', 'disabled');
+      const guard = await assertNotLastAdmin(auth.orgId, before, rel.member?.role, 'user', 'disabled');
       if (guard) {
         res.status(guard.status).json({ error: guard.error, message: guard.message });
         return;
@@ -375,7 +416,16 @@ export default async function handler(req, res) {
         res.status(400).json({ error: 'invalid_email' });
         return;
       }
-      const role = body.role === 'admin' ? 'admin' : 'staff';
+      const requested = body.role == null ? 'user' : String(body.role);
+      if (!['sysadmin', 'admin', 'manager', 'user', 'staff'].includes(requested)) {
+        res.status(400).json({ error: 'invalid_role' });
+        return;
+      }
+      const role = normalizeRole(requested);
+      if (role === 'sysadmin' && !callerIsSysadmin(auth)) {
+        res.status(400).json({ error: 'invalid_role' });
+        return;
+      }
       const mode = body.mode === 'password' ? 'password' : 'link';
       const loginUrl = appLoginUrl(req);
       const onboardUrl = appOnboardUrl(req);

@@ -3,6 +3,7 @@
  */
 
 import { $, toast } from '../lib/util.js';
+import { can } from '../lib/permissions.js';
 import { icon, initIcons } from '../lib/icons.js';
 import { hasTableFilter } from './table-filter.js';
 import { refreshFieldUndoButtons } from '../lib/field-undo.js';
@@ -572,9 +573,15 @@ function stripsForRoute(route) {
   const configured = eventStrips !== undefined && eventStrips !== null
     ? eventStrips
     : (globalStrips !== undefined && globalStrips !== null ? globalStrips : null);
+  const strips = Array.isArray(configured)
+    ? configured.map((strip) => ({
+      ...strip,
+      items: strip.items.filter((item) => item.id !== 'add-event-product' || can('stock.products_edit')),
+    })).filter((strip) => strip.items.length)
+    : null;
   return {
     configured,
-    strips: Array.isArray(configured) ? configured : null,
+    strips,
   };
 }
 

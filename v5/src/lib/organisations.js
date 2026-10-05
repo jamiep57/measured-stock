@@ -5,9 +5,10 @@
  */
 
 import { getCachedProfile } from './auth.js';
+import { isOrgAdminRole, isSysadminRole } from './permissions.js';
 import { getQueueStats } from '../sync-queue.js';
 
-/** @returns {Array<{ id: string, name: string, role: 'admin'|'staff' }>} */
+/** @returns {Array<{ id: string, name: string, role: 'sysadmin'|'admin'|'manager'|'user' }>} */
 export function listOrganisations() {
   return getCachedProfile()?.organisations || [];
 }
@@ -19,7 +20,11 @@ export function getActiveOrganisation() {
 }
 
 export function isOrgAdmin() {
-  return getActiveOrganisation()?.role === 'admin';
+  return isOrgAdminRole(getActiveOrganisation()?.role);
+}
+
+export function isSysadmin() {
+  return isSysadminRole(getActiveOrganisation()?.role);
 }
 
 /**

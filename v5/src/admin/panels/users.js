@@ -5,6 +5,7 @@
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { authFetch, getCachedProfile } from '../../lib/auth.js';
+import { assignableRoles, isSysadminRole, roleLabel } from '../../lib/permissions.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { icon } from '../../lib/icons.js';
 import { confirmDialog } from '../../components/modal.js';
@@ -14,6 +15,15 @@ import { reportError } from '../../lib/client-errors.js';
 
 /** @type {Array<Record<string, unknown>>} */
 let cachedProfiles = [];
+
+function roleOptionsHtml(selected) {
+  const options = assignableRoles(getCachedProfile()?.role);
+  const values = new Set(options.map((role) => role.value));
+  const selectedRole = values.has(selected) ? selected : (options[0]?.value || 'user');
+  return options.map((role) =>
+    `<option value="${escapeHtml(role.value)}"${role.value === selectedRole ? ' selected' : ''}>${escapeHtml(role.label)}</option>`
+  ).join('');
+}
 
 function statusBadge(status) {
   const s = String(status || '');
@@ -46,8 +56,7 @@ export function renderUsersSection() {
         <div class="users-invite-row">
           <input class="admin-input" type="email" id="usersInviteEmail" placeholder="name@company.com" />
           <select class="admin-input" id="usersInviteRole" style="max-width:8rem;">
-            <option value="staff">Staff</option>
-            <option value="admin">Admin</option>
+            ${roleOptionsHtml('user')}
           </select>
           <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="usersInviteSend">Create invite link</button>
         </div>
@@ -67,7 +76,7 @@ function rowHtml(p, selfId) {
   const isSelf = p.id === selfId;
   const name = p.display_name || '—';
   const email = p.email || '—';
-  const role = String(p.role || 'staff');
+  const role = roleLabel(p.role);
   const pending = p.status === 'pending';
 
   return `
@@ -170,7 +179,8 @@ async function loadUsers() {
     return;
   }
   const selfId = getCachedProfile()?.id;
-  cachedProfiles = data.profiles || [];
+  const viewerIsSysadmin = isSysadminRole(getCachedProfile()?.role);
+  cachedProfiles = (data.profiles || []).filter((profile) => viewerIsSysadmin || profile.role !== 'sysadmin');
   if (!cachedProfiles.length) {
     list.innerHTML = emptyState({
       iconHtml: icon('user', { size: 22 }),
@@ -245,8 +255,7 @@ async function openUserEditorFromProfile(profile) {
         <div class="admin-field">
           <label class="admin-label" for="usersEditRole">Role</label>
           <select class="admin-input" id="usersEditRole" ${isSelf ? 'disabled' : ''}>
-            <option value="staff">Staff</option>
-            <option value="admin">Admin</option>
+            ${roleOptionsHtml(profile.role)}
           </select>
           ${isSelf ? '<p class="wst-form-hint muted">You cannot change your own role.</p>' : ''}
         </div>
@@ -282,7 +291,9 @@ async function openUserEditorFromProfile(profile) {
 
   $('usersEditName').value = profile.display_name || '';
   $('usersEditEmail').value = profile.email || '';
-  $('usersEditRole').value = profile.role === 'admin' ? 'admin' : 'staff';
+  if ($('usersEditRole') && profile.role && [...$('usersEditRole').options].some((opt) => opt.value === profile.role)) {
+    $('usersEditRole').value = profile.role;
+  }
   $('usersEditStatus').value = ['pending', 'active', 'disabled'].includes(profile.status)
     ? profile.status
     : 'active';
@@ -301,7 +312,7 @@ async function openUserEditorFromProfile(profile) {
     /** @type {Record<string, unknown>} */
     const patch = { display_name, email };
     if (!isSelf) {
-      patch.role = $('usersEditRole')?.value || 'staff';
+      patch.role = $('usersEditRole')?.value || 'user';
       patch.status = $('usersEditStatus')?.value || 'active';
     }
     btn.disabled = true;
@@ -381,7 +392,7 @@ export function mountUsersPanel() {
 
   $('usersInviteSend')?.addEventListener('click', async () => {
     const email = $('usersInviteEmail')?.value?.trim();
-    const role = $('usersInviteRole')?.value || 'staff';
+    const role = $('usersInviteRole')?.value || 'user';
     if (!email) {
       toast('Enter an email', true);
       return;

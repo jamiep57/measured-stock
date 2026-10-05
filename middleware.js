@@ -59,7 +59,9 @@ export default async function middleware(request) {
   const session = cookie ? await verifyAuthToken(secret, cookie) : null;
 
   if (session) {
-    if (session.role === 'admin' || isStaffAllowed(url.pathname)) {
+    const desktop = session.shell === 'desktop'
+      || (session.shell !== 'field' && session.role !== 'user' && session.role !== 'staff');
+    if (desktop || isStaffAllowed(url.pathname)) {
       return;
     }
     return Response.redirect(new URL('/app/', request.url), 302);

@@ -19,12 +19,27 @@ import { startKitCountApp } from './kit-count-app.js';
 import { retireLegacyServiceWorkers, setupMeasuredPwaInstall } from './lib/pwa-install.js';
 import { showEventGate, hideEventGate } from './event-gate.js';
 import { initAppMenu, closeAppDrawer } from './app-menu.js';
-import { ensureAppAuth } from './lib/auth.js';
+import { ensureAppAuth, getCachedProfile } from './lib/auth.js';
+import { can, loadPermissions } from './lib/permissions.js';
 import { initClientErrorReporting } from './lib/client-errors.js';
 import { initSyncStatus } from './components/sync-status.js';
 
 const TABS = new Set(['counts', 'kit', 'deliveries', 'transfers', 'wastage']);
 const DEFAULT_TAB = 'counts';
+const FIELD_FEATURES = {
+  deliveries: 'stock.deliveries',
+  transfers: 'stock.transfers',
+  counts: 'stock.counts',
+  wastage: 'stock.wastage',
+  kit: 'kit.event',
+};
+const COMPOSE_FEATURES = {
+  delivery: 'stock.deliveries',
+  transfer: 'stock.transfers',
+  count: 'stock.counts',
+  wastage: 'stock.wastage',
+  kit: 'kit.event',
+};
 const EVENT_STORE_KEY = 'v5_event';
 const WAREHOUSE_STORE_KEY = 'v5_warehouse';
 
@@ -108,7 +123,9 @@ function setComposeFabOpen(open) {
 function syncComposeFab() {
   const fab = $('composeFab');
   if (!fab) return;
+  const anyCompose = [...document.querySelectorAll('[data-compose]')].some((el) => !el.hidden);
   const show = state.ready
+    && anyCompose
     && !document.documentElement.classList.contains('counting')
     && !document.documentElement.classList.contains('kit-deep');
   fab.hidden = !show;
@@ -368,8 +385,27 @@ async function ensureKit() {
   return kitApi;
 }
 
+function fieldTabAllowed(tab) {
+  const feature = FIELD_FEATURES[tab];
+  return !feature || can(feature);
+}
+
+function firstFieldTab() {
+  return [...TABS].find((tab) => fieldTabAllowed(tab)) || DEFAULT_TAB;
+}
+
+function applyFieldPermissions() {
+  document.querySelectorAll('.navbtn[data-tab]').forEach((btn) => {
+    btn.hidden = !fieldTabAllowed(btn.dataset.tab);
+  });
+  document.querySelectorAll('[data-compose]').forEach((btn) => {
+    const feature = COMPOSE_FEATURES[btn.dataset.compose];
+    btn.hidden = feature ? !can(feature) : false;
+  });
+}
+
 function switchTab(tab) {
-  if (!TABS.has(tab)) tab = DEFAULT_TAB;
+  if (!TABS.has(tab) || !fieldTabAllowed(tab)) tab = firstFieldTab();
   state.tab = tab;
   setUrlTab(tab);
 
@@ -534,6 +570,8 @@ async function boot() {
 
   const auth = await ensureAppAuth();
   if (!auth) return;
+  await loadPermissions(getCachedProfile()?.active_org_id);
+  applyFieldPermissions();
 
   initSheet();
   initSpreadsheetCells(document.body);

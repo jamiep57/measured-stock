@@ -26,6 +26,7 @@ import {
 import {
   renderDevShell,
   mountDevPanel,
+  renderBackupShell,
 } from './dev.js';
 import {
   renderSetupShell,
@@ -99,6 +100,7 @@ export const PANEL_TITLES = {
   sales: 'Square & modifiers',
   recon: 'Financial recon',
   audit: 'Forensic audit',
+  backup: 'Backup',
   reports: 'Reports',
   summary: 'Reports',
   'not-found': 'Not found',
@@ -164,6 +166,10 @@ export async function renderPanel(route, state) {
 
   if (route.view === 'bugs') {
     return renderBugsShell();
+  }
+
+  if (route.view === 'backup') {
+    return renderBackupShell();
   }
 
   if (route.view === 'audit') {

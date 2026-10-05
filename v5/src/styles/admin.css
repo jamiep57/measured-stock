@@ -4182,6 +4182,84 @@ body.admin-drawer-open {
 .settings-section .users-invite {
   margin: 0 16px 12px;
 }
+.access-section {
+  overflow: hidden;
+}
+.access-scroll {
+  overflow: auto;
+  padding: 0 16px 20px;
+}
+.access-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.access-table th,
+.access-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+.access-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  z-index: 1;
+}
+.access-table th[scope="row"] {
+  font-weight: 500;
+}
+.access-group td {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+  background: var(--secondary);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.access-switch {
+  position: relative;
+  width: 36px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--border);
+  padding: 0;
+  cursor: pointer;
+}
+.access-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.12s ease;
+}
+.access-switch.is-on {
+  background: var(--foreground);
+}
+.access-switch.is-on .access-switch-knob {
+  transform: translateX(14px);
+}
+.access-switch.is-locked {
+  opacity: 0.55;
+  cursor: default;
+}
+.access-backup {
+  padding: 24px;
+  max-width: 640px;
+}
+.access-backup h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
 .settings-card-head {
   display: flex;
   align-items: flex-start;

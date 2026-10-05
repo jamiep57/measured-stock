@@ -46,13 +46,13 @@
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarGlobal">
                 <div class="nav-link-row" id="sidebarCatalogDashboard" hidden>
-                  <a class="nav-link nav-link-row-main" data-route="dashboard" data-event><i data-lucide="gauge"></i> Dashboard</a>
-                  <a class="nav-link-cog" data-route="setup" data-event href="#" title="Event setup" aria-label="Event setup"><i data-lucide="settings"></i></a>
+                  <a class="nav-link nav-link-row-main" data-route="dashboard" data-event data-feature="home.dashboard"><i data-lucide="gauge"></i> Dashboard</a>
+                  <a class="nav-link-cog" data-route="setup" data-event data-feature="home.event_setup" href="#" title="Event setup" aria-label="Event setup"><i data-lucide="settings"></i></a>
                 </div>
-                <a class="nav-link" href="/library" data-route="library"><i data-lucide="library"></i> Library</a>
-                <a class="nav-link" href="/accounts" data-route="accounts"><i data-lucide="building-2"></i> Accounts</a>
-                <a class="nav-link" href="/suppliers" data-route="suppliers"><i data-lucide="truck"></i> Suppliers</a>
-                <a class="nav-link" href="/warehouses" data-route="warehouses"><i data-lucide="warehouse"></i> Warehouses</a>
+                <a class="nav-link" href="/library" data-route="library" data-feature="home.library"><i data-lucide="library"></i> Library</a>
+                <a class="nav-link" href="/accounts" data-route="accounts" data-feature="home.accounts"><i data-lucide="building-2"></i> Accounts</a>
+                <a class="nav-link" href="/suppliers" data-route="suppliers" data-feature="home.suppliers"><i data-lucide="truck"></i> Suppliers</a>
+                <a class="nav-link" href="/warehouses" data-route="warehouses" data-feature="home.warehouses"><i data-lucide="warehouse"></i> Warehouses</a>
               </nav>
             </div>
           </div>
@@ -64,9 +64,9 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventPlanning">
-                <a class="nav-link" data-route="planning" data-event><i data-lucide="calculator"></i> Menu &amp; GP</a>
-                <a class="nav-link" data-route="orders" data-event><i data-lucide="clipboard-list"></i> Orders</a>
-                <a class="nav-link" data-route="distribution" data-event><i data-lucide="share-2"></i> Distribution</a>
+                <a class="nav-link" data-route="planning" data-event data-feature="planning.menu_gp"><i data-lucide="calculator"></i> Menu &amp; GP</a>
+                <a class="nav-link" data-route="orders" data-event data-feature="planning.orders"><i data-lucide="clipboard-list"></i> Orders</a>
+                <a class="nav-link" data-route="distribution" data-event data-feature="planning.distribution"><i data-lucide="share-2"></i> Distribution</a>
               </nav>
             </div>
           </div>
@@ -78,12 +78,12 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventStock">
-                <a class="nav-link" data-route="products" data-event><i data-lucide="list"></i> Products</a>
-                <a class="nav-link" data-route="deliveries" data-event><i data-lucide="container"></i> Deliveries</a>
-                <a class="nav-link" data-route="counts" data-event><i data-lucide="clipboard-list"></i> Counts</a>
-                <a class="nav-link" data-route="transfers" data-event><i data-lucide="arrow-left-right"></i> Transfers</a>
-                <a class="nav-link" data-route="wastage" data-event><i data-lucide="trash"></i> Wastage</a>
-                <a class="nav-link" data-route="closing" data-event><i data-lucide="lock"></i> Closing</a>
+                <a class="nav-link" data-route="products" data-event data-feature="stock.products_view"><i data-lucide="list"></i> Products</a>
+                <a class="nav-link" data-route="deliveries" data-event data-feature="stock.deliveries"><i data-lucide="container"></i> Deliveries</a>
+                <a class="nav-link" data-route="counts" data-event data-feature="stock.counts"><i data-lucide="clipboard-list"></i> Counts</a>
+                <a class="nav-link" data-route="transfers" data-event data-feature="stock.transfers"><i data-lucide="arrow-left-right"></i> Transfers</a>
+                <a class="nav-link" data-route="wastage" data-event data-feature="stock.wastage"><i data-lucide="trash"></i> Wastage</a>
+                <a class="nav-link" data-route="closing" data-event data-feature="stock.closing"><i data-lucide="lock"></i> Closing</a>
               </nav>
             </div>
           </div>
@@ -95,8 +95,8 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventKit">
-                <a class="nav-link" href="/kit-library" data-route="kit-library"><i data-lucide="boxes"></i> Kit library</a>
-                <a class="nav-link" id="sidebarEventKitLink" data-route="kit" data-event hidden><i data-lucide="package"></i> Kit</a>
+                <a class="nav-link" href="/kit-library" data-route="kit-library" data-feature="kit.library"><i data-lucide="boxes"></i> Kit library</a>
+                <a class="nav-link" id="sidebarEventKitLink" data-route="kit" data-event data-feature="kit.event" hidden><i data-lucide="package"></i> Kit</a>
               </nav>
             </div>
           </div>
@@ -108,8 +108,8 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventSales">
-                <a class="nav-link" data-route="sales" data-event><i data-lucide="store"></i> Square &amp; modifiers</a>
-                <a class="nav-link" href="/volume-pools" data-route="volume-pools"><i data-lucide="layers"></i> Volume pools</a>
+                <a class="nav-link" data-route="sales" data-event data-feature="square.modifiers"><i data-lucide="store"></i> Square &amp; modifiers</a>
+                <a class="nav-link" href="/volume-pools" data-route="volume-pools" data-feature="square.volume_pools"><i data-lucide="layers"></i> Volume pools</a>
               </nav>
             </div>
           </div>
@@ -121,8 +121,8 @@
             </button>
             <div class="sidebar-section-body">
               <nav class="sidebar-nav" id="sidebarEventReports">
-                <a class="nav-link" data-route="reports" data-event><i data-lucide="pie-chart"></i> Reports</a>
-                <a class="nav-link" data-route="recon" data-event><i data-lucide="pound-sterling"></i> Recon</a>
+                <a class="nav-link" data-route="reports" data-event data-feature="finance.reports"><i data-lucide="pie-chart"></i> Reports</a>
+                <a class="nav-link" data-route="recon" data-event data-feature="finance.recon"><i data-lucide="pound-sterling"></i> Recon</a>
               </nav>
             </div>
           </div>
@@ -193,6 +193,9 @@
                   <a class="topbar-menu-item" role="menuitem" href="/settings/users"
                     data-profile-action="settings" data-route="settings">
                     Workspace settings
+                  </a>
+                  <a class="topbar-menu-item" role="menuitem" href="/dev" data-dev-tools hidden>
+                    Developer tools
                   </a>
                 </div>
                 <div class="topbar-menu-section">

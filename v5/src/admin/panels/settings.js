@@ -19,14 +19,17 @@ import {
   renderHistorySection,
   mountHistorySection,
 } from './settings-org.js';
+import { renderAccessSection, mountAccessSection } from './access.js';
+import { can } from '../../lib/permissions.js';
 
 const SETTINGS_NAV = [
-  { id: 'organisation', label: 'Organisation' },
-  { id: 'users', label: 'Users' },
-  { id: 'history', label: 'Change history' },
-  { id: 'warehouses', label: 'Warehouses' },
-  { id: 'categories', label: 'Product categories' },
-  { id: 'case-sizes', label: 'Case sizes' },
+  { id: 'organisation', label: 'Organisation', feature: 'workspace.organisation' },
+  { id: 'users', label: 'Users', feature: 'workspace.users' },
+  { id: 'access', label: 'Access', feature: 'workspace.access' },
+  { id: 'history', label: 'Change history', feature: 'workspace.history' },
+  { id: 'warehouses', label: 'Warehouses', feature: 'home.warehouses' },
+  { id: 'categories', label: 'Product categories', feature: 'workspace.categories' },
+  { id: 'case-sizes', label: 'Case sizes', feature: 'workspace.case_sizes' },
 ];
 
 const CATEGORY_COLOURS = [
@@ -84,7 +87,7 @@ function addressPreview(address) {
 function renderSubnav(section) {
   return `
     <nav class="settings-subnav" aria-label="Workspace settings">
-      ${SETTINGS_NAV.map((item) => `
+      ${SETTINGS_NAV.filter((item) => can(item.feature)).map((item) => `
         <a class="settings-subnav-link${item.id === section ? ' is-active' : ''}"
           href="${escapeHtml(hrefForRoute({ view: 'settings', section: item.id }))}"
           data-settings-section="${escapeHtml(item.id)}">${escapeHtml(item.label)}</a>
@@ -174,6 +177,7 @@ function renderSectionPane(section) {
   if (section === 'organisation') return renderOrganisationSection();
   if (section === 'history') return renderHistorySection();
   if (section === 'users') return renderUsersSection();
+  if (section === 'access') return renderAccessSection();
   if (section === 'warehouses') return renderWarehousesSection();
   if (section === 'categories') return renderCategoriesSection();
   if (section === 'case-sizes') return renderCaseSizesSection();
@@ -219,6 +223,7 @@ export function mountSettingsPanel(section = 'users') {
   if (section === 'users') {
     return mountUsersPanel();
   }
+  if (section === 'access') return mountAccessSection();
   if (section === 'organisation') return mountOrganisationSection();
   if (section === 'history') return mountHistorySection();
 

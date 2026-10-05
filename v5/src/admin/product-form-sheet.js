@@ -3,6 +3,7 @@
  */
 
 import { $, escapeHtml, rid, toast } from '../lib/util.js';
+import { can } from '../lib/permissions.js';
 import { icon } from '../lib/icons.js';
 import { getDB } from '../db.js';
 import { openSheet, closeSheet } from '../components/sheet.js';
@@ -108,6 +109,10 @@ function caseSizeSummary(cs) {
  * @param {() => void|Promise<void>} [opts.eventContext.onRemoveFromEvent]
  */
 export function openProductFormSheet(opts) {
+  if (!can('stock.products_edit')) {
+    toast('You can’t change product information', true);
+    return;
+  }
   const {
     product: p = null,
     categories = [],

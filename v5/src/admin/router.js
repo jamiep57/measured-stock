@@ -6,7 +6,7 @@
 /** Admin lives at site root — home is `/`. */
 const BASE = '';
 
-export const SETTINGS_SECTIONS = ['organisation', 'users', 'history', 'warehouses', 'categories', 'case-sizes'];
+export const SETTINGS_SECTIONS = ['organisation', 'users', 'access', 'history', 'warehouses', 'categories', 'case-sizes'];
 
 function joinAdmin(...parts) {
   const rest = parts.filter(Boolean).join('/');
@@ -40,6 +40,7 @@ export function parseRoute(pathname = location.pathname) {
   if (rest === 'dev') return { view: 'dev' };
   if (rest === 'dev/bugs' || rest === 'bugs') return { view: 'bugs' };
   if (rest === 'dev/audit') return { view: 'audit' };
+  if (rest === 'dev/backup') return { view: 'backup' };
 
   const global = ['library', 'kit-library', 'suppliers', 'accounts', 'warehouses', 'volume-pools'];
   if (global.includes(rest)) return { view: rest };
@@ -65,6 +66,7 @@ export function hrefForRoute(route) {
   if (route.view === 'dev') return '/dev';
   if (route.view === 'bugs') return '/dev/bugs';
   if (route.view === 'audit') return '/dev/audit';
+  if (route.view === 'backup') return '/dev/backup';
   if (route.view === 'settings') {
     const section = route.section || 'users';
     return `/settings/${section}`;

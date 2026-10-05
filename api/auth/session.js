@@ -8,7 +8,13 @@ import {
   getUserFromAccessToken,
   getProfileById,
   listMembershipsForProfile,
+  listRolePermissions,
 } from '../../lib/supabase-auth-admin.js';
+import {
+  isOrgAdminRole,
+  needsDesktopShell,
+  normalizeRole,
+} from '../../lib/access-model.js';
 
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
@@ -115,17 +121,22 @@ export default async function handler(req, res) {
   const organisations = memberships.map((m) => ({
     id: m.org_id,
     name: m.organisations?.name || 'Organisation',
-    role: m.role,
+    role: normalizeRole(m.role),
   }));
 
-  const role = active.role === 'admin' ? 'admin' : 'staff';
+  const role = normalizeRole(active.role);
+  const grants = await listRolePermissions(active.org_id);
+  const shell = needsDesktopShell(role, grants) ? 'desktop' : 'field';
+  const visibleGrants = isOrgAdminRole(role)
+    ? grants
+    : grants.filter((grant) => grant.role === role);
   const displayName =
     normalizeDisplayName(body.display_name) ||
     normalizeDisplayName(profile.display_name) ||
     normalizeDisplayName(user.email?.split('@')[0]) ||
     'User';
 
-  const token = await createAuthToken(secret, role);
+  const token = await createAuthToken(secret, role, undefined, shell);
   const flag = secureFlag();
   res.setHeader('Set-Cookie', [
     `${COOKIE_NAME}=${token}; Path=/; HttpOnly;${flag} SameSite=Lax; Max-Age=${MAX_AGE}`,
@@ -135,7 +146,7 @@ export default async function handler(req, res) {
   res.status(200).json({
     ok: true,
     role,
-    redirect: role === 'staff' ? '/app/' : '/',
+    redirect: shell === 'field' ? '/app/' : '/',
     profile: {
       id: profile.id,
       email: profile.email,
@@ -144,6 +155,7 @@ export default async function handler(req, res) {
       status: profile.status,
       active_org_id: profile.active_org_id,
       organisations,
+      permissions: visibleGrants,
     },
   });
 }

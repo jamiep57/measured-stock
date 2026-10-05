@@ -15,6 +15,7 @@ import {
   createOrganisation,
 } from '../lib/organisations.js';
 import { openModal, closeModal } from '../components/modal.js';
+import { can, canOpenDev, canOpenSettings, firstSettingsSection, roleLabel } from '../lib/permissions.js';
 
 const SECTION_STORAGE_KEY = 'v5-admin-sidebar-sections';
 const DEFAULT_WORKSPACE_MARK = '/assets/img/logomark.png';
@@ -54,7 +55,7 @@ function renderOrganisationItems() {
         <span class="sidebar-workspace-item-mark sidebar-workspace-item-mark--org" aria-hidden="true"><i data-lucide="building-2"></i></span>
         <span class="sidebar-workspace-item-text">
           <span class="sidebar-workspace-item-name">${escapeHtml(org.name)}</span>
-          <span class="sidebar-workspace-item-sub">${org.role === 'admin' ? 'Admin' : 'Staff'}</span>
+          <span class="sidebar-workspace-item-sub">${escapeHtml(roleLabel(org.role))}</span>
         </span>
       </button>`),
     admin
@@ -314,6 +315,7 @@ export function syncSidebar(route, state) {
 
   const eventSections = document.querySelectorAll('.sidebar-section[data-section^="event-"]');
   const showEvent = Boolean(eventId);
+  lastEventVisible = showEvent;
   eventSections.forEach((section) => {
     section.hidden = !showEvent;
   });
@@ -330,5 +332,50 @@ export function syncSidebar(route, state) {
     }
   });
 
+  applyNavPermissions();
   initIcons(document.getElementById('adminSidebar'));
+}
+
+let lastEventVisible = false;
+
+/** Hide nav links the signed-in role cannot open. */
+export function applyNavPermissions() {
+  document.querySelectorAll('[data-feature]').forEach((el) => {
+    const allowed = can(el.dataset.feature);
+    if (!allowed) {
+      el.hidden = true;
+      return;
+    }
+    if (el.hasAttribute('data-event')) {
+      el.hidden = !lastEventVisible;
+      return;
+    }
+    el.hidden = false;
+  });
+
+  document.querySelectorAll('.nav-link-row').forEach((row) => {
+    const bits = [...row.querySelectorAll('[data-feature]')];
+    if (!bits.length) return;
+    row.hidden = bits.every((el) => el.hidden);
+  });
+
+  document.querySelectorAll('.sidebar-section').forEach((section) => {
+    const links = [...section.querySelectorAll('[data-feature]')];
+    if (!links.length) return;
+    const anyVisible = links.some((el) => !el.hidden);
+    if (section.dataset.section?.startsWith('event-')) {
+      if (lastEventVisible) section.hidden = !anyVisible;
+    } else {
+      section.hidden = !anyVisible;
+    }
+  });
+
+  const settings = document.querySelector('[data-profile-action="settings"]');
+  if (settings) {
+    const section = firstSettingsSection();
+    settings.hidden = !canOpenSettings();
+    if (section) settings.setAttribute('href', hrefForRoute({ view: 'settings', section }));
+  }
+  const dev = document.querySelector('[data-dev-tools]');
+  if (dev) dev.hidden = !canOpenDev();
 }

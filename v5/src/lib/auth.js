@@ -4,6 +4,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { setDisplayName } from './session-identity.js';
+import {
+  hydratePermissions,
+  isOrgAdminRole,
+  normalizeRole,
+  profileNeedsDesktop,
+} from './permissions.js';
 
 /** @type {import('@supabase/supabase-js').SupabaseClient | null} */
 let client = null;
@@ -13,7 +19,7 @@ let clientKey = '';
 let cachedSession = null;
 
 /**
- * @typedef {{ id: string, name: string, role: 'admin'|'staff' }} OrgMembership
+ * @typedef {{ id: string, name: string, role: 'sysadmin'|'admin'|'manager'|'user' }} OrgMembership
  * @type {null | { id: string, email?: string, display_name?: string, role?: string, status?: string, active_org_id?: string, organisations?: OrgMembership[] }}
  */
 let cachedProfile = null;
@@ -75,7 +81,7 @@ export function getCachedProfile() {
 
 /**
  * Ensure Supabase session + edge cookie. Redirects to /login when needed.
- * @param {{ requireAdmin?: boolean, loginPath?: string }} [opts]
+ * @param {{ requireAdmin?: boolean, requireDesktop?: boolean, loginPath?: string }} [opts]
  * @returns {Promise<{ session: import('@supabase/supabase-js').Session, profile: object } | null>}
  */
 export async function ensureAppAuth(opts = {}) {
@@ -127,6 +133,7 @@ export async function ensureAppAuth(opts = {}) {
 
   if (resOk && data?.profile) {
     cachedProfile = data.profile;
+    hydratePermissions(cachedProfile);
   } else {
     // Fallback: read own profile via PostgREST (works once JWT + RLS are live).
     try {
@@ -150,7 +157,7 @@ export async function ensureAppAuth(opts = {}) {
       const organisations = (Array.isArray(memberships) ? memberships : []).map((m) => ({
         id: m.org_id,
         name: m.organisations?.name || 'Organisation',
-        role: m.role === 'admin' ? 'admin' : 'staff',
+        role: normalizeRole(m.role),
       }));
       const activeOrg = organisations.find((o) => o.id === profile.active_org_id);
       if (!activeOrg) {
@@ -158,6 +165,7 @@ export async function ensureAppAuth(opts = {}) {
         return null;
       }
       cachedProfile = { ...profile, role: activeOrg.role, organisations };
+      hydratePermissions(cachedProfile);
     } catch (err) {
       console.error('ensureAppAuth profile', err);
       window.location.href = `${loginPath}?error=session`;
@@ -169,7 +177,12 @@ export async function ensureAppAuth(opts = {}) {
     setDisplayName(cachedProfile.display_name);
   }
 
-  if (opts.requireAdmin && cachedProfile?.role !== 'admin') {
+  if (opts.requireAdmin && !isOrgAdminRole(cachedProfile?.role)) {
+    window.location.href = '/app/';
+    return null;
+  }
+
+  if (opts.requireDesktop && !profileNeedsDesktop(cachedProfile?.role, cachedProfile?.permissions || [])) {
     window.location.href = '/app/';
     return null;
   }
