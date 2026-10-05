@@ -23,9 +23,12 @@ import { listAccounts } from '../../lib/accounts-data.js';
 import { primaryContact } from '../../lib/accounts.js';
 import { findOfferForSupplier } from '../../pack-metrics.js';
 import { parsePlanningNumber, resolveMenuLine } from '../../lib/planning-menu.js';
+import { cocktailServesByProduct, projectedServesWithCocktails } from '../../lib/menu-cocktails.js';
 import {
+  isCocktailSchemaMissing,
   isEventPricingLocked,
   isPlanningSchemaMissing,
+  listEventCocktails,
   listEventMenu,
   loadEventPricing,
   upsertEventMenuItem,
@@ -120,6 +123,8 @@ export function mountOrdersPanel(route) {
     event: null,
     pricing: null,
     items: new Map(),
+    cocktails: [],
+    cocktailServes: new Map(),
     products: [],
     productById: new Map(),
     supplierById: new Map(),
@@ -141,17 +146,28 @@ export function mountOrdersPanel(route) {
 
   function plannedFor(pid) {
     const item = ctx.items.get(pid);
-    if (!item) return { cases: null, source: null };
+    const extra = ctx.cocktailServes.get(pid) || 0;
+    const combined = projectedServesWithCocktails(item, extra);
+    if (!item && combined.mode !== 'projection') return { cases: null, source: null };
     const product = ctx.productById.get(pid);
-    const line = resolveMenuLine(item, {
+    const line = resolveMenuLine(item || { product_id: pid, included: true }, {
       product,
       event: ctx.pricing,
       caseSizes: ctx.caseSizes,
     });
-    return plannedCases(item, line, product, ctx.caseSizes, ctx.buffer);
+    if (combined.mode === 'override') return plannedCases(item, line, product, ctx.caseSizes, ctx.buffer);
+    if (combined.mode !== 'projection') return { cases: null, source: null };
+    return plannedCases(
+      { included: true, projected_serves: combined.serves },
+      line,
+      product,
+      ctx.caseSizes,
+      ctx.buffer,
+    );
   }
 
   function recompute() {
+    ctx.cocktailServes = cocktailServesByProduct(ctx.cocktails);
     const ids = new Set();
     ctx.items.forEach((item, pid) => {
       if (item.included !== false || item.planned_qty_override != null) ids.add(pid);
@@ -160,6 +176,7 @@ export function mountOrdersPanel(route) {
     (ctx.event?.event_products || []).forEach((ep) => {
       if (Number(ep.qty_ordered) > 0 || Number(ep.delivered_qty) > 0) ids.add(ep.product_id);
     });
+    ctx.cocktailServes.forEach((_serves, pid) => ids.add(pid));
     const planned = new Map();
     ctx.plannedSource = new Map();
     ids.forEach((pid) => {
@@ -856,7 +873,7 @@ export function mountOrdersPanel(route) {
   async function reload() {
     await flushSaves();
     const DB = getDB();
-    const [event, pricing, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries] = await Promise.all([
+    const [event, pricing, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries, cocktails] = await Promise.all([
       loadEventLite(ctx.eventId),
       loadEventPricing(ctx.eventId),
       listEventMenu(ctx.eventId),
@@ -867,12 +884,17 @@ export function mountOrdersPanel(route) {
       loadCaseSizes(),
       loadCategories(),
       DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+      listEventCocktails(ctx.eventId).catch((err) => {
+        if (isCocktailSchemaMissing(err)) return [];
+        throw err;
+      }),
     ]);
     if (ctx.abort) return;
     if (!event || !pricing) throw new Error('Event not found');
     ctx.event = event;
     ctx.pricing = pricing;
     ctx.items = new Map((items || []).map((i) => [i.product_id, i]));
+    ctx.cocktails = cocktails || [];
     ctx.orders = orders || [];
     ctx.buffer = buffer;
     ctx.products = (products || []).filter((p) => !p.archived && (p.product_kind || 'stock') === 'stock');

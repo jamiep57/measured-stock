@@ -62,6 +62,7 @@ export function formatAbv(value) {
 export function serveSizeOf(line) {
   const explicit = String(line?.serveLabel || '').trim();
   if (explicit) return explicit;
+  if (line?.kind === 'cocktail') return 'Cocktail';
   const label = String(line?.caseSize || '').trim();
   const stockUnit = String(line?.stockUnit || '').toLowerCase();
   if (stockUnit === 'keg' || /\b(keg|keykeg|cask)\b/i.test(label) || /\d\s*gal\b/i.test(label)) return 'Pint';

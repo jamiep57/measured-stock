@@ -55,6 +55,12 @@ export const PANEL_TOOLBAR = {
           title: 'Add a library product to this event menu',
         },
         {
+          id: 'plan-add-cocktail',
+          icon: 'martini',
+          label: 'Cocktail',
+          title: 'Create a cocktail sold as one drink, costed from its stock products',
+        },
+        {
           id: 'plan-add-scenario',
           icon: 'target',
           label: 'Scenario',

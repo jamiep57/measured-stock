@@ -16,6 +16,7 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
 import { listAccounts, loadEventClientAccount } from '../../lib/accounts-data.js';
 import { openMenuExportDialog } from '../planning-export.js';
+import { openCocktailEditor } from '../planning-cocktail.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
@@ -34,15 +35,19 @@ import {
   scenarioColumnId,
   writePlanningColumnOrder,
 } from '../../lib/planning-columns.js';
+import { cocktailLineKey, resolveCocktailLine } from '../../lib/menu-cocktails.js';
 import {
   clearEventCostSnapshots,
   createScenario,
   deleteScenario,
+  isCocktailSchemaMissing,
   isEventPricingLocked,
   isPlanningSchemaMissing,
+  listEventCocktails,
   listEventMenu,
   listScenarios,
   loadEventPricing,
+  normaliseCocktail,
   replaceScenarioPrices,
   scenarioPricesFrom,
   applySavedMenu,
@@ -52,6 +57,7 @@ import {
   savedMenuProductCount,
   setScenarioPrice,
   snapshotEventCosts,
+  updateEventCocktail,
   updateEventPricing,
   updateScenario,
   upsertEventMenuItem,
@@ -129,6 +135,8 @@ export function mountPlanningPanel(route) {
     eventId: route.eventId,
     event: null,
     items: new Map(),
+    cocktails: new Map(),
+    cocktailsUnavailable: false,
     products: [],
     productById: new Map(),
     categories: [],
@@ -160,9 +168,21 @@ export function mountPlanningPanel(route) {
     return line;
   }
 
+  function cocktailLineFor(cocktail) {
+    const line = resolveCocktailLine(cocktail, cocktail.ingredients, {
+      productById: ctx.productById,
+      items: ctx.items,
+      caseSizes: ctx.caseSizes,
+      event: ctx.event,
+    });
+    ctx.lines.set(cocktailLineKey(cocktail.id), line);
+    return line;
+  }
+
   function recomputeAll() {
     ctx.lines.clear();
     ctx.items.forEach((_item, pid) => lineFor(pid));
+    ctx.cocktails.forEach((cocktail) => cocktailLineFor(cocktail));
   }
 
   function scenarioPrice(scenario, pid) {
@@ -183,8 +203,8 @@ export function mountPlanningPanel(route) {
       }
       if (cat && l.category !== cat) return false;
       if (q) {
-        const p = ctx.productById.get(l.productId);
-        const hay = [l.name, l.menuName, l.caseSize, l.category, p?.sku, productSupplierSearchText(p)].join(' ').toLowerCase();
+        const p = l.productId ? ctx.productById.get(l.productId) : null;
+        const hay = [l.name, l.menuName, l.caseSize, l.category, l.ingredientSummary, p?.sku, productSupplierSearchText(p)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -272,6 +292,7 @@ export function mountPlanningPanel(route) {
   }
 
   function columnCell(id, line, item) {
+    if (line.kind === 'cocktail') return cocktailColumnCell(id, line, item);
     const dis = locked() ? 'disabled' : '';
     if (id === 'serve') {
       return `<td class="plan-cell">${cellInput('serves_per_unit', item.serves_per_unit, { placeholder: line.servesPerUnit ?? '', label: 'Serves per unit', width: 'sm' })}</td>`;
@@ -331,7 +352,56 @@ export function mountPlanningPanel(route) {
     return '';
   }
 
+  function cocktailColumnCell(id, line, item) {
+    if (id === 'serve') {
+      const n = (line.ingredients || []).length;
+      const label = n ? `${n} product${n === 1 ? '' : 's'}` : 'Recipe';
+      return `<td class="plan-cell"><button type="button" class="plan-cocktail-recipe" data-edit-cocktail="${escapeHtml(line.cocktailId)}">${escapeHtml(label)}</button></td>`;
+    }
+    if (id === 'cost') {
+      const detail = (line.ingredients || []).map((p) => {
+        const each = p.costPerMeasure == null ? 'no cost' : money(p.costPerMeasure);
+        return `${p.name}: ${p.measures} × ${each}`;
+      }).join('\n');
+      return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(detail || 'Cost of the ingredients')}">${money(line.costPerServe)}</td>`;
+    }
+    if (id === 'menu') {
+      return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
+    }
+    if (id === 'target') {
+      return `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm' })}</td>`;
+    }
+    if (id === 'required') {
+      return `<td class="plan-cell plan-out" data-out="required">${line.requiredPrice != null && !locked()
+        ? `<button type="button" class="plan-use-price" data-use-price="${line.requiredPrice}" title="Use as menu price">${money(line.requiredPrice)}</button>`
+        : money(line.requiredPrice)}</td>`;
+    }
+    if (id === 'suggested') {
+      return `<td class="plan-cell">${cellInput('suggested_price', item.suggested_price, { placeholder: line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '', label: 'Suggested price' })}</td>`;
+    }
+    if (id === 'gp') {
+      return `<td class="plan-cell plan-cell--key plan-out" data-out="gp">${gpBadge(line.gpPct, line.status)}</td>`;
+    }
+    if (id.startsWith('scenario:')) {
+      return `<td class="plan-cell plan-cell--scenario" title="Cocktails keep their menu price in scenarios"><span class="plan-scenario-gp ${statusClass(line.status)}">${escapeHtml(formatGpPct(line.gpPct))}</span></td>`;
+    }
+    if (id === 'serves') {
+      return `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Projected serves' })}</td>`;
+    }
+    if (id === 'revenue') {
+      return `<td class="plan-cell plan-out" data-out="revenue">${money(line.revenueGross, 0)}</td>`;
+    }
+    if (id === 'gp-amount') {
+      return `<td class="plan-cell plan-out" data-out="gp-amount">${money(line.gpAmount, 0)}</td>`;
+    }
+    if (id === 'deal' || id === 'deal-ref') {
+      return `<td class="plan-cell plan-out" title="A cocktail’s cost comes from its ingredients">—</td>`;
+    }
+    return '';
+  }
+
   function renderRow(line) {
+    if (line.kind === 'cocktail') return renderCocktailRow(line);
     const pid = line.productId;
     const item = ctx.items.get(pid) || {};
     const dis = locked() ? 'disabled' : '';
@@ -354,10 +424,33 @@ export function mountPlanningPanel(route) {
       </th>${cells}</tr>`;
   }
 
+  function renderCocktailRow(line) {
+    const item = ctx.cocktails.get(line.cocktailId) || {};
+    const dis = locked() ? 'disabled' : '';
+    const meta = line.ingredientSummary
+      ? `<span class="dist-item-meta">${escapeHtml(line.ingredientSummary)}</span>` : '';
+    const serve = line.serveLabel
+      ? `<span class="dist-item-meta">${escapeHtml(line.serveLabel)}</span>` : '';
+    const cells = shownColumnIds().map((id) => cocktailColumnCell(id, line, item)).join('');
+    return `<tr class="dist-prod-row plan-row plan-row--cocktail${line.included ? '' : ' plan-row--off'}" data-cid="${escapeHtml(line.cocktailId)}">
+      <th class="dist-sticky plan-col-product" scope="row">
+        <div class="plan-item">
+          <input type="checkbox" class="plan-include" data-field="included" ${line.included ? 'checked' : ''} ${dis}
+            aria-label="${line.included ? 'Remove cocktail from' : 'Add cocktail to'} event menu" title="${line.included ? 'On the event menu' : 'Off the event menu'}">
+          <button type="button" class="plan-cocktail-open" data-edit-cocktail="${escapeHtml(line.cocktailId)}">
+            <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
+            <span class="dist-item-meta">Cocktail</span>
+            ${meta}
+            ${serve}
+          </button>
+        </div>
+      </th>${cells}</tr>`;
+  }
+
   function renderBody() {
     const rows = visibleLines();
     if (!rows.length) {
-      return `<tr><td colspan="${colCount()}" class="dist-empty">${ctx.items.size
+      return `<tr><td colspan="${colCount()}" class="dist-empty">${ctx.items.size || ctx.cocktails.size
         ? 'No menu items match the current filter.'
         : 'No products on this event menu yet.'}</td></tr>`;
     }
@@ -432,13 +525,13 @@ export function mountPlanningPanel(route) {
   }
 
   function paint() {
-    if (!ctx.items.size) {
+    if (!ctx.items.size && !ctx.cocktails.size) {
       panel.innerHTML = emptyState({
         iconHtml: icon('calculator', { size: 22 }),
         title: 'Plan this event’s menu',
-        copy: 'Add products and set prices here. Save the menu when you want to reuse it on another event.',
+        copy: 'Add products and set prices here, or build a cocktail from several stock products and sell it as one. Save the menu when you want to reuse it on another event.',
         variant: 'admin',
-        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-add-product>Add product</button>',
+        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-add-product>Add product</button> <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-add-cocktail>Create cocktail</button>',
       });
       return;
     }
@@ -512,7 +605,44 @@ export function mountPlanningPanel(route) {
       const tgtInput = row.querySelector('[data-field="target_gp_pct"]');
       if (tgtInput) tgtInput.placeholder = line.targetGpPct != null ? String(line.targetGpPct) : '';
     }
+    refreshCocktailsUsing(pid);
     paintKpis();
+  }
+
+  function refreshCocktailRow(id) {
+    const cocktail = ctx.cocktails.get(id);
+    if (!cocktail) return;
+    const line = cocktailLineFor(cocktail);
+    const row = panel.querySelector(`tr.plan-row[data-cid="${CSS.escape(id)}"]`);
+    if (row) {
+      const set = (key, html) => {
+        const el = row.querySelector(`[data-out="${key}"]`);
+        if (el) el.innerHTML = html;
+      };
+      set('gp', gpBadge(line.gpPct, line.status));
+      set('cost', money(line.costPerServe));
+      set('required', line.requiredPrice != null && !locked()
+        ? `<button type="button" class="plan-use-price" data-use-price="${line.requiredPrice}" title="Use as menu price">${money(line.requiredPrice)}</button>`
+        : money(line.requiredPrice));
+      set('revenue', money(line.revenueGross, 0));
+      set('gp-amount', money(line.gpAmount, 0));
+      const menuInput = row.querySelector('[data-field="menu_price"]');
+      if (menuInput) menuInput.placeholder = line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '';
+      const sugInput = row.querySelector('[data-field="suggested_price"]');
+      if (sugInput) sugInput.placeholder = line.requiredPrice != null ? line.requiredPrice.toFixed(2) : '';
+      const tgtInput = row.querySelector('[data-field="target_gp_pct"]');
+      if (tgtInput) tgtInput.placeholder = line.targetGpPct != null ? String(line.targetGpPct) : '';
+      row.querySelectorAll('.plan-cell--scenario .plan-scenario-gp').forEach((el) => {
+        el.textContent = formatGpPct(line.gpPct);
+        el.className = `plan-scenario-gp ${statusClass(line.status)}`;
+      });
+    }
+  }
+
+  function refreshCocktailsUsing(pid) {
+    ctx.cocktails.forEach((cocktail) => {
+      if ((cocktail.ingredients || []).some((ing) => ing.product_id === pid)) refreshCocktailRow(cocktail.id);
+    });
   }
 
   // ---------- saving -------------------------------------------------
@@ -559,10 +689,34 @@ export function mountPlanningPanel(route) {
     return null;
   }
 
+  function setCocktailField(id, field, value, { immediate = false } = {}) {
+    const cocktail = ctx.cocktails.get(id);
+    if (!cocktail) return null;
+    cocktail[field] = value;
+    refreshCocktailRow(id);
+    paintKpis();
+    const save = () => updateEventCocktail(id, { [field]: value });
+    if (immediate) return save().catch((err) => toast(err.message || 'Save failed', true));
+    queueSave(`cocktail:${id}:${field}`, save);
+    return null;
+  }
+
   function onGridInput(e) {
     const input = e.target;
     const row = input.closest('tr.plan-row');
     if (!row) return;
+    if (row.dataset.cid) {
+      const field = input.dataset.field;
+      if (!field || field === 'included') return;
+      const spec = NUMERIC_FIELDS[field];
+      if (!spec) return;
+      const parsed = parsePlanningNumber(input.value, { max: spec.max ?? undefined });
+      const ok = parsed.ok && !(spec.positive && parsed.value === 0);
+      input.classList.toggle('is-invalid', !ok);
+      if (!ok) return;
+      setCocktailField(row.dataset.cid, field, parsed.value);
+      return;
+    }
     const pid = row.dataset.pid;
 
     if (input.dataset.scenarioPrice) {
@@ -597,7 +751,14 @@ export function mountPlanningPanel(route) {
   async function onGridChange(e) {
     const input = e.target;
     if (!input.matches('.plan-include')) return;
-    const pid = input.closest('tr.plan-row')?.dataset.pid;
+    const row = input.closest('tr.plan-row');
+    const cid = row?.dataset.cid;
+    if (cid) {
+      await setCocktailField(cid, 'included', input.checked, { immediate: true });
+      paintGrid();
+      return;
+    }
+    const pid = row?.dataset.pid;
     if (!pid) return;
     await setItemField(pid, 'included', input.checked, { immediate: true });
     paintGrid();
@@ -720,6 +881,13 @@ export function mountPlanningPanel(route) {
 
   function endColDrag(e) {
     if (!colDrag || e.pointerId !== colDrag.pointerId) return;
+    colDrag.x = e.clientX;
+    colDrag.y = e.clientY;
+    if (!colDrag.active && e.type !== 'pointercancel') {
+      const dx = e.clientX - colDrag.startX;
+      const dy = e.clientY - colDrag.startY;
+      if (dx * dx + dy * dy >= 25) colDrag.active = true;
+    }
     if (colDrag.active) markColumnDrop(colDrag.x, colDrag.y);
     const drag = colDrag;
     colDrag = null;
@@ -743,14 +911,24 @@ export function mountPlanningPanel(route) {
       openAddProduct();
       return;
     }
+    if (e.target.closest('[data-add-cocktail]')) {
+      openCocktail(null);
+      return;
+    }
+    const edit = e.target.closest('[data-edit-cocktail]');
+    if (edit) {
+      openCocktail(edit.dataset.editCocktail);
+      return;
+    }
     const use = e.target.closest('[data-use-price]');
     if (use) {
-      const pid = use.closest('tr.plan-row')?.dataset.pid;
+      const row = use.closest('tr.plan-row');
       const price = Number(use.dataset.usePrice);
-      if (!pid || !Number.isFinite(price)) return;
-      const input = use.closest('tr').querySelector('[data-field="menu_price"]');
+      if (!row || !Number.isFinite(price)) return;
+      const input = row.querySelector('[data-field="menu_price"]');
       if (input) input.value = price.toFixed(2);
-      setItemField(pid, 'menu_price', price);
+      if (row.dataset.cid) setCocktailField(row.dataset.cid, 'menu_price', price);
+      else if (row.dataset.pid) setItemField(row.dataset.pid, 'menu_price', price);
       return;
     }
     const scen = e.target.closest('[data-scenario-edit]');
@@ -772,6 +950,47 @@ export function mountPlanningPanel(route) {
   }
 
   // ---------- toolbar actions ----------------------------------------
+
+  function ensureCocktails() {
+    if (!ctx.cocktailsUnavailable) return true;
+    toast('Cocktails need the latest database update. Apply migration 077_menu_cocktails.sql, then reload.', true);
+    return false;
+  }
+
+  function showMenu() {
+    recomputeAll();
+    setTableFilterContext('planning', {
+      categories: [...new Set([...ctx.lines.values()].map((l) => l.category))].sort(),
+    });
+    if (!ctx.items.size && !ctx.cocktails.size) paint();
+    else if ($('planGrid')) paintGrid();
+    else paint();
+  }
+
+  function openCocktail(id) {
+    if (!ensureCocktails()) return;
+    if (!id && locked()) { toast('Pricing is locked for this event', true); return; }
+    const cocktail = id ? ctx.cocktails.get(id) : null;
+    if (id && !cocktail) return;
+    openCocktailEditor({
+      cocktail,
+      ctx,
+      locked: locked(),
+      nameTaken: (name, exceptId) => {
+        const key = name.trim().toLowerCase();
+        return [...ctx.cocktails.values()].some((c) => c.id !== exceptId && String(c.name || '').trim().toLowerCase() === key);
+      },
+      onSaved: (saved) => {
+        ctx.cocktails.set(saved.id, normaliseCocktail(saved));
+        showMenu();
+      },
+      onDeleted: (cid) => {
+        ctx.cocktails.delete(cid);
+        ctx.lines.delete(cocktailLineKey(cid));
+        showMenu();
+      },
+    });
+  }
 
   function openAddProduct() {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
@@ -955,7 +1174,9 @@ export function mountPlanningPanel(route) {
   }
 
   function includedMenuCount() {
-    return [...ctx.items.values()].filter((item) => item.included !== false).length;
+    const products = [...ctx.items.values()].filter((item) => item.included !== false).length;
+    const cocktails = [...ctx.cocktails.values()].filter((c) => c.included !== false).length;
+    return products + cocktails;
   }
 
   function menuNameTaken(err) {
@@ -968,7 +1189,7 @@ export function mountPlanningPanel(route) {
       title: 'Save menu',
       bodyHtml: `
         <div class="admin-drawer-form">
-          <p class="admin-modal-confirm-msg">Saves the ${count} product${count === 1 ? '' : 's'} on this menu, with their menu price, suggested price, target GP and serves per unit. You can apply it to any event. Projected serves and deal costs stay on this event.</p>
+          <p class="admin-modal-confirm-msg">Saves the ${count} item${count === 1 ? '' : 's'} on this menu — products with their prices, and cocktails with their recipes. You can apply it to any event. Projected serves and deal costs stay on this event.</p>
           <label class="admin-field"><span class="admin-label">Name</span>
             <input class="admin-input" id="savedMenuName" maxlength="60" value="${escapeHtml(suggested)}" placeholder="e.g. Festival bar"></label>
           <p class="plan-form-err" id="savedMenuErr" hidden></p>
@@ -1007,7 +1228,7 @@ export function mountPlanningPanel(route) {
         if (menuNameTaken(e2)) {
           replaceExisting = true;
           okBtn.textContent = 'Update menu';
-          err.textContent = `“${name}” already exists. Update replaces its products and prices with this event’s menu.`;
+          err.textContent = `“${name}” already exists. Update replaces its products, cocktails and prices with this event’s menu.`;
           err.hidden = false;
           return;
         }
@@ -1025,14 +1246,14 @@ export function mountPlanningPanel(route) {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
     await flushSaves();
     const count = includedMenuCount();
-    if (!count) { toast('Add products to the menu before saving it', true); return; }
+    if (!count) { toast('Add something to the menu before saving it', true); return; }
     const suggested = String(ctx.event?.name || '').trim().slice(0, 60);
     bindSaveMenu(openModal(saveMenuForm(count, suggested)));
   }
 
   function showSaveMenu(el) {
     const count = includedMenuCount();
-    if (!count) { toast('Add products to the menu before saving it', true); return; }
+    if (!count) { toast('Add something to the menu before saving it', true); return; }
     const suggested = String(ctx.event?.name || '').trim().slice(0, 60);
     const form = saveMenuForm(count, suggested);
     el.querySelector('.admin-modal-title').textContent = form.title;
@@ -1138,12 +1359,12 @@ export function mountPlanningPanel(route) {
         const added = Number(await applySavedMenu(ctx.eventId, menu.id, refresh)) || 0;
         closeModal();
         await reload();
-        const addedLabel = `${added} product${added === 1 ? '' : 's'} added`;
+        const addedLabel = `${added} added`;
         toast(refresh
           ? `${menu.name} applied — ${addedLabel}, prices overwritten`
           : (added
             ? `${addedLabel} from ${menu.name}. Existing prices were left as they are.`
-            : `Every product on ${menu.name} is already on this menu. Prices were left as they are.`));
+            : `Everything on ${menu.name} is already on this menu. Prices were left as they are.`));
       } catch (e2) {
         el.querySelector('[data-ok]').disabled = false;
         err.textContent = e2.message || 'Could not apply menu';
@@ -1158,6 +1379,7 @@ export function mountPlanningPanel(route) {
       'plan-save-menu': () => { void openSaveMenu(); },
       'plan-apply-menu': () => { void openApplyMenu(); },
       'plan-add-product': openAddProduct,
+      'plan-add-cocktail': () => openCocktail(null),
       'plan-add-scenario': openAddScenario,
       'plan-costs': toggleCostLock,
       'plan-export': () => {
@@ -1195,18 +1417,24 @@ export function mountPlanningPanel(route) {
 
   async function reload() {
     await flushSaves();
-    const [event, items, scenarios, products, caseSizes, categories] = await Promise.all([
+    const [event, items, scenarios, products, caseSizes, categories, cocktailRows] = await Promise.all([
       loadEventPricing(ctx.eventId),
       listEventMenu(ctx.eventId),
       listScenarios(ctx.eventId),
       loadLibraryProducts(),
       loadCaseSizes(),
       loadCategories(),
+      listEventCocktails(ctx.eventId).catch((err) => {
+        if (isCocktailSchemaMissing(err)) return null;
+        throw err;
+      }),
     ]);
     if (ctx.abort) return;
     if (!event) throw new Error('Event not found');
     ctx.event = event;
     ctx.items = new Map((items || []).map((i) => [i.product_id, i]));
+    ctx.cocktailsUnavailable = cocktailRows == null;
+    ctx.cocktails = new Map((cocktailRows || []).map((c) => [c.id, normaliseCocktail(c)]));
     ctx.scenarios = scenarios || [];
     ctx.products = (products || []).filter((p) => !p.archived && (p.product_kind || 'stock') === 'stock');
     ctx.productById = new Map((products || []).map((p) => [p.id, p]));

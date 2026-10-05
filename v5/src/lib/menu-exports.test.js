@@ -45,6 +45,8 @@ describe('serve size', () => {
     expect(serveSizeOf({ caseSize: '50L Keg' })).toBe('Pint');
     expect(serveSizeOf({ caseSize: '9 Gal', stockUnit: 'keg' })).toBe('Pint');
     expect(serveSizeOf({ serveLabel: '175ml', caseSize: '750ml' })).toBe('175ml');
+    expect(serveSizeOf({ kind: 'cocktail' })).toBe('Cocktail');
+    expect(serveSizeOf({ kind: 'cocktail', serveLabel: 'Coupe' })).toBe('Coupe');
   });
 });
 

@@ -11,7 +11,14 @@ const enc = (v) => encodeURIComponent(v);
 export function isPlanningSchemaMissing(err) {
   const msg = String(err?.message || err || '');
   return /PGRST205|42P01|does not exist|Could not find the table|schema cache/i.test(msg)
-    && /price_years|house_menu_prices|event_menu_items|pricing_scenarios|scenario_prices|saved_menus|saved_menu_items|price_year_id|target_gp_pct/i.test(msg);
+    && /price_years|house_menu_prices|event_menu_items|pricing_scenarios|scenario_prices|saved_menus|saved_menu_items|event_cocktails|price_year_id|target_gp_pct/i.test(msg);
+}
+
+/** True when the cocktail tables are not deployed yet (077 not applied). */
+export function isCocktailSchemaMissing(err) {
+  const msg = String(err?.message || err || '');
+  return /PGRST205|42P01|does not exist|Could not find the table|schema cache/i.test(msg)
+    && /event_cocktails|event_cocktail_ingredients|saved_menu_cocktails/i.test(msg);
 }
 
 function cleanPatch(patch) {
@@ -195,7 +202,7 @@ export async function setScenarioPrice(scenarioId, productId, price) {
 export function scenarioPricesFrom(lines, upliftPct, roundTo, roundFn) {
   const mult = 1 + (Number(upliftPct) || 0) / 100;
   return lines
-    .filter((l) => l.menuPrice != null)
+    .filter((l) => l.kind !== 'cocktail' && l.productId && l.menuPrice != null)
     .map((l) => ({ product_id: l.productId, price: roundFn(l.menuPrice * mult, roundTo) }));
 }
 
@@ -206,4 +213,67 @@ export async function replaceScenarioPrices(scenarioId, rows) {
     rows.map((r) => ({ scenario_id: scenarioId, product_id: r.product_id, price: r.price })),
     { onConflict: 'scenario_id,product_id' },
   );
+}
+
+// ---------- cocktails ------------------------------------------------
+
+export function normaliseCocktail(row) {
+  const ingredients = (row?.event_cocktail_ingredients || row?.ingredients || [])
+    .map((ing) => ({
+      id: ing.id || null,
+      product_id: ing.product_id,
+      measures: Number(ing.measures),
+      position: Number(ing.position) || 0,
+    }))
+    .filter((ing) => ing.product_id)
+    .sort((a, b) => a.position - b.position || String(a.product_id).localeCompare(String(b.product_id)));
+  return { ...row, ingredients };
+}
+
+export async function listEventCocktails(eventId) {
+  const rows = await getDB().select(
+    'event_cocktails',
+    '?event_id=eq.' + enc(eventId) + '&select=*,event_cocktail_ingredients(id,product_id,measures,position)&order=name.asc',
+  );
+  return (rows || []).map(normaliseCocktail);
+}
+
+export async function createEventCocktail(eventId, fields, ingredients) {
+  const rows = await getDB().insert('event_cocktails', {
+    event_id: eventId,
+    included: true,
+    ...cleanPatch(fields),
+  });
+  const cocktail = rows?.[0];
+  if (!cocktail) throw new Error('Could not create cocktail');
+  let saved;
+  try {
+    saved = await replaceCocktailIngredients(cocktail.id, ingredients);
+  } catch (err) {
+    await deleteEventCocktail(cocktail.id).catch(() => {});
+    throw err;
+  }
+  return normaliseCocktail({ ...cocktail, ingredients: saved });
+}
+
+export async function updateEventCocktail(id, patch) {
+  const rows = await getDB().update('event_cocktails', 'id=eq.' + enc(id), cleanPatch(patch));
+  return rows?.[0] || null;
+}
+
+export async function replaceCocktailIngredients(cocktailId, ingredients) {
+  await getDB().remove('event_cocktail_ingredients', 'cocktail_id=eq.' + enc(cocktailId));
+  const list = (ingredients || []).filter((ing) => ing?.product_id && Number(ing.measures) > 0);
+  if (!list.length) return [];
+  const rows = await getDB().insert('event_cocktail_ingredients', list.map((ing, i) => ({
+    cocktail_id: cocktailId,
+    product_id: ing.product_id,
+    measures: Number(ing.measures),
+    position: i,
+  })));
+  return rows || [];
+}
+
+export function deleteEventCocktail(id) {
+  return getDB().remove('event_cocktails', 'id=eq.' + enc(id));
 }

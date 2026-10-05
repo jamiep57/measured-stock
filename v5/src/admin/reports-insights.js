@@ -15,7 +15,8 @@ import { isOrgAdmin } from '../lib/organisations.js';
 import { computeReconRows } from '../lib/recon.js';
 import { formatGpPct, gpStatus } from '../lib/gp.js';
 import { parsePlanningNumber, resolveMenuLine } from '../lib/planning-menu.js';
-import { listEventMenu, loadEventPricing } from '../lib/planning-data.js';
+import { resolveCocktailLine } from '../lib/menu-cocktails.js';
+import { isCocktailSchemaMissing, listEventCocktails, listEventMenu, loadEventPricing } from '../lib/planning-data.js';
 import {
   eventHeadlines, filterSales, groupSales, revenueComparison, rowsWithEvents, salesCsv, salesTotals,
 } from '../lib/sales-report.js';
@@ -111,21 +112,29 @@ export function createReportInsights({ getBase, onChange }) {
     state.menuLoading = true;
     const { eventId, caseSizes } = getBase();
     try {
-      const [event, items, products] = await Promise.all([
-        loadEventPricing(eventId), listEventMenu(eventId), loadLibraryProducts(),
+      const [event, items, products, cocktails] = await Promise.all([
+        loadEventPricing(eventId),
+        listEventMenu(eventId),
+        loadLibraryProducts(),
+        listEventCocktails(eventId).catch((err) => (isCocktailSchemaMissing(err) ? [] : Promise.reject(err))),
       ]);
       const productById = new Map((products || []).map((p) => [p.id, p]));
       const itemMap = new Map((items || []).map((i) => [i.product_id, i]));
       const lines = [...itemMap.values()].map((item) => resolveMenuLine(item, {
         product: productById.get(item.product_id), event, caseSizes,
       }));
+      (cocktails || []).forEach((cocktail) => {
+        lines.push(resolveCocktailLine(cocktail, cocktail.ingredients, {
+          productById, items: itemMap, caseSizes, event,
+        }));
+      });
       state.menu = {
         lines,
         items: itemMap,
         products: productById,
         targetGpPct: event?.target_gp_pct ?? null,
         amberBand: event?.gp_amber_band ?? 5,
-        yearLabel: year?.label || null,
+        yearLabel: null,
       };
     } catch (err) {
       state.menuError = err;
