@@ -122,7 +122,9 @@ export async function generateMenuExportPDF({
   const colCount = twoCol ? 2 : 1;
   const bottom = ctx.pageH - 14;
 
-  const meta = [
+  // Designer menu copy is the event name and the list. Venue, dates and
+  // the VAT line stay on the client pack and the schedule of rates.
+  const meta = type === 'designer' ? [] : [
     client?.name && type !== 'sor' ? `For ${client.name}` : '',
     event?.venue || '',
     eventDates(event) || '',
@@ -142,24 +144,26 @@ export async function generateMenuExportPDF({
     return ctx.ml + col * (measure + GUTTER);
   }
 
+  const kickerY = 11;
+
   function drawMasthead(continued) {
     const mark = logoBox(ctx.logo);
     if (mark) {
-      doc.addImage(ctx.logo.dataUrl, ctx.logo.format || 'JPEG', ctx.pageW - ctx.mr - mark.w, 12, mark.w, mark.h, 'brand-logo');
+      doc.addImage(ctx.logo.dataUrl, ctx.logo.format || 'JPEG', ctx.pageW - ctx.mr - mark.w, kickerY - mark.h + 2.2, mark.w, mark.h, 'brand-logo');
     }
     ctx.setFont('bold', 8, MUTED);
-    tracked(doc, kicker, ctx.ml, 17, 0.45);
+    tracked(doc, kicker, ctx.ml, kickerY, 0.45);
     const issued = formatDocDate(new Date());
     ctx.setFont('normal', 8, MUTED);
     const dateX = mark ? ctx.pageW - ctx.mr - mark.w - 6 : ctx.pageW - ctx.mr;
-    doc.text(issued, dateX, 17, { align: 'right' });
+    doc.text(issued, dateX, kickerY, { align: 'right' });
 
     if (continued) {
       ctx.setFont('bold', 14, INK);
-      doc.text(fitText(doc, hero, ctx.contentW - (mark ? mark.w + 8 : 0)), ctx.ml, 26);
+      doc.text(fitText(doc, hero, ctx.contentW - (mark ? mark.w + 8 : 0)), ctx.ml, kickerY + 7.5);
       doc.setFillColor(...GOLD);
-      doc.rect(ctx.ml, 29.2, 12, 0.7, 'F');
-      columnTop = 38;
+      doc.rect(ctx.ml, kickerY + 10.6, 12, 0.7, 'F');
+      columnTop = kickerY + 17;
       y = columnTop;
       col = 0;
       return;
@@ -170,14 +174,14 @@ export async function generateMenuExportPDF({
     if (doc.getTextWidth(hero) > ctx.contentW) titleSize = 20;
     ctx.setFont('bold', titleSize, INK);
     const titleLines = doc.splitTextToSize(hero, ctx.contentW);
-    let ty = 34;
+    let ty = kickerY + 11;
     titleLines.slice(0, 2).forEach((line) => {
       doc.text(line, ctx.ml, ty);
       ty += titleSize * 0.42;
     });
     doc.setFillColor(...GOLD);
     doc.rect(ctx.ml, ty - 1, 14, 0.75, 'F');
-    ty += 6;
+    ty += meta.length ? 6 : 3.2;
     if (meta.length) {
       ctx.setFont('normal', 9, MUTED);
       const metaLines = doc.splitTextToSize(meta.join('    ·    '), ctx.contentW);
