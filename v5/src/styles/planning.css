@@ -121,9 +121,16 @@
   text-align: left;
   box-shadow: 6px 0 10px -6px rgb(0 0 0 / 0.1);
 }
-.plan-th { min-width: 78px; }
-.plan-th--wide { min-width: 108px; }
-.plan-th .dist-bar-name { white-space: nowrap; }
+.dist-grid.plan-grid { width: max-content; }
+.plan-th { width: 78px; min-width: 78px; max-width: 78px; }
+.plan-th--wide { width: 108px; min-width: 108px; max-width: 108px; }
+.plan-th .dist-bar-name {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .plan-th--key .dist-bar-name { color: var(--foreground); }
 .plan-th--key { background: color-mix(in srgb, var(--secondary) 70%, #e4e4e7) !important; }
 .plan-th--scenario { padding: 4px !important; }
@@ -373,7 +380,8 @@
 .plan-grid .plan-cell-input {
   display: block;
   box-sizing: border-box;
-  width: 100%;
+  width: 0;
+  min-width: 100%;
   height: 100%;
   min-height: 40px;
   margin: 0;
