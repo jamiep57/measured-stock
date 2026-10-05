@@ -123,7 +123,7 @@
 }
 .dist-grid.plan-grid { width: 100%; }
 .plan-th { width: 78px; min-width: 78px; }
-.plan-th--size { width: 88px; min-width: 88px; }
+.plan-th--size { width: 78px; min-width: 78px; }
 .plan-th--narrow { width: 68px; min-width: 68px; }
 .plan-th--narrow .dist-bar-name {
   white-space: normal;
@@ -294,15 +294,22 @@
 }
 .plan-cell-input--sm { width: 56px; }
 .plan-cell-input--text { width: 110px; text-align: left; font-weight: 400; }
-.plan-cell--size {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.plan-cell-input.plan-cell-input--size {
-  width: 76px;
+.plan-grid .plan-cell-input.plan-cell-input--size {
   text-align: center;
   font-weight: 500;
+}
+.plan-size-split {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  min-height: 40px;
+}
+.plan-grid .plan-size-split .plan-cell-input {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
 }
 .plan-cell-input::placeholder { color: var(--muted-foreground); opacity: 0.7; font-weight: 400; }
 .plan-cell-input:hover:not(:disabled) { border-color: var(--border); background: var(--card); }

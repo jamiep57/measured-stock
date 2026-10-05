@@ -404,7 +404,9 @@ export function mountPlanningPanel(route) {
     const portionInput = portion !== 1
       ? cellInput('portion', item.portion, { label: 'Share of one serve', width: 'sm' })
       : '';
-    return `<td class="plan-cell plan-cell--text plan-cell--size">${cellInput('serve_label', shown, { text: true, placeholder: 'Pint', label: 'Serve size', width: 'size' })}${portionInput}</td>`;
+    const serve = cellInput('serve_label', shown, { text: true, placeholder: 'Pint', label: 'Serve size', width: 'size' });
+    const body = portionInput ? `<div class="plan-size-split">${serve}${portionInput}</div>` : serve;
+    return `<td class="plan-cell">${body}</td>`;
   }
 
   function columnCell(id, line, item) {
@@ -476,7 +478,7 @@ export function mountPlanningPanel(route) {
 
   function cocktailColumnCell(id, line, item) {
     if (id === 'size') {
-      return `<td class="plan-cell plan-cell--text plan-cell--size">${cellInput('serve_label', item.serve_label, { text: true, placeholder: 'Serve', label: 'Serve size', width: 'size' })}</td>`;
+      return `<td class="plan-cell">${cellInput('serve_label', item.serve_label, { text: true, placeholder: 'Serve', label: 'Serve size', width: 'size' })}</td>`;
     }
     if (id === 'serve') {
       return '<td class="plan-cell"></td>';
