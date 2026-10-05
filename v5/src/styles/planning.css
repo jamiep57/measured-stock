@@ -196,6 +196,29 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.plan-serve-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.plan-serve-name,
+.plan-serve-portion {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0 0 1px;
+  min-width: 0;
+}
+.plan-serve-name { width: 7.5rem; }
+.plan-serve-portion { width: 3rem; text-align: right; }
+.plan-serve-name:focus,
+.plan-serve-portion:focus { outline: none; border-bottom-color: var(--foreground); }
 .plan-row--off th,
 .plan-row--off td {
   background: color-mix(in srgb, var(--secondary) 70%, var(--card));

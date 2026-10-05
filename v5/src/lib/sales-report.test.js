@@ -85,7 +85,7 @@ describe('revenue & GP', () => {
     const hells = c.products.find((p) => p.productId === 'p1');
     expect(hells).toMatchObject({ forecastUnits: 3, consumed: 2, unitsVariance: -1, forecastCost: 200, actualCost: 200, costVariance: 0 });
     const water = c.products.find((p) => p.productId === 'p2');
-    expect(water.forecastUnits).toBe(3);
+    expect(water.forecastUnits).toBe(50);
     const off = c.products.find((p) => p.productId === 'p3');
     expect(off).toMatchObject({ onMenu: false, actualCost: null, forecastUnits: null });
   });

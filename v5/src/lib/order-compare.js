@@ -12,6 +12,8 @@
  */
 
 import { findOfferForSupplier } from '../pack-metrics.js';
+import { resolveMenuLine } from './planning-menu.js';
+import { portionOf } from './menu-serves.js';
 
 function num(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -42,6 +44,44 @@ export function plannedCases(item, line, product, caseSizes = [], bufferPct = 0)
   const serves = num(line?.projectedServes ?? item?.projected_serves);
   const perCase = servesPerCase(line?.servesPerUnit, product, caseSizes);
   if (serves == null || serves <= 0 || !perCase) return { cases: null, source: null };
+  const buffer = Math.max(0, num(bufferPct) || 0);
+  const raw = (serves * (1 + buffer / 100)) / perCase;
+  return { cases: Math.ceil(raw - EPS), source: 'projection' };
+}
+
+/**
+ * Cases to order for one product across every size, plus cocktail pours.
+ * A half counts as half a serve. An override on any size is the keg or case
+ * quantity for the whole product.
+ * @param {object[]|object|null} items
+ * @param {number} extraServes cocktail pours, already in full serves
+ */
+export function plannedProductCases(items, extraServes, product, caseSizes = [], bufferPct = 0) {
+  const list = (Array.isArray(items) ? items : [items]).filter(Boolean);
+  const override = list.map((item) => num(item.planned_qty_override)).find((n) => n != null);
+  if (override != null) return { cases: override, source: 'override' };
+  const anchor = list.find((item) => item.included !== false) || list[0] || null;
+  const resolved = resolveMenuLine(
+    anchor ? { ...anchor, portion: 1 } : { product_id: product?.id, included: true, portion: 1 },
+    { product, caseSizes },
+  );
+  const perCase = servesPerCase(resolved.servesPerUnit);
+  if (!perCase) return { cases: null, source: null };
+  let serves = 0;
+  let any = false;
+  list.forEach((item) => {
+    if (item.included === false) return;
+    const projected = num(item.projected_serves);
+    if (!(projected > 0)) return;
+    serves += projected * portionOf(item);
+    any = true;
+  });
+  const extra = Math.max(0, num(extraServes) || 0);
+  if (extra > 0) {
+    serves += extra;
+    any = true;
+  }
+  if (!any) return { cases: null, source: null };
   const buffer = Math.max(0, num(bufferPct) || 0);
   const raw = (serves * (1 + buffer / 100)) / perCase;
   return { cases: Math.ceil(raw - EPS), source: 'projection' };

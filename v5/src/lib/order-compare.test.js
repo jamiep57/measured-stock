@@ -7,6 +7,7 @@ import {
   orderLinesTotal,
   orderedByProduct,
   plannedCases,
+  plannedProductCases,
   servesPerCase,
 } from './order-compare.js';
 
@@ -38,6 +39,16 @@ describe('plannedCases', () => {
   it('nothing planned without serves or when off the menu', () => {
     expect(plannedCases({}, { projectedServes: null, servesPerUnit: 88 }, keg).cases).toBeNull();
     expect(plannedCases({ included: false }, { projectedServes: 100, servesPerUnit: 88 }, keg).cases).toBeNull();
+  });
+
+  it('adds pint and half into one keg order', () => {
+    const items = [
+      { included: true, projected_serves: 80, portion: 1, serves_per_unit: 88 },
+      { included: true, projected_serves: 40, portion: 0.5, serves_per_unit: 88 },
+    ];
+    expect(plannedProductCases(items, 0, keg).cases).toBe(2);
+    expect(plannedProductCases(items, 88, keg).cases).toBe(3);
+    expect(plannedProductCases([{ ...items[0], planned_qty_override: 5 }], 0, keg)).toEqual({ cases: 5, source: 'override' });
   });
 });
 

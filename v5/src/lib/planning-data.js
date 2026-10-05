@@ -107,12 +107,32 @@ export function listEventMenu(eventId) {
   return getDB().select('event_menu_items', '?event_id=eq.' + enc(eventId) + '&select=*');
 }
 
-export async function upsertEventMenuItem(eventId, productId, patch) {
-  const rows = await getDB().upsert(
+export async function insertEventMenuItem(eventId, productId, patch) {
+  const rows = await getDB().insert('event_menu_items', {
+    event_id: eventId,
+    product_id: productId,
+    ...cleanPatch(patch),
+  });
+  return rows?.[0] || null;
+}
+
+export async function updateEventMenuItem(id, patch) {
+  const rows = await getDB().update('event_menu_items', 'id=eq.' + enc(id), cleanPatch(patch));
+  return rows?.[0] || null;
+}
+
+/** Write one shared field onto every size of a product (yield, deal, order override). */
+export async function patchEventMenuItems(eventId, productId, patch) {
+  const rows = await getDB().update(
     'event_menu_items',
-    { event_id: eventId, product_id: productId, ...cleanPatch(patch) },
-    { onConflict: 'event_id,product_id' },
+    'event_id=eq.' + enc(eventId) + '&product_id=eq.' + enc(productId),
+    cleanPatch(patch),
   );
+  return rows || [];
+}
+
+export async function upsertEventMenuItem(eventId, productId, patch) {
+  const rows = await patchEventMenuItems(eventId, productId, patch);
   return rows?.[0] || null;
 }
 
@@ -182,19 +202,20 @@ export function deleteScenario(id) {
   return getDB().remove('pricing_scenarios', 'id=eq.' + enc(id));
 }
 
-/** Set (or clear with null) one product's price in a scenario. */
-export async function setScenarioPrice(scenarioId, productId, price) {
+/** Set (or clear with null) one menu row's price in a scenario. */
+export async function setScenarioPrice(scenarioId, menuItemId, productId, price) {
+  if (!menuItemId) return null;
   if (price == null) {
     await getDB().remove(
       'scenario_prices',
-      'scenario_id=eq.' + enc(scenarioId) + '&product_id=eq.' + enc(productId),
+      'scenario_id=eq.' + enc(scenarioId) + '&menu_item_id=eq.' + enc(menuItemId),
     );
     return null;
   }
   const rows = await getDB().upsert(
     'scenario_prices',
-    { scenario_id: scenarioId, product_id: productId, price },
-    { onConflict: 'scenario_id,product_id' },
+    { scenario_id: scenarioId, menu_item_id: menuItemId, product_id: productId, price },
+    { onConflict: 'scenario_id,menu_item_id' },
   );
   return rows?.[0] || null;
 }
@@ -204,15 +225,21 @@ export function scenarioPricesFrom(lines, upliftPct, roundTo, roundFn) {
   const mult = 1 + (Number(upliftPct) || 0) / 100;
   return lines
     .filter((l) => l.kind !== 'cocktail' && l.productId && l.menuPrice != null)
-    .map((l) => ({ product_id: l.productId, price: roundFn(l.menuPrice * mult, roundTo) }));
+    .filter((l) => l.itemId)
+    .map((l) => ({ product_id: l.productId, menu_item_id: l.itemId, price: roundFn(l.menuPrice * mult, roundTo) }));
 }
 
 export async function replaceScenarioPrices(scenarioId, rows) {
   if (!rows.length) return [];
   return getDB().upsert(
     'scenario_prices',
-    rows.map((r) => ({ scenario_id: scenarioId, product_id: r.product_id, price: r.price })),
-    { onConflict: 'scenario_id,product_id' },
+    rows.map((r) => ({
+      scenario_id: scenarioId,
+      product_id: r.product_id,
+      menu_item_id: r.menu_item_id,
+      price: r.price,
+    })),
+    { onConflict: 'scenario_id,menu_item_id' },
   );
 }
 

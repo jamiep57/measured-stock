@@ -75,15 +75,19 @@ import {
   setScenarioPrice,
   snapshotEventCosts,
   updateEventCocktail,
+  updateEventMenuItem,
   updateEventPricing,
   updateScenario,
-  upsertEventMenuItem,
+  insertEventMenuItem,
+  patchEventMenuItems,
 } from '../../lib/planning-data.js';
+import { baseMenuItem, portionOf, serveKey, SHARED_MENU_FIELDS } from '../../lib/menu-serves.js';
 
 const SAVE_DEBOUNCE_MS = 450;
 
 const NUMERIC_FIELDS = {
   serves_per_unit: { max: null, positive: true },
+  portion: { max: null, positive: true },
   menu_price: {},
   target_gp_pct: { max: 100 },
   suggested_price: {},
@@ -181,21 +185,53 @@ export function mountPlanningPanel(route) {
 
   // ---------- derived data -------------------------------------------
 
-  function lineFor(pid) {
-    const item = ctx.items.get(pid);
+  function itemsForProduct(pid) {
+    return [...ctx.items.values()].filter((item) => item.product_id === pid);
+  }
+
+  function showServeFields(item) {
+    if (!item) return false;
+    if (item.serve_label || portionOf(item) !== 1) return true;
+    return itemsForProduct(item.product_id).length > 1;
+  }
+
+  function serveLabelTaken(pid, label, exceptId) {
+    const key = serveKey(label);
+    return itemsForProduct(pid).some((item) => item.id !== exceptId && serveKey(item.serve_label) === key);
+  }
+
+  /** One full serve per product, for cocktail costing. */
+  function cocktailItemMap() {
+    const map = new Map();
+    const grouped = new Map();
+    ctx.items.forEach((item) => {
+      const list = grouped.get(item.product_id) || [];
+      list.push(item);
+      grouped.set(item.product_id, list);
+    });
+    grouped.forEach((list, pid) => {
+      const base = baseMenuItem(list);
+      if (base) map.set(pid, { ...base, portion: 1 });
+    });
+    return map;
+  }
+
+  function lineFor(itemId) {
+    const item = ctx.items.get(itemId);
+    if (!item) return null;
     const line = resolveMenuLine(item, {
-      product: ctx.productById.get(pid),
+      product: ctx.productById.get(item.product_id),
       event: ctx.event,
       caseSizes: ctx.caseSizes,
     });
-    ctx.lines.set(pid, line);
+    ctx.lines.set(itemId, line);
     return line;
   }
 
   function cocktailLineFor(cocktail) {
     const line = resolveCocktailLine(cocktail, cocktail.ingredients, {
       productById: ctx.productById,
-      items: ctx.items,
+      items: cocktailItemMap(),
       caseSizes: ctx.caseSizes,
       event: ctx.event,
     });
@@ -205,12 +241,12 @@ export function mountPlanningPanel(route) {
 
   function recomputeAll() {
     ctx.lines.clear();
-    ctx.items.forEach((_item, pid) => lineFor(pid));
+    ctx.items.forEach((_item, id) => lineFor(id));
     ctx.cocktails.forEach((cocktail) => cocktailLineFor(cocktail));
   }
 
-  function scenarioPrice(scenario, pid) {
-    const row = (scenario.scenario_prices || []).find((r) => r.product_id === pid);
+  function scenarioPrice(scenario, itemId) {
+    const row = (scenario.scenario_prices || []).find((r) => r.menu_item_id === itemId);
     return row ? Number(row.price) : null;
   }
 
@@ -228,13 +264,15 @@ export function mountPlanningPanel(route) {
       if (cat && l.category !== cat) return false;
       if (q) {
         const p = l.productId ? ctx.productById.get(l.productId) : null;
-        const hay = [l.name, l.menuName, l.caseSize, l.category, l.ingredientSummary, p?.sku, productSupplierSearchText(p)].join(' ').toLowerCase();
+        const hay = [l.name, l.menuName, l.serveLabel, l.caseSize, l.category, l.ingredientSummary, p?.sku, productSupplierSearchText(p)].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
     const sort = ctx.filter.sort || 'category';
-    const byName = (a, b) => a.name.localeCompare(b.name);
+    const byName = (a, b) => a.name.localeCompare(b.name)
+      || String(a.serveLabel || '').localeCompare(String(b.serveLabel || ''))
+      || (a.portion || 1) - (b.portion || 1);
     if (sort === 'name') rows.sort(byName);
     else if (sort === 'gp-asc') rows.sort((a, b) => (a.gpPct ?? Infinity) - (b.gpPct ?? Infinity));
     else if (sort === 'gp-desc') rows.sort((a, b) => (b.gpPct ?? -Infinity) - (a.gpPct ?? -Infinity));
@@ -332,7 +370,7 @@ export function mountPlanningPanel(route) {
   }
 
   function markRowKey(line) {
-    return line.kind === 'cocktail' ? `c:${line.cocktailId}` : `p:${line.productId}`;
+    return line.kind === 'cocktail' ? `c:${line.cocktailId}` : `p:${line.itemId}`;
   }
 
   function markClasses(rowKey, colId) {
@@ -365,7 +403,9 @@ export function mountPlanningPanel(route) {
     }
     if (id === 'cost') {
       const split = line.caseCost != null && line.servesPerUnit
-        ? `${money(line.caseCost)} ÷ ${line.servesPerUnit} serves`
+        ? (line.portion !== 1
+          ? `${money(line.caseCost)} ÷ ${line.servesPerUnit} × ${line.portion}`
+          : `${money(line.caseCost)} ÷ ${line.servesPerUnit} serves`)
         : `${money(line.unitCost)} per unit`;
       return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(`${costSourceLabel(line.costSource)} · ${split}`)}">
         ${money(line.costPerServe)}${line.costSource === 'locked' ? ` <span class="plan-lock">${icon('lock', { size: 11 })}</span>` : ''}
@@ -391,7 +431,7 @@ export function mountPlanningPanel(route) {
     if (id.startsWith('scenario:')) {
       const s = ctx.scenarios.find((x) => scenarioColumnId(x.id) === id);
       if (!s) return '';
-      const price = scenarioPrice(s, line.productId);
+      const price = scenarioPrice(s, line.itemId);
       const sg = scenarioGp(line, price);
       return `<td class="plan-cell plan-cell--scenario" data-scenario="${escapeHtml(s.id)}">
           <div class="plan-scenario-cell">
@@ -470,22 +510,33 @@ export function mountPlanningPanel(route) {
   function renderRow(line) {
     if (line.kind === 'cocktail') return renderCocktailRow(line);
     const pid = line.productId;
-    const item = ctx.items.get(pid) || {};
+    const item = ctx.items.get(line.itemId) || {};
     const packMeta = line.caseSize
       ? `<span class="dist-item-meta">${escapeHtml(line.caseSize)}</span>` : '';
     const menuMeta = line.menuName && line.menuName !== line.name
       ? `<span class="dist-item-meta">${escapeHtml(line.menuName)}</span>` : '';
+    const serveFields = showServeFields(item)
+      ? `<span class="plan-serve-row">
+          <input type="text" class="plan-serve-name" data-field="serve_label" value="${escapeHtml(item.serve_label || '')}"
+            placeholder="Serve" maxlength="40" aria-label="Serve name" ${locked() ? 'disabled' : ''}>
+          <input type="text" inputmode="decimal" class="num-math plan-serve-portion" data-field="portion"
+            value="${escapeHtml(item.portion != null ? String(item.portion) : '')}" placeholder="1"
+            aria-label="Size of one serve" title="How much of one serve this is. A half is 0.5." ${locked() ? 'disabled' : ''}>
+        </span>`
+      : '';
     const rowKey = markRowKey(line);
     const cells = shownColumnIds().map((id) => decorateCell(columnCell(id, line, item), id, rowKey)).join('');
-    return `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-pid="${escapeHtml(pid)}">
+    const label = line.serveLabel ? `${line.name} ${line.serveLabel}` : line.name;
+    return `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-item="${escapeHtml(line.itemId || '')}" data-pid="${escapeHtml(pid)}">
       <th class="dist-sticky plan-col-product${markClasses(rowKey, 'product')}" scope="row" data-col="product">
         <div class="plan-item">
           <div class="dist-item">
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
             ${packMeta}
             ${menuMeta}
+            ${serveFields}
           </div>
-          ${rowMenuButton(line.name)}
+          ${rowMenuButton(label)}
         </div>
       </th>${cells}</tr>`;
   }
@@ -566,7 +617,7 @@ export function mountPlanningPanel(route) {
     const mixStatus = totals.gpPct == null || target == null ? null
       : (totals.gpPct >= target ? 'green' : totals.gpPct >= target - amber ? 'amber' : 'red');
     const scenarioCards = ctx.scenarios.map((s) => {
-      const st = menuTotals(lines, { priceFor: (l) => scenarioPrice(s, l.productId) ?? l.menuPrice });
+      const st = menuTotals(lines, { priceFor: (l) => (l.itemId ? scenarioPrice(s, l.itemId) : null) ?? l.menuPrice });
       return `<div class="plan-kpi plan-kpi--scenario">
         <span class="plan-kpi-label">${escapeHtml(s.name)}</span>
         <span class="plan-kpi-value">${money(st.revenueGross, 0)}</span>
@@ -662,10 +713,10 @@ export function mountPlanningPanel(route) {
   }
 
   /** Refresh computed cells for one row without re-rendering inputs. */
-  function refreshRow(pid) {
-    const line = lineFor(pid);
-    const row = panel.querySelector(`tr.plan-row[data-pid="${CSS.escape(pid)}"]`);
-    if (row) {
+  function refreshRow(itemId) {
+    const line = lineFor(itemId);
+    const row = panel.querySelector(`tr.plan-row[data-item="${CSS.escape(itemId)}"]`);
+    if (line && row) {
       const set = (key, html) => {
         const el = row.querySelector(`[data-out="${key}"]`);
         if (el) el.innerHTML = html;
@@ -680,7 +731,7 @@ export function mountPlanningPanel(route) {
       row.querySelectorAll('[data-scenario]').forEach((cell) => {
         const s = ctx.scenarios.find((x) => x.id === cell.dataset.scenario);
         if (!s) return;
-        const sg = scenarioGp(line, scenarioPrice(s, pid));
+        const sg = scenarioGp(line, scenarioPrice(s, itemId));
         const out = cell.querySelector('[data-out="scenario-gp"]');
         if (out) {
           out.textContent = formatGpPct(sg.gpPct);
@@ -694,7 +745,7 @@ export function mountPlanningPanel(route) {
       const tgtInput = row.querySelector('[data-field="target_gp_pct"]');
       if (tgtInput) tgtInput.placeholder = line.targetGpPct != null ? String(line.targetGpPct) : '';
     }
-    refreshCocktailsUsing(pid);
+    if (line) refreshCocktailsUsing(line.productId);
     paintKpis();
   }
 
@@ -769,14 +820,32 @@ export function mountPlanningPanel(route) {
     }));
   }
 
-  function setItemField(pid, field, value, { immediate = false } = {}) {
-    const item = ctx.items.get(pid) || { event_id: ctx.eventId, product_id: pid, included: true };
-    item[field] = value;
-    ctx.items.set(pid, item);
-    refreshRow(pid);
+  function setItemField(itemId, field, value, { immediate = false } = {}) {
+    const item = ctx.items.get(itemId);
+    if (!item) return null;
+    if (field === 'serve_label' && serveLabelTaken(item.product_id, value, itemId)) {
+      toast('This product already has that serve', true);
+      return null;
+    }
+    const targets = SHARED_MENU_FIELDS.has(field) ? itemsForProduct(item.product_id) : [item];
+    targets.forEach((row) => { row[field] = value; });
+    targets.forEach((row) => {
+      refreshRow(row.id);
+      if (row.id === itemId) return;
+      const tr = panel.querySelector(`tr.plan-row[data-item="${CSS.escape(row.id)}"]`);
+      const input = tr?.querySelector(`[data-field="${CSS.escape(field)}"]`);
+      if (!input || document.activeElement === input) return;
+      if (field === 'deal_ref') input.value = value || '';
+      else if (field === 'unit_cost_override') input.value = formatPlanningPriceInput(value);
+      else input.value = value == null ? '' : String(value);
+    });
     const save = async () => {
-      const saved = await upsertEventMenuItem(ctx.eventId, pid, { [field]: value });
-      if (saved) ctx.items.set(pid, { ...ctx.items.get(pid), id: saved.id, org_id: saved.org_id });
+      if (SHARED_MENU_FIELDS.has(field)) {
+        await patchEventMenuItems(ctx.eventId, item.product_id, { [field]: value });
+        return;
+      }
+      const saved = await updateEventMenuItem(itemId, { [field]: value });
+      if (saved) ctx.items.set(itemId, { ...ctx.items.get(itemId), ...saved });
     };
     if (immediate) {
       return save().then(() => true, (err) => {
@@ -784,7 +853,8 @@ export function mountPlanningPanel(route) {
         return false;
       });
     }
-    queueSave(`${pid}:${field}`, save);
+    const key = SHARED_MENU_FIELDS.has(field) ? `${item.product_id}:${field}` : `${itemId}:${field}`;
+    queueSave(key, save);
     return null;
   }
 
@@ -821,7 +891,9 @@ export function mountPlanningPanel(route) {
       setCocktailField(row.dataset.cid, field, parsed.value);
       return;
     }
-    const pid = row.dataset.pid;
+    const itemId = row.dataset.item;
+    const item = ctx.items.get(itemId);
+    if (!item) return;
 
     if (input.dataset.scenarioPrice) {
       const parsed = parsePlanningNumber(input.value);
@@ -829,18 +901,18 @@ export function mountPlanningPanel(route) {
       if (!parsed.ok) return;
       const s = ctx.scenarios.find((x) => x.id === input.dataset.scenarioPrice);
       if (!s) return;
-      const list = (s.scenario_prices || []).filter((r) => r.product_id !== pid);
-      if (parsed.value != null) list.push({ product_id: pid, price: parsed.value });
+      const list = (s.scenario_prices || []).filter((r) => r.menu_item_id !== itemId);
+      if (parsed.value != null) list.push({ menu_item_id: itemId, product_id: item.product_id, price: parsed.value });
       s.scenario_prices = list;
-      refreshRow(pid);
-      queueSave(`${pid}:scenario:${s.id}`, () => setScenarioPrice(s.id, pid, parsed.value));
+      refreshRow(itemId);
+      queueSave(`${itemId}:scenario:${s.id}`, () => setScenarioPrice(s.id, itemId, item.product_id, parsed.value));
       return;
     }
 
     const field = input.dataset.field;
     if (!field || field === 'included') return;
-    if (field === 'deal_ref') {
-      setItemField(pid, field, input.value.trim() || null);
+    if (field === 'deal_ref' || field === 'serve_label') {
+      setItemField(itemId, field, input.value.trim() || null);
       return;
     }
     const spec = NUMERIC_FIELDS[field];
@@ -849,7 +921,7 @@ export function mountPlanningPanel(route) {
     const ok = parsed.ok && !(spec.positive && parsed.value === 0);
     input.classList.toggle('is-invalid', !ok);
     if (!ok) return;
-    setItemField(pid, field, parsed.value);
+    setItemField(itemId, field, parsed.value);
   }
 
   let colDrag = null;
@@ -1013,7 +1085,7 @@ export function mountPlanningPanel(route) {
       const cocktail = ctx.cocktails.get(row.dataset.cid);
       return cocktail ? cocktailLineFor(cocktail) : null;
     }
-    if (row?.dataset.pid) return lineFor(row.dataset.pid);
+    if (row?.dataset.item) return lineFor(row.dataset.item);
     return null;
   }
 
@@ -1062,7 +1134,7 @@ export function mountPlanningPanel(route) {
     const input = row.querySelector('[data-field="menu_price"]');
     if (input) input.value = price.toFixed(2);
     if (line.kind === 'cocktail') setCocktailField(line.cocktailId, 'menu_price', price);
-    else setItemField(line.productId, 'menu_price', price);
+    else setItemField(line.itemId, 'menu_price', price);
   }
 
   function clearPlanningCell(row, line, colId) {
@@ -1078,21 +1150,22 @@ export function mountPlanningPanel(route) {
     if (field === 'scenario') {
       const scenarioId = colId.slice('scenario:'.length);
       const s = ctx.scenarios.find((x) => x.id === scenarioId);
-      if (!s || !line.productId) return;
-      s.scenario_prices = (s.scenario_prices || []).filter((r) => r.product_id !== line.productId);
-      refreshRow(line.productId);
-      queueSave(`${line.productId}:scenario:${s.id}`, () => setScenarioPrice(s.id, line.productId, null));
+      if (!s || !line.itemId) return;
+      s.scenario_prices = (s.scenario_prices || []).filter((r) => r.menu_item_id !== line.itemId);
+      refreshRow(line.itemId);
+      queueSave(`${line.itemId}:scenario:${s.id}`, () => setScenarioPrice(s.id, line.itemId, line.productId, null));
       return;
     }
     if (line.kind === 'cocktail') setCocktailField(line.cocktailId, field, null);
-    else setItemField(line.productId, field, null);
+    else setItemField(line.itemId, field, null);
   }
 
-  function makeCocktailFromProduct(pid, drinkKind) {
+  function makeCocktailFromProduct(itemId, drinkKind) {
     if (!ensureCocktails()) return;
     if (locked()) { toast('Pricing is locked for this event', true); return; }
-    const item = ctx.items.get(pid) || {};
-    const line = lineFor(pid);
+    const item = ctx.items.get(itemId);
+    const line = lineFor(itemId);
+    if (!item || !line) return;
     const name = (line.menuName || line.name || drinkKindMeta(drinkKind).label).trim().slice(0, 80);
     openCocktail(null, {
       drinkKind,
@@ -1104,16 +1177,16 @@ export function mountPlanningPanel(route) {
         menu_price: item.menu_price ?? null,
         target_gp_pct: item.target_gp_pct ?? null,
         projected_serves: item.projected_serves ?? null,
-        ingredients: [{ product_id: pid, measures: 1 }],
+        ingredients: [{ product_id: item.product_id, measures: portionOf(item) }],
       },
-      convertProductId: pid,
+      convertItemId: itemId,
     });
   }
 
   async function toggleOnMenu(line) {
     const next = !line.included;
     if (line.kind === 'cocktail') await setCocktailField(line.cocktailId, 'included', next, { immediate: true });
-    else await setItemField(line.productId, 'included', next, { immediate: true });
+    else await setItemField(line.itemId, 'included', next, { immediate: true });
     paintGrid();
     const name = line.name || 'Item';
     if (next) {
@@ -1126,7 +1199,7 @@ export function mountPlanningPanel(route) {
         onClick: () => {
           const put = line.kind === 'cocktail'
             ? setCocktailField(line.cocktailId, 'included', true, { immediate: true })
-            : setItemField(line.productId, 'included', true, { immediate: true });
+            : setItemField(line.itemId, 'included', true, { immediate: true });
           Promise.resolve(put).then(() => paintGrid());
         },
       },
@@ -1160,8 +1233,9 @@ export function mountPlanningPanel(route) {
     else if (id === 'copy-name') await copyText(line.name || '');
     else if (id === 'paste') await pasteCell(row, colId);
     else if (id === 'clear') clearPlanningCell(row, line, colId);
-    else if (id === 'make-cocktail') makeCocktailFromProduct(line.productId, 'cocktail');
-    else if (id === 'make-spirit-mixer') makeCocktailFromProduct(line.productId, 'spirit_mixer');
+    else if (id === 'add-size') openAddSize(ctx.items.get(line.itemId));
+    else if (id === 'make-cocktail') makeCocktailFromProduct(line.itemId, 'cocktail');
+    else if (id === 'make-spirit-mixer') makeCocktailFromProduct(line.itemId, 'spirit_mixer');
     else if (id === 'edit-cocktail') openCocktail(line.cocktailId);
     else if (id === 'toggle-menu') await toggleOnMenu(line);
     else if (id === 'delete-cocktail') await deleteCocktailFromMenu(line);
@@ -1270,7 +1344,7 @@ export function mountPlanningPanel(route) {
       const input = row.querySelector('[data-field="menu_price"]');
       if (input) input.value = price.toFixed(2);
       if (row.dataset.cid) setCocktailField(row.dataset.cid, 'menu_price', price);
-      else if (row.dataset.pid) setItemField(row.dataset.pid, 'menu_price', price);
+      else if (row.dataset.item) setItemField(row.dataset.item, 'menu_price', price);
       return;
     }
     const scen = e.target.closest('[data-scenario-edit]');
@@ -1314,7 +1388,7 @@ export function mountPlanningPanel(route) {
     if (!id && locked()) { toast('Pricing is locked for this event', true); return; }
     const cocktail = id ? ctx.cocktails.get(id) : (extra.seed || null);
     if (id && !cocktail) return;
-    const convertProductId = extra.convertProductId || null;
+    const convertItemId = extra.convertItemId || null;
     openCocktailEditor({
       cocktail,
       drinkKind: extra.drinkKind,
@@ -1333,14 +1407,16 @@ export function mountPlanningPanel(route) {
           return String(c.square_variation || '').trim().toLowerCase() === variant;
         });
       },
-      quiet: !!convertProductId,
+      quiet: !!convertItemId,
       onSaved: async (saved) => {
         ctx.cocktails.set(saved.id, normaliseCocktail(saved));
-        if (convertProductId) {
-          const productName = ctx.productById.get(convertProductId)?.name || 'The product';
-          const removed = await setItemField(convertProductId, 'included', false, { immediate: true });
+        if (convertItemId) {
+          const source = ctx.items.get(convertItemId);
+          const productName = ctx.productById.get(source?.product_id)?.name || 'The product';
+          const size = source?.serve_label ? ` ${source.serve_label}` : '';
+          const removed = await setItemField(convertItemId, 'included', false, { immediate: true });
           if (removed) {
-            toast(`${saved.name || drinkKindMeta(saved.drink_kind).label} is on the menu. ${productName} was taken off so it isn’t counted twice.`);
+            toast(`${saved.name || drinkKindMeta(saved.drink_kind).label} is on the menu. ${productName}${size} was taken off so it isn’t counted twice.`);
           }
         }
         showMenu();
@@ -1353,26 +1429,107 @@ export function mountPlanningPanel(route) {
     });
   }
 
+  function openAddSize(source) {
+    if (locked()) { toast('Pricing is locked for this event', true); return; }
+    if (!source?.id) return;
+    const productName = ctx.productById.get(source.product_id)?.name || 'This product';
+    const needsCurrentName = !String(source.serve_label || '').trim();
+    const el = openModal({
+      title: `Another size of ${productName}`,
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <p class="muted plan-sheet-lead">Same keg or bottle, its own price. A half is 0.5 of one serve. The Serves column stays the yield of the whole case.</p>
+          ${needsCurrentName ? `<label class="admin-field"><span class="admin-label">Name the size already on the menu</span>
+            <input class="admin-input" id="sizeCurrent" maxlength="40" placeholder="Pint"></label>` : ''}
+          <label class="admin-field"><span class="admin-label">New size</span>
+            <input class="admin-input" id="sizeName" maxlength="40" placeholder="Half"></label>
+          <label class="admin-field"><span class="admin-label">How much of one serve</span>
+            <input class="admin-input num-math" id="sizePortion" inputmode="decimal" placeholder="0.5" value="0.5"></label>
+          <p class="plan-form-err" id="sizeErr" hidden></p>
+        </div>`,
+      footHtml: `
+        <div class="admin-modal-confirm-foot">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>Add size</button>
+        </div>`,
+    });
+    el.querySelector('[data-cancel]').onclick = closeModal;
+    el.querySelector('[data-ok]').onclick = async () => {
+      const err = el.querySelector('#sizeErr');
+      const currentName = needsCurrentName ? el.querySelector('#sizeCurrent').value.trim() : String(source.serve_label || '').trim();
+      const name = el.querySelector('#sizeName').value.trim();
+      const portion = parsePlanningNumber(el.querySelector('#sizePortion').value);
+      if (needsCurrentName && !currentName) { err.textContent = 'Name the size already on the menu'; err.hidden = false; return; }
+      if (!name) { err.textContent = 'Name the new size'; err.hidden = false; return; }
+      if (!portion.ok || !(portion.value > 0)) { err.textContent = 'Size must be a number above 0. A half is 0.5.'; err.hidden = false; return; }
+      if (serveKey(name) === serveKey(currentName) || serveLabelTaken(source.product_id, name, source.id)) {
+        err.textContent = 'This product already has that serve';
+        err.hidden = false;
+        return;
+      }
+      el.querySelector('[data-ok]').disabled = true;
+      try {
+        if (needsCurrentName) {
+          const renamed = await updateEventMenuItem(source.id, { serve_label: currentName });
+          const row = ctx.items.get(source.id);
+          if (row) row.serve_label = renamed?.serve_label ?? currentName;
+        }
+        const saved = await insertEventMenuItem(ctx.eventId, source.product_id, {
+          included: true,
+          serve_label: name,
+          portion: portion.value,
+          serves_per_unit: source.serves_per_unit ?? null,
+          unit_cost_override: source.unit_cost_override ?? null,
+          deal_ref: source.deal_ref ?? null,
+          target_gp_pct: source.target_gp_pct ?? null,
+        });
+        if (!saved?.id) throw new Error('Could not add that size');
+        ctx.items.set(saved.id, saved);
+        closeModal();
+        showMenu();
+        toast(`${productName} ${name} added`);
+      } catch (e2) {
+        el.querySelector('[data-ok]').disabled = false;
+        err.textContent = e2.message || 'Could not add that size';
+        err.hidden = false;
+      }
+    };
+    requestAnimationFrame(() => el.querySelector(needsCurrentName ? '#sizeCurrent' : '#sizeName')?.focus());
+  }
+
   function openAddProduct() {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
-    const available = ctx.products.filter((p) => !ctx.items.has(p.id) || ctx.items.get(p.id).included === false);
     openSheet({
       title: 'Add product to event menu',
       variant: 'admin-full',
-      bodyHtml: '<p class="muted plan-sheet-lead">Adds the product to this event’s menu only — the library and stock are unchanged.</p><div id="planAddSearch"></div>',
+      bodyHtml: '<p class="muted plan-sheet-lead">Adds the product to this event’s menu. Pick one that is already there to add another size, such as a half.</p><div id="planAddSearch"></div>',
       footHtml: `<div class="admin-drawer-foot"><button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="planAddCancel">Close</button></div>`,
     });
     mountProductSearch($('planAddSearch'), {
-      products: available,
+      products: ctx.products,
       categories: ctx.categories,
       caseSizes: ctx.caseSizes,
       placeholder: 'Search library to add…',
       onSelect: async ({ productId }) => {
+        const existing = itemsForProduct(productId);
+        const onMenu = existing.filter((item) => item.included !== false);
+        if (onMenu.length) {
+          closeSheet();
+          openAddSize(baseMenuItem(onMenu));
+          return;
+        }
+        if (existing.length) {
+          closeSheet();
+          await Promise.all(existing.map((item) => setItemField(item.id, 'included', true, { immediate: true })));
+          showMenu();
+          toast(`${ctx.productById.get(productId)?.name || 'Product'} is back on the menu`);
+          return;
+        }
         try {
-          const patch = { included: true };
-          const saved = await upsertEventMenuItem(ctx.eventId, productId, patch);
-          ctx.items.set(productId, saved || { product_id: productId, ...patch });
-          lineFor(productId);
+          const saved = await insertEventMenuItem(ctx.eventId, productId, { included: true });
+          if (!saved?.id) throw new Error('Could not add that product');
+          ctx.items.set(saved.id, saved);
+          lineFor(saved.id);
           closeSheet();
           paintGrid();
           toast(`${ctx.productById.get(productId)?.name || 'Product'} added to menu`);
@@ -1794,7 +1951,7 @@ export function mountPlanningPanel(route) {
     if (ctx.abort) return;
     if (!event) throw new Error('Event not found');
     ctx.event = event;
-    ctx.items = new Map((items || []).map((i) => [i.product_id, i]));
+    ctx.items = new Map((items || []).filter((i) => i.id).map((i) => [i.id, i]));
     ctx.cocktailsUnavailable = cocktailRows == null;
     ctx.cocktails = new Map((cocktailRows || []).map((c) => [c.id, normaliseCocktail(c)]));
     ctx.scenarios = scenarios || [];

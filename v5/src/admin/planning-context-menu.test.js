@@ -16,9 +16,10 @@ describe('planning context actions', () => {
       hasRequired: true,
     });
     expect(actions.cell.map((a) => a.id)).toEqual(['use-required', 'paste', 'copy', 'copy-name', 'clear']);
-    expect(actions.item.map((a) => a.id)).toEqual(['make-cocktail', 'make-spirit-mixer', 'toggle-menu']);
-    expect(actions.item[1].label).toBe('Make into spirit & mixer');
-    expect(actions.item[2].label).toBe('Remove from menu');
+    expect(actions.item.map((a) => a.id)).toEqual(['add-size', 'make-cocktail', 'make-spirit-mixer', 'toggle-menu']);
+    expect(actions.item[0].label).toBe('Add another size');
+    expect(actions.item[2].label).toBe('Make into spirit & mixer');
+    expect(actions.item[3].label).toBe('Remove from menu');
   });
 
   it('hides edits when pricing is locked and still allows copy', () => {

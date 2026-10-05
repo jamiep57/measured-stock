@@ -84,6 +84,11 @@ export function planningContextActions({ kind, drinkKind, included, colId, locke
     item.push({ id: 'edit-cocktail', label: `Edit ${drink}`, note: 'Recipe, price and section' });
   } else if (!locked) {
     item.push({
+      id: 'add-size',
+      label: 'Add another size',
+      note: 'Same product, its own price. A half is 0.5 of one serve.',
+    });
+    item.push({
       id: 'make-cocktail',
       label: 'Make into cocktail',
       note: 'One measure of this product. This line comes off the menu.',

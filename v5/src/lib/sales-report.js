@@ -8,7 +8,8 @@
  */
 
 import { menuTotals } from './planning-menu.js';
-import { plannedCases } from './order-compare.js';
+import { plannedCases, plannedProductCases } from './order-compare.js';
+import { portionOf } from './menu-serves.js';
 
 const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -115,6 +116,23 @@ export function reconCostTotals(reconRows) {
   return { cost: money(cost), priced, unpriced };
 }
 
+function forecastCasesFromLines(group, product, caseSizes) {
+  const serves = (group || []).reduce((sum, line) => {
+    const projected = num(line.projectedServes);
+    if (!(projected > 0)) return sum;
+    return sum + projected * portionOf(line);
+  }, 0);
+  const per = (group || []).find((line) => num(line.servesPerUnit) > 0);
+  if (!(serves > 0) || !per) return { cases: null, source: null };
+  return plannedCases(
+    { included: true, projected_serves: serves },
+    { projectedServes: serves, servesPerUnit: per.servesPerUnit },
+    product,
+    caseSizes,
+    0,
+  );
+}
+
 /**
  * Forecast (planned menu) vs actual (till + recon) for an event.
  * @param {{ lines: object[], items: Map<string, object>, products: Map<string, object>,
@@ -130,16 +148,36 @@ export function revenueComparison({ lines = [], items = new Map(), products = ne
   const actualGpPct = actualGp != null && sales.net > 0 ? (actualGp / sales.net) * 100 : null;
 
   const reconByPid = new Map((reconRows || []).map((r) => [r.pid, r]));
-  const lineByPid = new Map(lines.filter((l) => l.included).map((l) => [l.productId, l]));
-  const pids = new Set([...lineByPid.keys(), ...[...reconByPid.values()].filter((r) => (Number(r.consumption) || 0) > 0).map((r) => r.pid)]);
+  const linesByPid = new Map();
+  lines.filter((l) => l.included && l.productId).forEach((l) => {
+    const list = linesByPid.get(l.productId) || [];
+    list.push(l);
+    linesByPid.set(l.productId, list);
+  });
+  const pids = new Set([...linesByPid.keys(), ...[...reconByPid.values()].filter((r) => (Number(r.consumption) || 0) > 0).map((r) => r.pid)]);
 
   const products_ = [...pids].map((pid) => {
-    const line = lineByPid.get(pid) || null;
+    const group = linesByPid.get(pid) || [];
+    const line = group[0] || null;
     const rec = reconByPid.get(pid) || null;
     const product = products.get(pid) || rec?.p || null;
-    const planned = line ? plannedCases(items.get(pid), line, product, caseSizes, 0) : { cases: null };
-    const forecastCost = line && line.costPerServe != null && line.projectedServes != null
-      ? money(line.costPerServe * line.projectedServes) : null;
+    const stored = items.get(pid);
+    const storedList = Array.isArray(stored) ? stored : (stored ? [stored] : []);
+    const planned = storedList.length
+      ? plannedProductCases(storedList, 0, product, caseSizes, 0)
+      : forecastCasesFromLines(group, product, caseSizes);
+    const pricedRows = group.filter((row) => row.costPerServe != null && row.projectedServes != null);
+    const forecastCost = pricedRows.length
+      ? money(pricedRows.reduce((sum, row) => sum + row.costPerServe * row.projectedServes, 0))
+      : null;
+    const forecastServes = group.length
+      ? group.reduce((sum, row) => sum + (Number(row.projectedServes) || 0) * portionOf(row), 0)
+      : null;
+    const revenueRows = group.filter((row) => row.revenueNet != null);
+    const forecastRevenueNet = revenueRows.length
+      ? money(revenueRows.reduce((sum, row) => sum + Number(row.revenueNet), 0))
+      : null;
+    const mix = group.length > 1 ? menuTotals(group) : null;
     const actualCost = rec && Number(rec.rowPrice) > 0 ? money(rec.consumptionCharge) : null;
     const forecastUnits = planned.cases;
     const consumed = rec ? Number(rec.consumption) || 0 : null;
@@ -148,16 +186,16 @@ export function revenueComparison({ lines = [], items = new Map(), products = ne
       name: line?.name || product?.name || 'Unknown',
       category: line?.category || product?.category?.name || 'Uncategorised',
       onMenu: !!line,
-      forecastServes: line?.projectedServes ?? null,
+      forecastServes,
       forecastUnits,
       consumed,
       sold: rec ? Number(rec.plu) || 0 : null,
       unitsVariance: forecastUnits != null && consumed != null ? Math.round((consumed - forecastUnits) * 100) / 100 : null,
-      forecastRevenueNet: line?.revenueNet != null ? money(line.revenueNet) : null,
+      forecastRevenueNet,
       forecastCost,
       actualCost,
       costVariance: forecastCost != null && actualCost != null ? money(actualCost - forecastCost) : null,
-      forecastGpPct: line?.gpPct ?? null,
+      forecastGpPct: mix?.gpPct ?? line?.gpPct ?? null,
     };
   }).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 

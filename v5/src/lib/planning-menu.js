@@ -6,7 +6,8 @@
  *               (this is the price of one inner unit: a can, bottle, or keg)
  *   serves      item → house menu → serves in one case
  *               (pack servings × units in the case, so a 24×330ml case is 24)
- *   cost/serve  case price ÷ serves, and the case price is unit cost × units
+ *   cost/serve  portion × (case price ÷ serves). Portion is 1 for a full
+ *               serve and 0.5 for a half. The case price is unit cost × units
  *   target GP   item → house menu → event → price year → default
  */
 
@@ -88,7 +89,10 @@ export function resolveMenuLine(item, ctx = {}) {
   );
   const { unitCost, source: costSource } = resolveUnitCost(item, product);
   const caseCost = unitCost != null ? unitCost * unitsPerCase : null;
-  const cps = costPerServe(caseCost, servesPerUnit);
+  const portion = firstNum(item?.portion) ?? 1;
+  const portionSafe = portion > 0 ? portion : 1;
+  const baseCost = costPerServe(caseCost, servesPerUnit);
+  const cps = baseCost != null ? baseCost * portionSafe : null;
   const targetGpPct = firstNum(item?.target_gp_pct, house?.target_gp_pct, eventTargetGp(event, year));
   const menuPrice = num(item?.menu_price);
   const required = requiredPrice(cps, targetGpPct, vatRate);
@@ -102,6 +106,7 @@ export function resolveMenuLine(item, ctx = {}) {
   const caseSize = (pack?.label || product?.case_size || '').trim();
 
   return {
+    itemId: item?.id || null,
     productId: item?.product_id || product?.id || null,
     name: product?.name || '',
     menuName: menuNameOf(product),
@@ -111,6 +116,7 @@ export function resolveMenuLine(item, ctx = {}) {
     category: product?.category?.name || 'Uncategorised',
     included: item?.included !== false,
     serveLabel: item?.serve_label || house?.serve_label || null,
+    portion: portionSafe,
     vatRate,
     servesPerUnit,
     unitsPerCase,

@@ -89,6 +89,21 @@ describe('resolveMenuLine', () => {
     expect(line.gpPct).toBeNull();
     expect(line.status).toBeNull();
   });
+  it('prices a half as half a serve of the same keg', () => {
+    const pint = resolveMenuLine(
+      { id: 'a', product_id: 'p1', serve_label: 'Pint', portion: 1, menu_price: 6 },
+      { product: keg, year, event },
+    );
+    const half = resolveMenuLine(
+      { id: 'b', product_id: 'p1', serve_label: 'Half', portion: 0.5, menu_price: 3.5 },
+      { product: keg, year, event },
+    );
+    expect(pint.costPerServe).toBe(1);
+    expect(half.costPerServe).toBe(0.5);
+    expect(half.itemId).toBe('b');
+    expect(half.serveLabel).toBe('Half');
+    expect(half.gpPct).toBeGreaterThan(pint.gpPct);
+  });
   it('keeps the frozen cost after supplier prices change', () => {
     const item = { product_id: 'p1', menu_price: 6, unit_cost_snapshot: 88 };
     const before = resolveMenuLine(item, { product: keg, year, event });

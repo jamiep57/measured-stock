@@ -10,6 +10,7 @@ import { formatQtyAsFraction } from '../components/fraction-input.js';
 import { resolveCocktailLine } from './menu-cocktails.js';
 import { resolveMenuLine } from './planning-menu.js';
 import { recipeStoredProductName } from './recipe-stock.js';
+import { baseMenuItem } from './menu-serves.js';
 import { findRecipe, normVariation, recipeIsMapped } from './square-recipes.js';
 
 function num(v) {
@@ -123,7 +124,8 @@ export function cocktailToRecipe(cocktail, ctx = {}) {
   const incomplete = [];
   (line.ingredients || []).forEach((part) => {
     const product = ctx.productById?.get(part.productId) || null;
-    const menuItem = ctx.items?.get(part.productId) || null;
+    const rawItem = ctx.items?.get(part.productId) || null;
+    const menuItem = Array.isArray(rawItem) ? baseMenuItem(rawItem) : rawItem;
     const serves = knownServesPerUnit(product, menuItem, ctx.caseSizes);
     const measures = num(part.measures);
     if (!product || !(serves > 0) || !(measures > 0)) {

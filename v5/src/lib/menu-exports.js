@@ -93,9 +93,15 @@ export function buildMenuExport(type, input) {
   if (!spec) throw new Error(`Unknown export type: ${type}`);
   const includeInternal = !!input.includeInternal && spec.allowInternal;
   const scenarios = (input.scenarios || []).filter((s) => (input.scenarioIds || []).includes(s.id));
-  const scenarioPrice = (s, pid) => {
-    const row = (s.scenario_prices || []).find((r) => r.product_id === pid);
-    return row ? round2(row.price) : null;
+  const scenarioPrice = (s, line) => {
+    const rows = s.scenario_prices || [];
+    if (line.itemId) {
+      const hit = rows.find((r) => r.menu_item_id === line.itemId);
+      if (hit) return round2(hit.price);
+    }
+    const byProduct = rows.filter((r) => r.product_id === line.productId);
+    if (byProduct.length === 1) return round2(byProduct[0].price);
+    return null;
   };
 
   const lines = (input.lines || []).filter((l) => l.included);
@@ -120,7 +126,7 @@ export function buildMenuExport(type, input) {
         }
       } else if (input.rateSource && input.rateSource !== 'menu') {
         const s = (input.scenarios || []).find((x) => x.id === input.rateSource);
-        if (s) rate = scenarioPrice(s, l.productId) ?? rate;
+        if (s) rate = scenarioPrice(s, l) ?? rate;
       }
       if (rate == null) { missingRates += 1; return; }
       rows.push({ ...base, rate });
@@ -134,7 +140,7 @@ export function buildMenuExport(type, input) {
       abv: formatAbv(l.abv) || '—',
       price,
       mixPct: totalServes > 0 && l.projectedServes ? Math.round((Number(l.projectedServes) / totalServes) * 1000) / 10 : null,
-      scenarios: Object.fromEntries(scenarios.map((s) => [s.id, scenarioPrice(s, l.productId)])),
+      scenarios: Object.fromEntries(scenarios.map((s) => [s.id, scenarioPrice(s, l)])),
       costPerServe: round2(l.costPerServe),
       gpPct: l.gpPct == null ? null : Math.round(l.gpPct * 10) / 10,
     };

@@ -22,8 +22,9 @@ import { countedInFromDeliveries } from '../../lib/opening-stock.js';
 import { listAccounts } from '../../lib/accounts-data.js';
 import { primaryContact } from '../../lib/accounts.js';
 import { findOfferForSupplier } from '../../pack-metrics.js';
-import { parsePlanningNumber, resolveMenuLine } from '../../lib/planning-menu.js';
-import { cocktailServesByProduct, projectedServesWithCocktails } from '../../lib/menu-cocktails.js';
+import { parsePlanningNumber } from '../../lib/planning-menu.js';
+import { cocktailServesByProduct } from '../../lib/menu-cocktails.js';
+import { groupMenuItems } from '../../lib/menu-serves.js';
 import {
   isCocktailSchemaMissing,
   isEventPricingLocked,
@@ -31,7 +32,7 @@ import {
   listEventCocktails,
   listEventMenu,
   loadEventPricing,
-  upsertEventMenuItem,
+  patchEventMenuItems,
 } from '../../lib/planning-data.js';
 import {
   compareOrders,
@@ -39,7 +40,7 @@ import {
   draftOrdersFromShortfalls,
   orderLinesTotal,
   orderedByProduct,
-  plannedCases,
+  plannedProductCases,
   preferredSupplierId,
 } from '../../lib/order-compare.js';
 import {
@@ -145,32 +146,17 @@ export function mountOrdersPanel(route) {
   // ---------- derived ------------------------------------------------
 
   function plannedFor(pid) {
-    const item = ctx.items.get(pid);
+    const list = ctx.items.get(pid) || [];
     const extra = ctx.cocktailServes.get(pid) || 0;
-    const combined = projectedServesWithCocktails(item, extra);
-    if (!item && combined.mode !== 'projection') return { cases: null, source: null };
-    const product = ctx.productById.get(pid);
-    const line = resolveMenuLine(item || { product_id: pid, included: true }, {
-      product,
-      event: ctx.pricing,
-      caseSizes: ctx.caseSizes,
-    });
-    if (combined.mode === 'override') return plannedCases(item, line, product, ctx.caseSizes, ctx.buffer);
-    if (combined.mode !== 'projection') return { cases: null, source: null };
-    return plannedCases(
-      { included: true, projected_serves: combined.serves },
-      line,
-      product,
-      ctx.caseSizes,
-      ctx.buffer,
-    );
+    if (!list.length && !(extra > 0)) return { cases: null, source: null };
+    return plannedProductCases(list, extra, ctx.productById.get(pid), ctx.caseSizes, ctx.buffer);
   }
 
   function recompute() {
     ctx.cocktailServes = cocktailServesByProduct(ctx.cocktails);
     const ids = new Set();
-    ctx.items.forEach((item, pid) => {
-      if (item.included !== false || item.planned_qty_override != null) ids.add(pid);
+    ctx.items.forEach((list, pid) => {
+      if (list.some((item) => item.included !== false || item.planned_qty_override != null)) ids.add(pid);
     });
     ctx.orders.forEach((po) => (po.purchase_order_lines || []).forEach((l) => ids.add(l.product_id)));
     (ctx.event?.event_products || []).forEach((ep) => {
@@ -258,8 +244,9 @@ export function mountOrdersPanel(route) {
     const p = ctx.productById.get(r.productId);
     const supplier = ctx.supplierById.get(preferredSupplierId(p));
     const src = ctx.plannedSource.get(r.productId);
-    const item = ctx.items.get(r.productId);
-    const onMenu = !!item;
+    const list = ctx.items.get(r.productId) || [];
+    const item = list.find((row) => row.planned_qty_override != null) || list[0] || null;
+    const onMenu = list.length > 0;
     const dis = locked() || !onMenu ? 'disabled' : '';
     const plannedInput = `<input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input plan-cell-input--sm"
       data-planned="${escapeHtml(r.productId)}" value="${escapeHtml(item?.planned_qty_override != null ? String(item.planned_qty_override) : '')}"
@@ -405,14 +392,14 @@ export function mountOrdersPanel(route) {
       const parsed = parsePlanningNumber(t.value, { max: 100000 });
       t.classList.toggle('is-invalid', !parsed.ok);
       if (!parsed.ok) return;
-      const item = ctx.items.get(pid);
-      if (!item) return;
-      item.planned_qty_override = parsed.value;
+      const list = ctx.items.get(pid) || [];
+      if (!list.length) return;
+      list.forEach((item) => { item.planned_qty_override = parsed.value; });
       recompute();
       const k = $('ordKpis');
       if (k) k.innerHTML = kpisHtml();
       refreshRowOutputs(pid);
-      queueSave(`planned:${pid}`, () => upsertEventMenuItem(ctx.eventId, pid, { planned_qty_override: parsed.value }));
+      queueSave(`planned:${pid}`, () => patchEventMenuItems(ctx.eventId, pid, { planned_qty_override: parsed.value }));
     }
   }
 
@@ -893,7 +880,7 @@ export function mountOrdersPanel(route) {
     if (!event || !pricing) throw new Error('Event not found');
     ctx.event = event;
     ctx.pricing = pricing;
-    ctx.items = new Map((items || []).map((i) => [i.product_id, i]));
+    ctx.items = groupMenuItems(items || []);
     ctx.cocktails = cocktails || [];
     ctx.orders = orders || [];
     ctx.buffer = buffer;

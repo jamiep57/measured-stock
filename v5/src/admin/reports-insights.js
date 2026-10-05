@@ -15,6 +15,7 @@ import { isOrgAdmin } from '../lib/organisations.js';
 import { computeReconRows } from '../lib/recon.js';
 import { formatGpPct, gpStatus } from '../lib/gp.js';
 import { parsePlanningNumber, resolveMenuLine } from '../lib/planning-menu.js';
+import { baseMenuItem, groupMenuItems } from '../lib/menu-serves.js';
 import { resolveCocktailLine } from '../lib/menu-cocktails.js';
 import { isCocktailSchemaMissing, listEventCocktails, listEventMenu, loadEventPricing } from '../lib/planning-data.js';
 import {
@@ -121,18 +122,23 @@ export function createReportInsights({ getBase, onChange }) {
         listEventCocktails(eventId).catch((err) => (isCocktailSchemaMissing(err) ? [] : Promise.reject(err))),
       ]);
       const productById = new Map((products || []).map((p) => [p.id, p]));
-      const itemMap = new Map((items || []).map((i) => [i.product_id, i]));
-      const lines = [...itemMap.values()].map((item) => resolveMenuLine(item, {
+      const grouped = groupMenuItems(items || []);
+      const baseMap = new Map();
+      grouped.forEach((list, pid) => {
+        const base = baseMenuItem(list);
+        if (base) baseMap.set(pid, { ...base, portion: 1 });
+      });
+      const lines = (items || []).map((item) => resolveMenuLine(item, {
         product: productById.get(item.product_id), event, caseSizes,
       }));
       (cocktails || []).forEach((cocktail) => {
         lines.push(resolveCocktailLine(cocktail, cocktail.ingredients, {
-          productById, items: itemMap, caseSizes, event,
+          productById, items: baseMap, caseSizes, event,
         }));
       });
       state.menu = {
         lines,
-        items: itemMap,
+        items: grouped,
         products: productById,
         targetGpPct: event?.target_gp_pct ?? null,
         amberBand: event?.gp_amber_band ?? 5,

@@ -10,6 +10,7 @@
  */
 
 import { gpPct, gpPerServe, gpStatus, netFromGross, requiredPrice } from './gp.js';
+import { baseMenuItem } from './menu-serves.js';
 import { eventTargetGp, eventVatRate, resolveMenuLine } from './planning-menu.js';
 
 export const COCKTAIL_CATEGORY = 'Cocktails';
@@ -93,9 +94,17 @@ export function projectedServesWithCocktails(item, extraServes) {
   return { mode: 'projection', serves };
 }
 
+/** One full serve of the product, even when the menu also sells a half. */
+function menuItemForCost(ctx, productId) {
+  const raw = ctx.items?.get(productId) || null;
+  const item = Array.isArray(raw) ? baseMenuItem(raw) : raw;
+  if (!item) return { product_id: productId, included: true, portion: 1 };
+  return { ...item, portion: 1 };
+}
+
 function ingredientPart(ing, ctx) {
   const product = ctx.productById?.get(ing.product_id) || null;
-  const menuItem = ctx.items?.get(ing.product_id) || null;
+  const menuItem = menuItemForCost(ctx, ing.product_id);
   const measures = num(ing.measures);
   if (!product) {
     return {
@@ -112,7 +121,7 @@ function ingredientPart(ing, ctx) {
     };
   }
   const line = resolveMenuLine(
-    menuItem || { product_id: product.id, included: true },
+    menuItem,
     { product, caseSizes: ctx.caseSizes || [], event: ctx.event },
   );
   const cost = line.costPerServe != null && measures != null && measures > 0
