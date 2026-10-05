@@ -1,9 +1,8 @@
 /**
  * Planning — event menu, pricing and GP (spreadsheet grid).
  *
- * Rows are event_menu_items. Prices are the event's own copy, so editing a
- * price year never rewrites this event. Menu items never create stock:
- * quantities here are projections only.
+ * Rows are event_menu_items. Each event keeps its own menu prices.
+ * Menu items never create stock: quantities here are projections only.
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
@@ -15,9 +14,7 @@ import { loadCaseSizes, loadLibraryProducts, loadCategories } from '../../db.js'
 import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
-import { mountAccountSearch } from '../../components/account-search.js';
-import { createAccount, listAccounts, loadEventClientAccount, setEventClientAccount, updateAccount } from '../../lib/accounts-data.js';
-import { navigate } from '../router.js';
+import { listAccounts, loadEventClientAccount } from '../../lib/accounts-data.js';
 import { openMenuExportDialog } from '../planning-export.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
@@ -37,12 +34,15 @@ import {
   isEventPricingLocked,
   isPlanningSchemaMissing,
   listEventMenu,
-  listHousePrices,
-  listPriceYears,
   listScenarios,
   loadEventPricing,
   replaceScenarioPrices,
   scenarioPricesFrom,
+  applySavedMenu,
+  deleteSavedMenu,
+  listSavedMenus,
+  saveEventMenu,
+  savedMenuProductCount,
   seedEventMenu,
   setScenarioPrice,
   snapshotEventCosts,
@@ -66,7 +66,6 @@ const NUMERIC_FIELDS = {
 export const PLANNING_COLUMNS = [
   { key: 'serve', label: 'Serves / unit' },
   { key: 'cost', label: 'Cost / serve' },
-  { key: 'house', label: 'House £' },
   { key: 'required', label: 'Required £' },
   { key: 'suggested', label: 'Suggested £' },
   { key: 'other', label: 'Other event £' },
@@ -111,11 +110,6 @@ function costSourceLabel(source) {
   return 'No cost';
 }
 
-function goTo(route) {
-  navigate(route);
-  window.dispatchEvent(new PopStateEvent('popstate'));
-}
-
 export function renderPlanningShell() {
   return `
     <div class="dist-panel plan-panel" id="planPanel">
@@ -130,9 +124,6 @@ export function mountPlanningPanel(route) {
   const ctx = {
     eventId: route.eventId,
     event: null,
-    years: [],
-    year: null,
-    house: new Map(),
     items: new Map(),
     products: [],
     productById: new Map(),
@@ -157,8 +148,6 @@ export function mountPlanningPanel(route) {
     const item = ctx.items.get(pid);
     const line = resolveMenuLine(item, {
       product: ctx.productById.get(pid),
-      house: ctx.house.get(pid),
-      year: ctx.year,
       event: ctx.event,
       caseSizes: ctx.caseSizes,
     });
@@ -228,7 +217,6 @@ export function mountPlanningPanel(route) {
       <th class="dist-th dist-sticky plan-col-product" title="Product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div></th>`;
     if (colOn('serve')) html += th('Serves', 'Serves per stock unit (e.g. 88 pints per keg)');
     if (colOn('cost')) html += th('Cost', 'Cost per serve (ex VAT)');
-    if (colOn('house')) html += th('House', 'House menu price for the event’s price year');
     html += th('Menu £', 'Event menu price inc VAT', 'plan-th--key');
     html += th('Target', 'Target GP %');
     if (colOn('required')) html += th('Required', 'Price inc VAT needed to hit the target GP — click to use');
@@ -259,7 +247,7 @@ export function mountPlanningPanel(route) {
 
   function colCount() {
     let n = 4;
-    ['serve', 'cost', 'house', 'required', 'suggested', 'other', 'serves'].forEach((k) => { if (colOn(k)) n += 1; });
+    ['serve', 'cost', 'required', 'suggested', 'other', 'serves'].forEach((k) => { if (colOn(k)) n += 1; });
     if (colOn('scenarios')) n += ctx.scenarios.length;
     if (colOn('revenue')) n += 2;
     if (colOn('deal')) n += 2;
@@ -291,7 +279,6 @@ export function mountPlanningPanel(route) {
         ${money(line.costPerServe)}${line.costSource === 'locked' ? ` <span class="plan-lock">${icon('lock', { size: 11 })}</span>` : ''}
       </td>`;
     }
-    if (colOn('house')) html += `<td class="plan-cell plan-out">${money(line.housePrice)}</td>`;
     html += `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice != null ? line.suggestedPrice.toFixed(2) : '', label: 'Menu price' })}</td>`;
     html += `<td class="plan-cell">${cellInput('target_gp_pct', item.target_gp_pct, { placeholder: line.targetGpPct != null ? String(line.targetGpPct) : '', label: 'Target GP %', width: 'sm' })}</td>`;
     if (colOn('required')) {
@@ -359,7 +346,7 @@ export function mountPlanningPanel(route) {
   function totalsHtml() {
     const lines = [...ctx.lines.values()];
     const totals = menuTotals(lines);
-    const target = ctx.event?.target_gp_pct ?? ctx.year?.default_target_gp_pct ?? null;
+    const target = ctx.event?.target_gp_pct ?? null;
     const amber = ctx.event?.gp_amber_band ?? 5;
     const onMenu = lines.filter((l) => l.included).length;
     const statusCounts = { red: 0, amber: 0, green: 0 };
@@ -390,28 +377,16 @@ export function mountPlanningPanel(route) {
 
   function settingsHtml() {
     const dis = locked() ? 'disabled' : '';
-    const yearOpts = ctx.years.map((y) => `<option value="${escapeHtml(y.id)}" ${y.id === ctx.event?.price_year_id ? 'selected' : ''}>${escapeHtml(y.label)}${y.status === 'locked' ? ' (locked)' : ''}</option>`).join('');
     const snapshots = [...ctx.items.values()].filter((i) => i.unit_cost_snapshot != null).length;
     const costState = snapshots
       ? `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Costs locked (${snapshots})</span>`
       : '<span class="plan-chip">Live supplier costs</span>';
     return `
-      <label class="admin-field plan-field">
-        <span class="admin-label">Price year</span>
-        <select class="admin-select" id="planYear" ${dis}>
-          <option value="">No price year</option>
-          ${yearOpts}
-        </select>
-      </label>
-      ${ctx.accounts ? `<div class="admin-field plan-field">
-        <span class="admin-label">Client account</span>
-        <div id="planClientMount"></div>
-      </div>` : ''}
       <label class="admin-field plan-field plan-field--sm">
         <span class="admin-label">Target GP %</span>
         <input type="text" inputmode="decimal" class="admin-input num-math" id="planTarget"
           value="${escapeHtml(inputValue(ctx.event?.target_gp_pct))}"
-          placeholder="${escapeHtml(inputValue(ctx.year?.default_target_gp_pct ?? 70))}" ${dis}>
+          placeholder="70" ${dis}>
       </label>
       <label class="admin-field plan-field plan-field--sm">
         <span class="admin-label">Amber band (pts)</span>
@@ -421,18 +396,17 @@ export function mountPlanningPanel(route) {
       <div class="plan-settings-meta">
         ${locked() ? `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Event ${escapeHtml(ctx.event.status)} — pricing is read-only</span>` : ''}
         ${costState}
-        <a href="/price-years" class="plan-link" data-goto="price-years">${icon('calendar', { size: 13 })} Price years</a>
       </div>`;
   }
 
   function paint() {
-    if (!ctx.items.size && !ctx.years.length) {
+    if (!ctx.items.size) {
       panel.innerHTML = emptyState({
         iconHtml: icon('calculator', { size: 22 }),
         title: 'Plan this event’s menu',
-        copy: 'Create a price year with house menu prices, then seed this event’s menu — or add products straight onto the menu from the toolbar.',
+        copy: 'Add products and set prices here. Save the menu when you want to reuse it on another event.',
         variant: 'admin',
-        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-goto="price-years">Set up price years</button>',
+        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-add-product>Add product</button>',
       });
       return;
     }
@@ -447,38 +421,7 @@ export function mountPlanningPanel(route) {
           <tbody id="planBody">${renderBody()}</tbody>
         </table>
       </div>`;
-    mountClientPicker();
     syncTheadHeight();
-  }
-
-  function mountClientPicker() {
-    const mount = $('planClientMount');
-    if (!mount || !ctx.accounts) return;
-    mountAccountSearch(mount, {
-      accounts: ctx.accounts,
-      value: ctx.clientAccountId,
-      kind: 'client',
-      inputId: 'planClientInput',
-      placeholder: 'Search clients…',
-      emptyLabel: '— No client —',
-      allowCreate: true,
-      onCreate: async (fields) => {
-        const acc = await createAccount(fields);
-        if (acc) ctx.accounts = [...ctx.accounts, acc];
-        return acc;
-      },
-      onPromote: (id) => updateAccount(id, { is_client: true }),
-      onSelect: async ({ accountId }) => {
-        if ((accountId || null) === (ctx.clientAccountId || null)) return;
-        try {
-          await setEventClientAccount(ctx.eventId, accountId);
-          ctx.clientAccountId = accountId;
-          toast(accountId ? 'Client account set' : 'Client account cleared');
-        } catch (err) {
-          toast(err.message || 'Could not set client', true);
-        }
-      },
-    });
   }
 
   function paintGrid() {
@@ -629,10 +572,8 @@ export function mountPlanningPanel(route) {
   }
 
   function onPanelClick(e) {
-    const gotoEl = e.target.closest('[data-goto]');
-    if (gotoEl) {
-      e.preventDefault();
-      goTo({ view: gotoEl.dataset.goto });
+    if (e.target.closest('[data-add-product]')) {
+      openAddProduct();
       return;
     }
     const use = e.target.closest('[data-use-price]');
@@ -649,13 +590,6 @@ export function mountPlanningPanel(route) {
     if (scen) openScenarioEditor(scen.dataset.scenarioEdit);
   }
 
-  function onSettingsChange(e) {
-    if (e.target.id === 'planYear') {
-      const yearId = e.target.value || null;
-      void changePriceYear(yearId);
-    }
-  }
-
   function onSettingsInput(e) {
     const id = e.target.id;
     if (id !== 'planTarget' && id !== 'planAmber') return;
@@ -670,54 +604,28 @@ export function mountPlanningPanel(route) {
     queueSave(`event:${field}`, () => updateEventPricing(ctx.eventId, { [field]: parsed.value }));
   }
 
-  async function changePriceYear(yearId) {
-    try {
-      await updateEventPricing(ctx.eventId, { price_year_id: yearId });
-      ctx.event.price_year_id = yearId;
-      ctx.year = ctx.years.find((y) => y.id === yearId) || null;
-      const house = await listHousePrices(yearId);
-      ctx.house = new Map((house || []).map((h) => [h.product_id, h]));
-      recomputeAll();
-      paint();
-      if (yearId && ctx.house.size) {
-        toast(`${ctx.year?.label || 'Price year'} set — event prices are unchanged`, false, {
-          action: { label: 'Seed menu', onClick: () => openSeedDialog() },
-        });
-      } else {
-        toast('Price year updated');
-      }
-    } catch (err) {
-      toast(err.message || 'Could not change price year', true);
-    }
-  }
-
   // ---------- toolbar actions ----------------------------------------
 
   function openSeedDialog() {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
-    if (!ctx.event?.price_year_id) {
-      toast('Choose a price year first — products already on the event will still be added', false);
-    }
     const el = openModal({
-      title: 'Seed event menu',
+      title: 'Add stock products',
       bodyHtml: `
-        <p class="admin-modal-confirm-msg">Adds every product on the ${escapeHtml(ctx.year?.label || 'selected')} house menu, plus products already ordered for this event. Items already on the menu keep their prices.</p>
-        <label class="plan-check"><input type="checkbox" id="planSeedRefresh"> Also overwrite event menu prices with house menu prices</label>`,
+        <p class="admin-modal-confirm-msg">Adds products already ordered or delivered for this event onto the menu. Items already on the menu keep their prices.</p>`,
       footHtml: `
         <div class="admin-modal-confirm-foot">
           <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>Seed menu</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>Add products</button>
         </div>`,
     });
     el.querySelector('[data-cancel]').onclick = closeModal;
     el.querySelector('[data-ok]').onclick = async () => {
-      const refresh = el.querySelector('#planSeedRefresh').checked;
       el.querySelector('[data-ok]').disabled = true;
       try {
-        const added = await seedEventMenu(ctx.eventId, refresh);
+        const added = await seedEventMenu(ctx.eventId, false);
         closeModal();
         await reload();
-        toast(`${Number(added) || 0} item${Number(added) === 1 ? '' : 's'} added${refresh ? ' · prices refreshed' : ''}`);
+        toast(`${Number(added) || 0} item${Number(added) === 1 ? '' : 's'} added`);
       } catch (err) {
         el.querySelector('[data-ok]').disabled = false;
         toast(err.message || 'Seed failed', true);
@@ -741,17 +649,7 @@ export function mountPlanningPanel(route) {
       placeholder: 'Search library to add…',
       onSelect: async ({ productId }) => {
         try {
-          const house = ctx.house.get(productId);
           const patch = { included: true };
-          if (!ctx.items.has(productId) && house) {
-            Object.assign(patch, {
-              menu_price: house.menu_price,
-              suggested_price: house.suggested_price,
-              target_gp_pct: house.target_gp_pct,
-              serve_label: house.serve_label,
-              serves_per_unit: house.serves_per_unit,
-            });
-          }
           const saved = await upsertEventMenuItem(ctx.eventId, productId, patch);
           ctx.items.set(productId, saved || { product_id: productId, ...patch });
           lineFor(productId);
@@ -777,7 +675,6 @@ export function mountPlanningPanel(route) {
           <label class="admin-field"><span class="admin-label">Start from</span>
             <select class="admin-select" id="scnBase">
               <option value="menu">Event menu prices</option>
-              <option value="house">House menu prices</option>
               <option value="blank">Blank</option>
             </select></label>
           <label class="admin-field"><span class="admin-label">Change %</span>
@@ -811,10 +708,7 @@ export function mountPlanningPanel(route) {
           sort_order: ctx.scenarios.length,
         });
         const lines = [...ctx.lines.values()].filter((l) => l.included);
-        const source = base === 'house'
-          ? lines.map((l) => ({ ...l, menuPrice: l.housePrice }))
-          : lines;
-        const rows = base === 'blank' ? [] : scenarioPricesFrom(source, uplift, 0.05, roundUpToStep);
+        const rows = base === 'blank' ? [] : scenarioPricesFrom(lines, uplift, 0.05, roundUpToStep);
         const saved = await replaceScenarioPrices(scenario.id, rows);
         scenario.scenario_prices = saved || rows;
         ctx.scenarios.push(scenario);
@@ -920,9 +814,209 @@ export function mountPlanningPanel(route) {
     }
   }
 
+  function includedMenuCount() {
+    return [...ctx.items.values()].filter((item) => item.included !== false).length;
+  }
+
+  function menuNameTaken(err) {
+    const msg = String(err?.message || err || '');
+    return /already exists/i.test(msg) || /\b23505\b/.test(msg);
+  }
+
+  function saveMenuForm(count, suggested) {
+    return {
+      title: 'Save menu',
+      bodyHtml: `
+        <div class="admin-drawer-form">
+          <p class="admin-modal-confirm-msg">Saves the ${count} product${count === 1 ? '' : 's'} on this menu, with their menu price, suggested price, target GP and serves per unit. You can apply it to any event. Projected serves and deal costs stay on this event.</p>
+          <label class="admin-field"><span class="admin-label">Name</span>
+            <input class="admin-input" id="savedMenuName" maxlength="60" value="${escapeHtml(suggested)}" placeholder="e.g. Festival bar"></label>
+          <p class="plan-form-err" id="savedMenuErr" hidden></p>
+        </div>`,
+      footHtml: `
+        <div class="admin-modal-confirm-foot">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>Save menu</button>
+        </div>`,
+    };
+  }
+
+  function bindSaveMenu(el) {
+    const nameInput = el.querySelector('#savedMenuName');
+    const err = el.querySelector('#savedMenuErr');
+    let replaceExisting = false;
+    el.querySelector('[data-cancel]').onclick = closeModal;
+    nameInput.addEventListener('input', () => {
+      if (!replaceExisting) return;
+      replaceExisting = false;
+      el.querySelector('[data-ok]').textContent = 'Save menu';
+      err.hidden = true;
+    });
+    el.querySelector('[data-ok]').onclick = async () => {
+      const name = nameInput.value.trim();
+      if (!name) { err.textContent = 'Name is required'; err.hidden = false; return; }
+      const okBtn = el.querySelector('[data-ok]');
+      okBtn.disabled = true;
+      try {
+        await flushSaves();
+        await saveEventMenu(ctx.eventId, name, replaceExisting);
+        closeModal();
+        toast(replaceExisting ? `Updated “${name}”` : `Saved “${name}”`);
+      } catch (e2) {
+        okBtn.disabled = false;
+        if (menuNameTaken(e2)) {
+          replaceExisting = true;
+          okBtn.textContent = 'Update menu';
+          err.textContent = `“${name}” already exists. Update replaces its products and prices with this event’s menu.`;
+          err.hidden = false;
+          return;
+        }
+        err.textContent = e2.message || 'Could not save menu';
+        err.hidden = false;
+      }
+    };
+    requestAnimationFrame(() => {
+      nameInput?.focus();
+      nameInput?.select();
+    });
+  }
+
+  async function openSaveMenu() {
+    if (locked()) { toast('Pricing is locked for this event', true); return; }
+    await flushSaves();
+    const count = includedMenuCount();
+    if (!count) { toast('Add products to the menu before saving it', true); return; }
+    const suggested = String(ctx.event?.name || '').trim().slice(0, 60);
+    bindSaveMenu(openModal(saveMenuForm(count, suggested)));
+  }
+
+  function showSaveMenu(el) {
+    const count = includedMenuCount();
+    if (!count) { toast('Add products to the menu before saving it', true); return; }
+    const suggested = String(ctx.event?.name || '').trim().slice(0, 60);
+    const form = saveMenuForm(count, suggested);
+    el.querySelector('.admin-modal-title').textContent = form.title;
+    el.querySelector('.admin-modal-body').innerHTML = form.bodyHtml;
+    el.querySelector('.admin-modal-foot').innerHTML = form.footHtml;
+    bindSaveMenu(el);
+  }
+
+  function savedMenuOptions(menus, selectedId) {
+    return menus.map((menu) => {
+      const n = savedMenuProductCount(menu);
+      const label = `${menu.name} (${n} product${n === 1 ? '' : 's'})`;
+      const selected = menu.id === selectedId ? ' selected' : '';
+      return `<option value="${escapeHtml(menu.id)}"${selected}>${escapeHtml(label)}</option>`;
+    }).join('');
+  }
+
+  async function openApplyMenu() {
+    if (locked()) { toast('Pricing is locked for this event', true); return; }
+    let menus = [];
+    try {
+      menus = (await listSavedMenus()) || [];
+    } catch (err) {
+      toast(err.message || 'Could not load saved menus', true);
+      return;
+    }
+
+    const el = openModal({
+      title: 'Apply menu',
+      bodyHtml: menus.length ? `
+        <div class="admin-drawer-form">
+          <p class="admin-modal-confirm-msg">Copies the saved menu onto this event. Products already here keep their prices unless you overwrite them. Projected serves and deal costs are left alone.</p>
+          <label class="admin-field"><span class="admin-label">Saved menu</span>
+            <select class="admin-select" id="applyMenu">${savedMenuOptions(menus)}</select></label>
+          <label class="plan-check"><input type="checkbox" id="applyRefresh"> Overwrite prices already on this event</label>
+          <p class="plan-form-err" id="applyMenuErr" hidden></p>
+        </div>` : `
+        <p class="admin-modal-confirm-msg">No saved menus yet. Save this event’s menu, then apply that same menu to any other event.</p>`,
+      footHtml: `
+        <div class="admin-modal-confirm-foot">
+          ${menus.length ? '<button type="button" class="admin-drawer-btn admin-drawer-btn--danger" data-delete>Delete</button>' : ''}
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>${menus.length ? 'Apply menu' : 'Save this menu'}</button>
+        </div>`,
+    });
+    el.querySelector('[data-cancel]').onclick = closeModal;
+    if (!menus.length) {
+      el.querySelector('[data-ok]').onclick = async () => {
+        await flushSaves();
+        showSaveMenu(el);
+      };
+      return;
+    }
+
+    let pendingDeleteId = '';
+    const deleteBtn = el.querySelector('[data-delete]');
+    el.querySelector('#applyMenu').addEventListener('change', () => {
+      pendingDeleteId = '';
+      deleteBtn.textContent = 'Delete';
+      el.querySelector('#applyMenuErr').hidden = true;
+    });
+    deleteBtn.onclick = async () => {
+      const id = el.querySelector('#applyMenu').value;
+      const menu = menus.find((m) => m.id === id);
+      const err = el.querySelector('#applyMenuErr');
+      if (!menu) return;
+      if (pendingDeleteId !== id) {
+        pendingDeleteId = id;
+        deleteBtn.textContent = 'Confirm delete';
+        err.textContent = `Delete “${menu.name}”? Events that already used it keep their own copy.`;
+        err.hidden = false;
+        return;
+      }
+      deleteBtn.disabled = true;
+      try {
+        await deleteSavedMenu(id);
+        menus = menus.filter((m) => m.id !== id);
+        pendingDeleteId = '';
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Delete';
+        toast(`Deleted “${menu.name}”`);
+        if (!menus.length) {
+          closeModal();
+          return;
+        }
+        el.querySelector('#applyMenu').innerHTML = savedMenuOptions(menus);
+        err.hidden = true;
+      } catch (e2) {
+        deleteBtn.disabled = false;
+        err.textContent = e2.message || 'Could not delete menu';
+        err.hidden = false;
+      }
+    };
+
+    el.querySelector('[data-ok]').onclick = async () => {
+      const id = el.querySelector('#applyMenu').value;
+      const menu = menus.find((m) => m.id === id);
+      const refresh = el.querySelector('#applyRefresh').checked;
+      const err = el.querySelector('#applyMenuErr');
+      if (!menu) { err.textContent = 'Choose a menu'; err.hidden = false; return; }
+      el.querySelector('[data-ok]').disabled = true;
+      try {
+        const added = Number(await applySavedMenu(ctx.eventId, menu.id, refresh)) || 0;
+        closeModal();
+        await reload();
+        const addedLabel = `${added} product${added === 1 ? '' : 's'} added`;
+        toast(refresh
+          ? `${menu.name} applied — ${addedLabel}, prices overwritten`
+          : (added
+            ? `${addedLabel} from ${menu.name}. Existing prices were left as they are.`
+            : `Every product on ${menu.name} is already on this menu. Prices were left as they are.`));
+      } catch (e2) {
+        el.querySelector('[data-ok]').disabled = false;
+        err.textContent = e2.message || 'Could not apply menu';
+        err.hidden = false;
+      }
+    };
+  }
+
   function onToolbarAction(e) {
     const action = e.detail?.action;
     const handlers = {
+      'plan-save-menu': () => { void openSaveMenu(); },
+      'plan-apply-menu': () => { void openApplyMenu(); },
       'plan-seed': openSeedDialog,
       'plan-add-product': openAddProduct,
       'plan-add-scenario': openAddScenario,
@@ -962,9 +1056,8 @@ export function mountPlanningPanel(route) {
 
   async function reload() {
     await flushSaves();
-    const [event, years, items, scenarios, products, caseSizes, categories] = await Promise.all([
+    const [event, items, scenarios, products, caseSizes, categories] = await Promise.all([
       loadEventPricing(ctx.eventId),
-      listPriceYears(),
       listEventMenu(ctx.eventId),
       listScenarios(ctx.eventId),
       loadLibraryProducts(),
@@ -974,21 +1067,17 @@ export function mountPlanningPanel(route) {
     if (ctx.abort) return;
     if (!event) throw new Error('Event not found');
     ctx.event = event;
-    ctx.years = years || [];
-    ctx.year = ctx.years.find((y) => y.id === event.price_year_id) || null;
     ctx.items = new Map((items || []).map((i) => [i.product_id, i]));
     ctx.scenarios = scenarios || [];
     ctx.products = (products || []).filter((p) => !p.archived && (p.product_kind || 'stock') === 'stock');
     ctx.productById = new Map((products || []).map((p) => [p.id, p]));
     ctx.caseSizes = caseSizes || [];
     ctx.categories = categories || [];
-    const [house, accounts, clientId] = await Promise.all([
-      listHousePrices(event.price_year_id),
+    const [accounts, clientId] = await Promise.all([
       listAccounts().catch(() => null),
       loadEventClientAccount(ctx.eventId).catch(() => null),
     ]);
     if (ctx.abort) return;
-    ctx.house = new Map((house || []).map((h) => [h.product_id, h]));
     ctx.accounts = accounts;
     ctx.clientAccountId = clientId;
     recomputeAll();
@@ -1016,8 +1105,7 @@ export function mountPlanningPanel(route) {
     else onGridInput(e);
   });
   panel.addEventListener('change', (e) => {
-    if (e.target.closest('#planSettings')) onSettingsChange(e);
-    else void onGridChange(e);
+    if (!e.target.closest('#planSettings')) void onGridChange(e);
   });
   panel.addEventListener('click', onPanelClick);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);

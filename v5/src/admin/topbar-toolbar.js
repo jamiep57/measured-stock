@@ -36,11 +36,23 @@ export const PANEL_TOOLBAR = {
       label: 'Menu',
       items: [
         {
+          id: 'plan-save-menu',
+          icon: 'copy',
+          label: 'Save menu',
+          title: 'Save this event’s menu so it can be applied to any event',
+          primary: true,
+        },
+        {
+          id: 'plan-apply-menu',
+          icon: 'library',
+          label: 'Apply menu',
+          title: 'Copy a saved menu onto this event',
+        },
+        {
           id: 'plan-seed',
           icon: 'sparkles',
-          label: 'Seed from house menu',
-          title: 'Copy the price year’s house menu onto this event',
-          primary: true,
+          label: 'Add stock products',
+          title: 'Add products already on this event to the menu. Existing menu prices stay as they are.',
         },
         {
           id: 'plan-add-product',
@@ -86,21 +98,6 @@ export const PANEL_TOOLBAR = {
           icon: 'plus',
           label: 'New order',
           title: 'Create a purchase order',
-        },
-      ],
-    },
-  ],
-  'price-years': [
-    {
-      id: 'actions',
-      label: 'Price years',
-      items: [
-        {
-          id: 'price-year-new',
-          icon: 'plus',
-          label: 'New year',
-          title: 'Create a price year',
-          primary: true,
         },
       ],
     },

@@ -1,6 +1,6 @@
 /**
- * Planning data access — price years, house / event menus, scenarios.
- * Tables from migration 068; all admin-only under RLS.
+ * Planning data access — price years, event menus, saved menus, scenarios.
+ * Tables from migrations 068 and 076; all admin-only under RLS.
  */
 
 import { getDB } from '../db.js';
@@ -11,7 +11,7 @@ const enc = (v) => encodeURIComponent(v);
 export function isPlanningSchemaMissing(err) {
   const msg = String(err?.message || err || '');
   return /PGRST205|42P01|does not exist|Could not find the table|schema cache/i.test(msg)
-    && /price_years|house_menu_prices|event_menu_items|pricing_scenarios|scenario_prices|price_year_id|target_gp_pct/i.test(msg);
+    && /price_years|house_menu_prices|event_menu_items|pricing_scenarios|scenario_prices|saved_menus|saved_menu_items|price_year_id|target_gp_pct/i.test(msg);
 }
 
 function cleanPatch(patch) {
@@ -110,6 +110,41 @@ export async function upsertEventMenuItem(eventId, productId, patch) {
 
 export function seedEventMenu(eventId, refreshPrices = false) {
   return getDB().rpc('seed_event_menu', { p_event: eventId, p_refresh_prices: !!refreshPrices });
+}
+
+// ---------- saved menus ----------------------------------------------
+
+export function listSavedMenus() {
+  return getDB().select(
+    'saved_menus',
+    '?select=id,name,updated_at,saved_menu_items(product_id)&order=name.asc',
+  );
+}
+
+export function savedMenuProductCount(menu) {
+  return Array.isArray(menu?.saved_menu_items) ? menu.saved_menu_items.length : 0;
+}
+
+/** Save the products currently on an event menu. Rejects a name clash unless replace is set. */
+export function saveEventMenu(eventId, name, replace = false) {
+  return getDB().rpc('save_event_menu', {
+    p_event: eventId,
+    p_name: name,
+    p_replace: !!replace,
+  });
+}
+
+/** Copy a saved menu onto an event. Returns how many products were newly added. */
+export function applySavedMenu(eventId, menuId, refreshPrices = false) {
+  return getDB().rpc('apply_saved_menu', {
+    p_event: eventId,
+    p_menu: menuId,
+    p_refresh_prices: !!refreshPrices,
+  });
+}
+
+export function deleteSavedMenu(menuId) {
+  return getDB().remove('saved_menus', 'id=eq.' + enc(menuId));
 }
 
 export function snapshotEventCosts(eventId) {
