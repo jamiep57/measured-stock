@@ -7,6 +7,7 @@
 
 import { productStockPack, findOfferForSupplier } from '../pack-metrics.js';
 import { productStockUnit, eventProductStockKey, recipeProductByName, pluStockKeyForRecipeIngredient, recipeQtyToStockUnits, normProductName } from './recipe-stock.js';
+import { resolveSaleRecipe, saleCtxFrom } from './cocktail-square.js';
 import { findRecipe } from './square-recipes.js';
 import { parseQty, storedToForm, totalUnitsForProduct } from '../stock-entry.js';
 import {
@@ -271,9 +272,14 @@ export function computePluByProductId(
   caseSizes,
   countedIn = null,
   modifierRows = null,
+  saleCtx = null,
 ) {
   const byName = {};
   const byPool = {};
+  const catalog = [...(products || [])];
+  saleCtx?.productById?.forEach((p) => {
+    if (p?.id && !catalog.some((row) => row.id === p.id)) catalog.push(p);
+  });
 
   function accumulateSold(recipe, sold) {
     const n = Number(sold) || 0;
@@ -287,15 +293,17 @@ export function computePluByProductId(
         byPool[key] = (byPool[key] || 0) + n * qty;
         return;
       }
-      const p = recipeProductByName(ig.product_name, qty, products, caseSizes);
-      const key = pluStockKeyForRecipeIngredient(ig.product_name, qty, eps, products, caseSizes);
+      const p = recipeProductByName(ig.product_name, qty, catalog, caseSizes);
+      const key = pluStockKeyForRecipeIngredient(ig.product_name, qty, eps, catalog, caseSizes);
       if (!key) return;
       byName[key] = (byName[key] || 0) + recipeQtyToStockUnits(p, qty, n, caseSizes);
     });
   }
 
   (tillRows || []).forEach((r) => {
-    const recipe = findRecipe(recipes, r.name, r.variation);
+    const recipe = saleCtx
+      ? resolveSaleRecipe(r.name, r.variation, recipes, saleCtx).recipe
+      : findRecipe(recipes, r.name, r.variation);
     accumulateSold(recipe, r.items_sold);
   });
 
@@ -636,6 +644,8 @@ export function computeReconRows(state) {
     deliveries,
     showHidden,
     drafts = {},
+    cocktails = [],
+    menuItems = [],
   } = state;
 
   const eps = (event?.event_products || [])
@@ -647,6 +657,7 @@ export function computeReconRows(state) {
     : null;
   const pluByPid = computePluByProductId(
     eps, tillRows, recipes, products, caseSizes, countedIn, modifierRows,
+    saleCtxFrom({ cocktails, menuItems, products, caseSizes, event }),
   );
   const wastageMap = wastageByProduct(wastageBatches, event, caseSizes);
   const transferMap = transferOutByProduct(transfers, event?.id);

@@ -122,6 +122,8 @@
   box-shadow: 6px 0 10px -6px rgb(0 0 0 / 0.1);
 }
 .plan-th { min-width: 78px; }
+.plan-th--wide { min-width: 108px; }
+.plan-th .dist-bar-name { white-space: nowrap; }
 .plan-th--key .dist-bar-name { color: var(--foreground); }
 .plan-th--key { background: color-mix(in srgb, var(--secondary) 70%, #e4e4e7) !important; }
 .plan-th--scenario { padding: 4px !important; }

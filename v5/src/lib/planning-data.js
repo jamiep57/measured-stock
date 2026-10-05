@@ -238,6 +238,15 @@ export async function listEventCocktails(eventId) {
   return (rows || []).map(normaliseCocktail);
 }
 
+/** Cocktails plus menu serves, for Square matching on this event. Schema-missing → empty. */
+export async function loadEventCocktailMapping(eventId) {
+  const [cocktails, menuItems] = await Promise.all([
+    listEventCocktails(eventId).catch((err) => (isCocktailSchemaMissing(err) ? [] : Promise.reject(err))),
+    listEventMenu(eventId).catch(() => []),
+  ]);
+  return { cocktails: cocktails || [], menuItems: menuItems || [] };
+}
+
 export async function createEventCocktail(eventId, fields, ingredients) {
   const rows = await getDB().insert('event_cocktails', {
     event_id: eventId,

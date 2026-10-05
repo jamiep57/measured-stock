@@ -85,7 +85,7 @@ export function createReportInsights({ getBase, onChange }) {
 
   function reconRows() {
     const b = getBase();
-    const key = [b.event, b.closingRows, b.tillRows, b.modifierRows, b.recipes, b.deliveries, b.transfers, b.wastageBatches, b.supplierReturns];
+    const key = [b.event, b.closingRows, b.tillRows, b.modifierRows, b.recipes, b.deliveries, b.transfers, b.wastageBatches, b.supplierReturns, b.cocktails, b.menuItems];
     if (state.reconKey && key.every((v, i) => v === state.reconKey[i])) return state.reconRows;
     state.reconKey = key;
     state.reconRows = b.event ? computeReconRows({
@@ -103,6 +103,8 @@ export function createReportInsights({ getBase, onChange }) {
       deliveries: b.deliveries,
       showHidden: false,
       drafts: {},
+      cocktails: b.cocktails,
+      menuItems: b.menuItems,
     }) : [];
     return state.reconRows;
   }

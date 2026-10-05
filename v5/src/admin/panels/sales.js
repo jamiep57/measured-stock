@@ -3,12 +3,20 @@
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
-import { getDB, loadEventLite, loadCaseSizes, loadLibraryProducts, loadRecipesFull, productFromEvent } from '../../db.js';
+import { getDB, loadEventLite, loadCaseSizes, loadLibraryProducts, loadRecipesFull, loadCategories, productFromEvent } from '../../db.js';
 import {
   findRecipe, recipeIsMapped, recipeOnEvent, recipeIngredients,
   productIdForName, normVariation,
 } from '../../lib/square-recipes.js';
-import { recipeStoredProductName } from '../../lib/recipe-stock.js';
+import { recipeStoredProductName, recipeIngredientDisplayName } from '../../lib/recipe-stock.js';
+import {
+  cocktailsAwaitingSales,
+  resolveSaleRecipe,
+  saleCtxFrom,
+  squareItemName,
+} from '../../lib/cocktail-square.js';
+import { isEventPricingLocked, loadEventCocktailMapping, normaliseCocktail } from '../../lib/planning-data.js';
+import { openCocktailEditor } from '../planning-cocktail.js';
 import { parseFractionQty, displayFractionQty, formatQtyAsFraction } from '../../components/fraction-input.js';
 import { mountProductSearch } from '../../components/product-search.js';
 import { groupProductsByPool, poolSummary } from '../../lib/volume-pools.js';
@@ -86,6 +94,75 @@ function recipeSlots(recipe, eps, caseSizes = []) {
     : [{ selectedId: '', poolName: '', qty: '1' }];
 }
 
+function catalogProducts(ctx) {
+  const list = [];
+  ctx?.saleCtx?.productById?.forEach((p) => list.push(p));
+  if (!list.length) (ctx?.eps || []).forEach((ep) => { if (ep.product) list.push(ep.product); });
+  return list;
+}
+
+function tillResolution(ctx, item, variation) {
+  return resolveSaleRecipe(item, variation, ctx?.recipes, ctx?.saleCtx || {});
+}
+
+function statusOf(resolved, eps, caseSizes) {
+  if (resolved?.fromCocktail) {
+    const ready = recipeIsMapped(resolved.recipe)
+      && !resolved.incomplete?.length
+      && recipeOnEvent(resolved.recipe, eps, caseSizes);
+    return ready ? 'mapped' : 'warn';
+  }
+  const recipe = resolved?.recipe;
+  if (!recipeIsMapped(recipe)) return 'unmapped';
+  if (!recipeOnEvent(recipe, eps, caseSizes)) return 'warn';
+  return 'mapped';
+}
+
+function resolutionFor(row, ctx, itemKey, variationKey) {
+  const item = row[itemKey];
+  const variation = row[variationKey];
+  if (itemKey === 'name') return tillResolution(ctx, item, variation);
+  return { recipe: findRecipe(ctx.recipes, item, variation), incomplete: [], fromCocktail: false };
+}
+
+function countMapped(rows, ctx, itemKey, variationKey) {
+  let mapped = 0;
+  let warn = 0;
+  (rows || []).forEach((r) => {
+    const status = statusOf(resolutionFor(r, ctx, itemKey, variationKey), ctx.eps, ctx.caseSizes);
+    if (status === 'unmapped') return;
+    mapped += 1;
+    if (status === 'warn') warn += 1;
+  });
+  return { mapped, warn };
+}
+
+function renderCocktailColumns(resolved, ctx) {
+  const slots = recipeIngredients(resolved.recipe);
+  const products = catalogProducts(ctx);
+  const portionHtml = slots.length
+    ? slots.map((ig) => `<span class="mod-portion-ro">${escapeHtml(displayFractionQty(ig))}</span>`).join('')
+    : '<span class="mod-portion-ro">—</span>';
+  const names = slots.map((ig) => {
+    const label = recipeIngredientDisplayName(ig.product_name, products, ig.qty, ctx.caseSizes);
+    return `<div class="mod-cocktail-ing">${escapeHtml(label || ig.product_name || '')}</div>`;
+  }).join('');
+  const missing = (resolved.incomplete || []).map((part) =>
+    `<p class="mod-cocktail-note">Set serves per unit on ${escapeHtml(part.name)} before this can deplete stock.</p>`).join('');
+  const shared = resolved.sharedIgnored
+    ? '<p class="mod-cocktail-note">Using this event’s cocktail. The shared recipe is not used here.</p>'
+    : '';
+  const id = escapeHtml(resolved.cocktail?.id || resolved.recipe?.cocktailId || '');
+  const productHtml = `
+    <div class="mod-recipe mod-recipe--cocktail" data-cocktail-id="${id}">
+      <div class="mod-cocktail-ings">${names || '<span class="muted">No stock portions yet</span>'}</div>
+      ${missing}
+      ${shared}
+      <button type="button" class="mod-cocktail-edit" data-edit-cocktail="${id}">Edit cocktail</button>
+    </div>`;
+  return { portionHtml, productHtml };
+}
+
 function renderRecipeColumns(recipe, eps, attrs, caseSizes = []) {
   const slots = recipeSlots(recipe, eps, caseSizes);
   const portionHtml = slots.map((s) => renderPortionInput(s.qty)).join('');
@@ -103,26 +180,22 @@ function renderRecipeColumns(recipe, eps, attrs, caseSizes = []) {
   return { portionHtml, productHtml };
 }
 
-function countMapped(rows, itemKey, variationKey, recipes, eps, caseSizes = []) {
-  let mapped = 0;
-  let warn = 0;
-  rows.forEach((r) => {
-    const recipe = findRecipe(recipes, r[itemKey], r[variationKey]);
-    if (!recipeIsMapped(recipe)) return;
-    mapped += 1;
-    if (!recipeOnEvent(recipe, eps, caseSizes)) warn += 1;
-  });
-  return { mapped, warn };
-}
-
 function renderMapRow({
-  recipes, eps, caseSizes, item, variation, label, sublabel, qty, attrs, rowCls,
+  ctx, recipes, eps, caseSizes, item, variation, label, sublabel, qty, attrs, rowCls, waiting,
 }) {
-  const recipe = findRecipe(recipes, item, variation);
-  const mapped = recipeIsMapped(recipe);
-  const onEvent = mapped && recipeOnEvent(recipe, eps, caseSizes);
-  const cls = rowCls || (!mapped ? 'mod-row--unmapped' : onEvent ? 'mod-row--mapped' : 'mod-row--warn');
-  const { portionHtml, productHtml } = renderRecipeColumns(recipe, eps, attrs, caseSizes);
+  const resolved = ctx
+    ? tillResolution(ctx, item, variation)
+    : { recipe: findRecipe(recipes, item, variation), fromCocktail: false };
+  const fromCocktail = !!resolved.fromCocktail;
+  const recipe = resolved.recipe;
+  const status = fromCocktail || ctx
+    ? statusOf(resolved, eps, caseSizes)
+    : (!recipeIsMapped(recipe) ? 'unmapped' : recipeOnEvent(recipe, eps, caseSizes) ? 'mapped' : 'warn');
+  const cls = rowCls || (status === 'mapped' ? 'mod-row--mapped' : status === 'warn' ? 'mod-row--warn' : 'mod-row--unmapped');
+  const { portionHtml, productHtml } = fromCocktail
+    ? renderCocktailColumns(resolved, ctx)
+    : renderRecipeColumns(recipe, eps, attrs, caseSizes);
+  const qtyHtml = waiting ? '<span class="mod-qty--waiting">Waiting</span>' : fmtNum(qty);
 
   return `
     <tr class="mod-prod-row mod-row ${cls}" ${attrs}>
@@ -134,8 +207,8 @@ function renderMapRow({
           ${sublabel ? `<span class="mod-item-meta">${escapeHtml(sublabel)}</span>` : ''}
         </div>
       </th>
-      <td class="mod-num mod-qty">${fmtNum(qty)}</td>
-      <td class="mod-portion-cell mod-cell--edit">
+      <td class="mod-num mod-qty">${qtyHtml}</td>
+      <td class="${fromCocktail ? 'mod-portion-cell' : 'mod-portion-cell mod-cell--edit'}">
         <div class="mod-portion-stack">${portionHtml}</div>
       </td>
       <td class="mod-map-cell">${productHtml}</td>
@@ -144,11 +217,8 @@ function renderMapRow({
 
 const MAP_STATUS_RANK = { unmapped: 0, warn: 1, mapped: 2 };
 
-function rowMapStatus(row, recipes, eps, itemKey, variationKey, caseSizes = []) {
-  const recipe = findRecipe(recipes, row[itemKey], row[variationKey]);
-  if (!recipeIsMapped(recipe)) return 'unmapped';
-  if (!recipeOnEvent(recipe, eps, caseSizes)) return 'warn';
-  return 'mapped';
+function rowMapStatus(row, ctx, itemKey, variationKey) {
+  return statusOf(resolutionFor(row, ctx, itemKey, variationKey), ctx.eps, ctx.caseSizes);
 }
 
 function sortMapRows(list, ctx, { nameKey, qtyKey, itemKey, variationKey }) {
@@ -159,8 +229,8 @@ function sortMapRows(list, ctx, { nameKey, qtyKey, itemKey, variationKey }) {
         || (a[nameKey] || '').localeCompare(b[nameKey] || '');
     }
     if (key === 'status') {
-      const sa = MAP_STATUS_RANK[rowMapStatus(a, ctx.recipes, ctx.eps, itemKey, variationKey, ctx.caseSizes)] ?? 9;
-      const sb = MAP_STATUS_RANK[rowMapStatus(b, ctx.recipes, ctx.eps, itemKey, variationKey, ctx.caseSizes)] ?? 9;
+      const sa = MAP_STATUS_RANK[rowMapStatus(a, ctx, itemKey, variationKey)] ?? 9;
+      const sb = MAP_STATUS_RANK[rowMapStatus(b, ctx, itemKey, variationKey)] ?? 9;
       if (sa !== sb) return sa - sb;
       return (a[nameKey] || '').localeCompare(b[nameKey] || '');
     }
@@ -214,6 +284,31 @@ function uniqueGroupLabels(rows, key, fallback = 'Uncategorised') {
   return [...new Set((rows || []).map((r) => r[key] || fallback))].sort((a, b) => a.localeCompare(b));
 }
 
+function tillDisplayRows(ctx) {
+  const waiting = cocktailsAwaitingSales(ctx.cocktails, ctx.tillRows).map((cocktail) => ({
+    name: squareItemName(cocktail),
+    variation: String(cocktail.square_variation || '').trim() || 'Regular',
+    items_sold: null,
+    category: 'Cocktails',
+    waiting: true,
+    cocktailId: cocktail.id,
+    cocktailName: cocktail.name || '',
+  }));
+  return [...(ctx.tillRows || []), ...waiting];
+}
+
+function tillSublabel(row, resolved) {
+  const bits = [];
+  if (row.variation && normVariation(row.variation) !== 'regular') bits.push(row.variation);
+  const cocktailName = resolved?.fromCocktail
+    ? (resolved.recipe?.cocktailName || row.cocktailName || '')
+    : (row.cocktailName || '');
+  if (cocktailName && cocktailName.trim().toLowerCase() !== String(row.name || '').trim().toLowerCase()) {
+    bits.push(cocktailName);
+  }
+  return bits.join(' · ');
+}
+
 function renderTillGridBody(ctx) {
   const rows = filterTillRows(ctx);
   if (!rows.length) {
@@ -227,19 +322,19 @@ function renderTillGridBody(ctx) {
       <td colspan="3" class="dist-cat-scroll"></td>
     </tr>`;
     grouped[cat].forEach((row) => {
-      const varLabel = row.variation && normVariation(row.variation) !== 'regular'
-        ? row.variation
-        : '';
+      const resolved = tillResolution(ctx, row.name, row.variation);
       html += renderMapRow({
+        ctx,
         recipes: ctx.recipes,
         eps: ctx.eps,
         caseSizes: ctx.caseSizes,
         item: row.name,
         variation: row.variation,
         label: row.name,
-        sublabel: varLabel,
+        sublabel: tillSublabel(row, resolved),
         qty: row.items_sold,
         attrs: tillAttrs(row),
+        waiting: !!row.waiting,
       });
     });
   });
@@ -279,13 +374,13 @@ function filterTillRows(ctx) {
   const q = (ctx.searchQuery || '').trim().toLowerCase();
   const status = ctx.mapFilter || '';
   const cat = ctx.categoryFilter || '';
-  return (ctx.tillRows || []).filter((r) => {
+  return tillDisplayRows(ctx).filter((r) => {
     if (cat && (r.category || 'Uncategorised') !== cat) return false;
     if (status) {
-      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'name', 'variation', ctx.caseSizes) !== status) return false;
+      if (rowMapStatus(r, ctx, 'name', 'variation') !== status) return false;
     }
     if (!q) return true;
-    const hay = [r.name, r.variation, r.category].join(' ').toLowerCase();
+    const hay = [r.name, r.variation, r.category, r.cocktailName].join(' ').toLowerCase();
     return hay.includes(q);
   });
 }
@@ -297,7 +392,7 @@ function filterModRows(ctx) {
   return (ctx.modRows || []).filter((r) => {
     if (set && (r.modifier_set || 'Uncategorised') !== set) return false;
     if (status) {
-      if (rowMapStatus(r, ctx.recipes, ctx.eps, 'modifier', 'modifier_set', ctx.caseSizes) !== status) return false;
+      if (rowMapStatus(r, ctx, 'modifier', 'modifier_set') !== status) return false;
     }
     if (!q) return true;
     const hay = [r.modifier, r.modifier_set].join(' ').toLowerCase();
@@ -324,6 +419,11 @@ export function mountSalesPanel(route) {
     pools: [],
     caseSizes: [],
     recipes: [],
+    cocktails: [],
+    menuItems: [],
+    saleCtx: saleCtxFrom(),
+    libraryProducts: [],
+    categories: null,
     tillImport: null,
     tillRows: [],
     modImport: null,
@@ -379,7 +479,7 @@ export function mountSalesPanel(route) {
   }
 
   function paintTillStats() {
-    const { mapped, warn } = countMapped(ctx.tillRows, 'name', 'variation', ctx.recipes, ctx.eps, ctx.caseSizes);
+    const { mapped, warn } = countMapped(ctx.tillRows, ctx, 'name', 'variation');
     const qtyTotal = ctx.tillRows.reduce((s, r) => s + (Number(r.items_sold) || 0), 0);
     const cols = warn ? 5 : 4;
     return `
@@ -393,7 +493,7 @@ export function mountSalesPanel(route) {
   }
 
   function paintModStats() {
-    const { mapped, warn } = countMapped(ctx.modRows, 'modifier', 'modifier_set', ctx.recipes, ctx.eps, ctx.caseSizes);
+    const { mapped, warn } = countMapped(ctx.modRows, ctx, 'modifier', 'modifier_set');
     const qtyTotal = ctx.modRows.reduce((s, r) => s + (Number(r.qty_sold) || 0), 0);
     const cols = warn ? 5 : 4;
     return `
@@ -425,7 +525,7 @@ export function mountSalesPanel(route) {
 
   function syncSalesFilterContext() {
     const isItems = ctx.tab === 'items';
-    const sourceRows = isItems ? ctx.tillRows : ctx.modRows;
+    const sourceRows = isItems ? tillDisplayRows(ctx) : ctx.modRows;
     const groups = isItems
       ? uniqueGroupLabels(sourceRows, 'category')
       : uniqueGroupLabels(sourceRows, 'modifier_set');
@@ -662,6 +762,7 @@ export function mountSalesPanel(route) {
       ? [scope]
       : [...scope.querySelectorAll('.mod-recipe')];
     recipeEls.forEach((recipeEl) => {
+      if (recipeEl.hasAttribute('data-cocktail-id')) return;
       const tr = recipeEl.closest('tr');
       recipeEl.querySelectorAll('.mod-ing').forEach((slot) => {
         mountIngredientSearch(slot, recipeEl);
@@ -757,6 +858,7 @@ export function mountSalesPanel(route) {
   }
 
   async function handleRecipeSave(recipeEl, { toastOnSave = true } = {}) {
+    if (recipeEl?.hasAttribute('data-cocktail-id')) return;
     const { item, variation } = recipeKeysFromEl(recipeEl);
     const ingredients = readIngredientsFromRecipeEl(recipeEl);
     const hadRecipe = recipeIsMapped(findRecipe(ctx.recipes, item, variation));
@@ -781,7 +883,9 @@ export function mountSalesPanel(route) {
 
   function paint() {
     const isItems = ctx.tab === 'items';
-    const rows = isItems ? ctx.tillRows : ctx.modRows;
+    const hasRows = isItems
+      ? tillDisplayRows(ctx).length > 0
+      : ctx.modRows.length > 0;
     const stats = isItems ? paintTillStats() : paintModStats();
     const emptyMsg = isItems
       ? 'No item sales imported yet. Use <strong>Import item sales</strong> in the toolbar.'
@@ -790,7 +894,7 @@ export function mountSalesPanel(route) {
     panel.innerHTML = `
       ${paintTabs()}
       ${stats}
-      ${rows.length
+      ${hasRows
     ? gridShell({
       nameCol: isItems ? 'Till item' : 'Modifier',
       qtyCol: isItems ? 'Items sold' : 'Qty sold',
@@ -811,7 +915,7 @@ export function mountSalesPanel(route) {
     bindRecipeControls();
     syncTheadHeight();
     syncSalesFilterContext();
-    if (rows.length) startCollab();
+    if (hasRows) startCollab();
     else stopCollab();
   }
 
@@ -956,14 +1060,81 @@ export function mountSalesPanel(route) {
     return modFileInput;
   }
 
+  function rebuildSaleCtx() {
+    const products = [...(ctx.libraryProducts || [])];
+    (ctx.eps || []).forEach((ep) => {
+      if (ep.product?.id && !products.some((p) => p.id === ep.product.id)) products.push(ep.product);
+    });
+    ctx.saleCtx = saleCtxFrom({
+      cocktails: ctx.cocktails,
+      menuItems: ctx.menuItems,
+      products,
+      caseSizes: ctx.caseSizes,
+      event: ctx.event,
+    });
+  }
+
+  function squareTaken(square, variation, exceptId) {
+    const key = square.trim().toLowerCase();
+    const variant = variation.trim().toLowerCase();
+    return (ctx.cocktails || []).some((c) => {
+      if (c.id === exceptId) return false;
+      if (String(c.square_item_name || '').trim().toLowerCase() !== key) return false;
+      return String(c.square_variation || '').trim().toLowerCase() === variant;
+    });
+  }
+
+  async function editCocktail(id) {
+    const cocktail = (ctx.cocktails || []).find((c) => c.id === id);
+    if (!cocktail) return;
+    if (!ctx.categories) ctx.categories = await loadCategories().catch(() => []);
+    if (!ctx.libraryProducts?.length) {
+      ctx.libraryProducts = await loadLibraryProducts().catch(() => []);
+      rebuildSaleCtx();
+    }
+    const products = (ctx.libraryProducts || []).filter((p) => !p.archived && (p.product_kind || 'stock') === 'stock');
+    openCocktailEditor({
+      cocktail,
+      ctx: {
+        event: ctx.event,
+        eventId: ctx.eventId,
+        products,
+        productById: ctx.saleCtx.productById,
+        items: ctx.saleCtx.items,
+        caseSizes: ctx.caseSizes,
+        categories: ctx.categories || [],
+      },
+      locked: isEventPricingLocked(ctx.event),
+      nameTaken: (name, exceptId) => {
+        const key = name.trim().toLowerCase();
+        return (ctx.cocktails || []).some((c) => c.id !== exceptId && String(c.name || '').trim().toLowerCase() === key);
+      },
+      squareTaken,
+      onSaved: (saved) => {
+        const next = normaliseCocktail(saved);
+        const idx = ctx.cocktails.findIndex((c) => c.id === next.id);
+        if (idx >= 0) ctx.cocktails[idx] = next;
+        else ctx.cocktails.push(next);
+        rebuildSaleCtx();
+        paint();
+      },
+      onDeleted: (cid) => {
+        ctx.cocktails = ctx.cocktails.filter((c) => c.id !== cid);
+        rebuildSaleCtx();
+        paint();
+      },
+    });
+  }
+
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, modImport, recipes, caseSizes] = await Promise.all([
+    const [event, tillImport, modImport, recipes, caseSizes, mapping] = await Promise.all([
       loadEventLite(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
       DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
       loadRecipesFull(),
       loadCaseSizes(),
+      loadEventCocktailMapping(ctx.eventId),
     ]);
     if (ctx.abort) return;
     ctx.event = event;
@@ -975,20 +1146,25 @@ export function mountSalesPanel(route) {
     ctx.modImport = modImport;
     ctx.modRows = modImport?.rows || [];
     ctx.recipes = recipes || [];
-    if (!ctx.tillRows.length && ctx.modRows.length) ctx.tab = 'modifiers';
+    ctx.cocktails = mapping.cocktails || [];
+    ctx.menuItems = mapping.menuItems || [];
+    rebuildSaleCtx();
+    if (!ctx.tillRows.length && ctx.modRows.length && !ctx.cocktails.length) ctx.tab = 'modifiers';
     paint();
 
     // Volume pools come from the library — defer so the mapping grid paints first.
     try {
       const libraryProducts = await loadLibraryProducts().catch(() => []);
       if (ctx.abort) return;
+      ctx.libraryProducts = libraryProducts || [];
       ctx.pools = groupProductsByPool(libraryProducts || []).map((pool) => ({
         name: pool.name,
         key: pool.key,
         meta: `Volume pool · ${poolSummary(pool, ctx.caseSizes)}`,
         searchText: pool.members.map((m) => m.name || '').join(' '),
       }));
-      if (ctx.tab === 'modifiers') paint();
+      rebuildSaleCtx();
+      if (ctx.tab === 'modifiers' || ctx.cocktails.length) paint();
     } catch (err) {
       if (ctx.abort) return;
       reportError(err, { source: 'admin.sales.load.pools', silent: true });
@@ -1034,6 +1210,11 @@ export function mountSalesPanel(route) {
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   panel.addEventListener('keydown', onRecipeTabNav);
+  panel.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-edit-cocktail]');
+    if (!btn) return;
+    editCocktail(btn.dataset.editCocktail);
+  });
 
   reload().catch((err) => {
     reportError(err, { source: 'admin.sales.reload', silent: true });

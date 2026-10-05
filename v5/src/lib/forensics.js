@@ -29,6 +29,7 @@ import {
   epOpeningStock,
   leftToAllocate,
 } from './opening-stock.js';
+import { saleCtxFrom } from './cocktail-square.js';
 
 const EPS = 0.05;
 
@@ -148,6 +149,13 @@ export function buildAuditContext(raw = {}) {
   const transferMap = transferOutByProduct(transfers, eventId);
   const pluByPid = computePluByProductId(
     eps, tillRows, recipes, products, caseSizes, countedIn, modifierRows,
+    saleCtxFrom({
+      cocktails: raw.cocktails,
+      menuItems: raw.menuItems,
+      products,
+      caseSizes,
+      event,
+    }),
   );
 
   const reconRows = eps

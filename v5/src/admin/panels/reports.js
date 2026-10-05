@@ -5,6 +5,7 @@
 
 import { $, escapeHtml, toast, formatMoney, fmtDateTime } from '../../lib/util.js';
 import { getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, productsFromEvent } from '../../db.js';
+import { loadEventCocktailMapping } from '../../lib/planning-data.js';
 import {
   buildSupplierDeliveryCostReport,
   supplierDeliveryCostCsv,
@@ -115,6 +116,8 @@ export function mountReportsPanel(route) {
     supplierReturns: [],
     salesGroup: 'item',
     location: '',
+    cocktails: [],
+    menuItems: [],
   };
 
   const insightFilters = () => ({
@@ -241,6 +244,8 @@ export function mountReportsPanel(route) {
       deliveries: ctx.deliveries,
       showHidden: false,
       drafts: {},
+      cocktails: ctx.cocktails,
+      menuItems: ctx.menuItems,
     });
 
     if (!reconRows.length) {
@@ -777,7 +782,7 @@ export function mountReportsPanel(route) {
     compute();
     paint();
 
-    const [deliveries, transfers, tillImport, modImport, recipes, wastage, closingRows, supplierReturns] = await Promise.all([
+    const [deliveries, transfers, tillImport, modImport, recipes, wastage, closingRows, supplierReturns, mapping] = await Promise.all([
       DB.deliveries.forEvent(ctx.eventId),
       DB.transfers.forEvent(ctx.eventId),
       DB.tillImports.forEvent(ctx.eventId).catch(() => null),
@@ -786,6 +791,7 @@ export function mountReportsPanel(route) {
       DB.wastage.forEvent(ctx.eventId).catch(() => []),
       DB.closing.forEvent(ctx.eventId).catch(() => []),
       DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
+      loadEventCocktailMapping(ctx.eventId).catch(() => ({ cocktails: [], menuItems: [] })),
     ]);
     if (ctx.abort) return;
     ctx.deliveries = deliveries || [];
@@ -793,6 +799,8 @@ export function mountReportsPanel(route) {
     ctx.tillRows = tillImport?.rows || [];
     ctx.modifierRows = modImport?.rows || [];
     ctx.recipes = recipes || [];
+    ctx.cocktails = mapping.cocktails;
+    ctx.menuItems = mapping.menuItems;
     ctx.products = productsFromEvent(event);
     ctx.wastageBatches = wastage || [];
     ctx.closingRows = closingRows || [];

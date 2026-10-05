@@ -4946,8 +4946,46 @@ body.admin-drawer-open {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
-  text-align: left;
+}
+.mod-portion-ro {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.mod-cocktail-ings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mod-cocktail-ing {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+.mod-cocktail-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+.mod-cocktail-edit {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mod-qty--waiting {
+  font-size: 12px;
+  color: var(--muted-foreground);
 }
 
 /* Category rows */

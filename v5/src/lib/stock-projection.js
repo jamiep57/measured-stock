@@ -2,7 +2,8 @@
  * Stock run-out projection — scales imported Square sales to target revenue.
  */
 
-import { findRecipe } from './square-recipes.js';
+import { resolveSaleRecipe, saleCtxFrom } from './cocktail-square.js';
+import { recipeIsMapped } from './square-recipes.js';
 import {
   epOpeningStock,
   epDeliveredQty,
@@ -28,18 +29,21 @@ export function computeStockProjection({
   caseSizes = [],
   deliveries = null,
   wastageBatches = null,
+  cocktails = [],
+  menuItems = [],
 }) {
   const rows = tillRows || [];
   const baselineNet = rows.reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
   const target = Number(event?.target_revenue) || 0;
   const eps = event?.event_products || [];
+  const saleCtx = saleCtxFrom({ cocktails, menuItems, products, caseSizes, event });
 
   const byName = {};
   let mappedNet = 0;
 
   rows.forEach((r) => {
-    const recipe = findRecipe(recipes, r.name, r.variation);
-    if (!recipe) return;
+    const recipe = resolveSaleRecipe(r.name, r.variation, recipes, saleCtx).recipe;
+    if (!recipeIsMapped(recipe)) return;
     mappedNet += Number(r.net_sales) || 0;
     const sold = Number(r.items_sold) || 0;
     const seenProd = new Set();

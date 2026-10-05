@@ -44,16 +44,24 @@ function draftFrom(cocktail) {
       id: null,
       name: '',
       serve_label: '',
+      square_item_name: '',
+      square_variation: '',
+      squareFollowsName: true,
       menu_price: null,
       target_gp_pct: null,
       projected_serves: null,
       ingredients: [],
     };
   }
+  const name = cocktail.name || '';
+  const square = cocktail.square_item_name || '';
   return {
     id: cocktail.id,
-    name: cocktail.name || '',
+    name,
     serve_label: cocktail.serve_label || '',
+    square_item_name: square,
+    square_variation: cocktail.square_variation || '',
+    squareFollowsName: !!square.trim() && square.trim().toLowerCase() === name.trim().toLowerCase(),
     menu_price: cocktail.menu_price ?? null,
     target_gp_pct: cocktail.target_gp_pct ?? null,
     projected_serves: cocktail.projected_serves ?? null,
@@ -66,7 +74,10 @@ function draftFrom(cocktail) {
 
 function readNumber(input, { max, required } = {}) {
   const parsed = parsePlanningNumber(input.value, { max });
-  const bad = !parsed.ok || (required && (parsed.value == null || parsed.value === 0));
+  // Force a real boolean. `classList.toggle(cls, undefined)` flips the class
+  // on every keystroke, so a valid price like 11.95 can show as invalid.
+  const missing = Boolean(required && (parsed.value == null || parsed.value === 0));
+  const bad = !parsed.ok || missing;
   input.classList.toggle('is-invalid', bad);
   return bad ? null : parsed;
 }
@@ -77,12 +88,13 @@ function readNumber(input, { max, required } = {}) {
  *   ctx: object,
  *   locked: boolean,
  *   nameTaken: (name: string, exceptId: string|null) => boolean,
+ *   squareTaken: (square: string, variation: string, exceptId: string|null) => boolean,
  *   onSaved: (cocktail: object) => void,
  *   onDeleted: (id: string) => void,
  * }} opts
  */
 export function openCocktailEditor(opts) {
-  const { ctx, locked, nameTaken, onSaved, onDeleted } = opts;
+  const { ctx, locked, nameTaken, squareTaken, onSaved, onDeleted } = opts;
   const draft = draftFrom(opts.cocktail);
   const dis = locked ? 'disabled' : '';
 
@@ -94,6 +106,13 @@ export function openCocktailEditor(opts) {
       <div class="admin-drawer-form">
         <label class="admin-field"><span class="admin-label">Name</span>
           <input class="admin-input" id="cocktailName" maxlength="80" value="${escapeHtml(draft.name)}" placeholder="e.g. Margarita" ${dis}></label>
+        <div class="plan-form-row">
+          <label class="admin-field"><span class="admin-label">Square item</span>
+            <input class="admin-input" id="cocktailSquare" maxlength="200" value="${escapeHtml(draft.square_item_name)}" placeholder="Till name, if different" ${dis}></label>
+          <label class="admin-field"><span class="admin-label">Variation</span>
+            <input class="admin-input" id="cocktailVariation" maxlength="80" value="${escapeHtml(draft.square_variation)}" placeholder="Optional" ${dis}></label>
+        </div>
+        <p class="muted plan-sheet-lead">Square sales on this event match this item. It starts as the cocktail name. Clear it to keep the drink off sales mapping. A variation is only needed when Square sells this drink under one specific variation.</p>
         <label class="admin-field"><span class="admin-label">Serve label</span>
           <input class="admin-input" id="cocktailServe" maxlength="40" value="${escapeHtml(draft.serve_label)}" placeholder="Optional, e.g. Coupe" ${dis}></label>
         <div class="plan-cocktail-ings" id="cocktailIngs"></div>
@@ -252,6 +271,18 @@ export function openCocktailEditor(opts) {
   bindNumber('cocktailProjected', 'projected_serves', {});
   document.getElementById('cocktailName').addEventListener('input', (e) => {
     draft.name = e.target.value;
+    if (draft.squareFollowsName) {
+      draft.square_item_name = e.target.value;
+      const square = document.getElementById('cocktailSquare');
+      if (square) square.value = e.target.value;
+    }
+  });
+  document.getElementById('cocktailSquare').addEventListener('input', (e) => {
+    draft.square_item_name = e.target.value;
+    draft.squareFollowsName = false;
+  });
+  document.getElementById('cocktailVariation').addEventListener('input', (e) => {
+    draft.square_variation = e.target.value;
   });
   document.getElementById('cocktailServe').addEventListener('input', (e) => {
     draft.serve_label = e.target.value;
@@ -282,9 +313,19 @@ export function openCocktailEditor(opts) {
     draft.name = document.getElementById('cocktailName').value;
     draft.serve_label = document.getElementById('cocktailServe').value;
     const name = draft.name.trim();
+    const square = (draft.squareFollowsName
+      ? name
+      : document.getElementById('cocktailSquare').value).trim();
+    const variation = document.getElementById('cocktailVariation').value.trim();
     if (!name) { showErr('Name is required'); return; }
     if (name.length > 80) { showErr('Name must be 80 characters or fewer'); return; }
+    if (square.length > 200) { showErr('Square item must be 200 characters or fewer'); return; }
+    if (variation.length > 80) { showErr('Variation must be 80 characters or fewer'); return; }
     if (nameTaken(name, draft.id)) { showErr('This event already has a cocktail with that name'); return; }
+    if (square && squareTaken?.(square, variation, draft.id)) {
+      showErr('Another cocktail on this event already uses that Square item');
+      return;
+    }
     if (!draft.ingredients.length) { showErr('Add at least one stock product'); return; }
     const measureInputs = [...ingsEl.querySelectorAll('[data-measures]')];
     for (const input of measureInputs) {
@@ -303,6 +344,8 @@ export function openCocktailEditor(opts) {
     const fields = {
       name,
       serve_label: draft.serve_label.trim() || null,
+      square_item_name: square || null,
+      square_variation: variation || null,
       menu_price: price.value,
       target_gp_pct: target.value,
       projected_serves: projected.value,
@@ -324,9 +367,11 @@ export function openCocktailEditor(opts) {
     } catch (err) {
       btn.disabled = false;
       const msg = String(err?.message || '');
-      showErr(/event_cocktails_event_name_key|already exists|23505/i.test(msg)
-        ? 'This event already has a cocktail with that name'
-        : (err.message || 'Could not save cocktail'));
+      showErr(/event_cocktails_square_key|saved_menu_cocktails_square_key/i.test(msg)
+        ? 'Another cocktail on this event already uses that Square item'
+        : /event_cocktails_event_name_key|already exists|23505/i.test(msg)
+          ? 'This event already has a cocktail with that name'
+          : (err.message || 'Could not save cocktail'));
     }
   };
 

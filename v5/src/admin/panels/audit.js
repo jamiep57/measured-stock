@@ -7,6 +7,7 @@ import { initIcons } from '../../lib/icons.js';
 import {
   getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, loadSuppliers, loadRecipesFull,
 } from '../../db.js';
+import { loadEventCocktailMapping } from '../../lib/planning-data.js';
 import { getQueueStats } from '../../sync-queue.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
@@ -217,6 +218,7 @@ export function mountAuditPanel(route) {
       const [
         event, caseSizes, products, suppliers, closing, tillImport, modImport,
         recipes, wastage, transfers, supplierReturns, deliveries, distRows, syncQueueStats,
+        mapping,
       ] = await Promise.all([
         loadEventFull(ctx.eventId),
         loadCaseSizes(),
@@ -232,6 +234,7 @@ export function mountAuditPanel(route) {
         DB.deliveries.forEvent(ctx.eventId).catch(() => []),
         DB.distribution.forEvent(ctx.eventId).catch(() => []),
         getQueueStats().catch(() => ({ pending: 0, failed: 0, total: 0 })),
+        loadEventCocktailMapping(ctx.eventId).catch(() => ({ cocktails: [], menuItems: [] })),
       ]);
       if (ctx.abort) return;
 
@@ -253,6 +256,8 @@ export function mountAuditPanel(route) {
         bars: event?.bars || [],
         isBoneYard,
         syncQueueStats,
+        cocktails: mapping.cocktails,
+        menuItems: mapping.menuItems,
       });
       // Drop heavy ctx before keeping report in memory / export.
       ctx.report = {

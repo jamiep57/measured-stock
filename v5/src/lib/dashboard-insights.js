@@ -3,6 +3,7 @@
  */
 
 import { escapeHtml } from './util.js';
+import { resolveSaleRecipe, saleCtxFrom } from './cocktail-square.js';
 import { findRecipe, recipeIsMapped } from './square-recipes.js';
 import { projectionStatus } from './stock-projection.js';
 import { hrefForRoute } from '../admin/router.js';
@@ -12,17 +13,27 @@ function pct(part, total) {
   return Math.round((part / total) * 100);
 }
 
-export function countMappedRows(rows, itemKey, variationKey, recipes) {
+export function countMappedRows(rows, itemKey, variationKey, recipes, saleCtx = null) {
   let mapped = 0;
   (rows || []).forEach((r) => {
-    if (recipeIsMapped(findRecipe(recipes, r[itemKey], r[variationKey]))) mapped += 1;
+    const recipe = saleCtx
+      ? resolveSaleRecipe(r[itemKey], r[variationKey], recipes, saleCtx).recipe
+      : findRecipe(recipes, r[itemKey], r[variationKey]);
+    if (recipeIsMapped(recipe)) mapped += 1;
   });
   return mapped;
 }
 
 export function computeDashboardInsights(ctx) {
   const p = ctx.projection || {};
-  const tillMapped = countMappedRows(ctx.tillRows, 'name', 'variation', ctx.recipes);
+  const saleCtx = saleCtxFrom({
+    cocktails: ctx.cocktails,
+    menuItems: ctx.menuItems,
+    products: ctx.products,
+    caseSizes: ctx.caseSizes,
+    event: ctx.event,
+  });
+  const tillMapped = countMappedRows(ctx.tillRows, 'name', 'variation', ctx.recipes, saleCtx);
   const modMapped = countMappedRows(ctx.modRows, 'modifier', 'modifier_set', ctx.recipes);
   const tillTotal = ctx.tillRows?.length || 0;
   const modTotal = ctx.modRows?.length || 0;

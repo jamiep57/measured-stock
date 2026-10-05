@@ -5,6 +5,7 @@
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { getDB, loadEventLite, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
+import { loadEventCocktailMapping } from '../../lib/planning-data.js';
 import { computeStockProjection } from '../../lib/stock-projection.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import { initIcons } from '../../lib/icons.js';
@@ -118,11 +119,12 @@ export function mountProjectionsPanel(route) {
     paint();
 
     try {
-      const [tillImport, recipes, deliveries, wastageBatches] = await Promise.all([
+      const [tillImport, recipes, deliveries, wastageBatches, mapping] = await Promise.all([
         DB.tillImports.forEvent(ctx.eventId).catch(() => null),
         loadRecipesFull(),
         DB.deliveries.forEvent(ctx.eventId).catch(() => []),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
+        loadEventCocktailMapping(ctx.eventId),
       ]);
       if (ctx.abort) return;
 
@@ -134,6 +136,8 @@ export function mountProjectionsPanel(route) {
         caseSizes: caseSizes || [],
         deliveries: deliveries || [],
         wastageBatches: wastageBatches || [],
+        cocktails: mapping.cocktails,
+        menuItems: mapping.menuItems,
       });
       paint();
     } catch (err) {

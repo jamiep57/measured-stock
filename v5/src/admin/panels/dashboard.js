@@ -4,6 +4,7 @@
 
 import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
 import { getDB, loadEventLite, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
+import { loadEventCocktailMapping } from '../../lib/planning-data.js';
 import { computeStockProjection } from '../../lib/stock-projection.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import {
@@ -187,12 +188,13 @@ export function mountDashboardPanel(route) {
     paint();
 
     try {
-      const [tillImport, modImport, recipes, deliveries, wastageBatches] = await Promise.all([
+      const [tillImport, modImport, recipes, deliveries, wastageBatches, mapping] = await Promise.all([
         DB.tillImports.forEvent(ctx.eventId).catch(() => null),
         DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
         loadRecipesFull(),
         DB.deliveries.forEvent(ctx.eventId).catch(() => []),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
+        loadEventCocktailMapping(ctx.eventId),
       ]);
       if (ctx.abort) return;
 
@@ -201,6 +203,8 @@ export function mountDashboardPanel(route) {
       ctx.modImport = modImport;
       ctx.modRows = modImport?.rows || [];
       ctx.recipes = recipes || [];
+      ctx.cocktails = mapping.cocktails;
+      ctx.menuItems = mapping.menuItems;
       ctx.projection = computeStockProjection({
         event,
         tillRows: ctx.tillRows,
@@ -209,6 +213,8 @@ export function mountDashboardPanel(route) {
         caseSizes: ctx.caseSizes,
         deliveries: deliveries || [],
         wastageBatches: wastageBatches || [],
+        cocktails: ctx.cocktails,
+        menuItems: ctx.menuItems,
       });
       paint();
     } catch (err) {

@@ -80,7 +80,7 @@ export const PLANNING_COLUMNS = [
   { key: 'required', label: 'Required £' },
   { key: 'suggested', label: 'Suggested £' },
   { key: 'scenarios', label: 'Scenarios' },
-  { key: 'serves', label: 'Projected serves' },
+  { key: 'serves', label: 'Target serves' },
   { key: 'revenue', label: 'Revenue / GP £' },
   { key: 'deal', label: 'Deal cost & ref' },
 ];
@@ -262,7 +262,7 @@ export function mountPlanningPanel(route) {
     if (id === 'required') return th(id, 'Required', 'Price inc VAT needed to hit the target GP — click to use');
     if (id === 'suggested') return th(id, 'Suggested', 'Suggested selling price (defaults to required)');
     if (id === 'gp') return th(id, 'GP', 'Projected GP % at the menu price', 'plan-th--key');
-    if (id === 'serves') return th(id, 'Serves', 'Projected serves for the event');
+    if (id === 'serves') return th(id, 'Target serves', 'Target serves for the event', 'plan-th--wide');
     if (id === 'revenue') return th(id, 'Revenue', 'Projected revenue inc VAT');
     if (id === 'gp-amount') return th(id, 'GP £', 'Projected GP £ (ex VAT)');
     if (id === 'deal') return th(id, 'Deal cost', 'Agreed deal cost per stock unit — replaces the supplier cost');
@@ -334,7 +334,7 @@ export function mountPlanningPanel(route) {
         </td>`;
     }
     if (id === 'serves') {
-      return `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Projected serves' })}</td>`;
+      return `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Target serves' })}</td>`;
     }
     if (id === 'revenue') {
       return `<td class="plan-cell plan-out" data-out="revenue">${money(line.revenueGross, 0)}</td>`;
@@ -386,7 +386,7 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell plan-cell--scenario" title="Cocktails keep their menu price in scenarios"><span class="plan-scenario-gp ${statusClass(line.status)}">${escapeHtml(formatGpPct(line.gpPct))}</span></td>`;
     }
     if (id === 'serves') {
-      return `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Projected serves' })}</td>`;
+      return `<td class="plan-cell">${cellInput('projected_serves', item.projected_serves, { label: 'Target serves' })}</td>`;
     }
     if (id === 'revenue') {
       return `<td class="plan-cell plan-out" data-out="revenue">${money(line.revenueGross, 0)}</td>`;
@@ -979,6 +979,15 @@ export function mountPlanningPanel(route) {
       nameTaken: (name, exceptId) => {
         const key = name.trim().toLowerCase();
         return [...ctx.cocktails.values()].some((c) => c.id !== exceptId && String(c.name || '').trim().toLowerCase() === key);
+      },
+      squareTaken: (square, variation, exceptId) => {
+        const key = square.trim().toLowerCase();
+        const variant = variation.trim().toLowerCase();
+        return [...ctx.cocktails.values()].some((c) => {
+          if (c.id === exceptId) return false;
+          if (String(c.square_item_name || '').trim().toLowerCase() !== key) return false;
+          return String(c.square_variation || '').trim().toLowerCase() === variant;
+        });
       },
       onSaved: (saved) => {
         ctx.cocktails.set(saved.id, normaliseCocktail(saved));

@@ -1436,7 +1436,7 @@ const PLANNING_COLUMN_OPTIONS = [
   { value: 'required', label: 'Required price' },
   { value: 'suggested', label: 'Suggested price' },
   { value: 'scenarios', label: 'Scenarios' },
-  { value: 'serves', label: 'Projected serves' },
+  { value: 'serves', label: 'Target serves' },
   { value: 'revenue', label: 'Revenue & GP £' },
   { value: 'deal', label: 'Deal cost & ref' },
 ];

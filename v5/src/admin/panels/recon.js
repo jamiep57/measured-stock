@@ -9,6 +9,7 @@ import { initIcons } from '../../lib/icons.js';
 import {
   getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, productsFromEvent,
 } from '../../db.js';
+import { loadEventCocktailMapping } from '../../lib/planning-data.js';
 import { parseQty, storedToForm, totalUnitsForProduct } from '../../stock-entry.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { loadingTableRow } from '../../components/loading-widget.js';
@@ -408,6 +409,8 @@ export function mountReconPanel(route) {
       deliveries: ctx.deliveries,
       showHidden: ctx.showHidden,
       drafts: ctx.drafts,
+      cocktails: ctx.cocktails,
+      menuItems: ctx.menuItems,
     });
   }
 
@@ -1206,7 +1209,7 @@ export function mountReconPanel(route) {
 
     // Stage 2 — sales / movement datasets that fill derived columns.
     try {
-      const [tillImport, modImport, recipes, wastage, transfers, supplierReturns, deliveries] =
+      const [tillImport, modImport, recipes, wastage, transfers, supplierReturns, deliveries, mapping] =
         await Promise.all([
           DB.tillImports.forEvent(ctx.eventId).catch(() => null),
           DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
@@ -1215,11 +1218,14 @@ export function mountReconPanel(route) {
           DB.transfers.forEvent(ctx.eventId).catch(() => []),
           DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
           DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+          loadEventCocktailMapping(ctx.eventId),
         ]);
       if (ctx.abort) return;
       ctx.tillRows = tillImport?.rows || [];
       ctx.modifierRows = modImport?.rows || [];
       ctx.recipes = recipes || [];
+      ctx.cocktails = mapping.cocktails;
+      ctx.menuItems = mapping.menuItems;
       ctx.wastageBatches = wastage || [];
       ctx.transfers = transfers || [];
       ctx.supplierReturns = supplierReturns || [];
