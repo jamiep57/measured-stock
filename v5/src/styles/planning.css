@@ -196,14 +196,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.plan-include {
-  flex-shrink: 0;
-  width: 15px;
-  height: 15px;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-
 .plan-row--off th,
 .plan-row--off td {
   background: color-mix(in srgb, var(--secondary) 70%, var(--card));

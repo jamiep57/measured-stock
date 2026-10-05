@@ -471,7 +471,6 @@ export function mountPlanningPanel(route) {
     if (line.kind === 'cocktail') return renderCocktailRow(line);
     const pid = line.productId;
     const item = ctx.items.get(pid) || {};
-    const dis = locked() ? 'disabled' : '';
     const packMeta = line.caseSize
       ? `<span class="dist-item-meta">${escapeHtml(line.caseSize)}</span>` : '';
     const menuMeta = line.menuName && line.menuName !== line.name
@@ -481,8 +480,6 @@ export function mountPlanningPanel(route) {
     return `<tr class="dist-prod-row plan-row${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-pid="${escapeHtml(pid)}">
       <th class="dist-sticky plan-col-product${markClasses(rowKey, 'product')}" scope="row" data-col="product">
         <div class="plan-item">
-          <input type="checkbox" class="plan-include" data-field="included" ${line.included ? 'checked' : ''} ${dis}
-            aria-label="${line.included ? 'Remove from' : 'Add to'} event menu" title="${line.included ? 'On the event menu — untick to take off (product stays in the library)' : 'Off the event menu — tick to add'}">
           <div class="dist-item">
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
             ${packMeta}
@@ -518,7 +515,6 @@ export function mountPlanningPanel(route) {
 
   function renderCocktailRow(line) {
     const item = ctx.cocktails.get(line.cocktailId) || {};
-    const dis = locked() ? 'disabled' : '';
     const serve = line.serveLabel
       ? `<span class="dist-item-meta">${escapeHtml(line.serveLabel)}</span>` : '';
     const parts = line.ingredients || [];
@@ -527,8 +523,6 @@ export function mountPlanningPanel(route) {
     const parent = `<tr class="dist-prod-row plan-row plan-row--cocktail${parts.length ? ' plan-row--has-subs' : ''}${line.included ? '' : ' plan-row--off'}${rowMarkClass(rowKey)}" data-cid="${escapeHtml(line.cocktailId)}">
       <th class="dist-sticky plan-col-product${markClasses(rowKey, 'product')}" scope="row" data-col="product">
         <div class="plan-item">
-          <input type="checkbox" class="plan-include" data-field="included" ${line.included ? 'checked' : ''} ${dis}
-            aria-label="${line.included ? 'Remove cocktail from' : 'Add cocktail to'} event menu" title="${line.included ? 'On the event menu' : 'Off the event menu'}">
           <button type="button" class="plan-cocktail-open" data-edit-cocktail="${escapeHtml(line.cocktailId)}">
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
             <span class="dist-item-meta">Cocktail</span>
@@ -856,22 +850,6 @@ export function mountPlanningPanel(route) {
     input.classList.toggle('is-invalid', !ok);
     if (!ok) return;
     setItemField(pid, field, parsed.value);
-  }
-
-  async function onGridChange(e) {
-    const input = e.target;
-    if (!input.matches('.plan-include')) return;
-    const row = input.closest('tr.plan-row');
-    const cid = row?.dataset.cid;
-    if (cid) {
-      await setCocktailField(cid, 'included', input.checked, { immediate: true });
-      paintGrid();
-      return;
-    }
-    const pid = row?.dataset.pid;
-    if (!pid) return;
-    await setItemField(pid, 'included', input.checked, { immediate: true });
-    paintGrid();
   }
 
   let colDrag = null;
@@ -1845,9 +1823,6 @@ export function mountPlanningPanel(route) {
     else onGridInput(e);
   });
   panel.addEventListener('blur', (e) => paintMoneyInput(e.target), true);
-  panel.addEventListener('change', (e) => {
-    if (!e.target.closest('#planSettings')) void onGridChange(e);
-  });
   panel.addEventListener('click', onPanelClick);
   panel.addEventListener('contextmenu', onContextMenu);
   panel.addEventListener('pointerdown', onColPointerDown);
