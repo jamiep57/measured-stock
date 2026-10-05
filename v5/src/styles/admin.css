@@ -55,6 +55,15 @@ body:has(.admin-app) .toast {
     0 12px 32px rgb(0 0 0 / 0.22);
 }
 
+/* Right-drawer footer owns this corner. Keep the toast above it so Save stays clickable.
+   --toast-lift is the measured footer clearance (set while the drawer is open);
+   the 72px floor covers a single-row footer before that measurement lands. */
+body:has(.sheet.sheet--admin-full:not([hidden])) .toast,
+body:has(.sheet.sheet--admin-wide:not([hidden])) .toast {
+  bottom: max(var(--toast-lift, 0px), calc(var(--sidebar-gap) + 72px));
+  z-index: 210;
+}
+
 body:has(.admin-app) .toast.err {
   background: #fef2f2;
   border-color: #fecaca;

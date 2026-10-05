@@ -4,6 +4,37 @@ let closeHandler = null;
 let closeTimer = null;
 let lastFocus = null;
 let onKeyDown = null;
+let drawerToastObserver = null;
+
+function clearDrawerToastLift() {
+  drawerToastObserver?.disconnect();
+  drawerToastObserver = null;
+  document.body.style.removeProperty('--toast-lift');
+}
+
+/** Keep the corner toast above the open right-drawer footer (Save lives there). */
+function syncDrawerToastClearance(sheet) {
+  clearDrawerToastLift();
+  const rightDrawer = sheet
+    && !sheet.hidden
+    && (sheet.classList.contains('sheet--admin-full') || sheet.classList.contains('sheet--admin-wide'));
+  const foot = rightDrawer ? sheet.querySelector('.sheet-foot') : null;
+  if (!foot) return;
+
+  const apply = () => {
+    if (sheet.hidden) return;
+    const rect = foot.getBoundingClientRect();
+    if (rect.height < 1) return;
+    const gap = 12;
+    const lift = Math.round(window.innerHeight - rect.top + gap);
+    document.body.style.setProperty('--toast-lift', `${lift}px`);
+  };
+  apply();
+  if (typeof ResizeObserver !== 'undefined') {
+    drawerToastObserver = new ResizeObserver(apply);
+    drawerToastObserver.observe(foot);
+  }
+}
 
 function isAnimatedDrawer(sheet) {
   return sheet.classList.contains('sheet--admin-full')
@@ -28,6 +59,7 @@ function finishClose(sheet) {
     document.removeEventListener('keydown', onKeyDown);
     onKeyDown = null;
   }
+  clearDrawerToastLift();
   sheet.hidden = true;
   sheet.className = 'sheet';
   sheet.removeAttribute('aria-modal');
@@ -74,6 +106,7 @@ export function openSheet({ title, bodyHtml, footHtml, onClose, variant }) {
   if (variant === 'admin-full' || variant === 'admin-wide') {
     document.body.classList.add('admin-drawer-open');
   }
+  syncDrawerToastClearance(sheet);
 
   onKeyDown = (e) => {
     if (e.key === 'Escape') {
