@@ -44,6 +44,7 @@ import {
   writePlanningColumnOrder,
 } from '../../lib/planning-columns.js';
 import { cocktailLineKey, drinkKindMeta, resolveCocktailLine } from '../../lib/menu-cocktails.js';
+import { serveSizeOf } from '../../lib/menu-exports.js';
 import {
   PLANNING_MARK_IDS,
   planningCellMark,
@@ -189,10 +190,9 @@ export function mountPlanningPanel(route) {
     return [...ctx.items.values()].filter((item) => item.product_id === pid);
   }
 
-  function showServeFields(item) {
-    if (!item) return false;
-    if (item.serve_label || portionOf(item) !== 1) return true;
-    return itemsForProduct(item.product_id).length > 1;
+  function suggestedServeSize(line) {
+    if (!line || line.kind === 'cocktail') return '';
+    return serveSizeOf({ ...line, serveLabel: '' });
   }
 
   function serveLabelTaken(pid, label, exceptId) {
@@ -286,9 +286,10 @@ export function mountPlanningPanel(route) {
   function cellInput(field, value, { placeholder = '', label = '', text = false, width = '', suffix = '', money = false } = {}) {
     const dis = locked() ? 'disabled' : '';
     if (text) {
-      return `<input type="text" class="plan-cell-input plan-cell-input--text" data-field="${field}"
+      const wide = width === 'size' ? ' plan-cell-input--size' : '';
+      return `<input type="text" class="plan-cell-input plan-cell-input--text${wide}" data-field="${field}"
         value="${escapeHtml(value ?? '')}" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(label)}"
-        maxlength="120" autocomplete="off" ${dis}>`;
+        maxlength="${width === 'size' ? 40 : 120}" autocomplete="off" ${dis}>`;
     }
     const shown = money ? formatPlanningPriceInput(value) : inputValue(value);
     const hint = money ? formatPlanningPriceInput(placeholder) : placeholder;
@@ -315,7 +316,7 @@ export function mountPlanningPanel(route) {
     if (id.startsWith('scenario:')) return colOn('scenarios');
     if (id === 'gp-amount') return colOn('revenue');
     if (id === 'deal-ref') return colOn('deal');
-    if (id === 'menu' || id === 'target' || id === 'gp') return true;
+    if (id === 'size' || id === 'menu' || id === 'target' || id === 'gp') return true;
     return colOn(id);
   }
 
@@ -333,6 +334,7 @@ export function mountPlanningPanel(route) {
   }
 
   function columnHead(id) {
+    if (id === 'size') return th(id, 'Size', 'Serve the customer buys: 330ml, 440ml, pint or half', 'plan-th--size');
     if (id === 'serve') return th(id, 'Serves', 'Serves from one case (e.g. 24 cans, or 88 pints from a keg)');
     if (id === 'cost') return th(id, 'Cost', 'Cost per serve (ex VAT)');
     if (id === 'menu') return th(id, 'Menu £', 'Event menu price inc VAT', 'plan-th--key');
@@ -395,9 +397,20 @@ export function mountPlanningPanel(route) {
     return `<button type="button" class="plan-row-menu" data-row-menu aria-haspopup="menu" aria-label="Actions for ${escapeHtml(name)}">${icon('ellipsis', { size: 14 })}</button>`;
   }
 
+  function sizeCell(line, item) {
+    const typed = String(item?.serve_label || '').trim();
+    const shown = typed || suggestedServeSize(line);
+    const portion = portionOf(item);
+    const portionInput = portion !== 1
+      ? cellInput('portion', item.portion, { label: 'Share of one serve', width: 'sm' })
+      : '';
+    return `<td class="plan-cell plan-cell--text plan-cell--size">${cellInput('serve_label', shown, { text: true, placeholder: 'Pint', label: 'Serve size', width: 'size' })}${portionInput}</td>`;
+  }
+
   function columnCell(id, line, item) {
     if (line.kind === 'cocktail') return cocktailColumnCell(id, line, item);
     const dis = locked() ? 'disabled' : '';
+    if (id === 'size') return sizeCell(line, item);
     if (id === 'serve') {
       return `<td class="plan-cell">${cellInput('serves_per_unit', item.serves_per_unit, { placeholder: line.servesPerUnit ?? '', label: 'Serves from one case', width: 'sm' })}</td>`;
     }
@@ -462,6 +475,9 @@ export function mountPlanningPanel(route) {
   }
 
   function cocktailColumnCell(id, line, item) {
+    if (id === 'size') {
+      return `<td class="plan-cell plan-cell--text plan-cell--size">${cellInput('serve_label', item.serve_label, { text: true, placeholder: 'Serve', label: 'Serve size', width: 'size' })}</td>`;
+    }
     if (id === 'serve') {
       return '<td class="plan-cell"></td>';
     }
@@ -515,15 +531,6 @@ export function mountPlanningPanel(route) {
       ? `<span class="dist-item-meta">${escapeHtml(line.caseSize)}</span>` : '';
     const menuMeta = line.menuName && line.menuName !== line.name
       ? `<span class="dist-item-meta">${escapeHtml(line.menuName)}</span>` : '';
-    const serveFields = showServeFields(item)
-      ? `<span class="plan-serve-row">
-          <input type="text" class="plan-serve-name" data-field="serve_label" value="${escapeHtml(item.serve_label || '')}"
-            placeholder="Serve" maxlength="40" aria-label="Serve name" ${locked() ? 'disabled' : ''}>
-          <input type="text" inputmode="decimal" class="num-math plan-serve-portion" data-field="portion"
-            value="${escapeHtml(item.portion != null ? String(item.portion) : '')}" placeholder="1"
-            aria-label="Size of one serve" title="How much of one serve this is. A half is 0.5." ${locked() ? 'disabled' : ''}>
-        </span>`
-      : '';
     const rowKey = markRowKey(line);
     const cells = shownColumnIds().map((id) => decorateCell(columnCell(id, line, item), id, rowKey)).join('');
     const label = line.serveLabel ? `${line.name} ${line.serveLabel}` : line.name;
@@ -534,7 +541,6 @@ export function mountPlanningPanel(route) {
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
             ${packMeta}
             ${menuMeta}
-            ${serveFields}
           </div>
           ${rowMenuButton(label)}
         </div>
@@ -882,6 +888,10 @@ export function mountPlanningPanel(route) {
     if (row.dataset.cid) {
       const field = input.dataset.field;
       if (!field || field === 'included') return;
+      if (field === 'serve_label') {
+        setCocktailField(row.dataset.cid, field, input.value.trim() || null);
+        return;
+      }
       const spec = NUMERIC_FIELDS[field];
       if (!spec) return;
       const parsed = parsePlanningNumber(input.value, { max: spec.max ?? undefined });

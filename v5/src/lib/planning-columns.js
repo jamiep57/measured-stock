@@ -6,7 +6,7 @@
 
 export const PLANNING_COLUMN_ORDER_KEY = 'v5PlanningColumnOrder';
 
-const BEFORE_SCENARIOS = ['serve', 'cost', 'menu', 'target', 'required', 'suggested', 'gp'];
+const BEFORE_SCENARIOS = ['size', 'serve', 'cost', 'menu', 'target', 'required', 'suggested', 'gp'];
 const AFTER_SCENARIOS = ['serves', 'revenue', 'gp-amount', 'deal', 'deal-ref'];
 
 export function scenarioColumnId(scenarioId) {

@@ -13,7 +13,7 @@ const defaults = defaultPlanningColumnOrder(['a', 'b']);
 describe('defaultPlanningColumnOrder', () => {
   it('puts scenarios between GP and projected serves', () => {
     expect(defaults).toEqual([
-      'serve', 'cost', 'menu', 'target', 'required', 'suggested', 'gp',
+      'size', 'serve', 'cost', 'menu', 'target', 'required', 'suggested', 'gp',
       'scenario:a', 'scenario:b',
       'serves', 'revenue', 'gp-amount', 'deal', 'deal-ref',
     ]);

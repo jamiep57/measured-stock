@@ -9,6 +9,7 @@ import { PLANNING_MARK_IDS } from '../lib/planning-marks.js';
 
 const COLUMN_LABELS = {
   product: 'Product',
+  size: 'Serve size',
   serve: 'Serves',
   cost: 'Cost',
   menu: 'Menu £',
@@ -24,6 +25,7 @@ const COLUMN_LABELS = {
 };
 
 const PRODUCT_FIELDS = {
+  size: 'serve_label',
   serve: 'serves_per_unit',
   menu: 'menu_price',
   target: 'target_gp_pct',
@@ -34,6 +36,7 @@ const PRODUCT_FIELDS = {
 };
 
 const COCKTAIL_FIELDS = {
+  size: 'serve_label',
   menu: 'menu_price',
   target: 'target_gp_pct',
   suggested: 'suggested_price',
@@ -174,7 +177,9 @@ export function closePlanningContextMenu() {
  */
 export function openPlanningContextMenu(opts) {
   closePlanningContextMenu();
-  const scopeState = { value: opts.scope === 'row' ? 'row' : 'cell' };
+  const itemOnly = opts.colorMode === 'item';
+  const keepOpen = opts.keepOpenSelector || 'tr.plan-row, tr.plan-sub-row';
+  const scopeState = { value: itemOnly || opts.scope === 'row' ? 'row' : 'cell' };
   const marks = { cell: opts.marks?.cell || '', row: opts.marks?.row || '' };
   const root = document.createElement('div');
   root.className = 'plan-ctx';
@@ -191,10 +196,10 @@ export function openPlanningContextMenu(opts) {
       <div class="plan-ctx-sub" data-sub></div>
     </div>
     <div class="plan-ctx-label">Colour</div>
-    <div class="plan-ctx-scope" role="radiogroup" aria-label="Where to apply the colour">
+    ${itemOnly ? '' : `<div class="plan-ctx-scope" role="radiogroup" aria-label="Where to apply the colour">
       <button type="button" data-scope="cell" role="radio">This cell</button>
       <button type="button" data-scope="row" role="radio">Whole row</button>
-    </div>
+    </div>`}
     <div class="plan-ctx-swatches" role="radiogroup" aria-label="Colour">
       ${['', ...PLANNING_MARK_IDS].map((id) => swatchHtml(id, false)).join('')}
     </div>
@@ -211,11 +216,15 @@ export function openPlanningContextMenu(opts) {
       const on = btn.dataset.scope === scopeState.value;
       btn.setAttribute('aria-checked', on ? 'true' : 'false');
     });
-    const current = scopeState.value === 'row' ? marks.row : marks.cell;
+    const current = itemOnly || scopeState.value === 'row' ? marks.row : marks.cell;
     root.querySelectorAll('.plan-ctx-swatch').forEach((btn) => {
       btn.setAttribute('aria-checked', btn.dataset.mark === current ? 'true' : 'false');
     });
-    if (sub) sub.textContent = scopeState.value === 'row' ? 'Whole row' : (opts.columnLabel || 'This cell');
+    if (sub) {
+      sub.textContent = itemOnly
+        ? (opts.columnLabel || 'Item')
+        : (scopeState.value === 'row' ? 'Whole row' : (opts.columnLabel || 'This cell'));
+    }
   }
 
   function place() {
@@ -244,7 +253,7 @@ export function openPlanningContextMenu(opts) {
   function onPointerDown(e) {
     if (root.contains(e.target)) return;
     if (e.target.closest?.('[data-row-menu]')) return;
-    if (e.button === 2 && e.target.closest?.('tr.plan-row')) return;
+    if (e.button === 2 && keepOpen && e.target.closest?.(keepOpen)) return;
     close();
   }
 
@@ -295,10 +304,11 @@ export function openPlanningContextMenu(opts) {
     const swatch = e.target.closest('.plan-ctx-swatch');
     if (swatch) {
       const color = swatch.dataset.mark || '';
-      if (scopeState.value === 'row') marks.row = color;
+      const scope = itemOnly || scopeState.value === 'row' ? 'row' : 'cell';
+      if (scope === 'row') marks.row = color;
       else marks.cell = color;
       paintScope();
-      opts.onColor(scopeState.value, color);
+      opts.onColor(scope, color);
       return;
     }
     const action = e.target.closest('[data-action]');

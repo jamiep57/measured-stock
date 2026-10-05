@@ -123,6 +123,7 @@
 }
 .dist-grid.plan-grid { width: 100%; }
 .plan-th { width: 78px; min-width: 78px; }
+.plan-th--size { width: 120px; min-width: 120px; }
 .plan-th--narrow { width: 68px; min-width: 68px; }
 .plan-th--narrow .dist-bar-name {
   white-space: normal;
@@ -293,6 +294,8 @@
 }
 .plan-cell-input--sm { width: 56px; }
 .plan-cell-input--text { width: 110px; text-align: left; font-weight: 400; }
+.plan-cell--size { display: flex; align-items: center; gap: 4px; }
+.plan-cell-input--size { width: 72px; }
 .plan-cell-input::placeholder { color: var(--muted-foreground); opacity: 0.7; font-weight: 400; }
 .plan-cell-input:hover:not(:disabled) { border-color: var(--border); background: var(--card); }
 .plan-cell-input:focus {
@@ -605,6 +608,69 @@
 .plan-grid .plan-row--mark-violet > th:not(.plan-cell--mark),
 .plan-grid .plan-row--mark-violet > td:not(.plan-cell--mark) { background: #e7defb !important; }
 .plan-grid .plan-row--mark-violet > .plan-col-product { box-shadow: inset 3px 0 0 #6842a8, 6px 0 10px -6px rgb(0 0 0 / 0.1); }
+
+/* Same colours on every other grid and card. */
+.plan-cell--mark-sand,
+.plan-row--mark-sand > td:not(.plan-cell--mark),
+.plan-row--mark-sand > th:not(.plan-cell--mark),
+.event-card.plan-row--mark-sand,
+.ord-card.plan-row--mark-sand,
+.del-card.plan-row--mark-sand,
+.catalog-list-item.plan-row--mark-sand,
+.dash-stat.plan-row--mark-sand,
+.plan-kpi.plan-row--mark-sand,
+.wst-stat.plan-row--mark-sand { background: #f3ead8 !important; }
+.plan-cell--mark-amber,
+.plan-row--mark-amber > td:not(.plan-cell--mark),
+.plan-row--mark-amber > th:not(.plan-cell--mark),
+.event-card.plan-row--mark-amber,
+.ord-card.plan-row--mark-amber,
+.del-card.plan-row--mark-amber,
+.catalog-list-item.plan-row--mark-amber,
+.dash-stat.plan-row--mark-amber,
+.plan-kpi.plan-row--mark-amber,
+.wst-stat.plan-row--mark-amber { background: #fde7c7 !important; }
+.plan-cell--mark-green,
+.plan-row--mark-green > td:not(.plan-cell--mark),
+.plan-row--mark-green > th:not(.plan-cell--mark),
+.event-card.plan-row--mark-green,
+.ord-card.plan-row--mark-green,
+.del-card.plan-row--mark-green,
+.catalog-list-item.plan-row--mark-green,
+.dash-stat.plan-row--mark-green,
+.plan-kpi.plan-row--mark-green,
+.wst-stat.plan-row--mark-green { background: #d8f3e4 !important; }
+.plan-cell--mark-sky,
+.plan-row--mark-sky > td:not(.plan-cell--mark),
+.plan-row--mark-sky > th:not(.plan-cell--mark),
+.event-card.plan-row--mark-sky,
+.ord-card.plan-row--mark-sky,
+.del-card.plan-row--mark-sky,
+.catalog-list-item.plan-row--mark-sky,
+.dash-stat.plan-row--mark-sky,
+.plan-kpi.plan-row--mark-sky,
+.wst-stat.plan-row--mark-sky { background: #d9e9fb !important; }
+.plan-cell--mark-rose,
+.plan-row--mark-rose > td:not(.plan-cell--mark),
+.plan-row--mark-rose > th:not(.plan-cell--mark),
+.event-card.plan-row--mark-rose,
+.ord-card.plan-row--mark-rose,
+.del-card.plan-row--mark-rose,
+.catalog-list-item.plan-row--mark-rose,
+.dash-stat.plan-row--mark-rose,
+.plan-kpi.plan-row--mark-rose,
+.wst-stat.plan-row--mark-rose { background: #f8dbe3 !important; }
+.plan-cell--mark-violet,
+.plan-row--mark-violet > td:not(.plan-cell--mark),
+.plan-row--mark-violet > th:not(.plan-cell--mark),
+.event-card.plan-row--mark-violet,
+.ord-card.plan-row--mark-violet,
+.del-card.plan-row--mark-violet,
+.catalog-list-item.plan-row--mark-violet,
+.dash-stat.plan-row--mark-violet,
+.plan-kpi.plan-row--mark-violet,
+.wst-stat.plan-row--mark-violet { background: #e7defb !important; }
+.plan-cell--menu { outline: 2px solid var(--foreground); outline-offset: -2px; }
 
 .plan-ctx {
   position: fixed;
