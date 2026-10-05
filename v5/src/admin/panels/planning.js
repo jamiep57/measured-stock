@@ -302,11 +302,11 @@ export function mountPlanningPanel(route) {
     if (id === 'required') return th(id, 'Required', 'Price inc VAT needed to hit the target GP — click to use');
     if (id === 'suggested') return th(id, 'Suggested', 'Suggested selling price (defaults to required)');
     if (id === 'gp') return th(id, 'GP', 'Projected GP % at the menu price', 'plan-th--key');
-    if (id === 'serves') return th(id, 'Target serves', 'Target serves for the event', 'plan-th--wide');
+    if (id === 'serves') return th(id, 'Target serves', 'Target serves for the event', 'plan-th--narrow');
     if (id === 'revenue') return th(id, 'Revenue', 'Projected revenue inc VAT');
     if (id === 'gp-amount') return th(id, 'GP £', 'Projected GP £ (ex VAT)');
     if (id === 'deal') return th(id, 'Deal cost', 'Agreed price of one can, bottle or keg. Cost per serve is this times the units in the case, divided once by Serves');
-    if (id === 'deal-ref') return th(id, 'Deal ref', 'Deal or agreement reference');
+    if (id === 'deal-ref') return th(id, 'Deal ref', 'Deal or agreement reference', 'plan-th--ref');
     if (id.startsWith('scenario:')) {
       const s = ctx.scenarios.find((x) => scenarioColumnId(x.id) === id);
       if (!s) return '';

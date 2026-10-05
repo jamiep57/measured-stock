@@ -123,7 +123,14 @@
 }
 .dist-grid.plan-grid { width: 100%; }
 .plan-th { width: 78px; min-width: 78px; }
-.plan-th--wide { width: 108px; min-width: 108px; }
+.plan-th--narrow { width: 68px; min-width: 68px; }
+.plan-th--narrow .dist-bar-name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.15;
+}
+.plan-th--ref { width: 156px; min-width: 156px; }
 .plan-th .dist-bar-name {
   display: block;
   max-width: 100%;
