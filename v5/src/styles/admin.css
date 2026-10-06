@@ -442,6 +442,21 @@ body:has(.admin-app) .toast.err {
   font-weight: 600;
 }
 .nav-link.active .lucide-icon { color: var(--foreground); }
+.nav-link.nav-link--soon,
+.nav-link.nav-link--soon:hover,
+.nav-link.nav-link--soon.active,
+.nav-link.nav-link--soon:active {
+  opacity: 0.38;
+  color: var(--muted-foreground);
+  background: none;
+  font-weight: 500;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.nav-link.nav-link--soon .lucide-icon,
+.nav-link.nav-link--soon.active .lucide-icon {
+  color: var(--muted-foreground);
+}
 
 .sidebar-nav-tools {
   margin-top: 7px;

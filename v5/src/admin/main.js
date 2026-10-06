@@ -69,6 +69,14 @@ async function render(route) {
     }
   }
 
+  if (unfinishedAdminRoute(route)) {
+    const next = route.view === 'event' && route.eventId
+      ? { view: 'event', eventId: route.eventId, panel: 'dashboard' }
+      : { view: 'home' };
+    navigate(next, { replace: true });
+    return render(parseRoute());
+  }
+
   if (!routeAllowed(route)) {
     const next = fallbackRoute(route);
     const same = next.view === route.view
@@ -154,6 +162,14 @@ async function render(route) {
   });
 }
 
+function unfinishedAdminRoute(route) {
+  return route?.view === 'kit-library' || (route?.view === 'event' && route?.panel === 'kit');
+}
+
+function navLinkUnfinished(el) {
+  return !!el?.classList?.contains('nav-link--soon') || el?.getAttribute?.('aria-disabled') === 'true';
+}
+
 function goEventPanel(panel) {
   const eventId = resolveActiveEventId(parseRoute(), state);
   if (!eventId || !panel) return false;
@@ -167,11 +183,15 @@ function wireNav() {
     const eventLink = e.target.closest('a[data-event], .nav-link-cog[data-event]');
     if (eventLink) {
       e.preventDefault();
+      if (navLinkUnfinished(eventLink)) return;
       goEventPanel(eventLink.dataset.route);
       return;
     }
     const a = e.target.closest('a[data-route]:not([data-event])');
-    if (!a) return;
+    if (!a || navLinkUnfinished(a)) {
+      if (a) e.preventDefault();
+      return;
+    }
     e.preventDefault();
     const view = a.dataset.route;
     if (view === 'home') navigate({ view: 'home' });
@@ -196,6 +216,7 @@ function wireNav() {
       const globalLink = e.target.closest('a[data-route]:not([data-event])');
       if (globalLink) {
         e.preventDefault();
+        if (navLinkUnfinished(globalLink)) return;
         const view = globalLink.dataset.route;
         if (view === 'settings') navigate({ view: 'settings', section: globalLink.dataset.section || 'users' });
         else navigate({ view });
@@ -205,6 +226,7 @@ function wireNav() {
       const a = e.target.closest('a[data-event], .nav-link-cog[data-event]');
       if (!a) return;
       e.preventDefault();
+      if (navLinkUnfinished(a)) return;
       goEventPanel(a.dataset.route);
     });
   });
