@@ -25,6 +25,7 @@ import {
 } from '../planning-context-menu.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { openSquareMenuSync } from '../square-menu-sync.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
 import { formatGpPct, roundUpToStep } from '../../lib/gp.js';
 import {
@@ -2025,6 +2026,7 @@ export function mountPlanningPanel(route) {
         if (!ctx.event) return;
         openMenuExportDialog(ctx);
       },
+      'square-menu-sync': () => { void openSquareMenuSync(ctx.eventId); },
     };
     if (!handlers[action]) return;
     e.detail.handled = true;

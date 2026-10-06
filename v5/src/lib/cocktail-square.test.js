@@ -251,3 +251,42 @@ describe('Camden Pale Ale serves', () => {
     expect(plu.camden).toBe(1);
   });
 });
+
+describe('menu rows pushed to Square', () => {
+  const lager = { id: 'lager', name: 'Utopian Lager 50L', menu_name: 'Utopian Lager', case_size: '50L', units_per_case: 1 };
+  const menuItems = [
+    { product_id: 'lager', serve_label: 'Pint', serves_per_unit: 88, portion: 1, included: true },
+    { product_id: 'lager', serve_label: 'Half', serves_per_unit: 88, portion: 0.5, included: true },
+  ];
+  const ctx = (extra = {}) => saleCtxFrom({
+    cocktails: [],
+    menuItems,
+    products: [lager],
+    caseSizes: [],
+    event: { event_products: [{ product_id: 'lager', product: lager }] },
+    ...extra,
+  });
+
+  it('maps the Square item name and serve size to the product without a recipe', () => {
+    const pint = resolveSaleRecipe('Utopian Lager', 'Pint', [], ctx()).recipe;
+    expect(pint.source).toBe('menu');
+    expect(pint.ingredients[0].qty).toBeCloseTo(1 / 88);
+    const half = resolveSaleRecipe('utopian lager', 'half', [], ctx()).recipe;
+    expect(half.ingredients[0].qty).toBeCloseTo(0.5 / 88);
+  });
+
+  it('leaves unknown serves and names unmapped', () => {
+    expect(resolveSaleRecipe('Utopian Lager', 'Jug', [], ctx()).recipe).toBeNull();
+    expect(resolveSaleRecipe('Utopian Lager 50L', 'Pint', [], ctx()).recipe).toBeNull();
+  });
+
+  it('a shared recipe still wins over the menu row', () => {
+    const recipes = [{
+      till_item: 'Utopian Lager',
+      till_variation: 'Pint',
+      ingredients: [{ product_name: 'Other', qty: 0.02, position: 0 }],
+    }];
+    const recipe = resolveSaleRecipe('Utopian Lager', 'Pint', recipes, ctx()).recipe;
+    expect(recipe.ingredients[0].product_name).toBe('Other');
+  });
+});

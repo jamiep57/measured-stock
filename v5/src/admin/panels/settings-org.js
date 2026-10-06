@@ -49,7 +49,7 @@ export function renderSquareSection() {
     </section>`;
 }
 
-const SQUARE_STATUS = 'org_id,merchant_id,environment,merchant_name,connected_at,last_sync_at,last_webhook_at,last_error';
+const SQUARE_STATUS = 'org_id,merchant_id,environment,merchant_name,scopes,connected_at,last_sync_at,last_webhook_at,last_error';
 
 function squareReason(code) {
   const reasons = {
@@ -71,11 +71,16 @@ function paintSquareStatus(body, row) {
     return;
   }
   const when = row.last_sync_at ? new Date(row.last_sync_at).toLocaleString() : 'not yet';
+  const canWriteMenu = String(row.scopes || '').split(/\s+/).includes('ITEMS_WRITE');
   body.innerHTML = `
     <p>Connected to <strong>${escapeHtml(row.merchant_name || row.merchant_id)}</strong> <span class="muted">(${escapeHtml(row.environment)})</span></p>
     <p class="muted">Last sales sync: ${escapeHtml(when)}</p>
+    ${canWriteMenu ? '' : '<p class="muted">Reconnect Square to allow menu sync. The connection was made before the app could update your Square items.</p>'}
     ${row.last_error ? `<p class="muted">${escapeHtml(row.last_error)}</p>` : ''}
-    ${admin ? '<div class="settings-square-actions"><button type="button" class="admin-drawer-btn" id="settingsSquareDisconnect">Disconnect</button></div>' : ''}`;
+    ${admin ? `<div class="settings-square-actions">
+      ${canWriteMenu ? '' : '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsSquareConnect">Reconnect to allow menu sync</button>'}
+      <button type="button" class="admin-drawer-btn" id="settingsSquareDisconnect">Disconnect</button>
+    </div>` : ''}`;
 }
 
 export function mountSquareSection() {

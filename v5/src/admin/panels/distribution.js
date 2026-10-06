@@ -28,6 +28,8 @@ import {
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TABLE_FILTER, getDistControls } from '../table-filter.js';
 import { confirmDialog } from '../../components/modal.js';
+import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { openSquareMenuSync } from '../square-menu-sync.js';
 import {
   colVisible,
   stickyColCount,
@@ -565,10 +567,18 @@ export function mountDistributionPanel(route, state) {
     bindEmptyRetry(panel, () => reload());
   });
 
+  const onToolbarAction = (e) => {
+    if (e.detail?.action !== 'square-menu-sync') return;
+    e.detail.handled = true;
+    void openSquareMenuSync(ctx.eventId);
+  };
+
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   document.addEventListener(ADMIN_TABLE_FILTER, onDistControls);
+  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
 
   return () => {
+    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     ctx.abort = true;
     stopCollab();
     Object.values(ctx.saveTimers).forEach(clearTimeout);

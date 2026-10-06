@@ -10,7 +10,7 @@ import { formatQtyAsFraction } from '../components/fraction-input.js';
 import { resolveCocktailLine } from './menu-cocktails.js';
 import { resolveMenuLine } from './planning-menu.js';
 import { recipeStoredProductName } from './recipe-stock.js';
-import { baseMenuItem } from './menu-serves.js';
+import { baseMenuItem, portionOf } from './menu-serves.js';
 import { findRecipe, normVariation, recipeIsMapped } from './square-recipes.js';
 
 function num(v) {
@@ -108,10 +108,14 @@ export function saleCtxFrom({
   const items = menuItems instanceof Map
     ? menuItems
     : new Map((menuItems || []).filter((row) => row?.product_id).map((row) => [row.product_id, row]));
+  const menuRows = menuItems instanceof Map
+    ? [...menuItems.values()].flat()
+    : (menuItems || []).filter((row) => row?.product_id);
   return {
     cocktails: cocktails || [],
     productById,
     items,
+    menuRows,
     caseSizes: caseSizes || [],
     event,
   };
@@ -155,14 +159,51 @@ export function cocktailToRecipe(cocktail, ctx = {}) {
 }
 
 /**
- * Cocktail on this event wins. Otherwise the shared recipe, unchanged.
+ * Menu row sold under its Square name: item is the product's menu name and the
+ * variation is the serve size, as the Square menu push creates them.
+ */
+export function menuRowRecipe(item, variation, ctx = {}) {
+  const want = String(item ?? '').trim().toLowerCase();
+  if (!want) return null;
+  const wantVar = normVariation(variation);
+  for (const row of ctx.menuRows || []) {
+    if (row?.included === false) continue;
+    const product = ctx.productById?.get(row.product_id);
+    if (!product) continue;
+    const name = String(product.menu_name || '').trim() || String(product.name || '').trim();
+    if (name.toLowerCase() !== want) continue;
+    if (normVariation(row.serve_label) !== wantVar) continue;
+    const siblings = (ctx.menuRows || []).filter((r) => r?.product_id === row.product_id);
+    const serves = knownServesPerUnit(product, baseMenuItem(siblings) || row, ctx.caseSizes);
+    if (!(serves > 0)) return null;
+    const portion = portionOf(row);
+    return {
+      source: 'menu',
+      till_item: name,
+      till_variation: String(row.serve_label || '').trim(),
+      ingredients: [{
+        product_name: recipeStoredProductName(product, ctx.caseSizes || []),
+        pool_name: null,
+        qty: portion / serves,
+        qty_text: portionText(portion, serves),
+        position: 0,
+      }],
+    };
+  }
+  return null;
+}
+
+/**
+ * Cocktail on this event wins. Otherwise the shared recipe, then the event's
+ * menu row with the same Square name and serve size.
  * Modifier lines should keep calling findRecipe directly.
  */
 export function resolveSaleRecipe(item, variation, recipes, ctx = {}) {
   const cocktail = findCocktailForSale(ctx.cocktails, item, variation);
   if (!cocktail) {
+    const shared = findRecipe(recipes, item, variation);
     return {
-      recipe: findRecipe(recipes, item, variation),
+      recipe: recipeIsMapped(shared) ? shared : (menuRowRecipe(item, variation, ctx) || shared),
       fromCocktail: false,
       sharedIgnored: false,
       cocktail: null,

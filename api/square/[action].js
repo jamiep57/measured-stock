@@ -1,4 +1,5 @@
 import callback from '../../lib/square/routes/callback.js';
+import catalog from '../../lib/square/routes/catalog.js';
 import connect from '../../lib/square/routes/connect.js';
 import cron from '../../lib/square/routes/cron.js';
 import disconnect from '../../lib/square/routes/disconnect.js';
@@ -10,7 +11,7 @@ import webhook from '../../lib/square/routes/webhook.js';
 // The webhook signature is computed over the raw body, so nothing here may pre-parse it.
 export const config = { api: { bodyParser: false } };
 
-const ROUTES = { callback, connect, cron, disconnect, locations, sync, webhook };
+const ROUTES = { callback, catalog, connect, cron, disconnect, locations, sync, webhook };
 
 export default async function handler(req, res) {
   const action = String(req.query?.action || '');

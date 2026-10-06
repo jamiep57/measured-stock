@@ -30,7 +30,20 @@ export function setTopbarToolbarStrips(strips) {
 
 /** Per-panel strips (left of filter/search on distribution). */
 export const PANEL_TOOLBAR = {
-  distribution: [],
+  distribution: [
+    {
+      id: 'actions',
+      label: 'Distribution',
+      items: [
+        {
+          id: 'square-menu-sync',
+          icon: 'refresh-cw',
+          label: 'Sync to Square',
+          title: 'Preview and push this menu to Square, with each bar’s till showing what is distributed to it',
+        },
+      ],
+    },
+  ],
   planning: [
     {
       id: 'actions',
@@ -84,6 +97,12 @@ export const PANEL_TOOLBAR = {
           icon: 'download',
           label: 'Export',
           title: 'Designer menu, client pack or schedule of rates',
+        },
+        {
+          id: 'square-menu-sync',
+          icon: 'refresh-cw',
+          label: 'Sync to Square',
+          title: 'Preview and push this menu and its prices to Square',
         },
       ],
     },
