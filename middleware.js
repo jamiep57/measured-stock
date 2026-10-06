@@ -79,8 +79,11 @@ export const config = {
   //   /api/auth/*             — session + user admin APIs
   //   /api/logout             — clear cookies
   //   /api/sync-catchup       — cron (CRON_SECRET inside handler)
+  //   /api/square/callback    — Square OAuth return (signed state)
+  //   /api/square/webhook     — Square order webhook (signature inside handler)
+  //   /api/square/cron        — sales backfill (CRON_SECRET inside handler)
   //   static assets           — css/js/images/fonts
   matcher: [
-    '/((?!login(?:\\.html)?$|setup(?:\\.html)?$|onboard(?:\\.html)?$|api/auth(?:/|$)|api/logout$|api/unlock$|api/sync-catchup|api/client-error$|assets/js/(?:login|setup|onboard)\\.js$|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
+    '/((?!login(?:\\.html)?$|setup(?:\\.html)?$|onboard(?:\\.html)?$|api/auth(?:/|$)|api/logout$|api/unlock$|api/sync-catchup|api/square/(?:callback|webhook|cron)|api/client-error$|assets/js/(?:login|setup|onboard)\\.js$|.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|webmanifest)$).*)',
   ],
 };

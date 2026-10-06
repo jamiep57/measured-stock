@@ -6,6 +6,7 @@ import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
 import { getDB, loadEventLite, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
 import { loadEventCocktailMapping } from '../../lib/planning-data.js';
 import { computeStockProjection } from '../../lib/stock-projection.js';
+import { loadSalesBundle } from '../../lib/sales-feed.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import {
   computeDashboardInsights,
@@ -188,9 +189,8 @@ export function mountDashboardPanel(route) {
     paint();
 
     try {
-      const [tillImport, modImport, recipes, deliveries, wastageBatches, mapping] = await Promise.all([
-        DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-        DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
+      const [sales, recipes, deliveries, wastageBatches, mapping] = await Promise.all([
+        loadSalesBundle(DB, event),
         loadRecipesFull(),
         DB.deliveries.forEvent(ctx.eventId).catch(() => []),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
@@ -198,10 +198,10 @@ export function mountDashboardPanel(route) {
       ]);
       if (ctx.abort) return;
 
-      ctx.tillImport = tillImport;
-      ctx.tillRows = tillImport?.rows || [];
-      ctx.modImport = modImport;
-      ctx.modRows = modImport?.rows || [];
+      ctx.tillImport = sales.tillImport;
+      ctx.tillRows = sales.active.tillRows;
+      ctx.modImport = sales.modImport;
+      ctx.modRows = sales.active.modifierRows;
       ctx.recipes = recipes || [];
       ctx.cocktails = mapping.cocktails;
       ctx.menuItems = mapping.menuItems;

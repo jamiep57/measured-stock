@@ -9,6 +9,7 @@ import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { getActiveOrganisation, isOrgAdmin } from '../../lib/organisations.js';
 import { roleLabel } from '../../lib/permissions.js';
 import { describeAuditRow, AUDIT_TABLE_LABELS } from '../../lib/audit-log.js';
+import { authFetch } from '../../lib/auth.js';
 
 const PAGE_SIZE = 100;
 
@@ -32,14 +33,117 @@ export function renderOrganisationSection() {
         <p class="muted settings-org-role">Your role: <strong>${escapeHtml(roleLabel(org?.role))}</strong></p>
         ${admin ? '<div><button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsOrgSave">Save</button></div>' : ''}
       </div>
+    </section>
+    <section class="settings-section" id="settingsSquare">
+      <header class="settings-card-head">
+        <div class="settings-card-head-text">
+          <h2 class="settings-card-title">Square</h2>
+          <p class="settings-card-desc muted">Connect Square to pull till sales into an event. Uploaded sales files stay available until you switch that event over.</p>
+        </div>
+      </header>
+      <div id="settingsSquareBody"><p class="muted">Loading Square…</p></div>
     </section>`;
+}
+
+const SQUARE_STATUS = 'org_id,merchant_id,environment,merchant_name,connected_at,last_sync_at,last_webhook_at,last_error';
+
+function squareReason(code) {
+  const reasons = {
+    denied: 'Square connection was cancelled.',
+    not_configured: 'Square app keys are not set on the server yet.',
+    state: 'That connection link expired. Try again.',
+    exchange: 'Square did not accept the connection.',
+    merchant_taken: 'That Square account is already connected to another organisation.',
+  };
+  return reasons[code] || 'Square could not be connected.';
+}
+
+function paintSquareStatus(body, row) {
+  const admin = isOrgAdmin();
+  if (!row) {
+    body.innerHTML = `
+      <p class="muted">Not connected.</p>
+      ${admin ? '<div class="settings-square-actions"><button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsSquareConnect">Connect Square</button></div>' : '<p class="muted">An organisation admin can connect Square.</p>'}`;
+    return;
+  }
+  const when = row.last_sync_at ? new Date(row.last_sync_at).toLocaleString() : 'not yet';
+  body.innerHTML = `
+    <p>Connected to <strong>${escapeHtml(row.merchant_name || row.merchant_id)}</strong> <span class="muted">(${escapeHtml(row.environment)})</span></p>
+    <p class="muted">Last sales sync: ${escapeHtml(when)}</p>
+    ${row.last_error ? `<p class="muted">${escapeHtml(row.last_error)}</p>` : ''}
+    ${admin ? '<div class="settings-square-actions"><button type="button" class="admin-drawer-btn" id="settingsSquareDisconnect">Disconnect</button></div>' : ''}`;
 }
 
 export function mountOrganisationSection() {
   const btn = $('settingsOrgSave');
   const input = /** @type {HTMLInputElement|null} */ ($('settingsOrgName'));
   const org = getActiveOrganisation();
-  if (!btn || !input || !org) return () => {};
+  const squareBody = $('settingsSquareBody');
+  let disposed = false;
+
+  const params = new URLSearchParams(window.location.search);
+  const squareFlag = params.get('square');
+  if (squareFlag) {
+    if (squareFlag === 'connected') toast('Square connected');
+    else toast(squareReason(params.get('reason')), true);
+    params.delete('square');
+    params.delete('reason');
+    const next = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (next ? `?${next}` : ''));
+  }
+
+  async function loadSquare() {
+    if (!squareBody || !org) return;
+    try {
+      const rows = await getDB().select(
+        'org_square_connections',
+        `?org_id=eq.${encodeURIComponent(org.id)}&select=${SQUARE_STATUS}`,
+      );
+      if (disposed) return;
+      paintSquareStatus(squareBody, rows?.[0] || null);
+    } catch (err) {
+      if (disposed) return;
+      squareBody.innerHTML = `<p class="muted">${escapeHtml(err?.message || 'Could not load Square')}</p>`;
+    }
+  }
+
+  const onSquareClick = async (event) => {
+    const connect = event.target.closest?.('#settingsSquareConnect');
+    const disconnect = event.target.closest?.('#settingsSquareDisconnect');
+    if (!connect && !disconnect) return;
+    const button = connect || disconnect;
+    button.setAttribute('disabled', '');
+    try {
+      if (connect) {
+        const res = await authFetch('/api/square/connect', { method: 'POST', body: '{}' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.url) {
+          const message = data.error === 'not_configured'
+            ? 'Square app keys are not set on the server yet.'
+            : (data.message || 'Could not start the Square connection');
+          throw new Error(message);
+        }
+        window.location.assign(data.url);
+        return;
+      }
+      const res = await authFetch('/api/square/disconnect', { method: 'POST', body: '{}' });
+      if (!res.ok) throw new Error('Could not disconnect Square');
+      toast('Square disconnected');
+      await loadSquare();
+    } catch (err) {
+      toast(String(err?.message || err), true);
+      button.removeAttribute('disabled');
+    }
+  };
+  squareBody?.addEventListener('click', onSquareClick);
+  loadSquare();
+
+  if (!btn || !input || !org) {
+    return () => {
+      disposed = true;
+      squareBody?.removeEventListener('click', onSquareClick);
+    };
+  }
 
   const onSave = async () => {
     const name = input.value.trim();
@@ -60,7 +164,11 @@ export function mountOrganisationSection() {
     }
   };
   btn.addEventListener('click', onSave);
-  return () => btn.removeEventListener('click', onSave);
+  return () => {
+    disposed = true;
+    btn.removeEventListener('click', onSave);
+    squareBody?.removeEventListener('click', onSquareClick);
+  };
 }
 
 export function renderHistorySection() {

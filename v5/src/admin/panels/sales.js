@@ -2,8 +2,12 @@
  * Square & modifiers — item sales + modifier mapping grids.
  */
 
-import { $, escapeHtml, toast } from '../../lib/util.js';
-import { getDB, loadEventLite, loadCaseSizes, loadLibraryProducts, loadRecipesFull, loadCategories, productFromEvent } from '../../db.js';
+import { $, escapeHtml, toast, isBoneYard } from '../../lib/util.js';
+import { getDB, invalidateEventCache, loadEventLite, loadCaseSizes, loadLibraryProducts, loadRecipesFull, loadCategories, productFromEvent } from '../../db.js';
+import { authFetch } from '../../lib/auth.js';
+import { getActiveOrganisation } from '../../lib/organisations.js';
+import { loadSalesBundle, mergeModifierRows, unmatchedForEvent } from '../../lib/sales-feed.js';
+import { suggestSquareLocation } from '../../lib/square-locations.js';
 import {
   findRecipe, recipeIsMapped, recipeOnEvent, recipeIngredients,
   productIdForName, normVariation,
@@ -429,6 +433,15 @@ export function mountSalesPanel(route) {
     tillRows: [],
     modImport: null,
     modRows: [],
+    salesSource: 'csv',
+    viewSource: 'csv',
+    csvTillRows: [],
+    csvModRows: [],
+    squareTillRows: [],
+    squareModRows: [],
+    squareStatus: null,
+    barLinks: [],
+    unmatchedCount: 0,
     tab: 'items',
     searchQuery: getLastProductFilter().query || '',
     mapFilter: '',
@@ -882,17 +895,192 @@ export function mountSalesPanel(route) {
     }
   }
 
+  function applyView() {
+    const live = ctx.viewSource === 'square';
+    ctx.tillRows = mergeTillRowsByItem(live ? ctx.squareTillRows : ctx.csvTillRows);
+    ctx.modRows = live ? mergeModifierRows(ctx.squareModRows) : (ctx.csvModRows || []);
+  }
+
+  function servingBars(bars) {
+    return (bars || [])
+      .filter((bar) => !isBoneYard(bar))
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
+  function paintLiveBar() {
+    const uploadLines = (ctx.csvTillRows || []).length;
+    const liveLines = (ctx.squareTillRows || []).length;
+    const using = ctx.salesSource === 'square' ? 'Square live' : 'the uploaded file';
+    const preview = ctx.viewSource !== ctx.salesSource;
+    const connected = Boolean(ctx.squareStatus?.connected);
+    const bars = servingBars(ctx.event?.bars);
+    const linkByBar = new Map((ctx.barLinks || []).map((link) => [link.bar_id, link]));
+    const taken = new Set((ctx.barLinks || []).map((link) => link.square_location_id));
+    const locations = (ctx.squareStatus?.locations || []).filter((location) =>
+      location.status !== 'INACTIVE' || taken.has(location.id));
+    const pendingTaken = new Set(taken);
+    const suggestions = [];
+    for (const bar of bars) {
+      if (linkByBar.has(bar.id)) continue;
+      const suggested = suggestSquareLocation(bar.name, locations, pendingTaken);
+      if (!suggested) continue;
+      suggestions.push(bar.id);
+      pendingTaken.add(suggested);
+    }
+    const locationRows = bars.map((bar) => {
+      const link = linkByBar.get(bar.id);
+      const options = ['<option value="">Not linked</option>'].concat(locations.map((location) => {
+        const selected = link?.square_location_id === location.id ? ' selected' : '';
+        return `<option value="${escapeHtml(location.id)}"${selected}>${escapeHtml(location.name)}</option>`;
+      }));
+      return `<span>${escapeHtml(bar.name)}</span><select class="admin-select" data-bar-location="${escapeHtml(bar.id)}" aria-label="Square location for ${escapeHtml(bar.name)}">${options.join('')}</select>`;
+    }).join('');
+    const switchLabel = ctx.viewSource === 'square' ? 'Use Square live for projections' : 'Use the upload for projections';
+    return `
+      <div class="sales-live">
+        <div class="sales-live-row">
+          <strong>Sales feed</strong>
+          <span class="muted">Projections and recon use ${escapeHtml(using)}.</span>
+          <span class="muted">Upload ${uploadLines} line${uploadLines === 1 ? '' : 's'} · Square ${liveLines} line${liveLines === 1 ? '' : 's'}</span>
+        </div>
+        <div class="sales-live-row">
+          <button type="button" class="admin-drawer-btn" data-sales-view="csv" aria-pressed="${ctx.viewSource === 'csv'}">Uploaded file</button>
+          <button type="button" class="admin-drawer-btn" data-sales-view="square" aria-pressed="${ctx.viewSource === 'square'}">Square live</button>
+          ${preview ? `<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-sales-use="${escapeHtml(ctx.viewSource)}">${switchLabel}</button>` : ''}
+          ${connected ? '<button type="button" class="admin-drawer-btn" data-square-sync>Sync now</button>' : '<span class="muted">Connect Square in Settings → Organisation to pull live sales.</span>'}
+        </div>
+        ${preview ? '<p class="muted">This grid is a preview. Projections still use the other feed.</p>' : ''}
+        ${ctx.unmatchedCount ? `<p class="muted">${ctx.unmatchedCount} order${ctx.unmatchedCount === 1 ? '' : 's'} matched more than one event and ${ctx.unmatchedCount === 1 ? 'was' : 'were'} left out.</p>` : ''}
+        ${ctx.squareStatus?.last_error ? `<p class="muted">${escapeHtml(ctx.squareStatus.last_error)}</p>` : ''}
+        ${connected && bars.length ? `
+          <div>
+            <p class="muted">Each bar’s till is a Square location. Bone Yard is not linked.</p>
+            <div class="sales-loc-grid">${locationRows}</div>
+            ${suggestions.length ? '<div class="sales-live-row"><button type="button" class="admin-drawer-btn" data-link-suggested>Link matching names</button></div>' : ''}
+          </div>` : ''}
+      </div>`;
+  }
+
+  async function setSalesSource(source) {
+    const DB = getDB();
+    await DB.update('events', `id=eq.${DB._.enc(ctx.eventId)}`, { sales_source: source });
+    invalidateEventCache(ctx.eventId);
+    ctx.salesSource = source;
+    ctx.viewSource = source;
+    if (ctx.event) ctx.event.sales_source = source;
+    applyView();
+    paint();
+    toast(source === 'square' ? 'Projections now use Square live sales' : 'Projections now use the uploaded file');
+  }
+
+  async function saveBarLocation(barId, locationId) {
+    const DB = getDB();
+    const orgId = getActiveOrganisation()?.id;
+    if (!locationId) {
+      await DB.remove('event_bar_square_locations', `bar_id=eq.${DB._.enc(barId)}`);
+      ctx.barLinks = (ctx.barLinks || []).filter((link) => link.bar_id !== barId);
+      return;
+    }
+    const location = (ctx.squareStatus?.locations || []).find((row) => row.id === locationId);
+    const row = {
+      event_id: ctx.eventId,
+      bar_id: barId,
+      square_location_id: locationId,
+      square_location_name: location?.name || null,
+    };
+    if (orgId) row.org_id = orgId;
+    const saved = await DB.upsert('event_bar_square_locations', [row], { onConflict: 'bar_id' });
+    ctx.barLinks = (ctx.barLinks || []).filter((link) => link.bar_id !== barId).concat(saved || []);
+  }
+
+  function bindLiveControls() {
+    panel.querySelectorAll('[data-sales-view]').forEach((btn) => {
+      btn.onclick = () => {
+        const next = btn.getAttribute('data-sales-view');
+        if (!next || next === ctx.viewSource) return;
+        ctx.viewSource = next;
+        applyView();
+        paint();
+      };
+    });
+    const useBtn = panel.querySelector('[data-sales-use]');
+    if (useBtn) {
+      useBtn.onclick = () => {
+        const source = useBtn.getAttribute('data-sales-use');
+        setSalesSource(source).catch((err) => toast(err.message || 'Could not switch sales feed', true));
+      };
+    }
+    const syncBtn = panel.querySelector('[data-square-sync]');
+    if (syncBtn) {
+      syncBtn.onclick = async () => {
+        syncBtn.setAttribute('disabled', '');
+        try {
+          const res = await authFetch('/api/square/sync', {
+            method: 'POST',
+            body: JSON.stringify({ event_id: ctx.eventId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || 'Square sync failed');
+          toast(`Synced ${data.orders || 0} Square order${data.orders === 1 ? '' : 's'}`);
+          await reload();
+        } catch (err) {
+          toast(err.message || 'Square sync failed', true);
+          syncBtn.removeAttribute('disabled');
+        }
+      };
+    }
+    panel.querySelectorAll('[data-bar-location]').forEach((select) => {
+      select.onchange = () => {
+        saveBarLocation(select.getAttribute('data-bar-location'), select.value)
+          .then(() => {
+            toast(select.value ? 'Bar linked to Square location' : 'Bar unlinked');
+            paint();
+          })
+          .catch((err) => toast(err.message || 'Could not save location', true));
+      };
+    });
+    const suggestBtn = panel.querySelector('[data-link-suggested]');
+    if (suggestBtn) {
+      suggestBtn.onclick = async () => {
+        const bars = servingBars(ctx.event?.bars);
+        const locations = (ctx.squareStatus?.locations || []).filter((location) => location.status !== 'INACTIVE');
+        const taken = new Set((ctx.barLinks || []).map((link) => link.square_location_id));
+        const linked = new Set((ctx.barLinks || []).map((link) => link.bar_id));
+        try {
+          for (const bar of bars) {
+            if (linked.has(bar.id)) continue;
+            const locationId = suggestSquareLocation(bar.name, locations, taken);
+            if (!locationId) continue;
+            await saveBarLocation(bar.id, locationId);
+            taken.add(locationId);
+          }
+          toast('Matching bars linked');
+          paint();
+        } catch (err) {
+          toast(err.message || 'Could not link bars', true);
+        }
+      };
+    }
+  }
+
   function paint() {
+    applyView();
     const isItems = ctx.tab === 'items';
     const hasRows = isItems
       ? tillDisplayRows(ctx).length > 0
       : ctx.modRows.length > 0;
     const stats = isItems ? paintTillStats() : paintModStats();
     const emptyMsg = isItems
-      ? 'No item sales imported yet. Use <strong>Import item sales</strong> in the toolbar.'
-      : 'No modifier sales imported yet. Use <strong>Import modifiers</strong> in the toolbar.';
+      ? (ctx.viewSource === 'square'
+        ? 'No Square sales for this event yet. Link the bars and use <strong>Sync now</strong>. The uploaded file is unchanged.'
+        : 'No item sales imported yet. Use <strong>Import item sales</strong> in the toolbar.')
+      : (ctx.viewSource === 'square'
+        ? 'No Square modifier sales for this event yet.'
+        : 'No modifier sales imported yet. Use <strong>Import modifiers</strong> in the toolbar.');
 
     panel.innerHTML = `
+      ${paintLiveBar()}
       ${paintTabs()}
       ${stats}
       ${hasRows
@@ -913,6 +1101,7 @@ export function mountSalesPanel(route) {
         patchTableFilterState('sales', { category: '' });
       };
     });
+    bindLiveControls();
     bindRecipeControls();
     syncTheadHeight();
     syncSalesFilterContext();
@@ -967,7 +1156,9 @@ export function mountSalesPanel(route) {
     }
 
     ctx.tillImport = await DB.tillImports.forEvent(ctx.eventId);
-    ctx.tillRows = mergeTillRowsByItem(ctx.tillImport?.rows);
+    ctx.csvTillRows = ctx.tillImport?.rows || [];
+    ctx.viewSource = 'csv';
+    applyView();
     ctx.tab = 'items';
     paint();
     toast(`Imported ${parsed.length} item sales line${parsed.length === 1 ? '' : 's'}`);
@@ -994,7 +1185,9 @@ export function mountSalesPanel(route) {
     })), { returning: false });
 
     ctx.modImport = await DB.modifierImports.forEvent(ctx.eventId);
-    ctx.modRows = ctx.modImport?.rows || [];
+    ctx.csvModRows = ctx.modImport?.rows || [];
+    ctx.viewSource = 'csv';
+    applyView();
     ctx.tab = 'modifiers';
     paint();
     toast(`Imported ${parsed.length} modifier line${parsed.length === 1 ? '' : 's'}`);
@@ -1006,7 +1199,8 @@ export function mountSalesPanel(route) {
     const DB = getDB();
     await DB.tillImports.removeWhere(`event_id=eq.${DB._.enc(ctx.eventId)}`);
     ctx.tillImport = null;
-    ctx.tillRows = [];
+    ctx.csvTillRows = [];
+    applyView();
     paint();
     toast('Item sales import cleared');
   }
@@ -1017,7 +1211,8 @@ export function mountSalesPanel(route) {
     const DB = getDB();
     await DB.modifierImports.removeWhere(`event_id=eq.${DB._.enc(ctx.eventId)}`);
     ctx.modImport = null;
-    ctx.modRows = [];
+    ctx.csvModRows = [];
+    applyView();
     paint();
     toast('Modifier import cleared');
   }
@@ -1129,27 +1324,63 @@ export function mountSalesPanel(route) {
 
   async function reload() {
     const DB = getDB();
-    const [event, tillImport, modImport, recipes, caseSizes, mapping] = await Promise.all([
+    const [event, recipes, caseSizes, mapping] = await Promise.all([
       loadEventLite(ctx.eventId),
-      DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-      DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
       loadRecipesFull(),
       loadCaseSizes(),
       loadEventCocktailMapping(ctx.eventId),
+    ]);
+    if (ctx.abort) return;
+    const firstLoad = !ctx.event;
+    const [bundle, links, overlap, squareRes] = await Promise.all([
+      loadSalesBundle(DB, event),
+      DB.select(
+        'event_bar_square_locations',
+        `?event_id=eq.${DB._.enc(ctx.eventId)}&select=id,bar_id,square_location_id,square_location_name`,
+      ).catch(() => []),
+      DB.select(
+        'square_orders',
+        '?unmatched_reason=eq.overlap&select=id,square_location_id,closed_at,unmatched_reason',
+      ).catch(() => []),
+      authFetch('/api/square/locations').then(async (res) => {
+        const data = await res.json().catch(() => null);
+        return res.ok && data ? data : { connected: false, locations: [] };
+      }).catch(() => ({ connected: false, locations: [] })),
     ]);
     if (ctx.abort) return;
     ctx.event = event;
     ctx.eps = (event?.event_products || []).filter((ep) => ep.product?.name);
     ctx.caseSizes = caseSizes || [];
     ctx.pools = [];
-    ctx.tillImport = tillImport;
-    ctx.tillRows = mergeTillRowsByItem(tillImport?.rows);
-    ctx.modImport = modImport;
-    ctx.modRows = modImport?.rows || [];
+    ctx.tillImport = bundle.tillImport;
+    ctx.modImport = bundle.modImport;
+    ctx.csvTillRows = bundle.csv.tillRows;
+    ctx.csvModRows = bundle.csv.modifierRows;
+    ctx.squareTillRows = bundle.square.tillRows;
+    ctx.squareModRows = bundle.square.modifierRows;
+    ctx.salesSource = bundle.salesSource;
+    if (firstLoad) ctx.viewSource = bundle.salesSource;
+    ctx.barLinks = links || [];
+    ctx.squareStatus = squareRes;
+    ctx.unmatchedCount = unmatchedForEvent(
+      overlap,
+      event,
+      (links || []).map((link) => link.square_location_id),
+    ).length;
     ctx.recipes = recipes || [];
     ctx.cocktails = mapping.cocktails || [];
     ctx.menuItems = mapping.menuItems || [];
+    if (ctx.cocktails.length) {
+      ctx.libraryProducts = await loadLibraryProducts().catch(() => []);
+      ctx.pools = groupProductsByPool(ctx.libraryProducts || []).map((pool) => ({
+        name: pool.name,
+        key: pool.key,
+        meta: `Volume pool · ${poolSummary(pool, ctx.caseSizes)}`,
+        searchText: pool.members.map((m) => m.name || '').join(' '),
+      }));
+    }
     rebuildSaleCtx();
+    applyView();
     if (!ctx.tillRows.length && ctx.modRows.length && !ctx.cocktails.length) ctx.tab = 'modifiers';
     paint();
 

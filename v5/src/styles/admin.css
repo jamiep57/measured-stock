@@ -9430,3 +9430,29 @@ label.collab-cell--peer {
 .settings-history-when { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
 .settings-history-change { word-break: break-word; }
 .settings-history-more { display: flex; justify-content: center; padding: 12px 0; }
+
+.sales-live {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 8px;
+}
+.sales-live-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.sales-live-row .admin-drawer-btn[aria-pressed="true"] {
+  outline: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+}
+.sales-loc-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 200px) minmax(180px, 320px);
+  gap: 8px 12px;
+  align-items: center;
+}
+.settings-square-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

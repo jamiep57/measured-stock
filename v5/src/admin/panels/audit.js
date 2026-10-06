@@ -8,6 +8,7 @@ import {
   getDB, loadEventFull, loadCaseSizes, loadLibraryProducts, loadSuppliers, loadRecipesFull,
 } from '../../db.js';
 import { loadEventCocktailMapping } from '../../lib/planning-data.js';
+import { loadSalesBundle } from '../../lib/sales-feed.js';
 import { getQueueStats } from '../../sync-queue.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
@@ -216,7 +217,7 @@ export function mountAuditPanel(route) {
     root.innerHTML = loadingWidget('Loading event data…');
     try {
       const [
-        event, caseSizes, products, suppliers, closing, tillImport, modImport,
+        event, caseSizes, products, suppliers, closing, sales,
         recipes, wastage, transfers, supplierReturns, deliveries, distRows, syncQueueStats,
         mapping,
       ] = await Promise.all([
@@ -225,8 +226,7 @@ export function mountAuditPanel(route) {
         loadLibraryProducts(),
         loadSuppliers(),
         DB.closing.forEvent(ctx.eventId),
-        DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-        DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
+        loadEventFull(ctx.eventId).then((loaded) => loadSalesBundle(DB, loaded)),
         loadRecipesFull(),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
         DB.transfers.forEvent(ctx.eventId).catch(() => []),
@@ -245,8 +245,8 @@ export function mountAuditPanel(route) {
         products,
         suppliers,
         closingRows: closing || [],
-        tillRows: tillImport?.rows || [],
-        modifierRows: modImport?.rows || [],
+        tillRows: sales.active.tillRows,
+        modifierRows: sales.active.modifierRows,
         recipes: recipes || [],
         wastageBatches: wastage || [],
         transfers: transfers || [],

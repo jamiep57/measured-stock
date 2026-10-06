@@ -7,6 +7,7 @@ import { $, escapeHtml, toast } from '../../lib/util.js';
 import { getDB, loadEventLite, loadCaseSizes, loadRecipesFull, productsFromEvent } from '../../db.js';
 import { loadEventCocktailMapping } from '../../lib/planning-data.js';
 import { computeStockProjection } from '../../lib/stock-projection.js';
+import { loadSalesBundle } from '../../lib/sales-feed.js';
 import { renderProjectionStats, renderProjectionTable } from '../../lib/projection-view.js';
 import { initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
@@ -119,8 +120,8 @@ export function mountProjectionsPanel(route) {
     paint();
 
     try {
-      const [tillImport, recipes, deliveries, wastageBatches, mapping] = await Promise.all([
-        DB.tillImports.forEvent(ctx.eventId).catch(() => null),
+      const [sales, recipes, deliveries, wastageBatches, mapping] = await Promise.all([
+        loadSalesBundle(DB, event),
         loadRecipesFull(),
         DB.deliveries.forEvent(ctx.eventId).catch(() => []),
         DB.wastage.forEvent(ctx.eventId).catch(() => []),
@@ -130,7 +131,7 @@ export function mountProjectionsPanel(route) {
 
       ctx.projection = computeStockProjection({
         event,
-        tillRows: tillImport?.rows || [],
+        tillRows: sales.active.tillRows,
         recipes: recipes || [],
         products: productsFromEvent(event),
         caseSizes: caseSizes || [],

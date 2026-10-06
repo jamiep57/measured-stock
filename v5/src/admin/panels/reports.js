@@ -6,6 +6,7 @@
 import { $, escapeHtml, toast, formatMoney, fmtDateTime } from '../../lib/util.js';
 import { getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, productsFromEvent } from '../../db.js';
 import { loadEventCocktailMapping } from '../../lib/planning-data.js';
+import { loadSalesBundle } from '../../lib/sales-feed.js';
 import {
   buildSupplierDeliveryCostReport,
   supplierDeliveryCostCsv,
@@ -782,11 +783,10 @@ export function mountReportsPanel(route) {
     compute();
     paint();
 
-    const [deliveries, transfers, tillImport, modImport, recipes, wastage, closingRows, supplierReturns, mapping] = await Promise.all([
+    const [deliveries, transfers, sales, recipes, wastage, closingRows, supplierReturns, mapping] = await Promise.all([
       DB.deliveries.forEvent(ctx.eventId),
       DB.transfers.forEvent(ctx.eventId),
-      DB.tillImports.forEvent(ctx.eventId).catch(() => null),
-      DB.modifierImports.forEvent(ctx.eventId).catch(() => null),
+      loadSalesBundle(DB, ctx.event),
       loadRecipesFull().catch(() => []),
       DB.wastage.forEvent(ctx.eventId).catch(() => []),
       DB.closing.forEvent(ctx.eventId).catch(() => []),
@@ -796,8 +796,8 @@ export function mountReportsPanel(route) {
     if (ctx.abort) return;
     ctx.deliveries = deliveries || [];
     ctx.transfers = transfers || [];
-    ctx.tillRows = tillImport?.rows || [];
-    ctx.modifierRows = modImport?.rows || [];
+    ctx.tillRows = sales.active.tillRows;
+    ctx.modifierRows = sales.active.modifierRows;
     ctx.recipes = recipes || [];
     ctx.cocktails = mapping.cocktails;
     ctx.menuItems = mapping.menuItems;
