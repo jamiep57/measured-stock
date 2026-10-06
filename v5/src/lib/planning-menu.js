@@ -2,16 +2,19 @@
  * Event menu planning — resolve each menu item to prices, cost and GP.
  *
  * Precedence:
- *   cost/unit   snapshot (locked) → deal override → supplier offer → product
+ *   cost/unit   snapshot (locked) → deal override → case price ÷ units → product
  *               (this is the price of one inner unit: a can, bottle, or keg)
+ *   case price  the supplier case price. A stored unit price is used only
+ *               when there is no case price. Never multiply the case price
+ *               by the pack again — that turns a £7.28 case into £174.72.
  *   serves      item → house menu → serves in one case
  *               (pack servings × units in the case, so a 24×330ml case is 24)
  *   cost/serve  portion × (case price ÷ serves). Portion is 1 for a full
- *               serve and 0.5 for a half. The case price is unit cost × units
+ *               serve and 0.5 for a half.
  *   target GP   item → house menu → event → price year → default
  */
 
-import { productStockPack, unitCostFromOffer } from '../pack-metrics.js';
+import { findOfferForSupplier, productStockPack } from '../pack-metrics.js';
 import { servingsPerCase } from './volume-pools.js';
 import { menuNameOf } from './product-attributes.js';
 import {
@@ -41,23 +44,43 @@ function firstNum(...vals) {
   return null;
 }
 
-export function liveUnitCost(product) {
+/** Price paid for one case: preferred offer, else the product. */
+function paidCasePrice(product) {
   if (!product) return null;
-  const fromOffer = unitCostFromOffer(product);
-  if (fromOffer != null && Number.isFinite(fromOffer)) return fromOffer;
-  const unit = num(product.unit_price);
-  if (unit != null) return unit;
-  const casePrice = num(product.case_price);
-  const upc = num(product.units_per_case);
-  return casePrice != null && upc ? casePrice / upc : null;
+  const offer = findOfferForSupplier(product);
+  return num(offer?.case_price) ?? num(product.case_price);
 }
 
-export function resolveUnitCost(item, product) {
+function packUnits(product, unitsPerCase) {
+  const passed = num(unitsPerCase);
+  if (passed != null && passed > 0) return passed;
+  const onProduct = num(product?.units_per_case);
+  return onProduct != null && onProduct > 0 ? onProduct : 1;
+}
+
+/**
+ * Price of one inner unit (one can, bottle, or keg).
+ * The amount you pay is the case price, split across the pack. Older rows
+ * stored that same case price on unit price as well; multiplying it by 24
+ * prices the case twice.
+ */
+export function liveUnitCost(product, unitsPerCase) {
+  if (!product) return null;
+  const paid = paidCasePrice(product);
+  const upc = packUnits(product, unitsPerCase);
+  if (paid != null && upc > 0) return paid / upc;
+  const offer = findOfferForSupplier(product);
+  const unit = num(offer?.unit_price);
+  if (unit != null) return unit;
+  return num(product.unit_price);
+}
+
+export function resolveUnitCost(item, product, unitsPerCase) {
   const snap = num(item?.unit_cost_snapshot);
   if (snap != null) return { unitCost: snap, source: 'locked' };
   const deal = num(item?.unit_cost_override);
   if (deal != null) return { unitCost: deal, source: 'deal' };
-  const live = liveUnitCost(product);
+  const live = liveUnitCost(product, unitsPerCase);
   if (live != null) return { unitCost: live, source: 'supplier' };
   return { unitCost: null, source: null };
 }
@@ -87,8 +110,11 @@ export function resolveMenuLine(item, ctx = {}) {
     house?.serves_per_unit,
     product ? servingsPerCase(product, caseSizes) : null,
   );
-  const { unitCost, source: costSource } = resolveUnitCost(item, product);
-  const caseCost = unitCost != null ? unitCost * unitsPerCase : null;
+  const { unitCost, source: costSource } = resolveUnitCost(item, product, unitsPerCase);
+  const supplierCase = costSource === 'supplier' ? paidCasePrice(product) : null;
+  const caseCost = supplierCase != null
+    ? supplierCase
+    : (unitCost != null ? unitCost * unitsPerCase : null);
   const portion = firstNum(item?.portion) ?? 1;
   const portionSafe = portion > 0 ? portion : 1;
   const baseCost = costPerServe(caseCost, servesPerUnit);

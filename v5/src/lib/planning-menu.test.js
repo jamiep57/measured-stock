@@ -156,6 +156,36 @@ describe('Camden Pale Ale 24×330ml', () => {
   });
 });
 
+const heineken = {
+  id: 'heineken00',
+  name: 'Heineken 0.0 Lager',
+  case_size: '24×330ml',
+  stock_case_size_id: 'cs24',
+  units_per_case: 24,
+  stock_unit: 'case',
+  unit_price: 7.28,
+  case_price: 7.28,
+  product_suppliers: [{ supplier_id: 'bestone', unit_price: 7.28, case_price: 7.28, is_preferred: true }],
+};
+
+describe('case price stored on the unit price as well', () => {
+  const ctx = { product: heineken, caseSizes: [canCase], year, event };
+
+  it('splits the £7.28 case across 24 serves', () => {
+    const line = resolveMenuLine({ product_id: 'heineken00' }, ctx);
+    expect(line.unitCost).toBeCloseTo(7.28 / 24, 10);
+    expect(line.caseCost).toBeCloseTo(7.28, 10);
+    expect(line.servesPerUnit).toBe(24);
+    expect(line.costPerServe).toBeCloseTo(7.28 / 24, 10);
+  });
+
+  it('does not multiply the case price by 24 when Serves is 1', () => {
+    const line = resolveMenuLine({ product_id: 'heineken00', serves_per_unit: 1 }, ctx);
+    expect(line.caseCost).toBeCloseTo(7.28, 10);
+    expect(line.costPerServe).toBeCloseTo(7.28, 10);
+  });
+});
+
 describe('menuTotals', () => {
   it('ignores excluded items and weights the mix', () => {
     const lines = [
