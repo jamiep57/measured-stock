@@ -9,7 +9,7 @@ import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
-import { getDB, loadCaseSizes, loadCategories, loadEventLite, loadLibraryProducts, loadSuppliers } from '../../db.js';
+import { getDB, invalidateEventCache, loadCaseSizes, loadCategories, loadEventLite, loadLibraryProducts, loadRecipesFull, loadSuppliers } from '../../db.js';
 import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
@@ -20,7 +20,7 @@ import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
 import { countedInFromDeliveries } from '../../lib/opening-stock.js';
 import { findOfferForSupplier } from '../../pack-metrics.js';
-import { parsePlanningNumber } from '../../lib/planning-menu.js';
+import { parsePlanningNumber, resolveMenuLine } from '../../lib/planning-menu.js';
 import { cocktailServesByProduct } from '../../lib/menu-cocktails.js';
 import { groupMenuItems } from '../../lib/menu-serves.js';
 import {
@@ -31,6 +31,9 @@ import {
   listEventMenu,
   loadEventPricing,
   patchEventMenuItems,
+  updateEventCocktail,
+  updateEventMenuItem,
+  updateEventPricing,
 } from '../../lib/planning-data.js';
 import {
   compareOrders,
@@ -54,6 +57,19 @@ import {
   savePurchaseOrderLines,
   updatePurchaseOrder,
 } from '../../lib/orders-data.js';
+import { readTillFile } from '../../lib/till-import.js';
+import {
+  buildForecastLines,
+  forecastTotals,
+  groupForecastLines,
+  keepMixServes,
+  mixFromSales,
+  plannedOrderCost,
+  scaleCategoryServes,
+  sellingPrice,
+  servesForMix,
+  servesFromMix,
+} from '../../lib/order-forecast.js';
 
 const SAVE_DEBOUNCE_MS = 450;
 
@@ -133,6 +149,9 @@ export function mountOrdersPanel(route) {
     orders: [],
     rows: [],
     buffer: 0,
+    target: null,
+    anchorTarget: null,
+    recipes: [],
     filter: getTableFilterValues('orders') || {},
     query: getLastProductFilter().query || '',
     saveTimers: {},
@@ -314,11 +333,224 @@ export function mountOrdersPanel(route) {
     }).join('');
   }
 
+  function forecastLines() {
+    return buildForecastLines({
+      items: ctx.items,
+      cocktails: ctx.cocktails,
+      productById: ctx.productById,
+      caseSizes: ctx.caseSizes,
+      event: ctx.event,
+    });
+  }
+
+  function pctInputValue(n) {
+    if (n == null || !Number.isFinite(Number(n))) return '';
+    const v = Math.round(Number(n) * 10) / 10;
+    return String(v);
+  }
+
+  function showKeepMix() {
+    const anchor = Number(ctx.anchorTarget);
+    const target = Number(ctx.target);
+    if (!(anchor > 0) || !(target > 0)) return false;
+    if (Math.round(anchor * 100) === Math.round(target * 100)) return false;
+    return forecastLines().some((line) => Number(line.projectedServes) > 0);
+  }
+
+  function caseCostFor(productId) {
+    const product = ctx.productById.get(productId);
+    return resolveMenuLine({ product_id: productId, included: true }, {
+      product,
+      caseSizes: ctx.caseSizes,
+      event: ctx.event,
+    }).caseCost;
+  }
+
+  function forecastStatsHtml() {
+    const totals = forecastTotals(forecastLines(), ctx.target);
+    const cost = plannedOrderCost(ctx.rows, caseCostFor);
+    const share = ctx.target > 0 ? `${pctInputValue(totals.pct)}% of the target` : 'Set a target to see the mix';
+    const missing = cost.unpriced ? ` · ${cost.unpriced} unpriced` : '';
+    return `
+      <div class="plan-kpi"><span class="plan-kpi-label">Allocated</span><span class="plan-kpi-value">${money(totals.revenue)}</span>
+        <span class="plan-kpi-sub muted">${share}</span></div>
+      <div class="plan-kpi"><span class="plan-kpi-label">Order cost</span><span class="plan-kpi-value">${money(cost.total)}</span>
+        <span class="plan-kpi-sub muted">planned cases × case cost${missing}</span></div>`;
+  }
+
+  function forecastHeadHtml() {
+    const dis = locked() ? 'disabled' : '';
+    return `
+      <div class="ord-forecast-head">
+        <label class="admin-field plan-field">
+          <span class="admin-label">Target revenue (£)</span>
+          <input type="text" inputmode="decimal" autocomplete="off" class="admin-input num-math" id="ordTarget"
+            value="${escapeHtml(ctx.target != null ? String(ctx.target) : '')}" placeholder="350000" ${dis}>
+        </label>
+        <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordKeepMix" ${showKeepMix() && !locked() ? '' : 'hidden'}>Keep this mix</button>
+        <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordImportCsv" ${dis}>Import sales CSV</button>
+        <input type="file" id="ordCsvFile" accept=".csv,.tsv,.xlsx,.xls,.txt" hidden>
+      </div>
+      <p class="ord-forecast-note muted">Servings are each line’s share of the target, divided by its menu price. A blank price uses the price needed to hit the target GP from the cost.</p>
+      <div class="plan-kpis" id="ordForecastStats">${forecastStatsHtml()}</div>`;
+  }
+
+  function priceCell(line) {
+    if (line.price == null) return '<span class="ord-forecast-need">Needs a price</span>';
+    const note = line.priceSource === 'gp' ? '<span class="muted">from cost</span>' : '';
+    return `<span class="ord-forecast-price">${money(line.price)}${note ? ` ${note}` : ''}</span>`;
+  }
+
+  function mixInput(attr, key, value, enabled, label) {
+    const dis = enabled ? '' : 'disabled';
+    return `<input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input ord-forecast-pct"
+      ${attr}="${escapeHtml(key)}" value="${escapeHtml(pctInputValue(value))}"
+      aria-label="${escapeHtml(label)}" title="${escapeHtml(enabled ? label : 'Set a target, and a menu price or a cost, before editing the mix')}" ${dis}>`;
+  }
+
+  function forecastBodyHtml() {
+    const groups = groupForecastLines(forecastLines(), ctx.target);
+    if (!groups.length) {
+      return '<p class="ord-forecast-empty muted">Nothing on the menu yet. Add products in Menu &amp; GP, then split the target across them or import a sales CSV.</p>';
+    }
+    const canEdit = !locked() && Number(ctx.target) > 0;
+    const body = groups.map((group) => {
+      const editable = canEdit && group.lines.some((line) => line.price != null);
+      const head = `<tr class="ord-forecast-cat" data-forecast-cat="${escapeHtml(group.category)}">
+        <th scope="row">${escapeHtml(group.category)}</th>
+        <td class="num">${mixInput('data-cat-pct', group.category, group.pct, editable, `${group.category} percent of revenue`)}</td>
+        <td class="num" data-rev>${money(group.revenue)}</td>
+        <td></td>
+        <td class="num" data-serves>${group.serves ? qty(group.serves) : '—'}</td>
+        <td></td>
+      </tr>`;
+      const rows = group.lines.map((line) => {
+        const detail = [line.serveLabel, line.caseSize].filter(Boolean).join(' · ');
+        const size = detail ? `<span class="ord-forecast-size muted">${escapeHtml(detail)}</span>` : '';
+        const casesTitle = line.kind === 'cocktail'
+          ? 'Serves of this drink. The products inside it are planned on the order grid.'
+          : 'This size’s share of a case, before sizes are added together and the order buffer is applied.';
+        return `<tr data-forecast-line="${escapeHtml(line.key)}">
+          <td><span class="ord-forecast-name">${escapeHtml(line.name)}</span>${size}</td>
+          <td class="num">${mixInput('data-line-pct', line.key, line.mixPct, canEdit && line.price != null, `${line.name} percent of revenue`)}</td>
+          <td class="num" data-rev>${money(line.revenue)}</td>
+          <td class="num">${priceCell(line)}</td>
+          <td class="num" data-serves>${line.projectedServes != null ? qty(line.projectedServes) : '—'}</td>
+          <td class="num" data-cases title="${escapeHtml(casesTitle)}">${line.cases != null ? qty(line.cases) : '—'}</td>
+        </tr>`;
+      }).join('');
+      return head + rows;
+    }).join('');
+    return `<table class="ord-forecast">
+      <thead><tr>
+        <th>Line</th>
+        <th class="num">% of revenue</th>
+        <th class="num">Takings</th>
+        <th class="num">Price</th>
+        <th class="num">Serves</th>
+        <th class="num">Cases</th>
+      </tr></thead>
+      <tbody>${body}</tbody>
+    </table>`;
+  }
+
+  function refreshForecastOutputs() {
+    const groups = groupForecastLines(forecastLines(), ctx.target);
+    const byKey = new Map();
+    const canEdit = !locked() && Number(ctx.target) > 0;
+    groups.forEach((group) => group.lines.forEach((line) => byKey.set(line.key, line)));
+    panel.querySelectorAll('tr[data-forecast-line]').forEach((tr) => {
+      const line = byKey.get(tr.dataset.forecastLine);
+      if (!line) return;
+      const pct = tr.querySelector('[data-line-pct]');
+      if (pct) {
+        pct.disabled = !(canEdit && line.price != null);
+        if (document.activeElement !== pct) pct.value = pctInputValue(line.mixPct);
+      }
+      const rev = tr.querySelector('[data-rev]');
+      if (rev) rev.textContent = money(line.revenue);
+      const serves = tr.querySelector('[data-serves]');
+      if (serves) serves.textContent = line.projectedServes != null ? qty(line.projectedServes) : '—';
+      const cases = tr.querySelector('[data-cases]');
+      if (cases) cases.textContent = line.cases != null ? qty(line.cases) : '—';
+    });
+    groups.forEach((group) => {
+      const tr = panel.querySelector(`tr[data-forecast-cat="${CSS.escape(group.category)}"]`);
+      if (!tr) return;
+      const pct = tr.querySelector('[data-cat-pct]');
+      if (pct) {
+        pct.disabled = !(canEdit && group.lines.some((line) => line.price != null));
+        if (document.activeElement !== pct) pct.value = pctInputValue(group.pct);
+      }
+      const rev = tr.querySelector('[data-rev]');
+      if (rev) rev.textContent = money(group.revenue);
+      const serves = tr.querySelector('[data-serves]');
+      if (serves) serves.textContent = group.serves ? qty(group.serves) : '—';
+    });
+    const stats = $('ordForecastStats');
+    if (stats) stats.innerHTML = forecastStatsHtml();
+    const keep = $('ordKeepMix');
+    if (keep) keep.hidden = locked() || !showKeepMix();
+  }
+
+  function productIdsForUpdates(updates) {
+    const ids = new Set();
+    (updates || []).forEach((update) => {
+      if (update.productId) ids.add(update.productId);
+      if (update.kind !== 'cocktail') return;
+      const cocktail = ctx.cocktails.find((row) => row.id === update.itemId);
+      (cocktail?.ingredients || []).forEach((ing) => {
+        if (ing.product_id) ids.add(ing.product_id);
+      });
+    });
+    return [...ids];
+  }
+
+  function rememberServes(updates) {
+    (updates || []).forEach((update) => {
+      if (update.kind === 'cocktail') {
+        const cocktail = ctx.cocktails.find((row) => row.id === update.itemId);
+        if (cocktail) cocktail.projected_serves = update.serves;
+        return;
+      }
+      const list = ctx.items.get(update.productId) || [];
+      const item = list.find((row) => row.id === update.itemId);
+      if (item) item.projected_serves = update.serves;
+    });
+    productIdsForUpdates(updates).forEach((pid) => {
+      (ctx.items.get(pid) || []).forEach((item) => { item.planned_qty_override = null; });
+    });
+  }
+
+  async function persistServes(updates) {
+    for (const update of updates || []) {
+      if (update.kind === 'cocktail') {
+        await updateEventCocktail(update.itemId, { projected_serves: update.serves });
+      } else {
+        await updateEventMenuItem(update.itemId, { projected_serves: update.serves });
+      }
+    }
+    for (const pid of productIdsForUpdates(updates)) {
+      await patchEventMenuItems(ctx.eventId, pid, { planned_qty_override: null });
+    }
+    recompute();
+    const grid = $('ordGrid');
+    if (grid) grid.innerHTML = gridHtml();
+    const k = $('ordKpis');
+    if (k) k.innerHTML = kpisHtml();
+    refreshForecastOutputs();
+    syncTheadHeight();
+  }
+
   function paint() {
     panel.innerHTML = `
       <section class="plan-head admin-surface">
         <div class="plan-settings" id="ordSettings">${settingsHtml()}</div>
         <div class="plan-kpis" id="ordKpis">${kpisHtml()}</div>
+      </section>
+      <section class="ord-forecast-section admin-surface" id="ordForecast">
+        ${forecastHeadHtml()}
+        <div class="ord-forecast-wrap" id="ordForecastBody">${forecastBodyHtml()}</div>
       </section>
       <div class="dist-grid-wrap plan-grid-wrap ord-grid-wrap">
         <table class="dist-grid plan-grid ord-grid" id="ordGrid">${gridHtml()}</table>
@@ -339,6 +571,9 @@ export function mountOrdersPanel(route) {
     if (k) k.innerHTML = kpisHtml();
     const list = $('ordList');
     if (list) list.innerHTML = ordersListHtml();
+    const forecast = $('ordForecastBody');
+    if (forecast) forecast.innerHTML = forecastBodyHtml();
+    refreshForecastOutputs();
     syncTheadHeight();
   }
 
@@ -376,6 +611,72 @@ export function mountOrdersPanel(route) {
 
   function onPanelInput(e) {
     const t = e.target;
+    if (t.id === 'ordTarget') {
+      const parsed = parsePlanningNumber(t.value, { max: 1000000000 });
+      t.classList.toggle('is-invalid', !parsed.ok);
+      if (!parsed.ok) return;
+      ctx.target = parsed.value;
+      if (ctx.event) ctx.event.target_revenue = parsed.value;
+      refreshForecastOutputs();
+      queueSave('target', async () => {
+        await updateEventPricing(ctx.eventId, { target_revenue: ctx.target });
+        invalidateEventCache(ctx.eventId);
+      });
+      return;
+    }
+    if (t.dataset.linePct) {
+      const parsed = parsePlanningNumber(t.value, { max: 100.0001 });
+      t.classList.toggle('is-invalid', !parsed.ok);
+      if (!parsed.ok || !(Number(ctx.target) > 0)) return;
+      const line = forecastLines().find((row) => row.key === t.dataset.linePct);
+      if (!line || sellingPrice(line).price == null) return;
+      const serves = servesFromMix(ctx.target, parsed.value ?? 0, sellingPrice(line).price);
+      if (serves == null) return;
+      const update = { ...line, serves };
+      rememberServes([update]);
+      ctx.anchorTarget = ctx.target;
+      recompute();
+      refreshForecastOutputs();
+      const grid = $('ordGrid');
+      if (grid) grid.innerHTML = gridHtml();
+      const k = $('ordKpis');
+      if (k) k.innerHTML = kpisHtml();
+      const lineKey = line.key;
+      queueSave(`mix:${lineKey}`, () => {
+        const current = forecastLines().find((row) => row.key === lineKey);
+        return current ? persistServes([{ ...current, serves: Number(current.projectedServes) || 0 }]) : Promise.resolve();
+      });
+      return;
+    }
+    if (t.dataset.catPct) {
+      const parsed = parsePlanningNumber(t.value, { max: 100.0001 });
+      t.classList.toggle('is-invalid', !parsed.ok);
+      if (!parsed.ok || !(Number(ctx.target) > 0)) return;
+      const category = t.dataset.catPct;
+      const lines = forecastLines().filter((line) => (line.category || 'Uncategorised') === category);
+      const updates = scaleCategoryServes(lines, parsed.value ?? 0, ctx.target);
+      if (!updates.length) return;
+      rememberServes(updates);
+      ctx.anchorTarget = ctx.target;
+      recompute();
+      refreshForecastOutputs();
+      const grid = $('ordGrid');
+      if (grid) grid.innerHTML = gridHtml();
+      const k = $('ordKpis');
+      if (k) k.innerHTML = kpisHtml();
+      const scaled = new Set(updates.map((row) => row.key));
+      queueSave(`mix-cat:${category}`, () => {
+        const current = forecastLines().filter((row) => scaled.has(row.key));
+        return persistServes(current.map((row) => ({
+          key: row.key,
+          kind: row.kind,
+          itemId: row.itemId,
+          productId: row.productId,
+          serves: Number(row.projectedServes) || 0,
+        })));
+      });
+      return;
+    }
     if (t.id === 'ordBuffer') {
       const parsed = parsePlanningNumber(t.value, { max: 200 });
       t.classList.toggle('is-invalid', !parsed.ok);
@@ -793,6 +1094,110 @@ export function mountOrdersPanel(route) {
     };
   }
 
+  async function keepThisMix() {
+    if (locked() || !showKeepMix()) return;
+    const updates = keepMixServes(forecastLines(), ctx.anchorTarget, ctx.target);
+    if (!updates.length) return;
+    rememberServes(updates);
+    ctx.anchorTarget = ctx.target;
+    try {
+      await persistServes(updates);
+      toast('Serves scaled to the new target');
+    } catch (err) {
+      reportError(err, { source: 'admin.orders.keep-mix', silent: true });
+      toast(err.message || 'Could not scale serves', true);
+    }
+  }
+
+  function mixPreviewHtml(mix, fileName) {
+    const lines = forecastLines();
+    const byKey = new Map(lines.map((line) => [line.key, line]));
+    const needsPrice = mix.lines.filter((row) => !sellingPrice(byKey.get(row.key) || {}).price);
+    const cats = mix.categories.length
+      ? `<ul class="ord-gen-list">${mix.categories.map((row) => `<li><strong>${escapeHtml(row.category)}</strong> — ${escapeHtml(pctInputValue(row.pct))}% · ${money(row.amount)}</li>`).join('')}</ul>`
+      : '';
+    const matched = mix.lines.length
+      ? `<table class="ord-lines"><thead><tr><th>Line</th><th>Category</th><th class="num">Sales</th><th class="num">Mix</th></tr></thead><tbody>
+        ${mix.lines.map((row) => `<tr><td>${escapeHtml(row.name)}${row.serveLabel ? ` · ${escapeHtml(row.serveLabel)}` : ''}</td><td>${escapeHtml(row.category)}</td><td class="num">${money(row.amount)}</td><td class="num">${escapeHtml(pctInputValue(row.pct))}%</td></tr>`).join('')}
+        </tbody></table>`
+      : '<p class="muted">Nothing in this file matched the menu.</p>';
+    const labelOf = (row) => `${row.name}${row.variation && row.variation.toLowerCase() !== 'regular' ? ` (${row.variation})` : ''}`;
+    const ambiguous = mix.unmatched.filter((row) => row.reason === 'ambiguous');
+    const unknown = mix.unmatched.filter((row) => row.reason !== 'ambiguous');
+    const listOf = (rows) => {
+      const shown = rows.slice(0, 8).map(labelOf).join(', ');
+      const more = rows.length > 8 ? ` and ${rows.length - 8} more` : '';
+      return `${shown}${more}`;
+    };
+    const unmatched = [
+      ambiguous.length ? `<p class="ord-mix-note">${escapeHtml(listOf(ambiguous))} ${ambiguous.length === 1 ? 'is' : 'are'} on the menu more than once, so the file could not choose a product.</p>` : '',
+      unknown.length ? `<p class="ord-mix-note muted">${escapeHtml(pctInputValue(unknown.reduce((sum, row) => sum + row.pct, 0)))}% of the file is not on this menu: ${escapeHtml(listOf(unknown))}.</p>` : '',
+    ].join('');
+    const priceNote = needsPrice.length
+      ? `<p class="ord-mix-note">${escapeHtml(needsPrice.map((row) => row.name).join(', '))} matched but ${needsPrice.length === 1 ? 'has' : 'have'} no price, so ${needsPrice.length === 1 ? 'it' : 'they'} will be skipped.</p>`
+      : '';
+    const targetNote = Number(ctx.target) > 0
+      ? ''
+      : '<p class="ord-mix-note">Set a target revenue before applying this mix.</p>';
+    return `
+      <p class="ord-mix-note"><strong>${escapeHtml(fileName)}</strong> — ${escapeHtml(pctInputValue(mix.matchedPct))}% of ${money(mix.total)} matches the menu. Applying sets projected serves from that mix and clears planned-case overrides on those products.</p>
+      ${targetNote}
+      ${cats}
+      <div class="ord-mix-preview">${matched}</div>
+      ${unmatched}
+      ${priceNote}`;
+  }
+
+  async function openCsvPreview(file) {
+    let rows;
+    try {
+      rows = await readTillFile(file);
+    } catch (err) {
+      toast(err.message || 'Could not read that file', true);
+      return;
+    }
+    const mix = mixFromSales(rows, forecastLines(), {
+      recipes: ctx.recipes,
+      products: ctx.products,
+      caseSizes: ctx.caseSizes,
+    });
+    const lines = forecastLines();
+    const { applied } = Number(ctx.target) > 0 ? servesForMix(lines, mix.lines, ctx.target) : { applied: [] };
+    const replacing = applied.filter((update) => {
+      const line = lines.find((row) => row.key === update.key);
+      return line && Number(line.projectedServes) > 0;
+    });
+    const el = openModal({
+      title: 'Sales mix',
+      bodyHtml: mixPreviewHtml(mix, file.name || 'Sales file'),
+      footHtml: `
+        <div class="admin-modal-confirm-foot">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok ${applied.length ? '' : 'disabled'}>${replacing.length ? 'Replace projected serves' : 'Apply mix'}</button>
+        </div>`,
+    });
+    el.querySelector('[data-cancel]').onclick = closeModal;
+    el.querySelector('[data-ok]').onclick = async () => {
+      const btn = el.querySelector('[data-ok]');
+      btn.disabled = true;
+      try {
+        await flushSaves();
+        const fresh = servesForMix(forecastLines(), mix.lines, ctx.target);
+        if (!fresh.applied.length) throw new Error('No matched lines have a price');
+        rememberServes(fresh.applied);
+        ctx.anchorTarget = ctx.target;
+        await persistServes(fresh.applied);
+        closeModal();
+        const skipped = fresh.skipped.length ? ` · ${fresh.skipped.length} skipped, no price` : '';
+        toast(`Mix applied to ${fresh.applied.length} line${fresh.applied.length === 1 ? '' : 's'}${skipped}`);
+      } catch (err) {
+        btn.disabled = false;
+        reportError(err, { source: 'admin.orders.csv-mix', silent: true });
+        toast(err.message || 'Could not apply the mix', true);
+      }
+    };
+  }
+
   function onToolbarAction(e) {
     const action = e.detail?.action;
     const handlers = {
@@ -807,7 +1212,32 @@ export function mountOrdersPanel(route) {
     void handlers[action]();
   }
 
+  function onPanelFocusOut(e) {
+    if (e.target.id !== 'ordTarget') return;
+    if (!(Number(ctx.anchorTarget) > 0) && Number(ctx.target) > 0
+      && forecastLines().some((line) => Number(line.projectedServes) > 0)) {
+      ctx.anchorTarget = ctx.target;
+    }
+    refreshForecastOutputs();
+  }
+
+  function onPanelChange(e) {
+    if (e.target.id !== 'ordCsvFile') return;
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) void openCsvPreview(file);
+  }
+
   function onPanelClick(e) {
+    if (e.target.closest('#ordImportCsv')) {
+      if (locked()) { toast('Orders are locked for this event', true); return; }
+      $('ordCsvFile')?.click();
+      return;
+    }
+    if (e.target.closest('#ordKeepMix')) {
+      void keepThisMix();
+      return;
+    }
     const gotoEl = e.target.closest('[data-goto]');
     if (gotoEl) {
       e.preventDefault();
@@ -850,7 +1280,7 @@ export function mountOrdersPanel(route) {
   async function reload() {
     await flushSaves();
     const DB = getDB();
-    const [event, pricing, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries, cocktails] = await Promise.all([
+    const [event, pricing, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries, cocktails, recipes] = await Promise.all([
       loadEventLite(ctx.eventId),
       loadEventPricing(ctx.eventId),
       listEventMenu(ctx.eventId),
@@ -865,6 +1295,7 @@ export function mountOrdersPanel(route) {
         if (isCocktailSchemaMissing(err)) return [];
         throw err;
       }),
+      loadRecipesFull().catch(() => []),
     ]);
     if (ctx.abort) return;
     if (!event || !pricing) throw new Error('Event not found');
@@ -874,6 +1305,10 @@ export function mountOrdersPanel(route) {
     ctx.cocktails = cocktails || [];
     ctx.orders = orders || [];
     ctx.buffer = buffer;
+    ctx.recipes = recipes || [];
+    const target = Number(event.target_revenue);
+    ctx.target = Number.isFinite(target) && event.target_revenue != null && event.target_revenue !== '' ? target : null;
+    ctx.anchorTarget = ctx.target;
     ctx.products = (products || []).filter((p) => !p.archived && (p.product_kind || 'stock') === 'stock');
     ctx.productById = new Map((products || []).map((p) => [p.id, p]));
     ctx.suppliers = suppliers || [];
@@ -906,6 +1341,8 @@ export function mountOrdersPanel(route) {
   }
 
   panel.addEventListener('input', onPanelInput);
+  panel.addEventListener('focusout', onPanelFocusOut);
+  panel.addEventListener('change', onPanelChange);
   panel.addEventListener('click', onPanelClick);
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
@@ -917,6 +1354,8 @@ export function mountOrdersPanel(route) {
     ctx.abort = true;
     void flushSaves();
     panel.removeEventListener('input', onPanelInput);
+    panel.removeEventListener('focusout', onPanelFocusOut);
+    panel.removeEventListener('change', onPanelChange);
     panel.removeEventListener('click', onPanelClick);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);

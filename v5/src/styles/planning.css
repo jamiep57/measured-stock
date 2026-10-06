@@ -1218,6 +1218,58 @@
 .ord-history-who { color: var(--muted-foreground); }
 .ord-gen-list { margin: 8px 0; padding-left: 18px; font-size: 13px; }
 
+.ord-forecast-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--shell-radius, 12px);
+  background: var(--card);
+}
+.ord-forecast-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+.ord-forecast-section [hidden] { display: none !important; }
+.ord-forecast-head .admin-field { margin: 0; }
+.ord-forecast-note { margin: 0; font-size: 12px; }
+.ord-forecast-wrap { overflow-x: auto; }
+.ord-forecast {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ord-forecast th,
+.ord-forecast td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.ord-forecast thead th {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  text-align: left;
+}
+.ord-forecast thead th.num { text-align: right; }
+.ord-forecast .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ord-forecast-cat th,
+.ord-forecast-cat td { background: var(--secondary); font-weight: 600; }
+.ord-forecast-cat th { text-align: left; }
+.ord-forecast-name { font-weight: 500; }
+.ord-forecast-size { margin-left: 6px; font-size: 12px; font-weight: 400; }
+.ord-forecast-need { color: var(--danger, #b91c1c); font-size: 12px; }
+.ord-forecast-price { white-space: nowrap; }
+.ord-forecast-pct { width: 72px; }
+.ord-forecast-empty { margin: 0; font-size: 13px; }
+.ord-mix-preview { max-height: 320px; overflow: auto; }
+.ord-mix-note { margin: 0 0 8px; font-size: 13px; }
+
 /* Small icon button, used by reports */
 
 .acct-icon-btn {
