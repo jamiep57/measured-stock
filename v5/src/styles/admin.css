@@ -273,31 +273,6 @@ body:has(.admin-app) .toast.err {
   background: var(--secondary);
 }
 
-.sidebar-workspace-item-mark--org {
-  background: var(--secondary);
-  color: var(--foreground);
-}
-
-.sidebar-workspace-item-mark--org svg {
-  width: 15px;
-  height: 15px;
-}
-
-.sidebar-workspace-divider {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
-}
-
-.sidebar-workspace-heading {
-  padding: 6px 10px 2px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
 .sidebar-workspace-item-mark.has-event-image img {
   width: 100%;
   height: 100%;
