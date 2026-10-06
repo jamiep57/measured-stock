@@ -16,6 +16,8 @@ import { reportError } from '../../lib/client-errors.js';
 import {
   renderOrganisationSection,
   mountOrganisationSection,
+  renderSquareSection,
+  mountSquareSection,
   renderHistorySection,
   mountHistorySection,
 } from './settings-org.js';
@@ -24,6 +26,7 @@ import { can } from '../../lib/permissions.js';
 
 const SETTINGS_NAV = [
   { id: 'organisation', label: 'Organisation', feature: 'workspace.organisation' },
+  { id: 'square', label: 'Square', feature: 'workspace.organisation' },
   { id: 'users', label: 'Users', feature: 'workspace.users' },
   { id: 'access', label: 'Access', feature: 'workspace.access' },
   { id: 'history', label: 'Change history', feature: 'workspace.history' },
@@ -175,6 +178,7 @@ function renderCaseSizesSection() {
 
 function renderSectionPane(section) {
   if (section === 'organisation') return renderOrganisationSection();
+  if (section === 'square') return renderSquareSection();
   if (section === 'history') return renderHistorySection();
   if (section === 'users') return renderUsersSection();
   if (section === 'access') return renderAccessSection();
@@ -225,6 +229,7 @@ export function mountSettingsPanel(section = 'users') {
   }
   if (section === 'access') return mountAccessSection();
   if (section === 'organisation') return mountOrganisationSection();
+  if (section === 'square') return mountSquareSection();
   if (section === 'history') return mountHistorySection();
 
   const whWrap = $('settingsWarehouses');

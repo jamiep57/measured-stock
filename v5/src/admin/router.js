@@ -6,7 +6,7 @@
 /** Admin lives at site root — home is `/`. */
 const BASE = '';
 
-export const SETTINGS_SECTIONS = ['organisation', 'users', 'access', 'history', 'warehouses', 'categories', 'case-sizes'];
+export const SETTINGS_SECTIONS = ['organisation', 'square', 'users', 'access', 'history', 'warehouses', 'categories', 'case-sizes'];
 
 function joinAdmin(...parts) {
   const rest = parts.filter(Boolean).join('/');

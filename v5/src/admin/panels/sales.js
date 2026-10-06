@@ -948,7 +948,7 @@ export function mountSalesPanel(route) {
           <button type="button" class="admin-drawer-btn" data-sales-view="csv" aria-pressed="${ctx.viewSource === 'csv'}">Uploaded file</button>
           <button type="button" class="admin-drawer-btn" data-sales-view="square" aria-pressed="${ctx.viewSource === 'square'}">Square live</button>
           ${preview ? `<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-sales-use="${escapeHtml(ctx.viewSource)}">${switchLabel}</button>` : ''}
-          ${connected ? '<button type="button" class="admin-drawer-btn" data-square-sync>Sync now</button>' : '<span class="muted">Connect Square in Settings → Organisation to pull live sales.</span>'}
+          ${connected ? '<button type="button" class="admin-drawer-btn" data-square-sync>Sync now</button>' : '<span class="muted">Connect Square in Settings → Square to pull live sales.</span>'}
         </div>
         ${preview ? '<p class="muted">This grid is a preview. Projections still use the other feed.</p>' : ''}
         ${ctx.unmatchedCount ? `<p class="muted">${ctx.unmatchedCount} order${ctx.unmatchedCount === 1 ? '' : 's'} matched more than one event and ${ctx.unmatchedCount === 1 ? 'was' : 'were'} left out.</p>` : ''}

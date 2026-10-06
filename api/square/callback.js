@@ -6,7 +6,7 @@ import { encryptToken, verifyState } from '../../lib/square/crypto.js';
 
 function redirect(res, req, query) {
   const params = new URLSearchParams(query);
-  res.writeHead(302, { Location: `${appOrigin(req)}/settings/organisation?${params}` });
+  res.writeHead(302, { Location: `${appOrigin(req)}/settings/square?${params}` });
   res.end();
 }
 
