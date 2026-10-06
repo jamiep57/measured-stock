@@ -12,6 +12,7 @@ import { resolveMenuLine } from './planning-menu.js';
 import { recipeStoredProductName } from './recipe-stock.js';
 import { baseMenuItem, portionOf } from './menu-serves.js';
 import { findRecipe, normVariation, recipeIsMapped } from './square-recipes.js';
+import { squareItemNames } from '../../../lib/square/names.js';
 
 function num(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -162,15 +163,29 @@ export function cocktailToRecipe(cocktail, ctx = {}) {
  * Menu row sold under its Square name: item is the product's menu name and the
  * variation is the serve size, as the Square menu push creates them.
  */
+const squareNamesByCtx = new WeakMap();
+
+function squareNamesFor(ctx) {
+  if (squareNamesByCtx.has(ctx)) return squareNamesByCtx.get(ctx);
+  const products = (ctx.menuRows || [])
+    .filter((row) => row?.included !== false)
+    .map((row) => ctx.productById?.get(row.product_id))
+    .filter(Boolean);
+  const { names } = squareItemNames(products);
+  squareNamesByCtx.set(ctx, names);
+  return names;
+}
+
 export function menuRowRecipe(item, variation, ctx = {}) {
   const want = String(item ?? '').trim().toLowerCase();
-  if (!want) return null;
+  if (!want || !ctx.menuRows?.length) return null;
   const wantVar = normVariation(variation);
-  for (const row of ctx.menuRows || []) {
+  const names = squareNamesFor(ctx);
+  for (const row of ctx.menuRows) {
     if (row?.included === false) continue;
     const product = ctx.productById?.get(row.product_id);
     if (!product) continue;
-    const name = String(product.menu_name || '').trim() || String(product.name || '').trim();
+    const name = names.get(product.id) || '';
     if (name.toLowerCase() !== want) continue;
     if (normVariation(row.serve_label) !== wantVar) continue;
     const siblings = (ctx.menuRows || []).filter((r) => r?.product_id === row.product_id);

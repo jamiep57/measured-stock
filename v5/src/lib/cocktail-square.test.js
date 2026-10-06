@@ -280,6 +280,24 @@ describe('menu rows pushed to Square', () => {
     expect(resolveSaleRecipe('Utopian Lager 50L', 'Pint', [], ctx()).recipe).toBeNull();
   });
 
+  it('matches the bracketed name Square gets when two products share a name', () => {
+    const keg = { id: 'keg', name: 'Utopian Lager', case_size: '50L Keg', stock_unit: 'keg' };
+    const can = { id: 'can', name: 'Utopian Lager', case_size: '24×440ml Cans', stock_unit: 'case' };
+    const both = saleCtxFrom({
+      cocktails: [],
+      menuItems: [
+        { product_id: 'keg', serve_label: 'Pint', serves_per_unit: 88, included: true },
+        { product_id: 'can', serve_label: null, serves_per_unit: 24, included: true },
+      ],
+      products: [keg, can],
+      caseSizes: [],
+    });
+    const pint = resolveSaleRecipe('Utopian Lager (Draught)', 'Pint', [], both).recipe;
+    expect(pint.ingredients[0].qty).toBeCloseTo(1 / 88);
+    const tin = resolveSaleRecipe('Utopian Lager (Can)', 'Regular', [], both).recipe;
+    expect(tin.ingredients[0].qty).toBeCloseTo(1 / 24);
+  });
+
   it('a shared recipe still wins over the menu row', () => {
     const recipes = [{
       till_item: 'Utopian Lager',

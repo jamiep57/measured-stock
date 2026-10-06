@@ -2,7 +2,10 @@
 /**
  * Create paid test orders in the Square Sandbox so the live sales feed has something to receive.
  *
- *   SQUARE_SANDBOX_TOKEN=EAAA... node scripts/square-sandbox-sales.mjs [--orders 40] [--dry-run]
+ *   SQUARE_SANDBOX_TOKEN=EAAA... node scripts/square-sandbox-sales.mjs [--orders 40] [--catalog] [--dry-run]
+ *
+ * --catalog sells the Square items each location actually offers (as pushed from the app)
+ * instead of free-typed lines, so sales arrive with real item and serve size names.
  *
  * The token is the Sandbox access token on the app's Credentials page in the Square Developer Console.
  * Square stamps each order with the current time, so orders only land on an event whose dates include today.
@@ -95,6 +98,42 @@ async function ensureLocations(dryRun) {
   return { locations: out, currency: out[0]?.currency || currency };
 }
 
+async function catalogMenus(locations) {
+  const items = [];
+  let cursor = '';
+  do {
+    const qs = new URLSearchParams({ types: 'ITEM' });
+    if (cursor) qs.set('cursor', cursor);
+    const json = await square(`/v2/catalog/list?${qs}`);
+    items.push(...(json.objects || []));
+    cursor = json.cursor || '';
+  } while (cursor);
+  const offered = (obj, locId) => (obj.present_at_all_locations
+    ? !(obj.absent_at_location_ids || []).includes(locId)
+    : (obj.present_at_location_ids || []).includes(locId));
+  const menus = new Map();
+  for (const loc of locations) {
+    const variations = [];
+    for (const item of items) {
+      if (item.is_deleted || !offered(item, loc.id)) continue;
+      for (const v of item.item_data?.variations || []) {
+        if (!offered(v, loc.id) || v.item_variation_data?.pricing_type !== 'FIXED_PRICING') continue;
+        variations.push({ id: v.id, label: `${item.item_data.name} (${v.item_variation_data.name})` });
+      }
+    }
+    menus.set(loc.id, variations);
+  }
+  return menus;
+}
+
+function buildCatalogLines(variations) {
+  const count = 1 + Math.floor(Math.random() * 3);
+  return Array.from({ length: count }, () => ({
+    catalog_object_id: pick(variations).id,
+    quantity: String(1 + Math.floor(Math.random() * 2)),
+  }));
+}
+
 function buildLineItems(currency) {
   const lines = [];
   const count = 1 + Math.floor(Math.random() * 3);
@@ -127,14 +166,25 @@ async function main() {
     return;
   }
 
+  const menus = arg('catalog', false) === true ? await catalogMenus(locations) : null;
+  const selling = menus ? locations.filter((loc) => menus.get(loc.id)?.length) : locations;
+  if (!selling.length) {
+    console.error('No location offers any priced Square items yet. Push the menu from the app first.');
+    process.exit(1);
+  }
+  if (menus) {
+    for (const loc of locations) console.log(`${loc.name}: ${menus.get(loc.id).length} serve sizes on the till`);
+  }
+
   const totals = new Map();
   for (let i = 0; i < orders; i += 1) {
-    const loc = pick(locations);
+    const loc = pick(selling);
+    const lineItems = menus ? buildCatalogLines(menus.get(loc.id)) : buildLineItems(currency);
     const { order } = await square('/v2/orders', {
       method: 'POST',
       body: {
         idempotency_key: crypto.randomUUID(),
-        order: { location_id: loc.id, line_items: buildLineItems(currency) },
+        order: { location_id: loc.id, line_items: lineItems },
       },
     });
     await square('/v2/payments', {
