@@ -929,6 +929,15 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   transform: translate(0, calc(-1 * var(--fab-stack-step))) scale(1);
   transition-delay: 0.14s;
 }
+.compose-fab.is-open .compose-fab-item:disabled {
+  opacity: 0.38;
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+  filter: none;
+}
+.compose-fab.is-open .compose-fab-item:disabled .compose-fab-item-label {
+  color: var(--muted-foreground);
+}
 
 
 .navbtn[hidden],
@@ -955,6 +964,15 @@ html.event-gate:not(.event-gate-ready) .compose-fab {
   white-space: nowrap;
 }
 .navbtn.active { color: var(--accent); }
+.navbtn:disabled {
+  opacity: 0.38;
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+.navbtn:disabled:active {
+  background: none;
+  transform: none;
+}
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

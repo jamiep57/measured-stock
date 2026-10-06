@@ -26,6 +26,8 @@ import { initSyncStatus } from './components/sync-status.js';
 
 const TABS = new Set(['counts', 'kit', 'deliveries', 'transfers', 'wastage']);
 const DEFAULT_TAB = 'counts';
+/** Visible in the toolbar, but not openable until the feature is ready. */
+const UNFINISHED_TABS = new Set(['kit']);
 const FIELD_FEATURES = {
   deliveries: 'stock.deliveries',
   transfers: 'stock.transfers',
@@ -160,11 +162,7 @@ async function runComposeAction(action) {
     startNewWastage();
     return;
   }
-  if (action === 'kit') {
-    switchTab('kit');
-    await ensureKit();
-    return;
-  }
+  if (action === 'kit') return;
 }
 
 function initComposeFab() {
@@ -385,6 +383,10 @@ async function ensureKit() {
   return kitApi;
 }
 
+function tabUnfinished(tab) {
+  return UNFINISHED_TABS.has(tab);
+}
+
 function fieldTabAllowed(tab) {
   const feature = FIELD_FEATURES[tab];
   return !feature || can(feature);
@@ -396,16 +398,25 @@ function firstFieldTab() {
 
 function applyFieldPermissions() {
   document.querySelectorAll('.navbtn[data-tab]').forEach((btn) => {
-    btn.hidden = !fieldTabAllowed(btn.dataset.tab);
+    const tab = btn.dataset.tab;
+    btn.hidden = !fieldTabAllowed(tab);
+    const unfinished = tabUnfinished(tab);
+    btn.disabled = unfinished;
+    btn.setAttribute('aria-disabled', unfinished ? 'true' : 'false');
+    if (unfinished) btn.title = 'Coming soon';
   });
   document.querySelectorAll('[data-compose]').forEach((btn) => {
     const feature = COMPOSE_FEATURES[btn.dataset.compose];
     btn.hidden = feature ? !can(feature) : false;
+    const unfinished = btn.dataset.compose === 'kit';
+    btn.disabled = unfinished;
+    btn.setAttribute('aria-disabled', unfinished ? 'true' : 'false');
+    if (unfinished) btn.title = 'Coming soon';
   });
 }
 
 function switchTab(tab) {
-  if (!TABS.has(tab) || !fieldTabAllowed(tab)) tab = firstFieldTab();
+  if (!TABS.has(tab) || !fieldTabAllowed(tab) || tabUnfinished(tab)) tab = firstFieldTab();
   state.tab = tab;
   setUrlTab(tab);
 
@@ -605,6 +616,7 @@ async function boot() {
 
   document.querySelectorAll('.navbtn').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.disabled || tabUnfinished(btn.dataset.tab)) return;
       if (!state.ready) {
         openEventGate();
         return;
