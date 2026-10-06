@@ -270,7 +270,7 @@
     },
     {
       "path": "/api/square/cron",
-      "schedule": "*/15 * * * *"
+      "schedule": "30 4 * * *"
     }
   ]
 }
