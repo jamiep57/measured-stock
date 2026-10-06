@@ -31,6 +31,7 @@ describe('admin router', () => {
     expect(parseRoute('/library')).toEqual({ view: 'library' });
     expect(parseRoute('/kit-library')).toEqual({ view: 'kit-library' });
     expect(parseRoute('/suppliers')).toEqual({ view: 'suppliers' });
+    expect(parseRoute('/accounts')).toEqual({ view: 'not-found' });
     expect(parseRoute('/warehouses')).toEqual({ view: 'warehouses' });
     expect(parseRoute('/volume-pools')).toEqual({ view: 'volume-pools' });
   });

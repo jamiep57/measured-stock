@@ -44,7 +44,7 @@ export function parseRoute(pathname = location.pathname) {
   if (rest === 'dev/audit') return { view: 'audit' };
   if (rest === 'dev/backup') return { view: 'backup' };
 
-  const global = ['library', 'kit-library', 'suppliers', 'accounts', 'warehouses', 'volume-pools'];
+  const global = ['library', 'kit-library', 'suppliers', 'warehouses', 'volume-pools'];
   if (global.includes(rest)) return { view: rest };
 
   const m = rest.match(/^events\/([^/]+)(?:\/(.+))?$/);

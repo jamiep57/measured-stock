@@ -1320,41 +1320,6 @@ export const suppliersConfig = viewConfig({
   ],
 });
 
-export const accountsConfig = viewConfig({
-  id: 'accounts',
-  defaults: () => ({ query: '', kind: 'all', archived: 'hide', sort: 'name' }),
-  persist: { keys: ['sort', 'kind'], storageKey: 'v5AccountsTableFilter' },
-  buildFilterSections() {
-    return [{
-      id: 'query',
-      label: 'Search',
-      type: 'text',
-      placeholder: 'Account or contact…',
-    }, {
-      id: 'kind',
-      label: 'Type',
-      type: 'segment',
-      options: [
-        { value: 'all', label: 'All' },
-        { value: 'client', label: 'Clients' },
-        { value: 'supplier', label: 'Suppliers' },
-      ],
-    }, {
-      id: 'archived',
-      label: 'Archived',
-      type: 'segment',
-      options: [
-        { value: 'hide', label: 'Hide' },
-        { value: 'show', label: 'Show' },
-      ],
-    }];
-  },
-  sortOptions: [
-    { value: 'name', label: 'Name A–Z' },
-    { value: 'name-desc', label: 'Name Z–A' },
-  ],
-});
-
 export const warehousesConfig = viewConfig({
   id: 'warehouses',
   defaults: () => ({ query: '', kind: 'stock', sort: 'name' }),
@@ -1623,7 +1588,6 @@ export const ALL_FILTER_CONFIGS = [
   libraryConfig,
   kitLibraryConfig,
   suppliersConfig,
-  accountsConfig,
   warehousesConfig,
   volumePoolsConfig,
   bugsConfig,

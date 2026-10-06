@@ -19,8 +19,6 @@ import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js'
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
 import { countedInFromDeliveries } from '../../lib/opening-stock.js';
-import { listAccounts } from '../../lib/accounts-data.js';
-import { primaryContact } from '../../lib/accounts.js';
 import { findOfferForSupplier } from '../../pack-metrics.js';
 import { parsePlanningNumber } from '../../lib/planning-menu.js';
 import { cocktailServesByProduct } from '../../lib/menu-cocktails.js';
@@ -686,18 +684,10 @@ export function mountOrdersPanel(route) {
       try {
         const { generatePurchaseOrderPDF } = await import('../../lib/purchase-order-pdf.js');
         const h = readHeader();
-        const accounts = await listAccounts().catch(() => []);
-        const account = (accounts || []).find((a) => a.supplier_id === h.supplier_id);
-        const contact = primaryContact(account?.account_contacts, 'order');
         const sup = ctx.supplierById.get(h.supplier_id) || null;
         await generatePurchaseOrderPDF({
           po: { ...po, ...h },
-          supplier: sup ? {
-            ...sup,
-            contact_name: contact?.name || sup.contact_name,
-            email: contact?.email || sup.email,
-            phone: contact?.phone || sup.phone,
-          } : null,
+          supplier: sup,
           event: ctx.event,
           lines: state.lines.map((l) => {
             const p = ctx.productById.get(l.product_id);

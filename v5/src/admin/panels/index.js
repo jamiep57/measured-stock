@@ -50,7 +50,6 @@ const lazy = {
   counts: () => import('./counts.js'),
   library: () => import('./library.js'),
   suppliers: () => import('./suppliers.js'),
-  accounts: () => import('./accounts.js'),
   warehouses: () => import('./warehouses.js'),
   'volume-pools': () => import('./volume-pools.js'),
   planning: () => import('./planning.js'),
@@ -79,7 +78,6 @@ export const PANEL_TITLES = {
   library: 'Product library',
   'kit-library': 'Kit library',
   suppliers: 'Suppliers',
-  accounts: 'Accounts',
   warehouses: 'Warehouses',
   'volume-pools': 'Volume pools',
   planning: 'Menu & GP',
@@ -152,11 +150,6 @@ export async function renderPanel(route, state) {
   if (route.view === 'suppliers') {
     const m = await lazy.suppliers();
     return m.renderSuppliersShell();
-  }
-
-  if (route.view === 'accounts') {
-    const m = await lazy.accounts();
-    return m.renderAccountsShell();
   }
 
   if (route.view === 'volume-pools') {
@@ -389,10 +382,6 @@ export async function mountPanel(route, state) {
   if (route.view === 'suppliers') {
     const m = await lazy.suppliers();
     return m.mountSuppliersPanel();
-  }
-  if (route.view === 'accounts') {
-    const m = await lazy.accounts();
-    return m.mountAccountsPanel();
   }
   if (route.view === 'volume-pools') {
     const m = await lazy['volume-pools']();

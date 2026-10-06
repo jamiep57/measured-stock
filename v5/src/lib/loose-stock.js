@@ -158,7 +158,6 @@ export function validateLoosePayment(form) {
       paid_on: paidOn,
       reference: reference || null,
       notes: notes || null,
-      account_id: form?.account_id || null,
     } : null,
   };
 }

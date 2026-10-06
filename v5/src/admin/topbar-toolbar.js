@@ -369,21 +369,6 @@ export const PANEL_TOOLBAR = {
       ],
     },
   ],
-  accounts: [
-    {
-      id: 'actions',
-      label: 'Accounts',
-      items: [
-        {
-          id: 'new-account',
-          icon: 'plus',
-          label: 'New account',
-          title: 'Add a client or supplier account',
-          primary: true,
-        },
-      ],
-    },
-  ],
   warehouses: [
     {
       id: 'actions',

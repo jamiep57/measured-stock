@@ -1205,14 +1205,8 @@
 .ord-history-who { color: var(--muted-foreground); }
 .ord-gen-list { margin: 8px 0; padding-left: 18px; font-size: 13px; }
 
-/* Accounts — clients + suppliers, contacts, rider pricing */
+/* Small icon button, used by reports */
 
-.acct-item--archived .catalog-list-name { color: var(--muted-foreground); }
-.acct-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.acct-small-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 12px; }
-.acct-none { margin: 4px 0 8px; font-size: 13px; }
-.acct-sub { display: block; font-size: 11px; color: var(--muted-foreground); }
-.acct-row-actions { width: 1%; white-space: nowrap; text-align: right; }
 .acct-icon-btn {
   display: inline-flex;
   padding: 4px;
@@ -1223,41 +1217,6 @@
   cursor: pointer;
 }
 .acct-icon-btn:hover { color: var(--foreground); background: var(--secondary); }
-.acct-mini-title {
-  margin: 10px 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-.acct-links { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
-.acct-link {
-  padding: 0;
-  font: inherit;
-  font-weight: 500;
-  color: var(--foreground);
-  background: none;
-  border: 0;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.acct-kind-row { display: flex; gap: 16px; }
-.acct-check-inline { align-self: end; padding-bottom: 8px; }
-.acct-agreement {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.acct-agreement-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.acct-agreement-name { font-weight: 600; }
-.acct-agreement .lta-badge { margin-left: 6px; }
-.acct-rider-lines .plan-cell-input { max-width: 110px; margin-left: auto; }
 
 /* Reports: headlines, sales, revenue & GP, loose stock */
 .rpt-kpis { margin-bottom: 12px; }

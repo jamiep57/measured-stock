@@ -20,7 +20,7 @@ export function renderOrganisationSection() {
       <header class="settings-card-head">
         <div class="settings-card-head-text">
           <h2 class="settings-card-title">Organisation</h2>
-          <p class="settings-card-desc muted">Products, events, suppliers, accounts and users are isolated per organisation.</p>
+          <p class="settings-card-desc muted">Products, events, suppliers and users are isolated per organisation.</p>
         </div>
       </header>
       <div class="admin-drawer-form settings-org-form">

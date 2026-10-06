@@ -14,7 +14,6 @@ import { loadCaseSizes, loadLibraryProducts, loadCategories, loadServeSizes } fr
 import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
-import { listAccounts, loadEventClientAccount } from '../../lib/accounts-data.js';
 import { openMenuExportDialog } from '../planning-export.js';
 import { openCocktailEditor } from '../planning-cocktail.js';
 import {
@@ -177,8 +176,6 @@ export function mountPlanningPanel(route) {
     filter: getTableFilterValues('planning') || {},
     query: getLastProductFilter().query || '',
     saveTimers: {},
-    accounts: null,
-    clientAccountId: null,
     columnOrder: readPlanningColumnOrder(typeof localStorage === 'undefined' ? null : localStorage),
     marks: readPlanningMarks(typeof localStorage === 'undefined' ? null : localStorage, route.eventId),
     abort: false,
@@ -2086,13 +2083,6 @@ export function mountPlanningPanel(route) {
     ctx.caseSizes = caseSizes || [];
     ctx.serveSizes = serveSizes || [];
     ctx.categories = categories || [];
-    const [accounts, clientId] = await Promise.all([
-      listAccounts().catch(() => null),
-      loadEventClientAccount(ctx.eventId).catch(() => null),
-    ]);
-    if (ctx.abort) return;
-    ctx.accounts = accounts;
-    ctx.clientAccountId = clientId;
     recomputeAll();
     setTableFilterContext('planning', {
       categories: [...new Set([...ctx.lines.values()].map((l) => l.category))].sort(),

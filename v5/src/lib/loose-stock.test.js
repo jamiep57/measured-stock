@@ -79,7 +79,7 @@ describe('computeLooseStock', () => {
 describe('validateLoosePayment', () => {
   it('accepts payments and refunds', () => {
     expect(validateLoosePayment({ amount: '£1,250.50', paid_on: '2026-07-10', reference: ' BACS ' }).value)
-      .toEqual({ amount: 1250.5, paid_on: '2026-07-10', reference: 'BACS', notes: null, account_id: null });
+      .toEqual({ amount: 1250.5, paid_on: '2026-07-10', reference: 'BACS', notes: null });
     expect(validateLoosePayment({ amount: '-20', paid_on: '2026-07-10' }).ok).toBe(true);
   });
   it('rejects zero, junk and missing dates', () => {

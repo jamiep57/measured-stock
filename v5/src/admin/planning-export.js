@@ -9,8 +9,6 @@ import { escapeHtml, toast } from '../lib/util.js';
 import { getDB } from '../db.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { isOrgAdmin } from '../lib/organisations.js';
-import { listAgreementsForEvent } from '../lib/accounts-data.js';
-import { primaryContact, riderPricesFor } from '../lib/accounts.js';
 import { EXPORT_TYPES, buildMenuExport, exportFileStem, menuExportCsv } from '../lib/menu-exports.js';
 
 export function downloadBlob(filename, content, type) {
@@ -25,15 +23,12 @@ export function downloadBlob(filename, content, type) {
 }
 
 /**
- * @param {{ eventId, event, year, lines: Map, scenarios: object[], accounts: object[]|null, clientAccountId: string|null }} ctx
+ * @param {{ eventId, event, year, lines: Map, scenarios: object[] }} ctx
  */
 export function openMenuExportDialog(ctx) {
   const admin = isOrgAdmin();
-  const client = (ctx.accounts || []).find((a) => a.id === ctx.clientAccountId) || null;
   const lines = [...ctx.lines.values()];
   const vatRate = lines.find((l) => l.included)?.vatRate ?? 0.2;
-  let riderPrices = null;
-  let riderNote = '';
 
   const scenarioChecks = ctx.scenarios.length
     ? ctx.scenarios.map((s) => `
@@ -43,7 +38,6 @@ export function openMenuExportDialog(ctx) {
 
   const rateOpts = [
     '<option value="menu">Event menu prices</option>',
-    client ? '<option value="rider" disabled>Rider agreement (loading…)</option>' : '',
     ...ctx.scenarios.map((s) => `<option value="${escapeHtml(s.id)}">Scenario · ${escapeHtml(s.name)}</option>`),
   ].join('');
 
@@ -78,7 +72,6 @@ export function openMenuExportDialog(ctx) {
         <div data-export-section="sor" hidden>
           <label class="admin-field"><span class="admin-label">Rates from</span>
             <select class="admin-select" id="planExportRate">${rateOpts}</select></label>
-          ${client ? '' : '<p class="muted plan-export-note">This event has no client account, so the schedule can’t be addressed and rider rates aren’t available.</p>'}
         </div>
         <p class="plan-export-summary" id="planExportSummary"></p>
         <p class="plan-form-err" id="planExportErr" hidden></p>
@@ -100,7 +93,6 @@ export function openMenuExportDialog(ctx) {
       scenarios: ctx.scenarios,
       scenarioIds: [...el.querySelectorAll('[data-export-scenario]:checked')].map((c) => c.dataset.exportScenario),
       rateSource: $q('#planExportRate')?.value || 'menu',
-      riderPrices,
       includeInternal: includeInternal(),
     };
   }
@@ -113,8 +105,7 @@ export function openMenuExportDialog(ctx) {
     const model = buildMenuExport(t, options());
     const bits = [
       `${model.count} item${model.count === 1 ? '' : 's'}`,
-      client ? `client ${client.name}` : null,
-    ].filter(Boolean);
+    ];
     let extra = '';
     if (model.missingRates) {
       extra = t === 'sor'
@@ -127,27 +118,6 @@ export function openMenuExportDialog(ctx) {
 
   el.addEventListener('change', refresh);
   $q('[data-cancel]').onclick = closeModal;
-
-  if (client) {
-    listAgreementsForEvent(ctx.eventId, client.id)
-      .then((agreements) => {
-        riderPrices = riderPricesFor(agreements, ctx.event);
-        const opt = $q('#planExportRate option[value="rider"]');
-        if (!opt) return;
-        const names = [...new Set([...riderPrices.values()].map((r) => r.agreementName))];
-        riderNote = names.length ? `rates per ${names.join(', ')}` : '';
-        opt.disabled = riderPrices.size === 0;
-        opt.textContent = riderPrices.size
-          ? `Rider agreement · ${names.join(', ')} (${riderPrices.size} rate${riderPrices.size === 1 ? '' : 's'})`
-          : 'Rider agreement (none active for this event)';
-        if (riderPrices.size) $q('#planExportRate').value = 'rider';
-        refresh();
-      })
-      .catch(() => {
-        const opt = $q('#planExportRate option[value="rider"]');
-        if (opt) opt.textContent = 'Rider agreement (unavailable)';
-      });
-  }
 
   $q('[data-ok]').onclick = async () => {
     const err = $q('#planExportErr');
@@ -185,7 +155,6 @@ export function openMenuExportDialog(ctx) {
 
     const spec = EXPORT_TYPES[t];
     const stem = exportFileStem(t, ctx.event?.name);
-    const rateNote = t === 'sor' && opts.rateSource === 'rider' ? riderNote : '';
     try {
       if (format === 'csv') {
         downloadBlob(`${stem}.csv`, menuExportCsv(model), 'text/csv;charset=utf-8');
@@ -196,9 +165,7 @@ export function openMenuExportDialog(ctx) {
           model,
           title: `${spec.title} — ${ctx.event?.name || 'Event'}`,
           meta: [
-            client?.name,
             `Prices in GBP inc VAT ${vatPct}%`,
-            rateNote,
           ],
           notes: model.includeInternal ? ['INTERNAL — contains costs and GP. Not for distribution.'] : [],
           sheetName: spec.label,
@@ -211,9 +178,8 @@ export function openMenuExportDialog(ctx) {
           type: t,
           model,
           event: ctx.event,
-          client: client ? { name: client.name, contact: primaryContact(client.account_contacts, 'account_manager') } : null,
+          client: null,
           vatRate,
-          rateNote,
         });
       }
       closeModal();
