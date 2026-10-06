@@ -8,6 +8,7 @@ import { authFetch } from '../../lib/auth.js';
 import { getActiveOrganisation } from '../../lib/organisations.js';
 import { loadSalesBundle, mergeModifierRows, unmatchedForEvent } from '../../lib/sales-feed.js';
 import { suggestSquareLocation } from '../../lib/square-locations.js';
+import { squareSetupProgress, feedTotals } from '../../lib/square-setup.js';
 import {
   findRecipe, recipeIsMapped, recipeOnEvent, recipeIngredients,
   productIdForName, normVariation,
@@ -442,6 +443,9 @@ export function mountSalesPanel(route) {
     squareStatus: null,
     barLinks: [],
     unmatchedCount: 0,
+    wizardOpen: null,
+    wizardStep: null,
+    compareSeen: false,
     tab: 'items',
     searchQuery: getLastProductFilter().query || '',
     mapFilter: '',
@@ -908,57 +912,205 @@ export function mountSalesPanel(route) {
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }
 
-  function paintLiveBar() {
-    const uploadLines = (ctx.csvTillRows || []).length;
-    const liveLines = (ctx.squareTillRows || []).length;
-    const using = ctx.salesSource === 'square' ? 'Square live' : 'the uploaded file';
-    const preview = ctx.viewSource !== ctx.salesSource;
-    const connected = Boolean(ctx.squareStatus?.connected);
+  function squareProgress() {
     const bars = servingBars(ctx.event?.bars);
+    const linked = new Set((ctx.barLinks || []).map((link) => link.bar_id));
+    return squareSetupProgress({
+      connected: Boolean(ctx.squareStatus?.connected),
+      barCount: bars.length,
+      linkedCount: bars.filter((bar) => linked.has(bar.id)).length,
+      squareLines: (ctx.squareTillRows || []).length,
+      uploadLines: (ctx.csvTillRows || []).length,
+      salesSource: ctx.salesSource,
+      compareSeen: ctx.compareSeen,
+    });
+  }
+
+  function whenLabel(iso) {
+    if (!iso) return 'not yet';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return 'not yet';
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (date.toDateString() === new Date().toDateString()) return `today ${time}`;
+    return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+  }
+
+  const money = (n) => `£${(Number(n) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  function linkSuggestions(bars, locations) {
     const linkByBar = new Map((ctx.barLinks || []).map((link) => [link.bar_id, link]));
     const taken = new Set((ctx.barLinks || []).map((link) => link.square_location_id));
-    const locations = (ctx.squareStatus?.locations || []).filter((location) =>
-      location.status !== 'INACTIVE' || taken.has(location.id));
-    const pendingTaken = new Set(taken);
-    const suggestions = [];
+    const out = [];
     for (const bar of bars) {
       if (linkByBar.has(bar.id)) continue;
-      const suggested = suggestSquareLocation(bar.name, locations, pendingTaken);
+      const suggested = suggestSquareLocation(bar.name, locations, taken);
       if (!suggested) continue;
-      suggestions.push(bar.id);
-      pendingTaken.add(suggested);
+      out.push({ barId: bar.id, locationId: suggested });
+      taken.add(suggested);
     }
-    const locationRows = bars.map((bar) => {
-      const link = linkByBar.get(bar.id);
-      const options = ['<option value="">Not linked</option>'].concat(locations.map((location) => {
-        const selected = link?.square_location_id === location.id ? ' selected' : '';
-        return `<option value="${escapeHtml(location.id)}"${selected}>${escapeHtml(location.name)}</option>`;
-      }));
-      return `<span>${escapeHtml(bar.name)}</span><select class="admin-select" data-bar-location="${escapeHtml(bar.id)}" aria-label="Square location for ${escapeHtml(bar.name)}">${options.join('')}</select>`;
-    }).join('');
-    const switchLabel = ctx.viewSource === 'square' ? 'Use Square live for projections' : 'Use the upload for projections';
+    return out;
+  }
+
+  function paintViewToggle() {
     return `
-      <div class="sales-live">
-        <div class="sales-live-row">
-          <strong>Sales feed</strong>
-          <span class="muted">Projections and recon use ${escapeHtml(using)}.</span>
-          <span class="muted">Upload ${uploadLines} line${uploadLines === 1 ? '' : 's'} · Square ${liveLines} line${liveLines === 1 ? '' : 's'}</span>
+      <div class="sq-seg" role="group" aria-label="Sales shown in the grid">
+        <button type="button" data-sales-view="csv" aria-pressed="${ctx.viewSource === 'csv'}">Uploaded file</button>
+        <button type="button" data-sales-view="square" aria-pressed="${ctx.viewSource === 'square'}">Square live</button>
+      </div>`;
+  }
+
+  function paintStepBody(stepId) {
+    const status = ctx.squareStatus || {};
+    if (stepId === 'connect') {
+      if (status.connected) {
+        return `<p>Connected to <strong>${escapeHtml(status.merchant_name || status.merchant_id || 'Square')}</strong>${status.environment === 'sandbox' ? ' <span class="sq-pill">Sandbox</span>' : ''}.</p>`;
+      }
+      return `
+        <p>Square sends each bar’s till sales here as they happen, so you no longer need to upload a sales file.</p>
+        <p class="muted">An organisation admin connects Square once for every event.</p>
+        <div class="sq-actions"><a class="admin-drawer-btn admin-drawer-btn--primary" href="/settings/square">Open Square settings</a></div>`;
+    }
+
+    if (stepId === 'link') {
+      const bars = servingBars(ctx.event?.bars);
+      if (!bars.length) {
+        return '<p>This event has no bars yet. Add bars in event setup, then link each one to its Square location.</p>';
+      }
+      const linkByBar = new Map((ctx.barLinks || []).map((link) => [link.bar_id, link]));
+      const taken = new Set((ctx.barLinks || []).map((link) => link.square_location_id));
+      const locations = (status.locations || []).filter((location) =>
+        location.status !== 'INACTIVE' || taken.has(location.id));
+      const suggestions = linkSuggestions(bars, locations);
+      const rows = bars.map((bar) => {
+        const link = linkByBar.get(bar.id);
+        const options = ['<option value="">Not linked</option>'].concat(locations.map((location) => {
+          const selected = link?.square_location_id === location.id ? ' selected' : '';
+          return `<option value="${escapeHtml(location.id)}"${selected}>${escapeHtml(location.name)}</option>`;
+        }));
+        return `
+          <span class="sq-bar-name">${link ? icon('check', { size: 14 }) : '<span class="sq-dot"></span>'}${escapeHtml(bar.name)}</span>
+          <select class="admin-select" data-bar-location="${escapeHtml(bar.id)}" aria-label="Square location for ${escapeHtml(bar.name)}">${options.join('')}</select>`;
+      }).join('');
+      return `
+        <p>Pick the Square location each bar’s tills sell from. Sales are matched to this event by location and the event dates.</p>
+        ${suggestions.length ? `<div class="sq-actions"><button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-link-suggested>Link ${suggestions.length} matching name${suggestions.length === 1 ? '' : 's'}</button></div>` : ''}
+        <div class="sales-loc-grid">${rows}</div>
+        <p class="muted">Bone Yard is left out on purpose.</p>`;
+    }
+
+    if (stepId === 'pull') {
+      const square = feedTotals(ctx.squareTillRows);
+      return `
+        <p>New sales arrive on their own within seconds of a till closing an order. Use <strong>Sync now</strong> to pull sales from before the bars were linked, or if something looks missing.</p>
+        <div class="sq-stats">
+          <div><span class="muted">Items sold</span><strong>${square.items.toLocaleString('en-GB')}</strong></div>
+          <div><span class="muted">Net sales</span><strong>${money(square.net)}</strong></div>
+          <div><span class="muted">Last sale received</span><strong>${escapeHtml(whenLabel(status.last_webhook_at))}</strong></div>
+          <div><span class="muted">Last sync</span><strong>${escapeHtml(whenLabel(status.last_sync_at))}</strong></div>
         </div>
-        <div class="sales-live-row">
-          <button type="button" class="admin-drawer-btn" data-sales-view="csv" aria-pressed="${ctx.viewSource === 'csv'}">Uploaded file</button>
-          <button type="button" class="admin-drawer-btn" data-sales-view="square" aria-pressed="${ctx.viewSource === 'square'}">Square live</button>
-          ${preview ? `<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-sales-use="${escapeHtml(ctx.viewSource)}">${switchLabel}</button>` : ''}
-          ${connected ? '<button type="button" class="admin-drawer-btn" data-square-sync>Sync now</button>' : '<span class="muted">Connect Square in Settings → Square to pull live sales.</span>'}
+        ${ctx.unmatchedCount ? `<p class="sq-warn">${ctx.unmatchedCount} order${ctx.unmatchedCount === 1 ? '' : 's'} matched more than one event on the same day and ${ctx.unmatchedCount === 1 ? 'was' : 'were'} left out. Check the dates of events that share these locations.</p>` : ''}
+        <div class="sq-actions"><button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-square-sync>Sync now</button></div>`;
+    }
+
+    if (stepId === 'compare') {
+      const upload = feedTotals(ctx.csvTillRows);
+      const square = feedTotals(ctx.squareTillRows);
+      if (!upload.lines) {
+        return '<p>There is no uploaded sales file for this event, so there is nothing to compare. You can go live with Square.</p>';
+      }
+      const diffItems = square.items - upload.items;
+      const diffNet = Math.round((square.net - upload.net) * 100) / 100;
+      const sign = (n) => (n > 0 ? '+' : '');
+      return `
+        <p>Check Square against the uploaded file before projections switch over. Use the toggle to see each one in the grid below.</p>
+        <table class="sq-compare">
+          <thead><tr><th></th><th>Uploaded file</th><th>Square live</th><th>Difference</th></tr></thead>
+          <tbody>
+            <tr><th>Till lines</th><td>${upload.lines}</td><td>${square.lines}</td><td>${sign(square.lines - upload.lines)}${square.lines - upload.lines}</td></tr>
+            <tr><th>Items sold</th><td>${upload.items.toLocaleString('en-GB')}</td><td>${square.items.toLocaleString('en-GB')}</td><td class="${diffItems ? 'sq-off' : 'sq-ok'}">${diffItems ? `${sign(diffItems)}${diffItems.toLocaleString('en-GB')}` : 'Match'}</td></tr>
+            <tr><th>Net sales</th><td>${money(upload.net)}</td><td>${money(square.net)}</td><td class="${diffNet ? 'sq-off' : 'sq-ok'}">${diffNet ? `${sign(diffNet)}${money(diffNet)}` : 'Match'}</td></tr>
+          </tbody>
+        </table>
+        <div class="sq-actions">${paintViewToggle()}</div>`;
+    }
+
+    const live = ctx.salesSource === 'square';
+    return `
+      <p>${live
+    ? 'Projections, recon and reports for this event use <strong>Square live</strong> sales.'
+    : 'Projections, recon and reports for this event still use the <strong>uploaded file</strong>.'}</p>
+      <p class="muted">You can switch back at any time. The uploaded file is never deleted.</p>
+      <div class="sq-actions">
+        ${live
+    ? '<button type="button" class="admin-drawer-btn" data-sales-use="csv">Switch back to the uploaded file</button>'
+    : '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-sales-use="square">Use Square live for this event</button>'}
+      </div>`;
+  }
+
+  function paintLiveBar() {
+    const progress = squareProgress();
+    const connected = Boolean(ctx.squareStatus?.connected);
+    const live = ctx.salesSource === 'square';
+    const open = ctx.wizardOpen ?? (connected && !progress.complete);
+    const preview = ctx.viewSource !== ctx.salesSource;
+    const statusText = live
+      ? 'Live: projections use Square'
+      : connected
+        ? `Setup ${progress.doneCount} of ${progress.steps.length}`
+        : 'Not set up';
+    const summary = live
+      ? `Last sale received ${whenLabel(ctx.squareStatus?.last_webhook_at)}`
+      : connected
+        ? 'Projections use the uploaded file until you go live.'
+        : 'Pull till sales straight from Square instead of uploading a file.';
+
+    const head = `
+      <div class="sq-head">
+        <div class="sq-head-text">
+          <strong>Square live sales</strong>
+          <span class="sq-pill ${live ? 'sq-pill--live' : ''}">${escapeHtml(statusText)}</span>
+          <span class="muted">${escapeHtml(summary)}</span>
         </div>
-        ${preview ? '<p class="muted">This grid is a preview. Projections still use the other feed.</p>' : ''}
-        ${ctx.unmatchedCount ? `<p class="muted">${ctx.unmatchedCount} order${ctx.unmatchedCount === 1 ? '' : 's'} matched more than one event and ${ctx.unmatchedCount === 1 ? 'was' : 'were'} left out.</p>` : ''}
-        ${ctx.squareStatus?.last_error ? `<p class="muted">${escapeHtml(ctx.squareStatus.last_error)}</p>` : ''}
-        ${connected && bars.length ? `
-          <div>
-            <p class="muted">Each bar’s till is a Square location. Bone Yard is not linked.</p>
-            <div class="sales-loc-grid">${locationRows}</div>
-            ${suggestions.length ? '<div class="sales-live-row"><button type="button" class="admin-drawer-btn" data-link-suggested>Link matching names</button></div>' : ''}
-          </div>` : ''}
+        <div class="sq-head-actions">
+          ${connected && (ctx.squareTillRows || []).length ? paintViewToggle() : ''}
+          ${live && !open ? '<button type="button" class="admin-drawer-btn" data-square-sync>Sync now</button>' : ''}
+          <button type="button" class="admin-drawer-btn" data-sq-toggle aria-expanded="${open}">${open ? 'Hide setup' : (connected ? 'Setup' : 'Set up Square')}</button>
+        </div>
+      </div>
+      ${preview ? `<p class="sq-preview">The grid is showing ${ctx.viewSource === 'square' ? 'Square live' : 'the uploaded file'} as a preview. Projections still use ${live ? 'Square live' : 'the uploaded file'}.</p>` : ''}
+      ${ctx.squareStatus?.last_error ? `<p class="sq-warn">${escapeHtml(ctx.squareStatus.last_error)}</p>` : ''}`;
+
+    if (!open) return `<div class="sales-live sq-wizard">${head}</div>`;
+
+    const active = Math.min(ctx.wizardStep ?? progress.current, progress.steps.length - 1);
+    const step = progress.steps[active];
+    if (step.id === 'compare') ctx.compareSeen = true;
+    const stepper = progress.steps.map((s, i) => {
+      const state = s.done ? 'is-done' : (i === progress.current ? 'is-next' : '');
+      return `
+        <li>
+          <button type="button" class="sq-step ${state} ${i === active ? 'is-active' : ''}" data-sq-step="${i}" aria-current="${i === active ? 'step' : 'false'}">
+            <span class="sq-step-badge">${s.done ? icon('check', { size: 12 }) : i + 1}</span>
+            <span class="sq-step-title">${escapeHtml(s.title)}</span>
+          </button>
+        </li>`;
+    }).join('');
+    const canNext = active < progress.steps.length - 1 && (step.done || step.id === 'compare');
+
+    return `
+      <div class="sales-live sq-wizard">
+        ${head}
+        <ol class="sq-steps">${stepper}</ol>
+        <div class="sq-body">
+          <h3 class="sq-body-title">${active + 1}. ${escapeHtml(step.title)}</h3>
+          ${paintStepBody(step.id)}
+        </div>
+        <div class="sq-foot">
+          <button type="button" class="admin-drawer-btn" data-sq-step="${active - 1}" ${active === 0 ? 'disabled' : ''}>Back</button>
+          ${active < progress.steps.length - 1
+    ? `<button type="button" class="admin-drawer-btn ${canNext ? 'admin-drawer-btn--primary' : ''}" data-sq-step="${active + 1}" ${canNext ? '' : 'disabled'}>Next</button>`
+    : '<button type="button" class="admin-drawer-btn" data-sq-toggle>Done</button>'}
+        </div>
       </div>`;
   }
 
@@ -995,6 +1147,23 @@ export function mountSalesPanel(route) {
   }
 
   function bindLiveControls() {
+    panel.querySelectorAll('[data-sq-toggle]').forEach((btn) => {
+      btn.onclick = () => {
+        const progress = squareProgress();
+        const open = ctx.wizardOpen ?? (Boolean(ctx.squareStatus?.connected) && !progress.complete);
+        ctx.wizardOpen = !open;
+        ctx.wizardStep = null;
+        paint();
+      };
+    });
+    panel.querySelectorAll('[data-sq-step]').forEach((btn) => {
+      btn.onclick = () => {
+        const next = Number(btn.getAttribute('data-sq-step'));
+        if (!Number.isInteger(next) || next < 0) return;
+        ctx.wizardStep = next;
+        paint();
+      };
+    });
     panel.querySelectorAll('[data-sales-view]').forEach((btn) => {
       btn.onclick = () => {
         const next = btn.getAttribute('data-sales-view');
@@ -1008,11 +1177,14 @@ export function mountSalesPanel(route) {
     if (useBtn) {
       useBtn.onclick = () => {
         const source = useBtn.getAttribute('data-sales-use');
+        if (source === 'square') {
+          ctx.wizardOpen = false;
+          ctx.wizardStep = null;
+        }
         setSalesSource(source).catch((err) => toast(err.message || 'Could not switch sales feed', true));
       };
     }
-    const syncBtn = panel.querySelector('[data-square-sync]');
-    if (syncBtn) {
+    panel.querySelectorAll('[data-square-sync]').forEach((syncBtn) => {
       syncBtn.onclick = async () => {
         syncBtn.setAttribute('disabled', '');
         try {
@@ -1023,13 +1195,14 @@ export function mountSalesPanel(route) {
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.message || 'Square sync failed');
           toast(`Synced ${data.orders || 0} Square order${data.orders === 1 ? '' : 's'}`);
+          ctx.wizardStep = null;
           await reload();
         } catch (err) {
           toast(err.message || 'Square sync failed', true);
           syncBtn.removeAttribute('disabled');
         }
       };
-    }
+    });
     panel.querySelectorAll('[data-bar-location]').forEach((select) => {
       select.onchange = () => {
         saveBarLocation(select.getAttribute('data-bar-location'), select.value)
@@ -1055,6 +1228,7 @@ export function mountSalesPanel(route) {
             await saveBarLocation(bar.id, locationId);
             taken.add(locationId);
           }
+          ctx.wizardStep = null;
           toast('Matching bars linked');
           paint();
         } catch (err) {
