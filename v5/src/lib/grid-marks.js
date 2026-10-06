@@ -61,6 +61,17 @@ export function gridCellMark(marks, rowKey, colId) {
   return marks?.[rowKey]?.cells?.[colId] || '';
 }
 
+/**
+ * Colour for one cell. `legacyColId` is the old column-index key (`i:2`).
+ * A real column id wins. The index key is only a fallback so colours saved
+ * before cells had their own ids still show, until that cell is coloured again.
+ */
+export function resolveGridCellMark(marks, rowKey, colId, legacyColId = '') {
+  const direct = gridCellMark(marks, rowKey, colId);
+  if (direct || !legacyColId || legacyColId === colId) return direct;
+  return gridCellMark(marks, rowKey, legacyColId);
+}
+
 export function setGridMark(marks, rowKey, target, color) {
   return setPlanningMark(marks, rowKey, target, color);
 }

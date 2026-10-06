@@ -95,7 +95,7 @@ function renderBarQtyCells(bar, ep, ctx) {
 
   if (!serves) {
     return `
-      <td colspan="2" class="cnt-qty-cell cnt-qty-cell--off cnt-group-start" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
+      <td colspan="2" class="cnt-qty-cell cnt-qty-cell--off cnt-group-start" data-col="bar:${escapeHtml(barId)}" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
         <button type="button" class="dist-cell-add" title="Add to ${barName} menu" aria-label="Add to ${barName} menu">
           ${icon('plus', { size: 14, strokeWidth: 2.5 })}
         </button>
@@ -111,7 +111,7 @@ function renderBarQtyCells(bar, ep, ctx) {
 
   const casesCell = `
     <td class="cnt-qty-cell cnt-qty-cell--edit cnt-qty-cell--cases cnt-group-start${hasCases ? ' cnt-qty-cell--filled' : ''}"
-      data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
+      data-col="bar:${escapeHtml(barId)}:c" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
       <input type="text" class="cnt-inp cnt-inp--primary num-math"
         data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}"
         ${attrString(primary)}
@@ -126,7 +126,7 @@ function renderBarQtyCells(bar, ep, ctx) {
   const singlesCell = secondary
     ? `
     <td class="cnt-qty-cell cnt-qty-cell--edit cnt-qty-cell--singles${hasSingles ? ' cnt-qty-cell--filled' : ''}"
-      data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
+      data-col="bar:${escapeHtml(barId)}:s" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
       <input type="text" class="cnt-inp cnt-inp--secondary num-math"
         data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}"
         ${attrString(secondary)}
@@ -136,7 +136,7 @@ function renderBarQtyCells(bar, ep, ctx) {
     </td>`
     : `
     <td class="cnt-qty-cell cnt-qty-cell--singles cnt-qty-cell--na"
-      data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
+      data-col="bar:${escapeHtml(barId)}:s" data-bar="${escapeHtml(barId)}" data-pid="${escapeHtml(pid)}">
       <span class="muted">—</span>
     </td>`;
 
@@ -149,7 +149,7 @@ function renderProductRow(ep, ctx) {
   const packLabel = pack?.label || ep.product.case_size || '';
 
   let html = `<tr class="cnt-prod-row" data-pid="${escapeHtml(pid)}">
-    <th class="cnt-sticky cnt-col-item" scope="row">
+    <th class="cnt-sticky cnt-col-item" scope="row" data-col="product">
       <div class="cnt-item">
         <div class="cnt-item-top">
           <span class="cnt-item-name" title="${escapeHtml(ep.product.name)}">${escapeHtml(ep.product.name)}</span>

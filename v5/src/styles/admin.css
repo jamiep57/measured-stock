@@ -6262,6 +6262,61 @@ body.admin-drawer-open {
 .cnt-qty-cell--filled .cnt-inp {
   font-weight: 600;
 }
+/* Qty cells use their own grey with !important. A mark has to beat that grey, including hover and focus. */
+.cnt-grid td.plan-cell--mark-sand,
+.cnt-grid th.plan-cell--mark-sand,
+.cnt-grid .cnt-prod-row:hover > td.plan-cell--mark-sand,
+.cnt-grid .cnt-prod-row:hover > th.plan-cell--mark-sand,
+.cnt-grid td.plan-cell--mark-sand:focus-within,
+.cnt-grid th.plan-cell--mark-sand:focus-within { background: #f3ead8 !important; }
+.cnt-grid td.plan-cell--mark-amber,
+.cnt-grid th.plan-cell--mark-amber,
+.cnt-grid .cnt-prod-row:hover > td.plan-cell--mark-amber,
+.cnt-grid .cnt-prod-row:hover > th.plan-cell--mark-amber,
+.cnt-grid td.plan-cell--mark-amber:focus-within,
+.cnt-grid th.plan-cell--mark-amber:focus-within { background: #fde7c7 !important; }
+.cnt-grid td.plan-cell--mark-green,
+.cnt-grid th.plan-cell--mark-green,
+.cnt-grid .cnt-prod-row:hover > td.plan-cell--mark-green,
+.cnt-grid .cnt-prod-row:hover > th.plan-cell--mark-green,
+.cnt-grid td.plan-cell--mark-green:focus-within,
+.cnt-grid th.plan-cell--mark-green:focus-within { background: #d8f3e4 !important; }
+.cnt-grid td.plan-cell--mark-sky,
+.cnt-grid th.plan-cell--mark-sky,
+.cnt-grid .cnt-prod-row:hover > td.plan-cell--mark-sky,
+.cnt-grid .cnt-prod-row:hover > th.plan-cell--mark-sky,
+.cnt-grid td.plan-cell--mark-sky:focus-within,
+.cnt-grid th.plan-cell--mark-sky:focus-within { background: #d9e9fb !important; }
+.cnt-grid td.plan-cell--mark-rose,
+.cnt-grid th.plan-cell--mark-rose,
+.cnt-grid .cnt-prod-row:hover > td.plan-cell--mark-rose,
+.cnt-grid .cnt-prod-row:hover > th.plan-cell--mark-rose,
+.cnt-grid td.plan-cell--mark-rose:focus-within,
+.cnt-grid th.plan-cell--mark-rose:focus-within { background: #f8dbe3 !important; }
+.cnt-grid td.plan-cell--mark-violet,
+.cnt-grid th.plan-cell--mark-violet,
+.cnt-grid .cnt-prod-row:hover > td.plan-cell--mark-violet,
+.cnt-grid .cnt-prod-row:hover > th.plan-cell--mark-violet,
+.cnt-grid td.plan-cell--mark-violet:focus-within,
+.cnt-grid th.plan-cell--mark-violet:focus-within { background: #e7defb !important; }
+.cnt-grid .plan-row--mark-sand > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-sand:hover > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-sand > .cnt-qty-cell:not(.plan-cell--mark):focus-within { background: #f3ead8 !important; }
+.cnt-grid .plan-row--mark-amber > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-amber:hover > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-amber > .cnt-qty-cell:not(.plan-cell--mark):focus-within { background: #fde7c7 !important; }
+.cnt-grid .plan-row--mark-green > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-green:hover > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-green > .cnt-qty-cell:not(.plan-cell--mark):focus-within { background: #d8f3e4 !important; }
+.cnt-grid .plan-row--mark-sky > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-sky:hover > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-sky > .cnt-qty-cell:not(.plan-cell--mark):focus-within { background: #d9e9fb !important; }
+.cnt-grid .plan-row--mark-rose > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-rose:hover > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-rose > .cnt-qty-cell:not(.plan-cell--mark):focus-within { background: #f8dbe3 !important; }
+.cnt-grid .plan-row--mark-violet > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-violet:hover > .cnt-qty-cell:not(.plan-cell--mark),
+.cnt-grid .plan-row--mark-violet > .cnt-qty-cell:not(.plan-cell--mark):focus-within { background: #e7defb !important; }
 .cnt-cell-remove {
   position: absolute;
   top: 2px;

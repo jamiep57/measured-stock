@@ -7,9 +7,9 @@
 import { toast } from '../lib/util.js';
 import { PLANNING_MARK_IDS } from '../lib/planning-marks.js';
 import {
-  gridCellMark,
   gridRowMark,
   readGridMarks,
+  resolveGridCellMark,
   setGridMark,
   writeGridMarks,
 } from '../lib/grid-marks.js';
@@ -127,12 +127,21 @@ function rowKey(el) {
   return name ? `n:${name.slice(0, 80)}` : '';
 }
 
+function legacyColKey(cell, row) {
+  const index = [...row.children].indexOf(cell);
+  return `i:${index < 0 ? 0 : index}`;
+}
+
 function colKey(cell, row) {
   if (!cell || cell === row) return 'item';
   if (cell.dataset?.col) return cell.dataset.col;
   if (cell.dataset?.rcnCol) return cell.dataset.rcnCol;
-  const index = [...row.children].indexOf(cell);
-  return `i:${index < 0 ? 0 : index}`;
+  return legacyColKey(cell, row);
+}
+
+function cellMark(key, cell, row) {
+  const legacy = cell?.dataset?.col ? legacyColKey(cell, row) : '';
+  return resolveGridCellMark(marks, key, colKey(cell, row), legacy);
 }
 
 function columnLabel(cell, row) {
@@ -231,7 +240,7 @@ function paintHost(host) {
         setClasses(el, rowColor, 'plan-row', MARK_ROW);
         [...el.children].forEach((cell) => {
           if (cell.tagName !== 'TD' && cell.tagName !== 'TH') return;
-          const color = gridCellMark(marks, key, colKey(cell, el));
+          const color = cellMark(key, cell, el);
           setClasses(cell, color, 'plan-cell', MARK_CELL);
         });
       } else {
@@ -373,7 +382,7 @@ function openAt(target, point) {
     colorMode: card ? 'item' : 'cell',
     keepOpenSelector: KEEP_OPEN,
     marks: {
-      cell: gridCellMark(marks, key, col),
+      cell: cellMark(key, cell, el),
       row: gridRowMark(marks, key),
     },
     actions,
@@ -382,6 +391,10 @@ function openAt(target, point) {
       if (!key) return;
       const targetId = scope === 'row' ? 'row' : col;
       marks = setGridMark(marks, key, targetId, color);
+      if (scope !== 'row' && cell?.dataset?.col) {
+        const legacy = legacyColKey(cell, el);
+        if (legacy !== targetId) marks = setGridMark(marks, key, legacy, '');
+      }
       saveMarks();
       paintHost(document.getElementById('adminContent'));
     },
