@@ -2,7 +2,8 @@
  * Planning — event menu, pricing and GP (spreadsheet grid).
  *
  * Rows are event_menu_items. Each event keeps its own menu prices.
- * Menu items never create stock: quantities here are projections only.
+ * Adding a product here also adds it to Products, with nothing ordered yet.
+ * Serves and quantities on this page stay projections.
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
@@ -1623,7 +1624,7 @@ export function mountPlanningPanel(route) {
     openSheet({
       title: 'Add product to event menu',
       variant: 'admin-full',
-      bodyHtml: '<p class="muted plan-sheet-lead">Adds the product to this event’s menu. Pick one that is already there to add another size, such as a half.</p><div id="planAddSearch"></div>',
+      bodyHtml: '<p class="muted plan-sheet-lead">Adds the product to this event’s menu and to Products. Pick one that is already there to add another size, such as a half.</p><div id="planAddSearch"></div>',
       footHtml: `<div class="admin-drawer-foot"><button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="planAddCancel">Close</button></div>`,
     });
     mountProductSearch($('planAddSearch'), {

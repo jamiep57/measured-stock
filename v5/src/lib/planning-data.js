@@ -3,7 +3,7 @@
  * Tables from migrations 068 and 076; all admin-only under RLS.
  */
 
-import { getDB } from '../db.js';
+import { getDB, invalidateEventCache } from '../db.js';
 import { drinkKindOf } from './menu-cocktails.js';
 
 const enc = (v) => encodeURIComponent(v);
@@ -101,6 +101,47 @@ export function isEventPricingLocked(event) {
   return event?.status === 'reconciled' || event?.status === 'archived';
 }
 
+// ---------- event products from the menu -----------------------------
+
+/** Product ids in `wanted` that are not already on the event. */
+export function missingEventProductIds(wanted, existingRows) {
+  const have = new Set((existingRows || []).map((row) => row?.product_id).filter(Boolean));
+  return [...new Set((wanted || []).filter(Boolean))].filter((id) => !have.has(id));
+}
+
+function isDuplicateRow(err) {
+  return /23505|duplicate key|already exists/i.test(String(err?.message || err || ''));
+}
+
+/**
+ * Put products on the event’s Products list.
+ * Rows already there keep their ordered quantity.
+ */
+export async function ensureEventProducts(eventId, productIds) {
+  const wanted = [...new Set((productIds || []).filter(Boolean))];
+  if (!eventId || !wanted.length) return [];
+  const existing = await getDB().select(
+    'event_products',
+    '?event_id=eq.' + enc(eventId) + '&select=product_id',
+  );
+  const missing = missingEventProductIds(wanted, existing);
+  if (missing.length) {
+    try {
+      await getDB().insert('event_products', missing.map((product_id) => ({
+        event_id: eventId,
+        product_id,
+        qty_ordered: 0,
+      })));
+    } catch (err) {
+      if (!isDuplicateRow(err)) throw err;
+    }
+  }
+  // The menu insert can create the product row in the database before this
+  // call sees it. Drop the cached event either way so Products reloads it.
+  invalidateEventCache(eventId);
+  return missing;
+}
+
 // ---------- event menu -----------------------------------------------
 
 export function listEventMenu(eventId) {
@@ -108,26 +149,34 @@ export function listEventMenu(eventId) {
 }
 
 export async function insertEventMenuItem(eventId, productId, patch) {
+  const cleaned = cleanPatch(patch);
   const rows = await getDB().insert('event_menu_items', {
     event_id: eventId,
     product_id: productId,
-    ...cleanPatch(patch),
+    ...cleaned,
   });
-  return rows?.[0] || null;
+  const row = rows?.[0] || null;
+  if (row && cleaned.included !== false) await ensureEventProducts(eventId, [productId]);
+  return row;
 }
 
 export async function updateEventMenuItem(id, patch) {
-  const rows = await getDB().update('event_menu_items', 'id=eq.' + enc(id), cleanPatch(patch));
-  return rows?.[0] || null;
+  const cleaned = cleanPatch(patch);
+  const rows = await getDB().update('event_menu_items', 'id=eq.' + enc(id), cleaned);
+  const row = rows?.[0] || null;
+  if (row && cleaned.included === true) await ensureEventProducts(row.event_id, [row.product_id]);
+  return row;
 }
 
 /** Write one shared field onto every size of a product (yield, deal, order override). */
 export async function patchEventMenuItems(eventId, productId, patch) {
+  const cleaned = cleanPatch(patch);
   const rows = await getDB().update(
     'event_menu_items',
     'event_id=eq.' + enc(eventId) + '&product_id=eq.' + enc(productId),
-    cleanPatch(patch),
+    cleaned,
   );
+  if (cleaned.included === true) await ensureEventProducts(eventId, [productId]);
   return rows || [];
 }
 
@@ -159,12 +208,28 @@ export function saveEventMenu(eventId, name, replace = false) {
 }
 
 /** Copy a saved menu onto an event. Returns how many products were newly added. */
-export function applySavedMenu(eventId, menuId, refreshPrices = false) {
-  return getDB().rpc('apply_saved_menu', {
+export async function applySavedMenu(eventId, menuId, refreshPrices = false) {
+  const added = await getDB().rpc('apply_saved_menu', {
     p_event: eventId,
     p_menu: menuId,
     p_refresh_prices: !!refreshPrices,
   });
+  const [items, cocktails] = await Promise.all([
+    listEventMenu(eventId).catch(() => []),
+    listEventCocktails(eventId).catch((err) => (isCocktailSchemaMissing(err) ? [] : Promise.reject(err))),
+  ]);
+  const ids = [];
+  (items || []).forEach((item) => {
+    if (item.included !== false && item.product_id) ids.push(item.product_id);
+  });
+  (cocktails || []).forEach((cocktail) => {
+    if (cocktail.included === false) return;
+    (cocktail.ingredients || []).forEach((ing) => {
+      if (ing.product_id) ids.push(ing.product_id);
+    });
+  });
+  await ensureEventProducts(eventId, ids);
+  return added;
 }
 
 export function deleteSavedMenu(menuId) {
@@ -294,8 +359,17 @@ export async function createEventCocktail(eventId, fields, ingredients) {
 }
 
 export async function updateEventCocktail(id, patch) {
-  const rows = await getDB().update('event_cocktails', 'id=eq.' + enc(id), cleanPatch(patch));
-  return rows?.[0] || null;
+  const cleaned = cleanPatch(patch);
+  const rows = await getDB().update('event_cocktails', 'id=eq.' + enc(id), cleaned);
+  const row = rows?.[0] || null;
+  if (row && cleaned.included === true) {
+    const ings = await getDB().select(
+      'event_cocktail_ingredients',
+      '?cocktail_id=eq.' + enc(id) + '&select=product_id',
+    );
+    await ensureEventProducts(row.event_id, (ings || []).map((ing) => ing.product_id));
+  }
+  return row;
 }
 
 export async function replaceCocktailIngredients(cocktailId, ingredients) {
@@ -308,6 +382,14 @@ export async function replaceCocktailIngredients(cocktailId, ingredients) {
     measures: Number(ing.measures),
     position: i,
   })));
+  const parent = await getDB().select(
+    'event_cocktails',
+    '?id=eq.' + enc(cocktailId) + '&select=event_id,included',
+  );
+  const eventId = parent?.[0]?.event_id;
+  if (eventId && parent[0].included !== false) {
+    await ensureEventProducts(eventId, list.map((ing) => ing.product_id));
+  }
   return rows || [];
 }
 
