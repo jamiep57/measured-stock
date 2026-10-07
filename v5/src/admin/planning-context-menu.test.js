@@ -4,6 +4,7 @@ import {
   placeContextMenu,
   planningColumnLabel,
   planningContextActions,
+  showHideFromMenuControl,
 } from './planning-context-menu.js';
 
 describe('planning context actions', () => {
@@ -19,7 +20,35 @@ describe('planning context actions', () => {
     expect(actions.item.map((a) => a.id)).toEqual(['add-size', 'make-cocktail', 'make-spirit-mixer', 'toggle-menu']);
     expect(actions.item[0].label).toBe('Add another size');
     expect(actions.item[2].label).toBe('Make into spirit & mixer');
-    expect(actions.item[3].label).toBe('Remove from menu');
+    expect(actions.item[3].label).toBe('Hide from menu');
+    expect(actions.item[3].note).toBe('It stays under Off menu.');
+  });
+
+  it('keeps a cocktail ingredient in the drink when it is hidden', () => {
+    const actions = planningContextActions({
+      kind: 'product',
+      included: true,
+      usedInDrink: true,
+      colId: 'product',
+      locked: false,
+      hasRequired: false,
+    });
+    const hide = actions.item.find((a) => a.id === 'toggle-menu');
+    expect(hide.label).toBe('Hide from menu');
+    expect(hide.note).toBe('Taken off the sold menu. It stays in the cocktail and is still ordered.');
+    expect(hide.danger).toBeFalsy();
+    expect(showHideFromMenuControl({
+      kind: 'product', included: true, usedInDrink: true, locked: false,
+    })).toBe(true);
+    expect(showHideFromMenuControl({
+      kind: 'product', included: true, usedInDrink: false, locked: false,
+    })).toBe(false);
+    expect(showHideFromMenuControl({
+      kind: 'cocktail', included: true, usedInDrink: true, locked: false,
+    })).toBe(false);
+    expect(showHideFromMenuControl({
+      kind: 'product', included: false, usedInDrink: true, locked: false,
+    })).toBe(false);
   });
 
   it('hides edits when pricing is locked and still allows copy', () => {
@@ -45,7 +74,7 @@ describe('planning context actions', () => {
     expect(actions.cell.map((a) => a.id)).toEqual(['copy', 'copy-name']);
     expect(actions.item.map((a) => a.id)).toEqual(['edit-cocktail', 'toggle-menu', 'delete-cocktail']);
     expect(actions.item[0].label).toBe('Edit cocktail');
-    expect(actions.item[1].label).toBe('Put back on menu');
+    expect(actions.item[1].label).toBe('Show on menu');
     expect(actions.item[2].label).toBe('Delete cocktail');
   });
 
@@ -60,6 +89,9 @@ describe('planning context actions', () => {
     });
     expect(actions.item[0].label).toBe('Edit spirit & mixer');
     expect(actions.item.find((a) => a.id === 'delete-cocktail').label).toBe('Delete spirit & mixer');
+    const hide = actions.item.find((a) => a.id === 'toggle-menu');
+    expect(hide.label).toBe('Hide from menu');
+    expect(hide.note).toBe('The recipe stays under Off menu.');
     expect(editablePlanningField('cocktail', 'deal')).toBeNull();
     expect(editablePlanningField('product', 'scenario:abc')).toBe('scenario');
     expect(planningColumnLabel('menu')).toBe('Menu £');

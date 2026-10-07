@@ -70,7 +70,27 @@ export function editablePlanningField(kind, colId) {
 /**
  * @returns {{ cell: object[], item: object[] }}
  */
-export function planningContextActions({ kind, drinkKind, included, colId, locked, hasRequired }) {
+/** Inline control on a product that is already inside a drink. */
+export function showHideFromMenuControl({ kind, included, usedInDrink, locked }) {
+  return !locked && kind !== 'cocktail' && !!included && !!usedInDrink;
+}
+
+function hideMenuAction(kind, included, usedInDrink) {
+  if (!included) return { id: 'toggle-menu', label: 'Show on menu', note: '' };
+  if (kind === 'cocktail') {
+    return { id: 'toggle-menu', label: 'Hide from menu', note: 'The recipe stays under Off menu.' };
+  }
+  if (usedInDrink) {
+    return {
+      id: 'toggle-menu',
+      label: 'Hide from menu',
+      note: 'Taken off the sold menu. It stays in the cocktail and is still ordered.',
+    };
+  }
+  return { id: 'toggle-menu', label: 'Hide from menu', note: 'It stays under Off menu.' };
+}
+
+export function planningContextActions({ kind, drinkKind, included, usedInDrink, colId, locked, hasRequired }) {
   const cell = [];
   const item = [];
   const editable = !locked && !!editablePlanningField(kind, colId);
@@ -103,14 +123,7 @@ export function planningContextActions({ kind, drinkKind, included, colId, locke
     });
   }
   if (!locked) {
-    item.push({
-      id: 'toggle-menu',
-      label: included ? 'Remove from menu' : 'Put back on menu',
-      danger: !!included,
-      note: included
-        ? (kind === 'cocktail' ? 'The recipe stays under Off menu.' : 'The product stays in the library.')
-        : '',
-    });
+    item.push(hideMenuAction(kind, included, usedInDrink));
     if (kind === 'cocktail') {
       item.push({ id: 'delete-cocktail', label: `Delete ${drink}`, danger: true, note: 'Removes the recipe from this event.' });
     }

@@ -23,6 +23,7 @@ import {
   openPlanningContextMenu,
   planningColumnLabel,
   planningContextActions,
+  showHideFromMenuControl,
 } from '../planning-context-menu.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
@@ -190,6 +191,15 @@ export function mountPlanningPanel(route) {
 
   function itemsForProduct(pid) {
     return [...ctx.items.values()].filter((item) => item.product_id === pid);
+  }
+
+  /** True when this stock product is already poured inside a cocktail or spirit & mixer. */
+  function productUsedInDrink(pid) {
+    if (!pid) return false;
+    for (const cocktail of ctx.cocktails.values()) {
+      if ((cocktail.ingredients || []).some((ing) => ing.product_id === pid)) return true;
+    }
+    return false;
   }
 
   function suggestedServeSize(line) {
@@ -399,6 +409,18 @@ export function mountPlanningPanel(route) {
     return `<button type="button" class="plan-row-menu" data-row-menu aria-haspopup="menu" aria-label="Actions for ${escapeHtml(name)}">${icon('ellipsis', { size: 14 })}</button>`;
   }
 
+  /** A product already poured in a drink can come off the sold menu. */
+  function hideFromMenuButton(line) {
+    const show = showHideFromMenuControl({
+      kind: line.kind === 'cocktail' ? 'cocktail' : 'product',
+      included: line.included,
+      usedInDrink: productUsedInDrink(line.productId),
+      locked: locked(),
+    });
+    if (!show) return '';
+    return `<button type="button" class="plan-hide-menu" data-hide-menu title="Taken off the sold menu. It stays in the cocktail and is still ordered.">Hide from menu</button>`;
+  }
+
   function sizeButton(label, { placeholder = 'Size', empty = false } = {}) {
     const shown = String(label || '').trim();
     const text = shown || placeholder;
@@ -552,6 +574,7 @@ export function mountPlanningPanel(route) {
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
             ${packMeta}
             ${menuMeta}
+            ${hideFromMenuButton(line)}
           </div>
           ${rowMenuButton(label)}
         </div>
@@ -1240,7 +1263,7 @@ export function mountPlanningPanel(route) {
       toast(`${name} is back on the menu`);
       return;
     }
-    toast(`${name} removed from the menu`, false, {
+    toast(`${name} hidden from the menu`, false, {
       action: {
         label: 'Undo',
         onClick: () => {
@@ -1302,6 +1325,7 @@ export function mountPlanningPanel(route) {
       kind,
       drinkKind: line.drinkKind,
       included: !!line.included,
+      usedInDrink: kind === 'product' && productUsedInDrink(line.productId),
       colId,
       locked: locked(),
       hasRequired: line.requiredPrice != null,
@@ -1390,6 +1414,14 @@ export function mountPlanningPanel(route) {
   function onPanelClick(e) {
     if (suppressHeaderClick) {
       suppressHeaderClick = false;
+      return;
+    }
+    const hideBtn = e.target.closest('[data-hide-menu]');
+    if (hideBtn) {
+      e.preventDefault();
+      const row = hideBtn.closest('tr.plan-row');
+      const line = row && lineFromRow(row);
+      if (line) void toggleOnMenu(line);
       return;
     }
     const menuBtn = e.target.closest('[data-row-menu]');
