@@ -9674,11 +9674,15 @@ label.collab-cell--peer {
   justify-content: space-between;
   gap: 8px;
 }
+/* Sync preview is wider than the default 400px modal; the note and reconnect warning were clipping. */
+.admin-modal:has(.sqm) {
+  width: min(640px, calc(100vw - 32px));
+}
 .sqm {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-width: min(520px, 80vw);
+  min-width: 0;
   font-size: 13px;
 }
 .sqm p { margin: 0; }
