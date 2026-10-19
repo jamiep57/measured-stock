@@ -1701,6 +1701,7 @@ export const ordersConfig = simpleEventConfig({
   },
   sortOptions: [
     { value: 'gap', label: 'Biggest shortage first' },
+    { value: 'supplier', label: 'Supplier, then name' },
     { value: 'category', label: 'Category, then name' },
     { value: 'name', label: 'Product A–Z' },
   ],

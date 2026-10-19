@@ -214,10 +214,21 @@ export function mountOrdersPanel(route) {
     });
     const name = (r) => ctx.productById.get(r.productId)?.name || '';
     const cat = (r) => ctx.productById.get(r.productId)?.category?.name || 'Uncategorised';
+    const supplierName = (r) => {
+      const p = ctx.productById.get(r.productId);
+      return ctx.supplierById.get(preferredSupplierId(p))?.name || '';
+    };
     const sort = ctx.filter.sort || 'gap';
     if (sort === 'name') rows.sort((a, b) => name(a).localeCompare(name(b)));
     else if (sort === 'category') rows.sort((a, b) => cat(a).localeCompare(cat(b)) || name(a).localeCompare(name(b)));
-    else rows.sort((a, b) => (a.gap ?? 0) - (b.gap ?? 0) || name(a).localeCompare(name(b)));
+    else if (sort === 'supplier') {
+      rows.sort((a, b) => {
+        const sa = supplierName(a);
+        const sb = supplierName(b);
+        if (!sa !== !sb) return sa ? -1 : 1;
+        return sa.localeCompare(sb) || name(a).localeCompare(name(b));
+      });
+    } else rows.sort((a, b) => (a.gap ?? 0) - (b.gap ?? 0) || name(a).localeCompare(name(b)));
     return rows;
   }
 
@@ -264,6 +275,7 @@ export function mountOrdersPanel(route) {
   function rowHtml(r) {
     const p = ctx.productById.get(r.productId);
     const supplier = ctx.supplierById.get(preferredSupplierId(p));
+    const pack = packLabel(p, supplier?.id);
     const src = ctx.plannedSource.get(r.productId);
     const list = ctx.items.get(r.productId) || [];
     const item = list.find((row) => row.planned_qty_override != null) || list[0] || null;
@@ -284,9 +296,10 @@ export function mountOrdersPanel(route) {
       <th class="dist-sticky plan-col-product" scope="row">
         <div class="dist-item">
           <span class="dist-item-name" title="${escapeHtml(p?.name || '')}">${escapeHtml(p?.name || 'Unknown product')}</span>
-          <span class="dist-item-meta">${escapeHtml([supplier?.name, packLabel(p, supplier?.id)].filter(Boolean).join(' · ') || 'No supplier')}</span>
+          ${pack ? `<span class="dist-item-meta">${escapeHtml(pack)}</span>` : ''}
         </div>
       </th>
+      <td class="plan-cell ord-supplier" title="${escapeHtml(supplier?.name || 'No preferred supplier')}">${supplier?.name ? `<span class="ord-supplier-name">${escapeHtml(supplier.name)}</span>` : '<span class="muted">—</span>'}</td>
       <td class="plan-cell">${plannedInput}</td>
       <td class="plan-cell plan-out">${qty(r.confirmed)}${r.confirmedSource === 'manual' ? ' <span class="dist-bar-tag" title="Entered on the event before purchase orders — not linked to an order">manual</span>' : ''}</td>
       <td class="plan-cell plan-out">${r.pending ? qty(r.pending) : '—'}</td>
@@ -300,6 +313,7 @@ export function mountOrdersPanel(route) {
     const rows = visibleRows();
     const head = `<tr>
       <th class="dist-th dist-sticky plan-col-product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div></th>
+      <th class="dist-th plan-th plan-th--supplier" title="Preferred supplier for this product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Supplier</span></div></th>
       ${[
         ['Planned', 'Cases needed — projected serves ÷ serves per case, plus buffer'],
         ['Confirmed', 'Cases on confirmed purchase orders'],
@@ -311,7 +325,7 @@ export function mountOrdersPanel(route) {
     </tr>`;
     const body = rows.length
       ? rows.map(rowHtml).join('')
-      : `<tr><td colspan="7" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
+      : `<tr><td colspan="8" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
     return `<thead id="ordHead">${head}</thead><tbody id="ordBody">${body}</tbody>`;
   }
 
