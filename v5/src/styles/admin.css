@@ -771,6 +771,15 @@ body:has(.admin-app) .toast.err {
   padding: 0 4px;
 }
 
+.topbar-divider {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0 4px;
+  background: color-mix(in srgb, var(--border) 55%, var(--foreground));
+}
+
 .topbar-search {
   flex: 0 1 280px;
   min-width: 180px;

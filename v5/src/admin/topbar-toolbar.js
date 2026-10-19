@@ -9,7 +9,7 @@ import { refreshFieldUndoButtons } from '../lib/field-undo.js';
 
 export const ADMIN_TOOLBAR_ACTION = 'admin-toolbar-action';
 
-/** @typedef {{ id: string, icon?: string, title?: string, label?: string, primary?: boolean, disabled?: boolean, kind?: 'button' | 'text' | 'menu', items?: ToolbarItem[] }} ToolbarItem */
+/** @typedef {{ id: string, icon?: string, title?: string, label?: string, primary?: boolean, disabled?: boolean, kind?: 'button' | 'text' | 'menu' | 'divider', items?: ToolbarItem[] }} ToolbarItem */
 /** @typedef {{ id: string, label: string, items: ToolbarItem[] }} ToolbarStrip */
 
 /** @type {{ syncRoute: (route: object) => void, setStrips: (strips: ToolbarStrip[] | null) => void }} */
@@ -98,6 +98,7 @@ export const PANEL_TOOLBAR = {
           label: 'Sync to Square',
           title: 'Preview and push this menu and its prices to Square',
         },
+        { id: 'plan-after-sync', kind: 'divider' },
         {
           id: 'plan-settings',
           icon: 'settings',
@@ -536,6 +537,9 @@ function renderMenuChild(child) {
 }
 
 function renderToolbarItem(item) {
+  if (item.kind === 'divider') {
+    return '<span class="topbar-divider" aria-hidden="true"></span>';
+  }
   if (item.kind === 'text') {
     return `<span class="topbar-tool-meta muted" data-toolbar-meta="${item.id}">${item.label || ''}</span>`;
   }
