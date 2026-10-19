@@ -711,7 +711,7 @@ export function openProductFormSheet(opts) {
       closeSheet();
       if (onSaved) await onSaved({ productId, created, product: savedProduct, qtyOrdered });
       const eventNote = eventIdsToReprice.length
-        ? ` · reconciliation updated on ${eventIdsToReprice.length} event${eventIdsToReprice.length === 1 ? '' : 's'}`
+        ? ` · price updated on ${eventIdsToReprice.length} event${eventIdsToReprice.length === 1 ? '' : 's'}`
         : '';
       toast(created ? 'Product created' : `Product updated${eventNote}`);
     } catch (err) {

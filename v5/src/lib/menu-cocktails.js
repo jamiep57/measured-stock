@@ -167,7 +167,12 @@ function ingredientPart(ing, ctx) {
   }
   const line = resolveMenuLine(
     menuItem,
-    { product, caseSizes: ctx.caseSizes || [], event: ctx.event },
+    {
+      product,
+      caseSizes: ctx.caseSizes || [],
+      event: ctx.event,
+      eventPrice: ctx.eventPrices?.get(ing.product_id) || null,
+    },
   );
   const cost = line.costPerServe != null && measures != null && measures > 0
     ? line.costPerServe * measures

@@ -52,7 +52,7 @@ describe('priceChangeCopy', () => {
     const copy = priceChangeCopy([
       { event: { name: 'Festival' } },
     ]);
-    expect(copy.message).toBe('This price change will update on Festival and affect the reconciliation.');
+    expect(copy.message).toBe('Update this price on Festival as well?');
     expect(copy.keepLabel).toBe("Update product price and don't change event");
     expect(copy.applyLabel).toBe('Update product and update Festival');
     expect(copy.cancelLabel).toBe('Do not update');
@@ -63,7 +63,7 @@ describe('priceChangeCopy', () => {
       { event: { name: 'Festival' } },
       { event: { name: 'Warehouse' } },
     ]);
-    expect(copy.message).toContain('Festival and Warehouse');
+    expect(copy.message).toBe('Update this price on Festival and Warehouse as well?');
     expect(copy.applyLabel).toBe('Update product and update 2 events');
     expect(copy.keepLabel).toContain('events');
   });

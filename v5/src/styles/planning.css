@@ -308,7 +308,6 @@
 }
 .plan-cell--key { background: color-mix(in srgb, var(--secondary) 35%, var(--card)); }
 .plan-out { font-weight: 500; color: var(--foreground); }
-.plan-lock { color: var(--muted-foreground); vertical-align: -1px; }
 
 .plan-cell-input {
   width: 72px;

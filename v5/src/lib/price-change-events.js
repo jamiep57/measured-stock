@@ -1,7 +1,7 @@
 /**
- * Library price edits vs the price already copied onto events for recon.
- * A change only matters when the preferred supplier price (the one recon
- * captured) is different, and an event still has the old copy.
+ * Library price edits vs the price already copied onto an event.
+ * Menu GP and recon both use that copy. Changing the library price asks
+ * whether each open event should take the new one.
  */
 
 function money(v) {
@@ -66,7 +66,9 @@ export function priceChangeCopy(events) {
   const one = names.length === 1;
   const list = joinNames(names);
   return {
-    message: `This price change will update on ${list} and affect the reconciliation.`,
+    message: one
+      ? `Update this price on ${names[0]} as well?`
+      : `Update this price on ${list} as well?`,
     keepLabel: `Update product price and don't change ${one ? 'event' : 'events'}`,
     applyLabel: one
       ? `Update product and update ${names[0]}`

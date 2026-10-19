@@ -44,9 +44,11 @@ const year = { vat_rate: 0.2, default_target_gp_pct: 70 };
 const event = { target_gp_pct: 72, gp_amber_band: 4 };
 
 describe('resolveUnitCost', () => {
-  it('prefers locked snapshot, then deal, then supplier offer', () => {
-    expect(resolveUnitCost({ unit_cost_snapshot: 80, unit_cost_override: 70 }, keg)).toEqual({ unitCost: 80, source: 'locked' });
-    expect(resolveUnitCost({ unit_cost_override: 70 }, keg)).toEqual({ unitCost: 70, source: 'deal' });
+  const onEvent = { casePrice: 80, unitPrice: 80 };
+
+  it('prefers a deal, then the price copied onto the event, then the supplier', () => {
+    expect(resolveUnitCost({ unit_cost_override: 70 }, keg, null, onEvent)).toEqual({ unitCost: 70, source: 'deal' });
+    expect(resolveUnitCost({}, keg, null, onEvent)).toEqual({ unitCost: 80, source: 'event' });
     expect(resolveUnitCost({}, keg)).toEqual({ unitCost: 88, source: 'supplier' });
   });
   it('falls back to the product price without offers', () => {
@@ -104,12 +106,23 @@ describe('resolveMenuLine', () => {
     expect(half.serveLabel).toBe('Half');
     expect(half.gpPct).toBeGreaterThan(pint.gpPct);
   });
-  it('keeps the frozen cost after supplier prices change', () => {
-    const item = { product_id: 'p1', menu_price: 6, unit_cost_snapshot: 88 };
-    const before = resolveMenuLine(item, { product: keg, year, event });
-    const repriced = { ...keg, product_suppliers: [{ supplier_id: 's1', unit_price: 140, is_preferred: true }] };
-    const after = resolveMenuLine(item, { product: repriced, year, event });
+  it('keeps the event price after the library price changes', () => {
+    const item = { product_id: 'p1', menu_price: 6 };
+    const eventPrice = { casePrice: 88, unitPrice: 88 };
+    const before = resolveMenuLine(item, { product: keg, year, event, eventPrice });
+    const repriced = { ...keg, product_suppliers: [{ supplier_id: 's1', unit_price: 140, case_price: 140, is_preferred: true }] };
+    const after = resolveMenuLine(item, { product: repriced, year, event, eventPrice });
+    expect(after.costSource).toBe('event');
+    expect(after.caseCost).toBe(88);
     expect(after.gpPct).toBe(before.gpPct);
+    const accepted = resolveMenuLine(item, {
+      product: repriced,
+      year,
+      event,
+      eventPrice: { casePrice: 140, unitPrice: 140 },
+    });
+    expect(accepted.caseCost).toBe(140);
+    expect(accepted.gpPct).not.toBe(before.gpPct);
   });
 });
 

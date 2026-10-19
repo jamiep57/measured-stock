@@ -88,12 +88,6 @@ export const PANEL_TOOLBAR = {
           ],
         },
         {
-          id: 'plan-costs',
-          icon: 'lock',
-          label: 'Costs',
-          title: 'Lock or unlock menu costs',
-        },
-        {
           id: 'plan-export',
           icon: 'download',
           label: 'Export',

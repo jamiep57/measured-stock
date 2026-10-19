@@ -236,12 +236,12 @@ export function deleteSavedMenu(menuId) {
   return getDB().remove('saved_menus', 'id=eq.' + enc(menuId));
 }
 
-export function snapshotEventCosts(eventId) {
-  return getDB().rpc('snapshot_event_menu_costs', { p_event: eventId });
-}
-
-export function clearEventCostSnapshots(eventId) {
-  return getDB().rpc('clear_event_menu_cost_snapshots', { p_event: eventId });
+/** Price copied onto the event when the product was added, or last accepted from the library. */
+export function listEventProductPrices(eventId) {
+  return getDB().select(
+    'event_products',
+    '?event_id=eq.' + enc(eventId) + '&select=product_id,case_price_snapshot,unit_price_snapshot',
+  );
 }
 
 // ---------- scenarios ------------------------------------------------

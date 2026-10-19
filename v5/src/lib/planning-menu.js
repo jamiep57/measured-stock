@@ -2,8 +2,10 @@
  * Event menu planning — resolve each menu item to prices, cost and GP.
  *
  * Precedence:
- *   cost/unit   snapshot (locked) → deal override → case price ÷ units → product
+ *   cost/unit   deal override → price copied onto the event → live supplier
  *               (this is the price of one inner unit: a can, bottle, or keg)
+ *               A library price change updates the event only when someone
+ *               confirms it. Until then the event keeps the copied price.
  *   case price  the supplier case price. A stored unit price is used only
  *               when there is no case price. Never multiply the case price
  *               by the pack again — that turns a £7.28 case into £174.72.
@@ -75,11 +77,14 @@ export function liveUnitCost(product, unitsPerCase) {
   return num(product.unit_price);
 }
 
-export function resolveUnitCost(item, product, unitsPerCase) {
-  const snap = num(item?.unit_cost_snapshot);
-  if (snap != null) return { unitCost: snap, source: 'locked' };
+export function resolveUnitCost(item, product, unitsPerCase, captured) {
   const deal = num(item?.unit_cost_override);
   if (deal != null) return { unitCost: deal, source: 'deal' };
+  const upc = packUnits(product, unitsPerCase);
+  const capturedCase = num(captured?.casePrice);
+  if (capturedCase != null && upc > 0) return { unitCost: capturedCase / upc, source: 'event' };
+  const capturedUnit = num(captured?.unitPrice);
+  if (capturedUnit != null) return { unitCost: capturedUnit, source: 'event' };
   const live = liveUnitCost(product, unitsPerCase);
   if (live != null) return { unitCost: live, source: 'supplier' };
   return { unitCost: null, source: null };
@@ -96,10 +101,10 @@ export function eventTargetGp(event, year) {
 
 /**
  * @param {object} item event_menu_items row (or a house_menu_prices row for house planning)
- * @param {{ product?: object, house?: object, year?: object, event?: object, caseSizes?: object[] }} ctx
+ * @param {{ product?: object, house?: object, year?: object, event?: object, caseSizes?: object[], eventPrice?: { casePrice?: number|null, unitPrice?: number|null } }} ctx
  */
 export function resolveMenuLine(item, ctx = {}) {
-  const { product, house, year, event, caseSizes = [] } = ctx;
+  const { product, house, year, event, caseSizes = [], eventPrice = null } = ctx;
   const vatRate = eventVatRate(year);
   const pack = product ? productStockPack(product, caseSizes) : null;
   const unitsPerCase = pack?.unitsPerCase > 0 ? pack.unitsPerCase : 1;
@@ -110,10 +115,12 @@ export function resolveMenuLine(item, ctx = {}) {
     house?.serves_per_unit,
     product ? servingsPerCase(product, caseSizes) : null,
   );
-  const { unitCost, source: costSource } = resolveUnitCost(item, product, unitsPerCase);
+  const { unitCost, source: costSource } = resolveUnitCost(item, product, unitsPerCase, eventPrice);
+  const capturedCase = costSource === 'event' ? num(eventPrice?.casePrice) : null;
   const supplierCase = costSource === 'supplier' ? paidCasePrice(product) : null;
-  const caseCost = supplierCase != null
-    ? supplierCase
+  const knownCase = capturedCase != null ? capturedCase : supplierCase;
+  const caseCost = knownCase != null
+    ? knownCase
     : (unitCost != null ? unitCost * unitsPerCase : null);
   const portion = firstNum(item?.portion) ?? 1;
   const portionSafe = portion > 0 ? portion : 1;

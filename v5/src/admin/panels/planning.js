@@ -31,11 +31,11 @@ import { openSquareMenuSync } from '../square-menu-sync.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
 import { formatGpPct, roundUpToStep } from '../../lib/gp.js';
 import {
-  liveUnitCost,
   menuTotals,
   formatPlanningPriceInput,
   parsePlanningNumber,
   resolveMenuLine,
+  resolveUnitCost,
   scenarioGp,
 } from '../../lib/planning-menu.js';
 import {
@@ -56,7 +56,6 @@ import {
   writePlanningMarks,
 } from '../../lib/planning-marks.js';
 import {
-  clearEventCostSnapshots,
   createScenario,
   deleteEventCocktail,
   deleteScenario,
@@ -65,6 +64,7 @@ import {
   isPlanningSchemaMissing,
   listEventCocktails,
   listEventMenu,
+  listEventProductPrices,
   listScenarios,
   loadEventPricing,
   normaliseCocktail,
@@ -76,7 +76,6 @@ import {
   saveEventMenu,
   savedMenuProductCount,
   setScenarioPrice,
-  snapshotEventCosts,
   updateEventCocktail,
   updateEventMenuItem,
   updateEventPricing,
@@ -146,8 +145,8 @@ function gpBadge(gp, status, attrs = '') {
 }
 
 function costSourceLabel(source) {
-  if (source === 'locked') return 'Locked cost';
   if (source === 'deal') return 'Deal cost';
+  if (source === 'event') return 'Event cost';
   if (source === 'supplier') return 'Supplier cost';
   return 'No cost';
 }
@@ -171,6 +170,7 @@ export function mountPlanningPanel(route) {
     cocktailsUnavailable: false,
     products: [],
     productById: new Map(),
+    eventPrices: new Map(),
     categories: [],
     caseSizes: [],
     serveSizes: [],
@@ -235,6 +235,7 @@ export function mountPlanningPanel(route) {
       product: ctx.productById.get(item.product_id),
       event: ctx.event,
       caseSizes: ctx.caseSizes,
+      eventPrice: ctx.eventPrices.get(item.product_id) || null,
     });
     ctx.lines.set(itemId, line);
     return line;
@@ -246,6 +247,7 @@ export function mountPlanningPanel(route) {
       items: cocktailItemMap(),
       caseSizes: ctx.caseSizes,
       event: ctx.event,
+      eventPrices: ctx.eventPrices,
     });
     ctx.lines.set(cocktailLineKey(cocktail.id), line);
     return line;
@@ -448,14 +450,7 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell">${cellInput('serves_per_unit', item.serves_per_unit, { placeholder: line.servesPerUnit ?? '', label: 'Serves from one case', width: 'sm' })}</td>`;
     }
     if (id === 'cost') {
-      const split = line.caseCost != null && line.servesPerUnit
-        ? (line.portion !== 1
-          ? `${money(line.caseCost)} ÷ ${line.servesPerUnit} × ${line.portion}`
-          : `${money(line.caseCost)} ÷ ${line.servesPerUnit} serves`)
-        : `${money(line.unitCost)} per unit`;
-      return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(`${costSourceLabel(line.costSource)} · ${split}`)}">
-        ${money(line.costPerServe)}${line.costSource === 'locked' ? ` <span class="plan-lock">${icon('lock', { size: 11 })}</span>` : ''}
-      </td>`;
+      return `<td class="plan-cell plan-out" data-out="cost" title="${escapeHtml(costDetail(line))}">${money(line.costPerServe)}</td>`;
     }
     if (id === 'menu') {
       return `<td class="plan-cell plan-cell--key">${cellInput('menu_price', item.menu_price, { placeholder: line.suggestedPrice, label: 'Menu price', money: true })}</td>`;
@@ -498,8 +493,13 @@ export function mountPlanningPanel(route) {
       return `<td class="plan-cell plan-out" data-out="gp-amount">${money(line.gpAmount, 0)}</td>`;
     }
     if (id === 'deal') {
-      const live = liveUnitCost(ctx.productById.get(line.productId));
-      return `<td class="plan-cell">${cellInput('unit_cost_override', item.unit_cost_override, { placeholder: live, label: 'Deal cost per unit', money: true })}</td>`;
+      const basis = resolveUnitCost(
+        {},
+        ctx.productById.get(line.productId),
+        line.unitsPerCase,
+        ctx.eventPrices.get(line.productId) || null,
+      );
+      return `<td class="plan-cell">${cellInput('unit_cost_override', item.unit_cost_override, { placeholder: basis.unitCost, label: 'Deal cost per unit', money: true })}</td>`;
     }
     if (id === 'deal-ref') {
       return `<td class="plan-cell plan-cell--text">${cellInput('deal_ref', item.deal_ref, { text: true, placeholder: 'Ref', label: 'Deal reference' })}</td>`;
@@ -678,15 +678,20 @@ export function mountPlanningPanel(route) {
       ${scenarioCards}`;
   }
 
+  function costDetail(line) {
+    const split = line.caseCost != null && line.servesPerUnit
+      ? (line.portion !== 1
+        ? `${money(line.caseCost)} ÷ ${line.servesPerUnit} × ${line.portion}`
+        : `${money(line.caseCost)} ÷ ${line.servesPerUnit} serves`)
+      : `${money(line.unitCost)} per unit`;
+    return `${costSourceLabel(line.costSource)} · ${split}`;
+  }
+
   function settingsHtml() {
-    const snapshots = [...ctx.items.values()].filter((i) => i.unit_cost_snapshot != null).length;
-    const costState = snapshots
-      ? `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Costs locked (${snapshots})</span>`
-      : '<span class="plan-chip">Live supplier costs</span>';
+    if (!locked()) return '';
     return `
       <div class="plan-settings-meta">
-        ${locked() ? `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Event ${escapeHtml(ctx.event.status)} — pricing is read-only</span>` : ''}
-        ${costState}
+        <span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Event ${escapeHtml(ctx.event.status)} — pricing is read-only</span>
       </div>`;
   }
 
@@ -778,9 +783,10 @@ export function mountPlanningPanel(route) {
       });
       return;
     }
+    const settings = settingsHtml();
     panel.innerHTML = `
       <section class="plan-head admin-surface">
-        <div class="plan-settings" id="planSettings">${settingsHtml()}</div>
+        ${settings ? `<div class="plan-settings" id="planSettings">${settings}</div>` : ''}
         <div class="plan-kpis" id="planKpis">${totalsHtml()}</div>
       </section>
       <div class="dist-grid-wrap plan-grid-wrap">
@@ -827,7 +833,11 @@ export function mountPlanningPanel(route) {
         if (el) el.innerHTML = html;
       };
       set('gp', gpBadge(line.gpPct, line.status));
-      set('cost', `${money(line.costPerServe)}${line.costSource === 'locked' ? ` <span class="plan-lock">${icon('lock', { size: 11 })}</span>` : ''}`);
+      const costEl = row.querySelector('[data-out="cost"]');
+      if (costEl) {
+        costEl.textContent = money(line.costPerServe);
+        costEl.title = costDetail(line);
+      }
       set('required', line.requiredPrice != null && !locked()
         ? `<button type="button" class="plan-use-price" data-use-price="${line.requiredPrice}" title="Use as menu price">${money(line.requiredPrice)}</button>`
         : money(line.requiredPrice));
@@ -1867,42 +1877,6 @@ export function mountPlanningPanel(route) {
     };
   }
 
-  async function toggleCostLock() {
-    if (locked()) { toast('Costs are frozen for reconciled events', true); return; }
-    const snapshots = [...ctx.items.values()].filter((i) => i.unit_cost_snapshot != null).length;
-    if (snapshots) {
-      const ok = await confirmDialog({
-        title: 'Unlock costs',
-        message: `${snapshots} menu item cost${snapshots === 1 ? ' is' : 's are'} locked. Unlock to use live supplier and deal costs again?`,
-        confirmLabel: 'Unlock costs',
-        danger: false,
-      });
-      if (!ok) return;
-      try {
-        await clearEventCostSnapshots(ctx.eventId);
-        await reload();
-        toast('Costs unlocked');
-      } catch (err) {
-        toast(err.message || 'Unlock failed', true);
-      }
-      return;
-    }
-    const ok = await confirmDialog({
-      title: 'Lock costs',
-      message: 'Freeze today’s cost per unit on every menu item so later supplier price changes don’t move this event’s GP. Costs also lock automatically when the event is reconciled.',
-      confirmLabel: 'Lock costs',
-      danger: false,
-    });
-    if (!ok) return;
-    try {
-      const n = await snapshotEventCosts(ctx.eventId);
-      await reload();
-      toast(`Locked ${Number(n) || 0} cost${Number(n) === 1 ? '' : 's'}`);
-    } catch (err) {
-      toast(err.message || 'Lock failed', true);
-    }
-  }
-
   function includedMenuCount() {
     const products = [...ctx.items.values()].filter((item) => item.included !== false).length;
     const cocktails = [...ctx.cocktails.values()].filter((c) => c.included !== false).length;
@@ -2112,7 +2086,6 @@ export function mountPlanningPanel(route) {
       'plan-add-product': openAddProduct,
       'plan-recipe-builder': () => openCocktail(null),
       'plan-add-scenario': openAddScenario,
-      'plan-costs': toggleCostLock,
       'plan-export': () => {
         if (!ctx.event) return;
         openMenuExportDialog(ctx);
@@ -2152,7 +2125,7 @@ export function mountPlanningPanel(route) {
 
   async function reload() {
     await flushSaves();
-    const [event, items, scenarios, products, caseSizes, serveSizes, categories, cocktailRows] = await Promise.all([
+    const [event, items, scenarios, products, caseSizes, serveSizes, categories, cocktailRows, eventProducts] = await Promise.all([
       loadEventPricing(ctx.eventId),
       listEventMenu(ctx.eventId),
       listScenarios(ctx.eventId),
@@ -2162,6 +2135,10 @@ export function mountPlanningPanel(route) {
       loadCategories(),
       listEventCocktails(ctx.eventId).catch((err) => {
         if (isCocktailSchemaMissing(err)) return null;
+        throw err;
+      }),
+      listEventProductPrices(ctx.eventId).catch((err) => {
+        if (/case_price_snapshot|unit_price_snapshot/i.test(String(err?.message || err))) return [];
         throw err;
       }),
     ]);
@@ -2174,6 +2151,10 @@ export function mountPlanningPanel(route) {
     ctx.scenarios = scenarios || [];
     ctx.products = (products || []).filter((p) => !p.archived && (p.product_kind || 'stock') === 'stock');
     ctx.productById = new Map((products || []).map((p) => [p.id, p]));
+    ctx.eventPrices = new Map((eventProducts || []).filter((row) => row.product_id).map((row) => [row.product_id, {
+      casePrice: row.case_price_snapshot,
+      unitPrice: row.unit_price_snapshot,
+    }]));
     ctx.caseSizes = caseSizes || [];
     ctx.serveSizes = serveSizes || [];
     ctx.categories = categories || [];
