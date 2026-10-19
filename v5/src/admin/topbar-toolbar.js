@@ -36,7 +36,7 @@ export const PANEL_TOOLBAR = {
       items: [
         {
           id: 'square-menu-sync',
-          icon: 'refresh-cw',
+          icon: 'square',
           label: 'Sync to Square',
           title: 'Preview and push this menu to Square, with each bar’s till showing what is distributed to it',
         },
@@ -94,7 +94,7 @@ export const PANEL_TOOLBAR = {
         },
         {
           id: 'square-menu-sync',
-          icon: 'refresh-cw',
+          icon: 'square',
           label: 'Sync to Square',
           title: 'Preview and push this menu and its prices to Square',
         },
