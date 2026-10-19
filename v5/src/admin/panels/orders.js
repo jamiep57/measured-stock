@@ -279,6 +279,7 @@ export function mountOrdersPanel(route) {
       const po = ctx.orders.find((o) => o.reference === ref);
       return po ? `<button type="button" class="ord-ref" data-open-po="${escapeHtml(po.id)}">${escapeHtml(ref)}</button>` : '';
     }).join('');
+    const marker = statusMarker(productOrderStatus(r.productId));
     return `<tr class="dist-prod-row ord-row" data-pid="${escapeHtml(r.productId)}">
       <th class="dist-sticky plan-col-product" scope="row">
         <div class="dist-item">
@@ -290,6 +291,7 @@ export function mountOrdersPanel(route) {
       <td class="plan-cell plan-out">${qty(r.confirmed)}${r.confirmedSource === 'manual' ? ' <span class="dist-bar-tag" title="Entered on the event before purchase orders — not linked to an order">manual</span>' : ''}</td>
       <td class="plan-cell plan-out">${r.pending ? qty(r.pending) : '—'}</td>
       <td class="plan-cell plan-cell--key plan-out">${badge(gapCls, `title="${escapeHtml(r.gap == null ? 'No plan' : `${signed(r.gap)} cases vs plan`)}"`)} <span class="ord-gap">${r.gap ? signed(r.gap) : ''}</span></td>
+      <td class="plan-cell ord-status-cell">${marker}</td>
       <td class="plan-cell ord-refs">${refs || '<span class="muted">—</span>'}</td>
     </tr>`;
   }
@@ -303,13 +305,39 @@ export function mountOrdersPanel(route) {
         ['Confirmed', 'Cases on confirmed purchase orders'],
         ['Pending', 'Cases on draft or sent orders'],
         ['Gap', 'Confirmed minus planned'],
+        ['Status', 'Draft, then sent, then confirmed'],
         ['Orders', 'Purchase orders including this product'],
       ].map(([l, t]) => `<th class="dist-th plan-th" title="${escapeHtml(t)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(l)}</span></div></th>`).join('')}
     </tr>`;
     const body = rows.length
       ? rows.map(rowHtml).join('')
-      : `<tr><td colspan="6" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
+      : `<tr><td colspan="7" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
     return `<thead id="ordHead">${head}</thead><tbody id="ordBody">${body}</tbody>`;
+  }
+
+  const ORDER_STEPS = [
+    { id: 'draft', label: 'Draft' },
+    { id: 'sent', label: 'Sent' },
+    { id: 'confirmed', label: 'Confirmed' },
+  ];
+
+  function productOrderStatus(productId) {
+    const statuses = ctx.orders
+      .filter((po) => po.status !== 'cancelled' && (po.purchase_order_lines || []).some((line) => line.product_id === productId))
+      .map((po) => po.status);
+    if (statuses.includes('draft')) return 'draft';
+    if (statuses.includes('sent')) return 'sent';
+    if (statuses.includes('confirmed')) return 'confirmed';
+    return null;
+  }
+
+  function statusMarker(status) {
+    if (!status || status === 'cancelled') return '<span class="muted">—</span>';
+    const at = ORDER_STEPS.findIndex((step) => step.id === status);
+    return `<ol class="ord-steps" aria-label="Order status">${ORDER_STEPS.map((step, i) => {
+      const cls = i < at ? 'is-done' : (i === at ? 'is-current' : '');
+      return `<li class="${cls}">${escapeHtml(step.label)}</li>`;
+    }).join('')}</ol>`;
   }
 
   function shortfallGroups() {
@@ -340,9 +368,22 @@ export function mountOrdersPanel(route) {
     return buttons.join('');
   }
 
+  function orderMatchesQuery(po) {
+    const q = ctx.query.trim().toLowerCase();
+    if (!q) return true;
+    const sup = ctx.supplierById.get(po.supplier_id);
+    const names = (po.purchase_order_lines || []).map((line) => ctx.productById.get(line.product_id)?.name || '');
+    return [po.reference, po.status, sup?.name, ...names].join(' ').toLowerCase().includes(q);
+  }
+
   function ordersRailHtml() {
+    const q = ctx.query.trim().toLowerCase();
     const { orders: groups, unassigned } = shortfallGroups();
-    const raiseRows = groups.filter((group) => !draftForSupplier(group.supplierId)).map((group) => {
+    const raiseRows = groups.filter((group) => !draftForSupplier(group.supplierId)).filter((group) => {
+      if (!q) return true;
+      const sup = ctx.supplierById.get(group.supplierId);
+      return (sup?.name || '').toLowerCase().includes(q);
+    }).map((group) => {
       const sup = ctx.supplierById.get(group.supplierId);
       const cases = group.lines.reduce((sum, line) => sum + line.qty_cases, 0);
       return `<article class="ord-rail-row">
@@ -351,31 +392,37 @@ export function mountOrdersPanel(route) {
           <span class="ord-rail-sup">${escapeHtml(sup?.name || 'Supplier')}</span>
           <span class="ord-rail-meta muted">${group.lines.length} product${group.lines.length === 1 ? '' : 's'} · ${qty(cases)} cases still short</span>
         </div>
+        <div class="ord-rail-status"></div>
         <div class="ord-rail-actions">
           <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-po-action="raise" data-supplier-id="${escapeHtml(group.supplierId)}">Raise PO</button>
         </div>
       </article>`;
     }).join('');
-    const orderRows = ctx.orders.slice().reverse().map((po) => {
+    const orderRows = ctx.orders.slice().reverse().filter(orderMatchesQuery).map((po) => {
       const meta = STATUS_META[po.status] || STATUS_META.draft;
       const sup = ctx.supplierById.get(po.supplier_id);
       const t = orderLinesTotal(po.purchase_order_lines);
       const cases = (po.purchase_order_lines || []).reduce((s, l) => s + Number(l.qty_cases || 0), 0);
       const actions = orderActionButtons(po);
+      const marker = po.status === 'cancelled' ? badge(meta) : statusMarker(po.status);
       return `<article class="ord-rail-row${po.status === 'cancelled' ? ' ord-rail-row--cancelled' : ''}" data-open-po="${escapeHtml(po.id)}">
         <div class="ord-rail-main">
-          <span class="ord-rail-top"><span class="ord-rail-ref">${escapeHtml(po.reference)}</span>${badge(meta)}</span>
+          <span class="ord-rail-top"><span class="ord-rail-ref">${escapeHtml(po.reference)}</span></span>
           <span class="ord-rail-sup">${escapeHtml(sup?.name || 'Unknown supplier')}</span>
           <span class="ord-rail-meta">${t.lines} line${t.lines === 1 ? '' : 's'} · ${qty(cases)} cases · ${money(t.total)}</span>
         </div>
-        ${actions ? `<div class="ord-rail-actions">${actions}</div>` : ''}
+        <div class="ord-rail-status">${marker}</div>
+        ${actions ? `<div class="ord-rail-actions">${actions}</div>` : '<div class="ord-rail-actions"></div>'}
       </article>`;
     }).join('');
     const missing = unassigned.length
       ? `<p class="ord-rail-note muted">${unassigned.length} product${unassigned.length === 1 ? ' has' : 's have'} no supplier, so ${unassigned.length === 1 ? 'it can’t' : 'they can’t'} be raised from here.</p>`
       : '';
     if (!raiseRows && !orderRows) {
-      return `<p class="ord-rail-empty muted">No purchase orders yet. Use <strong>Generate orders</strong> for every shortfall, or <strong>New order</strong>.</p>${missing}`;
+      const empty = q
+        ? 'No purchase orders match this search.'
+        : 'No purchase orders yet. Use <strong>Generate orders</strong> for every shortfall, or <strong>New order</strong>.';
+      return `<p class="ord-rail-empty muted">${empty}</p>${q ? '' : missing}`;
     }
     return `${raiseRows}${orderRows}${missing}`;
   }
@@ -605,36 +652,45 @@ export function mountOrdersPanel(route) {
   }
 
   function tabsHtml() {
-    const takeOn = ctx.tab === 'take';
+    const tab = ctx.tab;
     const count = ctx.orders.length ? ` (${ctx.orders.length})` : '';
+    const button = (id, label) => `<button type="button" class="sales-tab${tab === id ? ' sales-tab--active' : ''}" data-ord-tab="${id}" role="tab" aria-selected="${tab === id}">${label}</button>`;
     return `
       <div class="sales-tabs ord-tabs" role="tablist">
-        <button type="button" class="sales-tab${takeOn ? ' sales-tab--active' : ''}" data-ord-tab="take" role="tab"
-          aria-selected="${takeOn}">Take</button>
-        <button type="button" class="sales-tab${takeOn ? '' : ' sales-tab--active'}" data-ord-tab="orders" role="tab"
-          aria-selected="${!takeOn}">Purchase orders${count}</button>
+        ${button('take', 'Take')}
+        ${button('orders', 'Purchase orders')}
+        ${button('ledger', `Orders${count}`)}
       </div>`;
+  }
+
+  function searchPlaceholder() {
+    if (ctx.tab === 'take') return 'Filter menu lines…';
+    if (ctx.tab === 'ledger') return 'Filter purchase orders…';
+    return 'Filter event products…';
   }
 
   function syncTabChrome() {
     setTopbarFilterSuppressed(ctx.tab !== 'orders');
     const input = document.querySelector('#topbarSearch .product-search-input');
-    if (input) input.placeholder = ctx.tab === 'take' ? 'Filter menu lines…' : 'Filter event products…';
+    if (input) input.placeholder = searchPlaceholder();
+  }
+
+  function syncLedgerCount() {
+    const ledgerTab = panel.querySelector('[data-ord-tab="ledger"]');
+    if (!ledgerTab) return;
+    const count = ctx.orders.length ? ` (${ctx.orders.length})` : '';
+    ledgerTab.textContent = `Orders${count}`;
   }
 
   function setTab(tab) {
-    if (tab !== 'take' && tab !== 'orders') return;
+    if (tab !== 'take' && tab !== 'orders' && tab !== 'ledger') return;
     ctx.tab = tab;
     panel.querySelectorAll('[data-ord-tab]').forEach((btn) => {
       const on = btn.dataset.ordTab === tab;
       btn.classList.toggle('sales-tab--active', on);
       btn.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    const ordersTab = panel.querySelector('[data-ord-tab="orders"]');
-    if (ordersTab) {
-      const count = ctx.orders.length ? ` (${ctx.orders.length})` : '';
-      ordersTab.textContent = `Purchase orders${count}`;
-    }
+    syncLedgerCount();
     panel.querySelectorAll('[data-ord-pane]').forEach((pane) => {
       pane.hidden = pane.dataset.ordPane !== tab;
     });
@@ -643,6 +699,9 @@ export function mountOrdersPanel(route) {
       const grid = $('ordGrid');
       if (grid) grid.innerHTML = gridHtml();
       syncTheadHeight();
+    } else if (tab === 'ledger') {
+      const list = $('ordList');
+      if (list) list.innerHTML = ordersRailHtml();
     } else {
       const forecast = $('ordForecastBody');
       if (forecast) forecast.innerHTML = forecastBodyHtml();
@@ -651,31 +710,28 @@ export function mountOrdersPanel(route) {
   }
 
   function paint() {
-    const takeOn = ctx.tab === 'take';
+    const tab = ctx.tab;
     panel.innerHTML = `
       <div class="ord-workspace">
         ${tabsHtml()}
-        <div class="ord-tab-body" data-ord-pane="take" ${takeOn ? '' : 'hidden'}>
+        <div class="ord-tab-body" data-ord-pane="take" ${tab === 'take' ? '' : 'hidden'}>
           <section class="ord-take-head admin-surface">
             <div class="plan-settings" id="ordSettings">${settingsHtml()}</div>
             ${forecastHeadHtml()}
           </section>
           <div class="ord-forecast-wrap" id="ordForecastBody">${forecastBodyHtml()}</div>
         </div>
-        <div class="ord-tab-body" data-ord-pane="orders" ${takeOn ? 'hidden' : ''}>
+        <div class="ord-tab-body" data-ord-pane="orders" ${tab === 'orders' ? '' : 'hidden'}>
           <section class="plan-head admin-surface">
             <div class="plan-settings-meta">${lockChip()}<span class="plan-chip">Orders never change stock — only deliveries do</span></div>
             <div class="plan-kpis" id="ordKpis">${kpisHtml()}</div>
           </section>
-          <div class="ord-split">
-            <div class="dist-grid-wrap plan-grid-wrap ord-grid-wrap">
-              <table class="dist-grid plan-grid ord-grid" id="ordGrid">${gridHtml()}</table>
-            </div>
-            <aside class="ord-rail">
-              <h3 class="ord-rail-title">Purchase orders</h3>
-              <div class="ord-rail-list" id="ordList">${ordersRailHtml()}</div>
-            </aside>
+          <div class="dist-grid-wrap plan-grid-wrap ord-grid-wrap">
+            <table class="dist-grid plan-grid ord-grid" id="ordGrid">${gridHtml()}</table>
           </div>
+        </div>
+        <div class="ord-tab-body" data-ord-pane="ledger" ${tab === 'ledger' ? '' : 'hidden'}>
+          <div class="ord-ledger" id="ordList">${ordersRailHtml()}</div>
         </div>
       </div>`;
     syncTabChrome();
@@ -691,11 +747,7 @@ export function mountOrdersPanel(route) {
     if (k) k.innerHTML = kpisHtml();
     const list = $('ordList');
     if (list) list.innerHTML = ordersRailHtml();
-    const ordersTab = panel.querySelector('[data-ord-tab="orders"]');
-    if (ordersTab) {
-      const count = ctx.orders.length ? ` (${ctx.orders.length})` : '';
-      ordersTab.textContent = `Purchase orders${count}`;
-    }
+    syncLedgerCount();
     const forecast = $('ordForecastBody');
     if (forecast) forecast.innerHTML = forecastBodyHtml();
     refreshForecastOutputs();
@@ -932,7 +984,7 @@ export function mountOrdersPanel(route) {
               </dl>
             </div>
             <address class="ord-doc-from">
-              <strong>Measured</strong>
+              <img class="ord-doc-logo" src="/assets/img/logo.png" alt="Measured">
               <span>124 City Road</span>
               <span>London, EC1V 2NX</span>
               <span>live@measured.events</span>
@@ -1318,7 +1370,7 @@ export function mountOrdersPanel(route) {
         }
         closeModal();
         await reloadOrders();
-        setTab('orders');
+        setTab('ledger');
         toast(`${made} draft order${made === 1 ? '' : 's'} created`);
       } catch (e2) {
         closeModal();
@@ -1616,6 +1668,9 @@ export function mountOrdersPanel(route) {
           panel.querySelector(`tr[data-forecast-line="${CSS.escape(line.key)}"]`)?.scrollIntoView({ block: 'nearest' });
         }
       }
+    } else if (ctx.tab === 'ledger') {
+      const list = $('ordList');
+      if (list) list.innerHTML = ordersRailHtml();
     } else {
       repaintBody();
       if (e.detail?.productId) {
