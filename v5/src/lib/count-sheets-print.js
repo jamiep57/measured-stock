@@ -277,7 +277,7 @@ export function buildCountSheetsHtml({
   if (mode === 'event') {
     const eps = (event?.event_products || []).filter((ep) => ep.product?.name);
     if (!eps.length) {
-      return { error: 'Add products to this event before printing count sheets.' };
+      return { error: 'Add products on Menu & GP before printing count sheets.' };
     }
     const sheet = renderBarSheet({ name: eventName }, eps, sizes, {
       eventName,
@@ -359,7 +359,7 @@ export function buildClosingCountSheetHtml({
   if (mode === 'event') {
     const eps = (event?.event_products || []).filter((ep) => ep.product?.name);
     if (!eps.length) {
-      return { error: 'Add products to this event before printing a closing count sheet.' };
+      return { error: 'Add products on Menu & GP before printing a closing count sheet.' };
     }
     const sheet = renderClosingSheet(eps, sizes, { eventName });
     const html = wrapPrintHtml(`Closing count — ${eventName}`, sheet);

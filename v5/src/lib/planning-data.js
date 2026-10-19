@@ -114,7 +114,7 @@ function isDuplicateRow(err) {
 }
 
 /**
- * Put products on the event’s Products list.
+ * Put products on the event’s Opening stock list.
  * Rows already there keep their ordered quantity.
  */
 export async function ensureEventProducts(eventId, productIds) {
@@ -137,7 +137,7 @@ export async function ensureEventProducts(eventId, productIds) {
     }
   }
   // The menu insert can create the product row in the database before this
-  // call sees it. Drop the cached event either way so Products reloads it.
+  // call sees it. Drop the cached event either way so Opening stock reloads it.
   invalidateEventCache(eventId);
   return missing;
 }

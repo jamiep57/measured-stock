@@ -2,7 +2,7 @@
  * Planning — event menu, pricing and GP (spreadsheet grid).
  *
  * Rows are event_menu_items. Each event keeps its own menu prices.
- * Adding a product here also adds it to Products, with nothing ordered yet.
+ * Adding a product here also adds it to Opening stock, with nothing ordered yet.
  * Serves and quantities on this page stay projections.
  */
 
@@ -11,7 +11,8 @@ import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
-import { loadCaseSizes, loadLibraryProducts, loadCategories, loadServeSizes } from '../../db.js';
+import { getDB, loadCaseSizes, loadLibraryProducts, loadCategories, loadServeSizes } from '../../db.js';
+import { can } from '../../lib/permissions.js';
 import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
@@ -88,6 +89,31 @@ import { createServeSize, mergeServeSize, portionForSize } from '../../lib/serve
 import { closeServeSizeMenu, openServeSizeMenu } from '../serve-size-menu.js';
 
 const SAVE_DEBOUNCE_MS = 450;
+
+async function createLibraryProduct(ctx, { name, category_id, case_size_id, sku, abv }) {
+  const cs = (ctx.caseSizes || []).find((c) => c.id === case_size_id);
+  const category = (ctx.categories || []).find((c) => c.id === category_id);
+  const created = await getDB().products.create({
+    name: name.trim(),
+    category_id: category_id || null,
+    case_size_id: case_size_id || null,
+    case_size: cs?.label || null,
+    units_per_case: cs?.units_per_case ?? 1,
+    stock_unit: cs?.stock_unit || null,
+    sku: sku || null,
+    abv: abv != null ? abv : null,
+  });
+  if (!created?.id) throw new Error('Could not create that product');
+  const product = {
+    ...created,
+    category: category
+      ? { id: category.id, name: category.name, colour_key: category.colour_key }
+      : (created.category || null),
+  };
+  ctx.productById.set(product.id, product);
+  if (!ctx.products.some((p) => p.id === product.id)) ctx.products.push(product);
+  return { productId: product.id, product };
+}
 
 const NUMERIC_FIELDS = {
   serves_per_unit: { max: null, positive: true },
@@ -1592,6 +1618,9 @@ export function mountPlanningPanel(route) {
       drinkKind: extra.drinkKind,
       ctx,
       locked: locked(),
+      onCreateProduct: can('stock.products_edit')
+        ? (fields) => createLibraryProduct(ctx, fields)
+        : null,
       nameTaken: (name, exceptId) => {
         const key = name.trim().toLowerCase();
         return [...ctx.cocktails.values()].some((c) => c.id !== exceptId && String(c.name || '').trim().toLowerCase() === key);
@@ -1724,7 +1753,7 @@ export function mountPlanningPanel(route) {
     openSheet({
       title: 'Add product to event menu',
       variant: 'admin-full',
-      bodyHtml: '<p class="muted plan-sheet-lead">Adds the product to this event’s menu and to Products. Pick one that is already there to add another size, such as a half.</p><div id="planAddSearch"></div>',
+      bodyHtml: '<p class="muted plan-sheet-lead">Search the library, or type a name that isn’t there to create it. This adds the product to the menu and to Opening stock. Pick one already on the menu to add another size, such as a half.</p><div id="planAddSearch"></div>',
       footHtml: `<div class="admin-drawer-foot"><button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="planAddCancel">Close</button></div>`,
     });
     mountProductSearch($('planAddSearch'), {
@@ -1732,6 +1761,9 @@ export function mountPlanningPanel(route) {
       categories: ctx.categories,
       caseSizes: ctx.caseSizes,
       placeholder: 'Search library to add…',
+      allowCreate: can('stock.products_edit'),
+      createContextLabel: 'this menu',
+      onCreateProduct: (fields) => createLibraryProduct(ctx, fields),
       onSelect: async ({ productId }) => {
         const existing = itemsForProduct(productId);
         const onMenu = existing.filter((item) => item.included !== false);

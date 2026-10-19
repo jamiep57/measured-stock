@@ -1,5 +1,6 @@
 /**
- * Event products + opening stock — single panel (catalogue, ordered, counted in, opening).
+ * Opening stock — ordered, counted in, variance, and opening.
+ * Products join the event from Menu & GP.
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
@@ -13,8 +14,8 @@ import {
   countedInFromDeliveries,
   damagedFromDeliveries as damagedFromDeliveriesMap,
 } from '../../lib/opening-stock.js';
-import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
-import { openSheet, closeSheet } from '../../components/sheet.js';
+import { productSupplierSearchText } from '../../components/product-search.js';
+import { hrefForRoute } from '../router.js';
 import { loadingTableRow } from '../../components/loading-widget.js';
 import { openProductFormSheet } from '../product-form-sheet.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
@@ -23,7 +24,6 @@ import {
   productsCellKeyFromInput,
   productsFindCellEl,
 } from '../../lib/grid-collab-keys.js';
-import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
 import {
   ADMIN_TABLE_FILTER,
   getTableFilterValues,
@@ -167,10 +167,11 @@ function renderShell() {
         <div class="dist-empty ep-empty" id="epEmpty" hidden>
           ${emptyState({
             iconHtml: icon('package', { size: 22 }),
-            title: 'No products on this event yet',
-            copy: 'Use Add product in the toolbar to get started.',
+            title: 'Nothing on this event yet',
+            copy: 'Add products on Menu & GP. They show up here so you can track ordered, counted in, and opening.',
             variant: 'admin',
             className: 'empty--inline',
+            ctaHtml: '<a class="admin-drawer-btn admin-drawer-btn--primary" data-planning-link href="#">Menu &amp; GP</a>',
           })}
         </div>
       </div>
@@ -186,6 +187,10 @@ export function mountProductsPanel(route) {
   if (!eventId) return () => {};
 
   const panel = $('epPanel') || $('epBody')?.closest('.ep-panel');
+  const planningLink = panel?.querySelector('[data-planning-link]');
+  if (planningLink) {
+    planningLink.href = hrefForRoute({ view: 'event', eventId, panel: 'planning' });
+  }
   let collab = null;
   let event = null;
   let caseSizes = [];
@@ -542,48 +547,6 @@ export function mountProductsPanel(route) {
     });
   }
 
-  async function openAddProduct() {
-    // Toolbar can fire before refresh() finishes hydrating the library.
-    if (!library.length) {
-      try {
-        await refresh();
-      } catch (err) {
-        toast(err.message || 'Products are still loading', true);
-        return;
-      }
-    }
-    const onEvent = new Set((event?.event_products || []).map((ep) => ep.product_id));
-    const available = library.filter((p) => !onEvent.has(p.id));
-
-    openSheet({
-      title: 'Add product to event',
-      variant: 'admin-full',
-      bodyHtml: '<div id="epAddSearch"></div>',
-      footHtml: `
-        <div class="admin-drawer-foot">
-          <button class="admin-drawer-btn admin-drawer-btn--solid" type="button" id="epAddCancel">Cancel</button>
-        </div>`,
-    });
-
-    mountProductSearch($('epAddSearch'), {
-      products: available,
-      categories,
-      caseSizes,
-      placeholder: 'Search library to add…',
-      onSelect: async ({ productId }) => {
-        try {
-          await getDB().eventProducts.setForEvent(eventId, productId, { qty_ordered: 0 });
-          closeSheet();
-          await refresh();
-          toast('Product added to event');
-        } catch (err) {
-          toast(err.message || 'Add failed', true);
-        }
-      },
-    });
-    $('epAddCancel').onclick = closeSheet;
-  }
-
   const onProductFilter = (e) => {
     productFilter = e.detail || {};
     paintTable();
@@ -599,13 +562,6 @@ export function mountProductsPanel(route) {
     paintTable();
   };
 
-  const onToolbarAction = (e) => {
-    if (e.detail?.action === 'add-event-product') {
-      e.detail.handled = true;
-      openAddProduct().catch((err) => toast(err.message || 'Could not open add product', true));
-    }
-  };
-
   const onPageHide = () => { flushAllPending(); };
 
   panel?.addEventListener('input', onPanelInput);
@@ -613,7 +569,6 @@ export function mountProductsPanel(route) {
   panel?.addEventListener('blur', onPanelBlur, true);
   document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
-  document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
   window.addEventListener('pagehide', onPageHide);
 
   refresh().catch((err) => {
@@ -638,7 +593,6 @@ export function mountProductsPanel(route) {
     panel?.removeEventListener('blur', onPanelBlur, true);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
-    document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     window.removeEventListener('pagehide', onPageHide);
   };
 }

@@ -138,7 +138,7 @@ export function buildQuickActions(ctx) {
     { icon: 'trash', label: 'Log wastage', desc: 'Record write-offs', href: href('wastage') },
     { icon: 'share-2', label: 'Update count', desc: 'Enter stock at each bar', href: href('counts') },
     { icon: 'pound-sterling', label: 'Financial recon', desc: 'Post-event supplier close', href: href('recon') },
-    { icon: 'plus', label: 'Add products', desc: 'Build event catalogue', href: href('products') },
+    { icon: 'calculator', label: 'Plan the menu', desc: 'Add products and set prices', href: href('planning') },
     { icon: 'settings', label: 'Event setup', desc: 'Bars, dates, recipients', href: href('setup') },
   );
 

@@ -17,6 +17,7 @@ describe('grid context actions', () => {
   it('offers add or remove for a distribution bar cell', () => {
     const off = gridContextActions({ kind: 'distribution', canAddBar: true, onEvent: true });
     expect(off.item.map((a) => a.id)).toEqual(['add-bar', 'goto-products']);
+    expect(off.item.map((a) => a.label)).toEqual(['Add to this bar', 'Open on Opening stock']);
     const on = gridContextActions({ kind: 'distribution', canRemoveBar: true, hasInput: true });
     expect(on.item.map((a) => a.id)).toEqual(['remove-bar']);
     expect(on.cell.map((a) => a.id)).toContain('clear');

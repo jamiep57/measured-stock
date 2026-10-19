@@ -35,11 +35,11 @@ function renderDashboard(ctx) {
   if (!barCount || !productCount) {
     const steps = [
       !barCount ? 'Add bars in Event setup' : null,
-      !productCount ? 'Add products to this event' : null,
+      !productCount ? 'Add the menu on Menu & GP' : null,
       'Set opening stock, then run the first count',
     ].filter(Boolean);
     const setupHref = hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'setup' });
-    const productsHref = hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'products' });
+    const planningHref = hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'planning' });
     return `
       <div class="dash-panel dash-panel--onboarding" id="dashPanel">
         ${emptyState({
@@ -54,7 +54,7 @@ function renderDashboard(ctx) {
             </ol>
             <div class="empty-cta-row">
               <a class="admin-drawer-btn admin-drawer-btn--primary" href="${escapeHtml(setupHref)}">Event setup</a>
-              <a class="admin-drawer-btn admin-drawer-btn--solid" href="${escapeHtml(productsHref)}">Products</a>
+              <a class="admin-drawer-btn admin-drawer-btn--solid" href="${escapeHtml(planningHref)}">Menu &amp; GP</a>
             </div>`,
         })}
       </div>`;

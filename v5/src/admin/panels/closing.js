@@ -228,7 +228,7 @@ export function renderClosingShell() {
           ${emptyState({
             iconHtml: icon('clipboard-list', { size: 22 }),
             title: 'No products to close',
-            copy: 'Add products to this event before entering closing stock.',
+            copy: 'Add products on Menu & GP before entering closing stock.',
             variant: 'admin',
             className: 'empty--inline',
           })}
@@ -419,7 +419,8 @@ export function mountClosingPanel(route) {
       if (table) table.hidden = true;
       if (empty) {
         empty.hidden = false;
-        empty.textContent = 'Add products to this event before entering closing stock.';
+        const copy = empty.querySelector('.empty-copy');
+        if (copy) copy.textContent = 'Add products on Menu & GP before entering closing stock.';
       }
       return;
     }

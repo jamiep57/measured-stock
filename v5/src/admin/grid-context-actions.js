@@ -51,7 +51,7 @@ export function gridContextActions(info) {
   } else if (kind === 'distribution') {
     if (info.canAddBar) item.push({ id: 'add-bar', label: 'Add to this bar' });
     if (info.canRemoveBar) item.push({ id: 'remove-bar', label: 'Remove from this bar', danger: true });
-    if (info.onEvent) item.push(goto('goto-products', 'Open on Products'));
+    if (info.onEvent) item.push(goto('goto-products', 'Open on Opening stock'));
   } else if (kind === 'products') {
     item.push({ id: 'edit-row', label: 'Edit product' });
     if (info.onEvent) item.push(goto('goto-planning', 'Open on Menu & GP'));
@@ -72,13 +72,13 @@ export function gridContextActions(info) {
       const label = kind === 'delivery' ? 'Edit delivery' : kind === 'wastage' ? 'Edit wastage' : 'Edit transfer';
       item.push({ id: 'edit-button', label });
     }
-    if (info.onEvent) item.push(goto('goto-products', 'Open on Products'));
+    if (info.onEvent) item.push(goto('goto-products', 'Open on Opening stock'));
   } else if (kind === 'event') {
     item.push({ id: 'open-card', label: 'Open dashboard' });
   } else if (kind === 'catalog') {
     item.push({ id: 'open-card', label: 'Open' });
   } else if (kind === 'kit') {
-    if (info.onEvent) item.push(goto('goto-products', 'Open on Products'));
+    if (info.onEvent) item.push(goto('goto-products', 'Open on Opening stock'));
   } else if (kind === 'sales') {
     if (info.canEditRecipe) item.push({ id: 'edit-recipe', label: 'Edit recipe' });
     if (info.onEvent) item.push(goto('goto-planning', 'Open on Menu & GP'));

@@ -24,6 +24,7 @@ import { createGridCollabSession } from '../../lib/collab-presence.js';
 import { confirmDialog } from '../../components/modal.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+import { hrefForRoute } from '../router.js';
 import {
   countsCellKeyFromInput,
   countsFindCellEl,
@@ -402,8 +403,9 @@ export function mountCountsPanel(route) {
         ${emptyState({
           iconHtml: icon('list', { size: 22 }),
           title: 'Add products and bars first',
-          copy: 'Set up products and bars in Event setup before counting.',
+          copy: 'Add products on Menu & GP, and bars in Event setup, before counting.',
           variant: 'admin',
+          ctaHtml: `<a class="admin-drawer-btn admin-drawer-btn--primary" href="${escapeHtml(hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'planning' }))}">Menu &amp; GP</a>`,
         })}`;
       bindSessionBar();
       return;

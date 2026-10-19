@@ -3,7 +3,6 @@
  */
 
 import { $, escapeHtml, toast } from '../lib/util.js';
-import { can } from '../lib/permissions.js';
 import { icon, initIcons } from '../lib/icons.js';
 import { hasTableFilter } from './table-filter.js';
 import { refreshFieldUndoButtons } from '../lib/field-undo.js';
@@ -71,7 +70,7 @@ export const PANEL_TOOLBAR = {
               id: 'plan-add-product',
               icon: 'plus',
               label: 'Add product',
-              title: 'Add a library product to this event menu',
+              title: 'Search the library or create a product and add it to this menu',
             },
             {
               id: 'plan-recipe-builder',
@@ -316,21 +315,6 @@ export const PANEL_TOOLBAR = {
           icon: 'file-text',
           label: 'Export invoice',
           title: 'Download client transfer invoice PDF',
-        },
-      ],
-    },
-  ],
-  products: [
-    {
-      id: 'actions',
-      label: 'Products',
-      items: [
-        {
-          id: 'add-event-product',
-          icon: 'plus',
-          label: 'Add product',
-          title: 'Add product to event',
-          primary: true,
         },
       ],
     },
@@ -609,10 +593,7 @@ function stripsForRoute(route) {
     ? eventStrips
     : (globalStrips !== undefined && globalStrips !== null ? globalStrips : null);
   const strips = Array.isArray(configured)
-    ? configured.map((strip) => ({
-      ...strip,
-      items: strip.items.filter((item) => item.id !== 'add-event-product' || can('stock.products_edit')),
-    })).filter((strip) => strip.items.length)
+    ? configured.filter((strip) => strip.items.length)
     : null;
   return {
     configured,

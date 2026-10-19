@@ -3,6 +3,7 @@ import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+import { hrefForRoute } from '../router.js';
 import { getDB, loadEventLite, loadCaseSizes } from '../../db.js';
 import {
   barServesProduct,
@@ -363,8 +364,9 @@ export function mountDistributionPanel(route, state) {
       panel.innerHTML = emptyState({
         iconHtml: icon('list', { size: 22 }),
         title: 'Add products and bars first',
-        copy: 'Set up products and bars in Event setup before distributing stock.',
+        copy: 'Add products on Menu & GP, and bars in Event setup, before distributing stock.',
         variant: 'admin',
+        ctaHtml: `<a class="admin-drawer-btn admin-drawer-btn--primary" href="${escapeHtml(hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'planning' }))}">Menu &amp; GP</a>`,
       });
       return;
     }

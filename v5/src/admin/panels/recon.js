@@ -442,7 +442,7 @@ export function mountReconPanel(route) {
     if (!all.length) {
       const msg = ctx.showHidden
         ? 'No products are excluded from recon.'
-        : 'Add products and enter closing stock to begin.';
+        : 'Add products on Menu & GP and enter closing stock to begin.';
       body.innerHTML = `<tr><td colspan="${RECON_COLS.length}" class="dist-empty muted">${escapeHtml(msg)}</td></tr>`;
       applyColVisibility(panel, ctx.colVis);
       return;

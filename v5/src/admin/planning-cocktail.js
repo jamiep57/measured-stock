@@ -121,7 +121,7 @@ function sheetTitle(draft) {
 }
 
 export function openCocktailEditor(opts) {
-  const { ctx, locked, nameTaken, squareTaken, onSaved, onDeleted } = opts;
+  const { ctx, locked, nameTaken, squareTaken, onSaved, onDeleted, onCreateProduct } = opts;
   const draft = draftFrom(opts.cocktail, ctx.categories);
   const dis = locked ? 'disabled' : '';
 
@@ -246,6 +246,9 @@ export function openCocktailEditor(opts) {
       categories: ctx.categories,
       caseSizes: ctx.caseSizes,
       placeholder: draft.ingredients.length ? 'Add another product…' : 'Search stock to add…',
+      allowCreate: !!onCreateProduct,
+      createContextLabel: 'this recipe',
+      onCreateProduct,
       onSelect: ({ productId }) => {
         if (!productId) return;
         if (draft.ingredients.some((ing) => ing.product_id === productId)) {
