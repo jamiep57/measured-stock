@@ -77,6 +77,9 @@
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 8px;
 }
+.plan-panel .plan-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
 .plan-kpi {
   display: flex;
   flex-direction: column;
