@@ -279,7 +279,7 @@ export function mountOrdersPanel(route) {
       const po = ctx.orders.find((o) => o.reference === ref);
       return po ? `<button type="button" class="ord-ref" data-open-po="${escapeHtml(po.id)}">${escapeHtml(ref)}</button>` : '';
     }).join('');
-    const marker = statusMarker(productOrderStatus(r.productId));
+    const marker = statusChip(productOrderStatus(r.productId));
     return `<tr class="dist-prod-row ord-row" data-pid="${escapeHtml(r.productId)}">
       <th class="dist-sticky plan-col-product" scope="row">
         <div class="dist-item">
@@ -305,7 +305,7 @@ export function mountOrdersPanel(route) {
         ['Confirmed', 'Cases on confirmed purchase orders'],
         ['Pending', 'Cases on draft or sent orders'],
         ['Gap', 'Confirmed minus planned'],
-        ['Status', 'Draft, then sent, then confirmed'],
+        ['Status', 'Current order status for this product'],
         ['Orders', 'Purchase orders including this product'],
       ].map(([l, t]) => `<th class="dist-th plan-th" title="${escapeHtml(t)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(l)}</span></div></th>`).join('')}
     </tr>`;
@@ -338,6 +338,13 @@ export function mountOrdersPanel(route) {
       const cls = i < at ? 'is-done' : (i === at ? 'is-current' : '');
       return `<li class="${cls}">${escapeHtml(step.label)}</li>`;
     }).join('')}</ol>`;
+  }
+
+  function statusChip(status) {
+    if (!status || status === 'cancelled') return '<span class="muted">—</span>';
+    const step = ORDER_STEPS.find((s) => s.id === status);
+    if (!step) return '<span class="muted">—</span>';
+    return `<ol class="ord-steps" aria-label="Order status"><li class="is-current">${escapeHtml(step.label)}</li></ol>`;
   }
 
   function shortfallGroups() {
