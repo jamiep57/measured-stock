@@ -57,8 +57,7 @@ export const PANEL_TOOLBAR = {
         },
         {
           id: 'plan-apply-menu',
-          icon: 'library',
-          label: 'Load menu',
+          icon: 'folder',
           title: 'Load a saved menu onto this event',
         },
         {
