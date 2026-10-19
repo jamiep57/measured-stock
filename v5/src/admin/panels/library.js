@@ -11,7 +11,7 @@ import {
 import { productStockPack } from '../../pack-metrics.js';
 import { formatAbv } from '../../lib/menu-exports.js';
 import { palletQtyOf, KEG_COUPLER_TYPES, DISPENSE_GAS_TYPES } from '../../lib/product-attributes.js';
-import { LIBRARY_EXTRA_COLUMNS } from '../filter-configs.js';
+import { LIBRARY_COLUMNS } from '../filter-configs.js';
 import { productSupplierSearchText } from '../../components/product-search.js';
 import { skeletonTableRows } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
@@ -119,16 +119,35 @@ function productHaystack(p, caseSizes) {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
-function extraHeaderHtml() {
-  return LIBRARY_EXTRA_COLUMNS.map((col) => `
+function columnHeaderHtml() {
+  return LIBRARY_COLUMNS.map((col) => `
     <th class="${col.numeric ? 'lib-num' : ''}" data-col="${col.value}" data-sort="${col.value}">${escapeHtml(col.label)}</th>`).join('');
 }
 
-function extraCellHtml(p, caseSizes) {
-  return LIBRARY_EXTRA_COLUMNS.map((col) => {
+function columnCellHtml(p, caseSizes, parts) {
+  return LIBRARY_COLUMNS.map((col) => {
     const cls = col.numeric ? ' class="lib-num"' : '';
-    return `<td${cls} data-col="${col.value}">${extraCellValue(p, col.value, caseSizes)}</td>`;
+    return `<td${cls} data-col="${col.value}">${columnCellValue(col.value, p, caseSizes, parts)}</td>`;
   }).join('');
+}
+
+function columnCellValue(key, p, caseSizes, parts) {
+  if (key === 'name') {
+    return `<div class="lib-prod">
+      <span class="lib-prod-name">${escapeHtml(p.name || 'Product')}</span>
+      ${parts.packLabel ? `<span class="lib-prod-pack">${escapeHtml(parts.packLabel)}</span>` : ''}
+      ${parts.menuMeta}
+      ${parts.skuMeta}
+    </div>`;
+  }
+  if (key === 'case_size') return escapeHtml(parts.packLabel);
+  if (key === 'stock_unit') return `${escapeHtml(parts.countAs)}${parts.auto}`;
+  if (key === 'category') return categoryBadge(p.category);
+  if (key === 'supplier') return supplierCellHtml(p);
+  if (key === 'units_per_case') return p.units_per_case != null ? escapeHtml(String(p.units_per_case)) : '—';
+  if (key === 'case_price') return fmtMoney(p.case_price) || '—';
+  if (key === 'unit_price') return fmtMoney(p.unit_price) || '—';
+  return extraCellValue(p, key, caseSizes);
 }
 
 function extraCellValue(p, key, caseSizes) {
@@ -202,20 +221,12 @@ function renderShell() {
           <thead>
             <tr>
               <th class="lib-sel-col" aria-label="Select"></th>
-              <th data-sort="name">Product</th>
-              <th data-sort="case_size">Stock pack</th>
-              <th data-sort="stock_unit">Count as</th>
-              <th data-sort="category">Category</th>
-              <th data-sort="supplier">Supplier</th>
-              <th class="lib-num" data-sort="units_per_case">Units/case</th>
-              <th class="lib-num" data-sort="case_price">Case £</th>
-              <th class="lib-num" data-sort="unit_price">Unit £</th>
-              ${extraHeaderHtml()}
+              ${columnHeaderHtml()}
               <th class="lib-act"></th>
             </tr>
           </thead>
           <tbody id="libBody">
-            ${skeletonTableRows(10 + LIBRARY_EXTRA_COLUMNS.length, { rows: 8 })}
+            ${skeletonTableRows(LIBRARY_COLUMNS.length + 2, { rows: 8 })}
           </tbody>
         </table>
         <div class="lib-empty" id="libEmpty" hidden>No products match.</div>
@@ -253,22 +264,7 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
           ${mergeMode ? `<input type="checkbox" class="lib-sel-check" data-sel="${escapeHtml(p.id)}"
             ${isSel ? 'checked' : ''} aria-label="Select ${escapeHtml(p.name || 'product')}">` : ''}
         </td>
-        <td>
-          <div class="lib-prod">
-            <span class="lib-prod-name">${escapeHtml(p.name || 'Product')}</span>
-            ${packLabel ? `<span class="lib-prod-pack">${escapeHtml(packLabel)}</span>` : ''}
-            ${menuMeta}
-            ${skuMeta}
-          </div>
-        </td>
-        <td>${escapeHtml(packLabel)}</td>
-        <td>${escapeHtml(countAs)}${auto}</td>
-        <td>${categoryBadge(p.category)}</td>
-        <td>${supplierCellHtml(p)}</td>
-        <td class="lib-num">${p.units_per_case != null ? escapeHtml(String(p.units_per_case)) : '—'}</td>
-        <td class="lib-num">${fmtMoney(p.case_price) || '—'}</td>
-        <td class="lib-num">${fmtMoney(p.unit_price) || '—'}</td>
-        ${extraCellHtml(p, caseSizes)}
+        ${columnCellHtml(p, caseSizes, { packLabel, countAs, auto, menuMeta, skuMeta })}
         <td class="lib-act">
           ${mergeMode ? '' : `<button type="button" class="topbar-tool del-card-action" data-edit="${escapeHtml(p.id)}"
             title="Edit product" aria-label="Edit ${escapeHtml(p.name || 'product')}">
@@ -296,7 +292,7 @@ export function mountLibraryPanel() {
   let caseSizes = [];
   let sortKey = 'name';
   let sortDir = 1;
-  let visibleColumns = LIBRARY_EXTRA_COLUMNS.map((c) => c.value);
+  let visibleColumns = LIBRARY_COLUMNS.map((c) => c.value);
   let filterCat = '';
   let filterSup = '';
   let filterSupIds = [];
@@ -685,7 +681,7 @@ export function mountLibraryPanel() {
 
   refresh().catch((err) => {
     reportError(err, { source: 'admin.library.refresh', silent: true });
-    bodyEl.innerHTML = `<tr><td colspan="${10 + LIBRARY_EXTRA_COLUMNS.length}">${errorState({
+    bodyEl.innerHTML = `<tr><td colspan="${LIBRARY_COLUMNS.length + 2}">${errorState({
       title: 'Couldn’t load library',
       copy: err.message || 'Failed to load',
       variant: 'admin',

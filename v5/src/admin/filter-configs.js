@@ -1185,18 +1185,28 @@ function viewConfig({
   };
 }
 
-export const LIBRARY_EXTRA_COLUMNS = [
+export const LIBRARY_COLUMNS = [
+  { value: 'name', label: 'Product', locked: true },
+  { value: 'case_size', label: 'Stock pack' },
+  { value: 'stock_unit', label: 'Count as' },
+  { value: 'category', label: 'Category' },
+  { value: 'supplier', label: 'Supplier' },
+  { value: 'units_per_case', label: 'Units/case', numeric: true },
+  { value: 'case_price', label: 'Case £', numeric: true },
+  { value: 'unit_price', label: 'Unit £', numeric: true },
   { value: 'abv', label: 'ABV', numeric: true },
   { value: 'pallet_qty', label: 'Pallet qty', numeric: true },
-  { value: 'keg_coupler', label: 'Keg coupler', numeric: false },
-  { value: 'dispense_gas', label: 'Dispense gas', numeric: false },
+  { value: 'keg_coupler', label: 'Keg coupler' },
+  { value: 'dispense_gas', label: 'Dispense gas' },
 ];
 
-/** Shown extra columns, in table order. Missing state means all of them. */
+/** Shown columns, in table order. Product stays on. Missing state means all of them. */
 export function libraryVisibleColumns(state) {
-  const all = LIBRARY_EXTRA_COLUMNS.map((c) => c.value);
-  if (!Array.isArray(state?.columns)) return all;
-  return all.filter((id) => state.columns.includes(id));
+  const all = LIBRARY_COLUMNS.map((c) => c.value);
+  const locked = LIBRARY_COLUMNS.filter((c) => c.locked).map((c) => c.value);
+  if (!Array.isArray(state?.visibleColumns)) return all;
+  const shown = new Set([...locked, ...state.visibleColumns]);
+  return all.filter((id) => shown.has(id));
 }
 
 const libraryBase = viewConfig({
@@ -1206,9 +1216,9 @@ const libraryBase = viewConfig({
     supplierId: [],
     sort: 'name',
     sortDir: 'asc',
-    columns: LIBRARY_EXTRA_COLUMNS.map((c) => c.value),
+    visibleColumns: LIBRARY_COLUMNS.map((c) => c.value),
   }),
-  persist: { keys: ['sort', 'sortDir', 'columns'], storageKey: 'v5LibraryTableFilter' },
+  persist: { keys: ['sort', 'sortDir', 'visibleColumns'], storageKey: 'v5LibraryTableFilter' },
   buildFilterSections(_state, context) {
     const sections = [];
     if (context.categories?.length) {
@@ -1275,23 +1285,31 @@ export const libraryConfig = {
       label: 'Columns',
       icon: 'columns',
       sections: [{
-        id: 'columns',
-        label: 'Extra columns',
+        id: 'visibleColumns',
+        label: 'Visible columns',
         type: 'checkbox',
         showCount: true,
         hideCountWhenFull: true,
-        options: LIBRARY_EXTRA_COLUMNS,
+        scroll: true,
+        options: LIBRARY_COLUMNS.map((c) => ({
+          value: c.value,
+          label: c.label,
+          disabled: Boolean(c.locked),
+        })),
       }],
-      values: { columns: shown },
+      values: { visibleColumns: shown },
       onChange(_id, value) {
-        api.setState({ ...api.getState(), columns: value });
+        api.setState({
+          ...api.getState(),
+          visibleColumns: libraryVisibleColumns({ visibleColumns: value }),
+        });
         api.syncUi();
         api.emit();
       },
       onReset() {
         api.setState({
           ...api.getState(),
-          columns: LIBRARY_EXTRA_COLUMNS.map((c) => c.value),
+          visibleColumns: LIBRARY_COLUMNS.map((c) => c.value),
         });
         api.syncUi();
         api.emit();
@@ -1301,11 +1319,12 @@ export const libraryConfig = {
   },
   buildActiveItems(api) {
     const items = libraryBase.buildActiveItems(api)
-      .filter((item) => !String(item.id).startsWith('columns:'));
+      .filter((item) => !String(item.id).startsWith('visibleColumns:'));
     if (api.getActiveTab() === 'columns') return items;
     const shown = new Set(libraryVisibleColumns(api.getState()));
-    LIBRARY_EXTRA_COLUMNS.forEach((col) => {
-      if (!shown.has(col.value)) items.push({ id: `columns-hidden:${col.value}`, label: col.label });
+    LIBRARY_COLUMNS.forEach((col) => {
+      if (col.locked || shown.has(col.value)) return;
+      items.push({ id: `columns-hidden:${col.value}`, label: col.label });
     });
     return items;
   },
@@ -1317,7 +1336,7 @@ export const libraryConfig = {
       shown.add(key);
       api.setState({
         ...state,
-        columns: LIBRARY_EXTRA_COLUMNS.map((c) => c.value).filter((col) => shown.has(col)),
+        visibleColumns: LIBRARY_COLUMNS.map((c) => c.value).filter((col) => shown.has(col)),
       });
       return true;
     }

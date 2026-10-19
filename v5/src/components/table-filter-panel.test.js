@@ -11,7 +11,7 @@ import {
   extractCategoryNames,
 } from '../admin/filter-helpers.js';
 import { getTableFilterConfig } from '../admin/table-filter.js';
-import { ALL_FILTER_CONFIGS, libraryConfig } from '../admin/filter-configs.js';
+import { ALL_FILTER_CONFIGS, LIBRARY_COLUMNS, libraryConfig } from '../admin/filter-configs.js';
 
 describe('tableFilterIsActive', () => {
   it('detects checkbox and radio differences from defaults', () => {
@@ -229,27 +229,31 @@ describe('library column visibility', () => {
     };
   }
 
-  it('adds a Columns tab and reports the checked extra columns', () => {
+  it('lists every library column and keeps Product visible', () => {
     const api = apiFor(libraryConfig.defaults());
     const tabs = libraryConfig.buildTabs(api);
     expect(tabs.map((t) => t.id)).toEqual(['filter', 'sort', 'columns']);
     const columns = tabs.find((t) => t.id === 'columns');
-    expect(columns.sections[0].options.map((o) => o.label)).toEqual([
-      'ABV', 'Pallet qty', 'Keg coupler', 'Dispense gas',
-    ]);
-    expect(libraryConfig.toValues(libraryConfig.defaults()).visibleColumns).toEqual([
-      'abv', 'pallet_qty', 'keg_coupler', 'dispense_gas',
-    ]);
-    expect(libraryConfig.toValues({ ...libraryConfig.defaults(), columns: ['abv', 'dispense_gas'] }).visibleColumns)
-      .toEqual(['abv', 'dispense_gas']);
+    expect(columns.sections[0].options.map((o) => o.label)).toEqual(
+      LIBRARY_COLUMNS.map((c) => c.label),
+    );
+    expect(columns.sections[0].options[0]).toMatchObject({ value: 'name', disabled: true });
+    expect(libraryConfig.toValues(libraryConfig.defaults()).visibleColumns).toEqual(
+      LIBRARY_COLUMNS.map((c) => c.value),
+    );
+    expect(libraryConfig.toValues({
+      ...libraryConfig.defaults(),
+      visibleColumns: ['abv', 'case_size'],
+    }).visibleColumns).toEqual(['name', 'case_size', 'abv']);
   });
 
   it('chips a hidden column and restores it when the chip is removed', () => {
-    const api = apiFor({ ...libraryConfig.defaults(), columns: ['abv'] });
+    const api = apiFor({ ...libraryConfig.defaults(), visibleColumns: ['name', 'abv'] });
     const chips = libraryConfig.buildActiveItems(api);
+    expect(chips.some((c) => c.id === 'columns-hidden:stock_unit')).toBe(true);
     expect(chips.some((c) => c.id === 'columns-hidden:pallet_qty')).toBe(true);
-    expect(chips.some((c) => c.id.startsWith('columns:'))).toBe(false);
+    expect(chips.some((c) => c.id === 'columns-hidden:name')).toBe(false);
     libraryConfig.removeActiveItem(api, 'columns-hidden:keg_coupler');
-    expect(api.getState().columns).toEqual(['abv', 'keg_coupler']);
+    expect(api.getState().visibleColumns).toEqual(['name', 'abv', 'keg_coupler']);
   });
 });
