@@ -936,6 +936,20 @@ body:has(.admin-app) .toast.err {
   min-width: 240px;
   max-width: min(320px, 92vw);
 }
+.topbar-menu--start {
+  left: 0;
+  right: auto;
+}
+.admin-topbar .topbar-tool[aria-expanded="true"] {
+  background: var(--secondary);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--foreground));
+}
+.admin-topbar .topbar-tool .topbar-tool-chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: -2px;
+  color: var(--muted-foreground);
+}
 .topbar-menu-section + .topbar-menu-section {
   margin-top: 6px;
   padding-top: 6px;
@@ -966,6 +980,18 @@ body:has(.admin-app) .toast.err {
   text-align: left;
   cursor: pointer;
 }
+.topbar-menu-item--row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.topbar-menu-item--row .lucide-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.topbar-menu-item--row:hover .lucide-icon { color: var(--foreground); }
 .topbar-menu-item:hover { background: var(--secondary); }
 .topbar-menu-item.is-selected {
   background: var(--secondary);

@@ -2,7 +2,7 @@
  * Admin topbar toolbar — disconnected icon strips + filter/search on the right.
  */
 
-import { $, toast } from '../lib/util.js';
+import { $, escapeHtml, toast } from '../lib/util.js';
 import { can } from '../lib/permissions.js';
 import { icon, initIcons } from '../lib/icons.js';
 import { hasTableFilter } from './table-filter.js';
@@ -10,7 +10,7 @@ import { refreshFieldUndoButtons } from '../lib/field-undo.js';
 
 export const ADMIN_TOOLBAR_ACTION = 'admin-toolbar-action';
 
-/** @typedef {{ id: string, icon?: string, title?: string, label?: string, primary?: boolean, disabled?: boolean, kind?: 'button' | 'text' }} ToolbarItem */
+/** @typedef {{ id: string, icon?: string, title?: string, label?: string, primary?: boolean, disabled?: boolean, kind?: 'button' | 'text' | 'menu', items?: ToolbarItem[] }} ToolbarItem */
 /** @typedef {{ id: string, label: string, items: ToolbarItem[] }} ToolbarStrip */
 
 /** @type {{ syncRoute: (route: object) => void, setStrips: (strips: ToolbarStrip[] | null) => void }} */
@@ -61,22 +61,31 @@ export const PANEL_TOOLBAR = {
           title: 'Load a saved menu onto this event',
         },
         {
-          id: 'plan-add-product',
+          id: 'plan-add',
+          kind: 'menu',
           icon: 'plus',
-          label: 'Add product',
-          title: 'Add a library product to this event menu',
-        },
-        {
-          id: 'plan-recipe-builder',
-          icon: 'martini',
-          label: 'Recipe builder',
-          title: 'Build a drink from stock products and choose which category it sits in',
-        },
-        {
-          id: 'plan-add-scenario',
-          icon: 'target',
-          label: 'Scenario',
-          title: 'Add a pricing scenario column',
+          label: 'Add',
+          title: 'Add a product, a recipe, or a pricing scenario',
+          items: [
+            {
+              id: 'plan-add-product',
+              icon: 'plus',
+              label: 'Add product',
+              title: 'Add a library product to this event menu',
+            },
+            {
+              id: 'plan-recipe-builder',
+              icon: 'martini',
+              label: 'Recipe builder',
+              title: 'Build a cocktail or a spirit and mixer, sold as one drink and costed from its stock products',
+            },
+            {
+              id: 'plan-add-scenario',
+              icon: 'target',
+              label: 'Scenario',
+              title: 'Add a pricing scenario column',
+            },
+          ],
         },
         {
           id: 'plan-costs',
@@ -532,15 +541,40 @@ export const PANEL_TOOLBAR = {
   ],
 };
 
+const TOOLBAR_ICON = { size: 16, strokeWidth: 2 };
+
+function renderMenuChild(child) {
+  const title = child.title || child.label || child.id;
+  return `<button type="button" class="topbar-menu-item topbar-menu-item--row" role="menuitem"
+    data-toolbar-action="${escapeHtml(child.id)}"
+    title="${escapeHtml(title)}">
+    ${child.icon ? icon(child.icon, TOOLBAR_ICON) : ''}<span>${escapeHtml(child.label || child.id)}</span>
+  </button>`;
+}
+
 function renderToolbarItem(item) {
   if (item.kind === 'text') {
     return `<span class="topbar-tool-meta muted" data-toolbar-meta="${item.id}">${item.label || ''}</span>`;
   }
+  const iconOpts = TOOLBAR_ICON;
+  const title = item.title || item.label || item.id;
+  if (item.kind === 'menu') {
+    const menuId = `toolbar-menu-${item.id}`;
+    return `<div class="topbar-tool-wrap" data-toolbar-menu-wrap="${escapeHtml(item.id)}">
+      <button type="button" class="topbar-tool topbar-tool--label"
+        data-toolbar-menu="${escapeHtml(item.id)}"
+        aria-haspopup="menu" aria-expanded="false" aria-controls="${escapeHtml(menuId)}"
+        title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
+        ${item.icon ? icon(item.icon, iconOpts) : ''}<span>${escapeHtml(item.label || 'Menu')}</span>${icon('chevron-down', { size: 14, strokeWidth: 2, class: 'topbar-tool-chevron' })}
+      </button>
+      <div class="topbar-menu topbar-menu--start" id="${escapeHtml(menuId)}" role="menu" hidden>
+        ${(item.items || []).map(renderMenuChild).join('')}
+      </div>
+    </div>`;
+  }
   const classes = ['topbar-tool'];
   if (item.label) classes.push('topbar-tool--label');
   if (item.primary) classes.push('topbar-tool--primary');
-  const iconOpts = { size: 16, strokeWidth: 2 };
-  const title = item.title || item.label || item.id;
   const inner = item.label
     ? `${item.icon ? icon(item.icon, iconOpts) : ''}<span>${item.label}</span>`
     : icon(item.icon, iconOpts);
@@ -601,10 +635,40 @@ export function initTopbarToolbar() {
   /** @type {ToolbarStrip[] | null} */
   let stripOverride = null;
 
+  function closeToolbarMenus() {
+    stripsEl.querySelectorAll('[data-toolbar-menu]').forEach((btn) => {
+      btn.setAttribute('aria-expanded', 'false');
+      const menu = document.getElementById(btn.getAttribute('aria-controls') || '');
+      if (menu) menu.hidden = true;
+    });
+  }
+
   stripsEl.addEventListener('click', (e) => {
+    const menuBtn = e.target.closest('[data-toolbar-menu]');
+    if (menuBtn && stripsEl.contains(menuBtn)) {
+      e.stopPropagation();
+      const menu = document.getElementById(menuBtn.getAttribute('aria-controls') || '');
+      const willOpen = !!menu?.hidden;
+      closeToolbarMenus();
+      if (willOpen && menu) {
+        menu.hidden = false;
+        menuBtn.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
     const btn = e.target.closest('[data-toolbar-action]');
-    if (!btn || btn.disabled) return;
+    if (!btn || btn.disabled || !stripsEl.contains(btn)) return;
+    closeToolbarMenus();
     onToolbarAction(btn.dataset.toolbarAction);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target instanceof Node && stripsEl.contains(e.target)) return;
+    closeToolbarMenus();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeToolbarMenus();
   });
 
   function paint(route = lastRoute) {
