@@ -14,9 +14,9 @@ import { openModal, closeModal, confirmDialog } from '../../components/modal.js'
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
 import { mountSupplierSearch } from '../../components/supplier-search.js';
-import { navigate } from '../router.js';
+import { hrefForRoute, navigate } from '../router.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
-import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { ADMIN_TOOLBAR_ACTION, setTopbarFilterSuppressed } from '../topbar-toolbar.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
 import { countedInFromDeliveries } from '../../lib/opening-stock.js';
 import { findOfferForSupplier } from '../../pack-metrics.js';
@@ -63,7 +63,9 @@ import {
   forecastTotals,
   groupForecastLines,
   keepMixServes,
+  matchedTakingsTarget,
   mixFromSales,
+  mixSharesOfMatched,
   plannedOrderCost,
   scaleCategoryServes,
   sellingPrice,
@@ -152,6 +154,7 @@ export function mountOrdersPanel(route) {
     target: null,
     anchorTarget: null,
     recipes: [],
+    tab: 'take',
     filter: getTableFilterValues('orders') || {},
     query: getLastProductFilter().query || '',
     saveTimers: {},
@@ -243,6 +246,11 @@ export function mountOrdersPanel(route) {
         <span class="plan-kpi-sub muted">${s.short ? `<span class="plan-dot plan-dot--red"></span>${s.short} short ` : ''}${s.over ? `<span class="plan-dot plan-dot--amber"></span>${s.over} over` : ''}${!s.short && !s.over ? 'Orders match the plan' : ''}</span></div>`;
   }
 
+  function lockChip() {
+    if (!locked()) return '';
+    return `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Event ${escapeHtml(ctx.pricing.status)} — orders are read-only</span>`;
+  }
+
   function settingsHtml() {
     const dis = locked() ? 'disabled' : '';
     return `
@@ -251,9 +259,8 @@ export function mountOrdersPanel(route) {
         <input type="text" inputmode="decimal" class="admin-input num-math" id="ordBuffer" value="${escapeHtml(ctx.buffer ? String(ctx.buffer) : '')}" placeholder="0" ${dis}>
       </label>
       <div class="plan-settings-meta">
-        ${locked() ? `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Event ${escapeHtml(ctx.pricing.status)} — orders are read-only</span>` : ''}
-        <span class="plan-chip">Orders never change stock — only deliveries do</span>
-        <a href="/planning" class="plan-link" data-goto="planning">${icon('calculator', { size: 13 })} Menu & GP</a>
+        ${lockChip()}
+        <a href="${escapeHtml(hrefForRoute({ view: 'event', eventId: ctx.eventId, panel: 'planning' }))}" class="plan-link" data-goto="planning">${icon('calculator', { size: 13 })} Menu & GP</a>
       </div>`;
   }
 
@@ -385,13 +392,13 @@ export function mountOrdersPanel(route) {
         <label class="admin-field plan-field">
           <span class="admin-label">Target revenue (£)</span>
           <input type="text" inputmode="decimal" autocomplete="off" class="admin-input num-math" id="ordTarget"
-            value="${escapeHtml(ctx.target != null ? String(ctx.target) : '')}" placeholder="350000" ${dis}>
+            value="${escapeHtml(ctx.target != null ? String(ctx.target) : '')}" placeholder="e.g. 350000" ${dis}>
         </label>
         <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordKeepMix" ${showKeepMix() && !locked() ? '' : 'hidden'}>Keep this mix</button>
         <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordImportCsv" ${dis}>Import sales CSV</button>
         <input type="file" id="ordCsvFile" accept=".csv,.tsv,.xlsx,.xls,.txt" hidden>
       </div>
-      <p class="ord-forecast-note muted">Servings are each line’s share of the target, divided by its menu price. A blank price uses the price needed to hit the target GP from the cost.</p>
+      <p class="ord-forecast-note muted">Each line’s share of the target, divided by its menu price. A blank price uses the price needed to hit the target GP. Import a sales file to set the mix — with no target yet, the file’s matched takings become the target.</p>
       <div class="plan-kpis" id="ordForecastStats">${forecastStatsHtml()}</div>`;
   }
 
@@ -408,6 +415,16 @@ export function mountOrdersPanel(route) {
       aria-label="${escapeHtml(label)}" title="${escapeHtml(enabled ? label : 'Set a target, and a menu price or a cost, before editing the mix')}" ${dis}>`;
   }
 
+  function forecastLineVisible(line) {
+    const q = ctx.query.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [line.name, line.menuName, line.productName, line.sku, line.serveLabel, line.category]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  }
+
   function forecastBodyHtml() {
     const groups = groupForecastLines(forecastLines(), ctx.target);
     if (!groups.length) {
@@ -415,6 +432,8 @@ export function mountOrdersPanel(route) {
     }
     const canEdit = !locked() && Number(ctx.target) > 0;
     const body = groups.map((group) => {
+      const lines = group.lines.filter(forecastLineVisible);
+      if (!lines.length) return '';
       const editable = canEdit && group.lines.some((line) => line.price != null);
       const head = `<tr class="ord-forecast-cat" data-forecast-cat="${escapeHtml(group.category)}">
         <th scope="row">${escapeHtml(group.category)}</th>
@@ -424,7 +443,7 @@ export function mountOrdersPanel(route) {
         <td class="num" data-serves>${group.serves ? qty(group.serves) : '—'}</td>
         <td></td>
       </tr>`;
-      const rows = group.lines.map((line) => {
+      const rows = lines.map((line) => {
         const detail = [line.serveLabel, line.caseSize].filter(Boolean).join(' · ');
         const size = detail ? `<span class="ord-forecast-size muted">${escapeHtml(detail)}</span>` : '';
         const casesTitle = line.kind === 'cocktail'
@@ -441,6 +460,9 @@ export function mountOrdersPanel(route) {
       }).join('');
       return head + rows;
     }).join('');
+    if (!body) {
+      return '<p class="ord-forecast-empty muted">No menu lines match this search.</p>';
+    }
     return `<table class="ord-forecast">
       <thead><tr>
         <th>Line</th>
@@ -542,23 +564,79 @@ export function mountOrdersPanel(route) {
     syncTheadHeight();
   }
 
+  function tabsHtml() {
+    const takeOn = ctx.tab === 'take';
+    const count = ctx.orders.length ? ` (${ctx.orders.length})` : '';
+    return `
+      <div class="sales-tabs ord-tabs" role="tablist">
+        <button type="button" class="sales-tab${takeOn ? ' sales-tab--active' : ''}" data-ord-tab="take" role="tab"
+          aria-selected="${takeOn}">Take</button>
+        <button type="button" class="sales-tab${takeOn ? '' : ' sales-tab--active'}" data-ord-tab="orders" role="tab"
+          aria-selected="${!takeOn}">Purchase orders${count}</button>
+      </div>`;
+  }
+
+  function syncTabChrome() {
+    setTopbarFilterSuppressed(ctx.tab !== 'orders');
+    const input = document.querySelector('#topbarSearch .product-search-input');
+    if (input) input.placeholder = ctx.tab === 'take' ? 'Filter menu lines…' : 'Filter event products…';
+  }
+
+  function setTab(tab) {
+    if (tab !== 'take' && tab !== 'orders') return;
+    ctx.tab = tab;
+    panel.querySelectorAll('[data-ord-tab]').forEach((btn) => {
+      const on = btn.dataset.ordTab === tab;
+      btn.classList.toggle('sales-tab--active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const ordersTab = panel.querySelector('[data-ord-tab="orders"]');
+    if (ordersTab) {
+      const count = ctx.orders.length ? ` (${ctx.orders.length})` : '';
+      ordersTab.textContent = `Purchase orders${count}`;
+    }
+    panel.querySelectorAll('[data-ord-pane]').forEach((pane) => {
+      pane.hidden = pane.dataset.ordPane !== tab;
+    });
+    syncTabChrome();
+    if (tab === 'orders') {
+      const grid = $('ordGrid');
+      if (grid) grid.innerHTML = gridHtml();
+      syncTheadHeight();
+    } else {
+      const forecast = $('ordForecastBody');
+      if (forecast) forecast.innerHTML = forecastBodyHtml();
+      refreshForecastOutputs();
+    }
+  }
+
   function paint() {
+    const takeOn = ctx.tab === 'take';
     panel.innerHTML = `
-      <section class="plan-head admin-surface">
-        <div class="plan-settings" id="ordSettings">${settingsHtml()}</div>
-        <div class="plan-kpis" id="ordKpis">${kpisHtml()}</div>
-      </section>
-      <section class="ord-forecast-section admin-surface" id="ordForecast">
-        ${forecastHeadHtml()}
-        <div class="ord-forecast-wrap" id="ordForecastBody">${forecastBodyHtml()}</div>
-      </section>
-      <div class="dist-grid-wrap plan-grid-wrap ord-grid-wrap">
-        <table class="dist-grid plan-grid ord-grid" id="ordGrid">${gridHtml()}</table>
-      </div>
-      <section class="ord-list-wrap">
-        <h3 class="ord-list-title">Purchase orders</h3>
-        <div class="ord-list" id="ordList">${ordersListHtml()}</div>
-      </section>`;
+      <div class="ord-workspace">
+        ${tabsHtml()}
+        <div class="ord-tab-body" data-ord-pane="take" ${takeOn ? '' : 'hidden'}>
+          <section class="ord-take-head admin-surface">
+            <div class="plan-settings" id="ordSettings">${settingsHtml()}</div>
+            ${forecastHeadHtml()}
+          </section>
+          <div class="ord-forecast-wrap" id="ordForecastBody">${forecastBodyHtml()}</div>
+        </div>
+        <div class="ord-tab-body" data-ord-pane="orders" ${takeOn ? 'hidden' : ''}>
+          <section class="plan-head admin-surface">
+            <div class="plan-settings-meta">${lockChip()}<span class="plan-chip">Orders never change stock — only deliveries do</span></div>
+            <div class="plan-kpis" id="ordKpis">${kpisHtml()}</div>
+          </section>
+          <section class="ord-list-wrap">
+            <h3 class="ord-list-title">Purchase orders</h3>
+            <div class="ord-list" id="ordList">${ordersListHtml()}</div>
+          </section>
+          <div class="dist-grid-wrap plan-grid-wrap ord-grid-wrap">
+            <table class="dist-grid plan-grid ord-grid" id="ordGrid">${gridHtml()}</table>
+          </div>
+        </div>
+      </div>`;
+    syncTabChrome();
     syncTheadHeight();
   }
 
@@ -571,6 +649,11 @@ export function mountOrdersPanel(route) {
     if (k) k.innerHTML = kpisHtml();
     const list = $('ordList');
     if (list) list.innerHTML = ordersListHtml();
+    const ordersTab = panel.querySelector('[data-ord-tab="orders"]');
+    if (ordersTab) {
+      const count = ctx.orders.length ? ` (${ctx.orders.length})` : '';
+      ordersTab.textContent = `Purchase orders${count}`;
+    }
     const forecast = $('ordForecastBody');
     if (forecast) forecast.innerHTML = forecastBodyHtml();
     refreshForecastOutputs();
@@ -715,6 +798,36 @@ export function mountOrdersPanel(route) {
     });
   }
 
+  function openSupplierEmail(po, supplier) {
+    const to = supplier?.email || '';
+    const subject = `Purchase order ${po?.reference || ''}`.trim();
+    const who = supplier?.name ? ` ${supplier.name}` : '';
+    const body = `Hello${who},\n\nPlease find purchase order ${po?.reference || ''} attached.`;
+    const el = openModal({
+      title: 'Email supplier',
+      bodyHtml: `
+        <p class="ord-mix-note">The PDF will be attached. Sending from the app comes next.</p>
+        <label class="admin-field">
+          <span class="admin-label">To</span>
+          <input class="admin-input" type="email" value="${escapeHtml(to)}" placeholder="No email on this supplier" disabled>
+        </label>
+        <label class="admin-field">
+          <span class="admin-label">Subject</span>
+          <input class="admin-input" type="text" value="${escapeHtml(subject)}" disabled>
+        </label>
+        <label class="admin-field">
+          <span class="admin-label">Message</span>
+          <textarea class="admin-input ord-notes" rows="5" disabled>${escapeHtml(body)}</textarea>
+        </label>`,
+      footHtml: `
+        <div class="admin-modal-confirm-foot">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Close</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" disabled>Send</button>
+        </div>`,
+    });
+    el.querySelector('[data-cancel]').onclick = closeModal;
+  }
+
   // ---------- purchase order sheet -----------------------------------
 
   async function openOrder(poId) {
@@ -777,6 +890,7 @@ export function mountOrdersPanel(route) {
           ${!isNew && status !== 'cancelled' && !locked() ? '<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordCancel">Cancel order</button>' : ''}
           <span class="ord-foot-spacer"></span>
           ${!isNew ? `<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordPdf">${icon('download', { size: 14 })} PDF</button>` : ''}
+          ${!isNew ? `<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordEmail">${icon('mail', { size: 14 })} Email supplier</button>` : ''}
           ${status !== 'cancelled' && !locked() ? '<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordSave">Save</button>' : ''}
           ${editable && status === 'draft' ? '<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordSent">Mark sent</button>' : ''}
           ${editable ? '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="ordConfirm">Confirm order</button>' : ''}
@@ -1001,6 +1115,11 @@ export function mountOrdersPanel(route) {
         btn.disabled = false;
       }
     });
+    on('ordEmail', () => {
+      const h = readHeader();
+      const sup = ctx.supplierById.get(h.supplier_id) || null;
+      openSupplierEmail(po, sup);
+    });
 
     const hist = $('ordHistory');
     if (hist) {
@@ -1085,6 +1204,7 @@ export function mountOrdersPanel(route) {
         }
         closeModal();
         await reloadOrders();
+        setTab('orders');
         toast(`${made} draft order${made === 1 ? '' : 's'} created`);
       } catch (e2) {
         closeModal();
@@ -1136,9 +1256,13 @@ export function mountOrdersPanel(route) {
     const priceNote = needsPrice.length
       ? `<p class="ord-mix-note">${escapeHtml(needsPrice.map((row) => row.name).join(', '))} matched but ${needsPrice.length === 1 ? 'has' : 'have'} no price, so ${needsPrice.length === 1 ? 'it' : 'they'} will be skipped.</p>`
       : '';
-    const targetNote = Number(ctx.target) > 0
-      ? ''
-      : '<p class="ord-mix-note">Set a target revenue before applying this mix.</p>';
+    const fileTarget = matchedTakingsTarget(mix);
+    const hasTarget = Number(ctx.target) > 0;
+    const targetNote = hasTarget
+      ? `<p class="ord-mix-note">This mix will be scaled to the current target of ${money(ctx.target)}.</p>`
+      : (fileTarget
+        ? `<p class="ord-mix-note">No target yet. Applying sets the target to ${money(fileTarget)} — the takings in this file that match the menu.</p>`
+        : '<p class="ord-mix-note">Nothing in this file matched the menu, so there is no take to apply.</p>');
     return `
       <p class="ord-mix-note"><strong>${escapeHtml(fileName)}</strong> — ${escapeHtml(pctInputValue(mix.matchedPct))}% of ${money(mix.total)} matches the menu. Applying sets projected serves from that mix and clears planned-case overrides on those products.</p>
       ${targetNote}
@@ -1162,7 +1286,11 @@ export function mountOrdersPanel(route) {
       caseSizes: ctx.caseSizes,
     });
     const lines = forecastLines();
-    const { applied } = Number(ctx.target) > 0 ? servesForMix(lines, mix.lines, ctx.target) : { applied: [] };
+    const fileTarget = matchedTakingsTarget(mix);
+    const hasTarget = Number(ctx.target) > 0;
+    const applyTarget = hasTarget ? Number(ctx.target) : fileTarget;
+    const mixLines = hasTarget ? mix.lines : mixSharesOfMatched(mix.lines, applyTarget);
+    const { applied } = applyTarget ? servesForMix(lines, mixLines, applyTarget) : { applied: [] };
     const replacing = applied.filter((update) => {
       const line = lines.find((row) => row.key === update.key);
       return line && Number(line.projectedServes) > 0;
@@ -1173,7 +1301,7 @@ export function mountOrdersPanel(route) {
       footHtml: `
         <div class="admin-modal-confirm-foot">
           <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok ${applied.length ? '' : 'disabled'}>${replacing.length ? 'Replace projected serves' : 'Apply mix'}</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok ${applied.length ? '' : 'disabled'}>${Number(ctx.target) > 0 ? (replacing.length ? 'Replace projected serves' : 'Apply mix') : 'Use this take'}</button>
         </div>`,
     });
     el.querySelector('[data-cancel]').onclick = closeModal;
@@ -1182,14 +1310,30 @@ export function mountOrdersPanel(route) {
       btn.disabled = true;
       try {
         await flushSaves();
-        const fresh = servesForMix(forecastLines(), mix.lines, ctx.target);
+        const fromFile = !(Number(ctx.target) > 0);
+        let target = Number(ctx.target);
+        let mixLines = mix.lines;
+        if (fromFile) {
+          target = matchedTakingsTarget(mix);
+          if (!(target > 0)) throw new Error('Nothing in this file matched the menu');
+          mixLines = mixSharesOfMatched(mix.lines, target);
+          await updateEventPricing(ctx.eventId, { target_revenue: target });
+          invalidateEventCache(ctx.eventId);
+          ctx.target = target;
+          ctx.anchorTarget = target;
+          if (ctx.event) ctx.event.target_revenue = target;
+          const input = $('ordTarget');
+          if (input) input.value = String(target);
+        }
+        const fresh = servesForMix(forecastLines(), mixLines, target);
         if (!fresh.applied.length) throw new Error('No matched lines have a price');
         rememberServes(fresh.applied);
         ctx.anchorTarget = ctx.target;
         await persistServes(fresh.applied);
         closeModal();
         const skipped = fresh.skipped.length ? ` · ${fresh.skipped.length} skipped, no price` : '';
-        toast(`Mix applied to ${fresh.applied.length} line${fresh.applied.length === 1 ? '' : 's'}${skipped}`);
+        const lead = fromFile ? `Target set to ${money(target)} · ` : '';
+        toast(`${lead}Mix applied to ${fresh.applied.length} line${fresh.applied.length === 1 ? '' : 's'}${skipped}`);
       } catch (err) {
         btn.disabled = false;
         reportError(err, { source: 'admin.orders.csv-mix', silent: true });
@@ -1241,8 +1385,13 @@ export function mountOrdersPanel(route) {
     const gotoEl = e.target.closest('[data-goto]');
     if (gotoEl) {
       e.preventDefault();
-      navigate({ view: gotoEl.dataset.goto });
+      navigate({ view: 'event', eventId: ctx.eventId, panel: 'planning' });
       window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
+    const tabBtn = e.target.closest('[data-ord-tab]');
+    if (tabBtn && panel.contains(tabBtn)) {
+      setTab(tabBtn.dataset.ordTab);
       return;
     }
     const open = e.target.closest('[data-open-po]');
@@ -1257,9 +1406,21 @@ export function mountOrdersPanel(route) {
 
   function onProductFilter(e) {
     ctx.query = e.detail?.query || '';
-    repaintBody();
-    if (e.detail?.productId) {
-      panel.querySelector(`tr[data-pid="${CSS.escape(e.detail.productId)}"]`)?.scrollIntoView({ block: 'nearest' });
+    if (ctx.tab === 'take') {
+      const forecast = $('ordForecastBody');
+      if (forecast) forecast.innerHTML = forecastBodyHtml();
+      refreshForecastOutputs();
+      if (e.detail?.productId) {
+        const line = forecastLines().find((row) => row.productId === e.detail.productId);
+        if (line) {
+          panel.querySelector(`tr[data-forecast-line="${CSS.escape(line.key)}"]`)?.scrollIntoView({ block: 'nearest' });
+        }
+      }
+    } else {
+      repaintBody();
+      if (e.detail?.productId) {
+        panel.querySelector(`tr[data-pid="${CSS.escape(e.detail.productId)}"]`)?.scrollIntoView({ block: 'nearest' });
+      }
     }
     if (e.detail) e.detail.handled = true;
   }
@@ -1360,5 +1521,6 @@ export function mountOrdersPanel(route) {
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
+    setTopbarFilterSuppressed(false, { paint: false });
   };
 }

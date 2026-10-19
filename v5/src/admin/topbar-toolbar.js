@@ -12,11 +12,29 @@ export const ADMIN_TOOLBAR_ACTION = 'admin-toolbar-action';
 /** @typedef {{ id: string, icon?: string, title?: string, label?: string, primary?: boolean, disabled?: boolean, kind?: 'button' | 'text' | 'menu' | 'divider', items?: ToolbarItem[] }} ToolbarItem */
 /** @typedef {{ id: string, label: string, items: ToolbarItem[] }} ToolbarStrip */
 
-/** @type {{ syncRoute: (route: object) => void, setStrips: (strips: ToolbarStrip[] | null) => void }} */
+/** @type {{ syncRoute: (route: object) => void, setStrips: (strips: ToolbarStrip[] | null) => void, paint: () => void }} */
 let toolbarController = {
   syncRoute() {},
   setStrips() {},
+  paint() {},
 };
+
+/** Hide the plan-vs-ordered filter while another workspace on the same route is open. */
+let filterSuppressed = false;
+
+/**
+ * @param {boolean} suppressed
+ * @param {{ paint?: boolean }} [opts]
+ */
+export function setTopbarFilterSuppressed(suppressed, { paint = true } = {}) {
+  filterSuppressed = Boolean(suppressed);
+  if (filterSuppressed) {
+    const dropdown = $('topbarTableFilterPanel');
+    if (dropdown) dropdown.hidden = true;
+    $('topbarTableFilterBtn')?.setAttribute('aria-expanded', 'false');
+  }
+  if (paint) toolbarController.paint();
+}
 
 /**
  * Temporarily replace the current panel’s topbar strips (e.g. library merge mode).
@@ -610,7 +628,7 @@ export function initTopbarToolbar() {
   const stripsEl = $('topbarToolbarStrips');
   const filterStrip = $('topbarFilterStrip');
   if (!tools || !stripsEl || !filterStrip) {
-    toolbarController = { syncRoute() {}, setStrips() {} };
+    toolbarController = { syncRoute() {}, setStrips() {}, paint() {} };
     return { syncRoute: () => {} };
   }
 
@@ -658,7 +676,7 @@ export function initTopbarToolbar() {
   function paint(route = lastRoute) {
     const { configured, strips: defaultStrips } = stripsForRoute(route) || { configured: null, strips: null };
     const strips = stripOverride || defaultStrips;
-    const showFilter = route ? hasTableFilter(route) : false;
+    const showFilter = route ? hasTableFilter(route) && !filterSuppressed : false;
     const showStrips = !!(strips && strips.length);
     const showToolbar = showStrips || showFilter || configured !== null || !!stripOverride;
 
@@ -687,7 +705,7 @@ export function initTopbarToolbar() {
     paint(lastRoute);
   }
 
-  toolbarController = { syncRoute, setStrips };
+  toolbarController = { syncRoute, setStrips, paint };
 
   return { syncRoute };
 }

@@ -4,8 +4,10 @@ import {
   forecastTotals,
   groupForecastLines,
   keepMixServes,
+  matchedTakingsTarget,
   mixFromSales,
   mixPct,
+  mixSharesOfMatched,
   plannedOrderCost,
   roughCases,
   scaleCategoryServes,
@@ -132,6 +134,25 @@ describe('sales mix', () => {
     expect(mix.lines.find((row) => row.key === 'half').pct).toBe(25);
     expect(mix.unmatched[0].name).toBe('Mystery');
     expect(mix.categories.find((row) => row.category === 'Cocktails').pct).toBe(50);
+    expect(matchedTakingsTarget(mix)).toBe(150);
+  });
+
+  it('has no starting target when nothing matched', () => {
+    expect(matchedTakingsTarget(null)).toBeNull();
+    expect(matchedTakingsTarget({ matchedAmount: 0 })).toBeNull();
+  });
+
+  it('keeps each matched line’s takings when unmatched sales are left out', () => {
+    const mix = mixFromSales([
+      { name: 'Hells', variation: 'Pint', gross_sales: 60 },
+      { name: 'Mystery', variation: 'Regular', gross_sales: 40 },
+    ], [pint]);
+    const target = matchedTakingsTarget(mix);
+    expect(target).toBe(60);
+    const shares = mixSharesOfMatched(mix.lines, target);
+    expect(shares[0].pct).toBe(100);
+    const result = servesForMix([pint], shares, target);
+    expect(result.applied[0].serves).toBe(10);
   });
 
   it('uses net sales when the file has no gross column', () => {

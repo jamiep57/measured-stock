@@ -34,6 +34,7 @@ function placeholderForRoute(route) {
   if (route.view === 'event' && (route.panel === 'closing' || route.panel === 'recon')) {
     return 'Search product or supplier…';
   }
+  if (route.view === 'event' && route.panel === 'orders') return 'Filter menu lines…';
   if (route.view === 'event') return 'Filter event products…';
   if (route.view === 'library') return 'Search library…';
   if (route.view === 'kit-library') return 'Search kit / barcode…';

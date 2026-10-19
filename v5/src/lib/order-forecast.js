@@ -7,6 +7,7 @@
  * price needed to hit the target GP when the menu price is blank.
  *
  * A sales file sets the mix. It is not stored as this event's till import.
+ * When the event has no target, the matched takings are the starting target.
  */
 
 import { requiredPrice } from './gp.js';
@@ -117,7 +118,8 @@ export function groupForecastLines(lines, target) {
       rows.sort((a, b) => (a.name || '').localeCompare(b.name || '')
         || String(a.serveLabel || '').localeCompare(String(b.serveLabel || '')));
       const revenue = roundMoney(rows.reduce((sum, row) => sum + (row.revenue || 0), 0));
-      const pct = rows.reduce((sum, row) => sum + (row.mixPct || 0), 0);
+      const known = rows.filter((row) => row.mixPct != null);
+      const pct = known.length ? known.reduce((sum, row) => sum + row.mixPct, 0) : null;
       const serves = rows.reduce((sum, row) => sum + (num(row.projectedServes) || 0), 0);
       return { category, revenue, pct, serves, lines: rows };
     })
@@ -335,6 +337,29 @@ export function mixFromSales(tillRows, lines, options = {}) {
     unmatched: missed.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name)),
     categories,
   };
+}
+
+/**
+ * Starting target when the event has none: takings in the file that
+ * matched the menu. Unmatched sales are left out.
+ */
+export function matchedTakingsTarget(mix) {
+  const amount = num(mix?.matchedAmount);
+  if (!(amount > 0)) return null;
+  return roundMoney(amount);
+}
+
+/**
+ * Shares of the matched takings, so each line's revenue equals its sales.
+ * The file-level mix leaves a gap for unmatched rows.
+ */
+export function mixSharesOfMatched(mixLines, matchedAmount) {
+  const total = num(matchedAmount);
+  if (!(total > 0)) return [];
+  return (mixLines || []).map((row) => ({
+    ...row,
+    pct: ((num(row.amount) || 0) / total) * 100,
+  }));
 }
 
 /** Projected serves for matched lines that have a selling price. */
