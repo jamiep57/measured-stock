@@ -11,6 +11,71 @@ import { openModal, closeModal } from '../components/modal.js';
 import { isOrgAdmin } from '../lib/organisations.js';
 import { EXPORT_TYPES, buildMenuExport, exportFileStem, menuExportCsv } from '../lib/menu-exports.js';
 
+/**
+ * Write the audit log, then download a menu export. Internal cost/GP is
+ * refused when the audit write fails. Used by Menu & GP and by Reports.
+ */
+export async function commitMenuExport({
+  type,
+  format,
+  model,
+  scenarioIds = [],
+  rateSource = null,
+  event,
+  eventId,
+  vatRate = 0.2,
+}) {
+  const detail = {
+    type,
+    format,
+    items: model.count,
+    scenarios: scenarioIds,
+    rate_source: type === 'sor' ? rateSource : null,
+    internal: model.includeInternal,
+  };
+  try {
+    await getDB().rpc('log_audit_event', {
+      p_kind: model.includeInternal ? 'menu_export_internal' : 'menu_export',
+      p_ref: eventId,
+      p_detail: detail,
+    });
+  } catch (e) {
+    if (model.includeInternal) {
+      const err = new Error('Couldn’t record the internal export in the audit log, so it was not created.');
+      err.cause = e;
+      throw err;
+    }
+  }
+
+  const spec = EXPORT_TYPES[type];
+  const stem = exportFileStem(type, event?.name);
+  if (format === 'csv') {
+    downloadBlob(`${stem}.csv`, menuExportCsv(model), 'text/csv;charset=utf-8');
+  } else if (format === 'xlsx') {
+    const { buildMenuExportXlsx } = await import('../lib/menu-export-xlsx.js');
+    const vatPct = Math.round(vatRate * 1000) / 10;
+    const bytes = buildMenuExportXlsx({
+      model,
+      title: `${spec.title} — ${event?.name || 'Event'}`,
+      meta: [`Prices in GBP inc VAT ${vatPct}%`],
+      notes: model.includeInternal ? ['INTERNAL — contains costs and GP. Not for distribution.'] : [],
+      sheetName: spec.label,
+      orientation: type === 'designer' ? 'landscape' : 'portrait',
+    });
+    downloadBlob(`${stem}.xlsx`, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  } else {
+    const { generateMenuExportPDF } = await import('../lib/menu-export-pdf.js');
+    await generateMenuExportPDF({
+      type,
+      model,
+      event,
+      client: null,
+      vatRate,
+    });
+  }
+  return spec;
+}
+
 export function downloadBlob(filename, content, type) {
   const blob = content instanceof Blob ? content : new Blob([content], { type });
   const a = document.createElement('a');
@@ -130,58 +195,17 @@ export function openMenuExportDialog(ctx) {
     const btn = $q('[data-ok]');
     btn.disabled = true;
 
-    const detail = {
-      type: t,
-      format,
-      items: model.count,
-      scenarios: opts.scenarioIds,
-      rate_source: t === 'sor' ? opts.rateSource : null,
-      internal: model.includeInternal,
-    };
     try {
-      await getDB().rpc('log_audit_event', {
-        p_kind: model.includeInternal ? 'menu_export_internal' : 'menu_export',
-        p_ref: ctx.eventId,
-        p_detail: detail,
+      const spec = await commitMenuExport({
+        type: t,
+        format,
+        model,
+        scenarioIds: opts.scenarioIds,
+        rateSource: opts.rateSource,
+        event: ctx.event,
+        eventId: ctx.eventId,
+        vatRate,
       });
-    } catch (e) {
-      if (model.includeInternal) {
-        btn.disabled = false;
-        err.textContent = 'Couldn’t record the internal export in the audit log, so it was not created.';
-        err.hidden = false;
-        return;
-      }
-    }
-
-    const spec = EXPORT_TYPES[t];
-    const stem = exportFileStem(t, ctx.event?.name);
-    try {
-      if (format === 'csv') {
-        downloadBlob(`${stem}.csv`, menuExportCsv(model), 'text/csv;charset=utf-8');
-      } else if (format === 'xlsx') {
-        const { buildMenuExportXlsx } = await import('../lib/menu-export-xlsx.js');
-        const vatPct = Math.round(vatRate * 1000) / 10;
-        const bytes = buildMenuExportXlsx({
-          model,
-          title: `${spec.title} — ${ctx.event?.name || 'Event'}`,
-          meta: [
-            `Prices in GBP inc VAT ${vatPct}%`,
-          ],
-          notes: model.includeInternal ? ['INTERNAL — contains costs and GP. Not for distribution.'] : [],
-          sheetName: spec.label,
-          orientation: t === 'designer' ? 'landscape' : 'portrait',
-        });
-        downloadBlob(`${stem}.xlsx`, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      } else {
-        const { generateMenuExportPDF } = await import('../lib/menu-export-pdf.js');
-        await generateMenuExportPDF({
-          type: t,
-          model,
-          event: ctx.event,
-          client: null,
-          vatRate,
-        });
-      }
       closeModal();
       toast(`${spec.label} exported`);
     } catch (e) {

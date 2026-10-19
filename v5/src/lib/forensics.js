@@ -633,3 +633,30 @@ export function filterFindings(findings, {
     return true;
   });
 }
+
+/** JSON document downloaded from Forensic audit and from Reports. */
+export function auditExportDocument(report) {
+  return {
+    eventId: report?.eventId,
+    ranAt: report?.ranAt,
+    summary: report?.summary,
+    findings: (report?.findings || []).map((f) => ({
+      id: f.id,
+      checkId: f.checkId,
+      severity: f.severity,
+      productId: f.productId,
+      productName: f.productName,
+      expected: f.expected,
+      actual: f.actual,
+      delta: f.delta,
+      message: f.message,
+      fixHint: f.fixHint,
+      relatedPanel: f.relatedPanel,
+      detail: f.detail,
+    })),
+  };
+}
+
+export function auditExportFilename(report, eventId) {
+  return `forensic-audit-${eventId || 'event'}-${(report?.ranAt || '').slice(0, 10)}.json`;
+}

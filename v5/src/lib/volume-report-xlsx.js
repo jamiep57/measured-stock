@@ -21,7 +21,7 @@ function numberCell(ref, value, style = 5) {
   return `<c r="${ref}" s="${style}"><v>${round2(value)}</v></c>`;
 }
 
-function reportGroups(rows) {
+export function volumeReportGroups(rows) {
   const groups = new Map();
   for (const row of rows || []) {
     const category = row?.p?.category?.name || 'Uncategorised';
@@ -38,7 +38,7 @@ function reportGroups(rows) {
 }
 
 function worksheetXml(rows, eventName) {
-  const groups = reportGroups(rows);
+  const groups = volumeReportGroups(rows);
   const output = [];
   const merges = ['A1:E1', 'A2:E2'];
   let rowNumber = 1;

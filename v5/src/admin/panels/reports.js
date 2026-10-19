@@ -1,11 +1,18 @@
 /**
- * Reports — headlines, sales, revenue & GP, loose stock (reports-insights.js),
- * supplier delivery cost and internal transfers by client.
+ * Reports library. Opening the page lists named reports. Opening a report
+ * shows its preview, its own filters, and only the downloads it can produce.
  */
 
-import { $, escapeHtml, toast, formatMoney, fmtDateTime } from '../../lib/util.js';
-import { getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, productsFromEvent } from '../../db.js';
-import { loadEventCocktailMapping } from '../../lib/planning-data.js';
+import { $, escapeHtml, toast, formatMoney, fmtDateTime, isBoneYard } from '../../lib/util.js';
+import { getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, loadLibraryProducts, productsFromEvent } from '../../db.js';
+import {
+  isCocktailSchemaMissing,
+  listEventCocktails,
+  listEventMenu,
+  listScenarios,
+  loadEventCocktailMapping,
+  loadEventPricing,
+} from '../../lib/planning-data.js';
 import { loadSalesBundle } from '../../lib/sales-feed.js';
 import {
   buildSupplierDeliveryCostReport,
@@ -20,10 +27,38 @@ import {
 import { generateRecipientInvoicePDF } from '../../lib/recipient-invoice-pdf.js';
 import { icon, initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
-import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { ADMIN_TOOLBAR_ACTION, setTopbarFilterSuppressed, setTopbarToolbarStrips } from '../topbar-toolbar.js';
 import { parseQty } from '../../stock-entry.js';
 import { computeReconRows } from '../../lib/recon.js';
-import { buildVolumeReportXlsx } from '../../lib/volume-report-xlsx.js';
+import { reconCsv } from '../../lib/recon-csv.js';
+import { buildVolumeReportXlsx, volumeReportGroups } from '../../lib/volume-report-xlsx.js';
+import { can } from '../../lib/permissions.js';
+import { isOrgAdmin } from '../../lib/organisations.js';
+import { getQueueStats } from '../../sync-queue.js';
+import { auditExportDocument, auditExportFilename, runEventAudit, CHECK_META } from '../../lib/forensics.js';
+import { resolveMenuLine } from '../../lib/planning-menu.js';
+import { baseMenuItem, groupMenuItems } from '../../lib/menu-serves.js';
+import { resolveCocktailLine } from '../../lib/menu-cocktails.js';
+import { cellValue, formatCell, buildMenuExport } from '../../lib/menu-exports.js';
+import { commitMenuExport } from '../planning-export.js';
+import { listPurchaseOrders } from '../../lib/orders-data.js';
+import { generatePurchaseOrderPDF } from '../../lib/purchase-order-pdf.js';
+import { generateDeliveryNotePDF } from '../../lib/delivery-note-pdf.js';
+import { generatePalletStickerPDF } from '../../lib/pallet-sticker-pdf.js';
+import { printClosingCountSheet, printCountSheets } from '../../lib/count-sheets-print.js';
+import { findOfferForSupplier } from '../../pack-metrics.js';
+import {
+  buildClosingRegister,
+  buildCountRegister,
+  buildDeliveryRegister,
+  buildOrderRegister,
+  buildProductRegister,
+  buildTransferRegister,
+  buildWastageRegister,
+  transferEnds,
+} from '../../lib/report-registers.js';
+import { formatSpec, reportById, visibleReports } from '../report-catalog.js';
+import { renderDataTable, renderReportLibrary, renderWorkspaceHead } from '../report-view.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   reportsCellKeyFromInput,
@@ -34,6 +69,7 @@ import { reportError } from '../../lib/client-errors.js';
 import {
   ADMIN_TABLE_FILTER,
   getTableFilterValues,
+  patchTableFilterState,
   setTableFilterContext,
 } from '../table-filter.js';
 import { INSIGHT_KINDS, createReportInsights } from '../reports-insights.js';
@@ -95,13 +131,19 @@ export function mountReportsPanel(route) {
     transfers: [],
     caseSizes: [],
     suppliers: [],
-    reportKind: 'clients',
+    reportId: '',
+    search: '',
     supplierId: '',
     recipientId: '',
     dateFrom: '',
     dateTo: '',
     qtyMode: 'received',
     supplierView: 'suppliers',
+    printScope: 'all',
+    rateSource: 'menu',
+    includeInternal: false,
+    menuScenarioIds: [],
+    menuScenarioInit: false,
     abort: false,
     supplierReport: null,
     baseClientReport: null,
@@ -119,17 +161,33 @@ export function mountReportsPanel(route) {
     location: '',
     cocktails: [],
     menuItems: [],
+    orders: [],
+    countSessions: [],
+    countLines: new Map(),
+    warehouses: [],
+    barProducts: [],
+    libraryProducts: [],
+    menuLines: [],
+    menuScenarios: [],
+    menuVatRate: 0.2,
+    menuLoaded: false,
+    menuLoading: false,
+    libraryLoaded: false,
+    auditReport: null,
+    auditLoaded: false,
+    auditLoading: false,
+    auditError: null,
   };
 
   const insightFilters = () => ({
     dateFrom: ctx.dateFrom, dateTo: ctx.dateTo, location: ctx.location, salesGroup: ctx.salesGroup,
   });
   const insights = createReportInsights({ getBase: () => ctx, onChange: () => paint() });
-  const isInsight = () => INSIGHT_KINDS.includes(ctx.reportKind);
+  const isInsight = () => INSIGHT_KINDS.includes(ctx.reportId);
 
   const seeded = getTableFilterValues('reports');
   if (seeded) {
-    ctx.reportKind = seeded.kind || 'clients';
+    ctx.reportId = seeded.reportId || '';
     ctx.salesGroup = seeded.salesGroup || 'item';
     ctx.location = seeded.location || '';
     ctx.supplierId = seeded.supplierId || '';
@@ -138,6 +196,11 @@ export function mountReportsPanel(route) {
     ctx.dateTo = seeded.dates?.to || '';
     ctx.qtyMode = seeded.qtyMode || 'received';
     ctx.supplierView = seeded.supplierView || 'suppliers';
+    ctx.printScope = seeded.printScope || 'all';
+    ctx.rateSource = seeded.rateSource || 'menu';
+  }
+  if (ctx.reportId && !visibleReports(can).some((entry) => entry.id === ctx.reportId)) {
+    ctx.reportId = '';
   }
 
   function stopCollab() {
@@ -148,7 +211,7 @@ export function mountReportsPanel(route) {
 
   function startCollab() {
     stopCollab();
-    if (ctx.reportKind !== 'clients') return;
+    if (ctx.reportId !== 'clients') return;
     ctx.collab = createGridCollabSession({
       channelName: `collab:reports:${ctx.eventId}`,
       root,
@@ -214,23 +277,28 @@ export function mountReportsPanel(route) {
   }
 
   function exportCsv() {
-    if (ctx.reportKind === 'clients') {
+    if (ctx.reportId === 'clients') {
       if (!ctx.clientReport) return;
       const { filename, content } = recipientTransferCsv(ctx.clientReport, ctx.event?.name);
       downloadBlob(filename, content);
       return;
     }
-    if (!ctx.supplierReport) return;
-    const { filename, content } = supplierDeliveryCostCsv(ctx.supplierReport, ctx.event?.name);
-    downloadBlob(filename, content);
-  }
-
-  function exportVolumeExcel() {
-    if (!ctx.event) {
-      toast('Event not loaded yet', true);
+    if (ctx.reportId === 'suppliers') {
+      if (!ctx.supplierReport) return;
+      const { filename, content } = supplierDeliveryCostCsv(ctx.supplierReport, ctx.event?.name);
+      downloadBlob(filename, content);
       return;
     }
-    const reconRows = computeReconRows({
+    const register = currentRegister();
+    if (!register) return;
+    const entry = reportById(ctx.reportId);
+    downloadBlob(`${fileStem(entry?.title || 'Report')}.csv`, register.csv);
+    toast('CSV downloaded');
+  }
+
+  function reconRows() {
+    if (!ctx.event) return [];
+    return computeReconRows({
       event: ctx.event,
       closingRows: ctx.closingRows,
       tillRows: ctx.tillRows,
@@ -248,14 +316,22 @@ export function mountReportsPanel(route) {
       cocktails: ctx.cocktails,
       menuItems: ctx.menuItems,
     });
+  }
 
-    if (!reconRows.length) {
+  function exportVolumeExcel() {
+    if (!ctx.event) {
+      toast('Event not loaded yet', true);
+      return;
+    }
+    const rows = reconRows();
+
+    if (!rows.length) {
       toast('No product data to export', true);
       return;
     }
 
     const eventName = (ctx.event?.name || 'event').replace(/[^\w\s.-]/g, '');
-    const workbook = buildVolumeReportXlsx(reconRows, ctx.event?.name || 'Event');
+    const workbook = buildVolumeReportXlsx(rows, ctx.event?.name || 'Event');
     downloadBlob(
       `${eventName} Volume Report.xlsx`,
       workbook,
@@ -295,8 +371,8 @@ export function mountReportsPanel(route) {
   }
 
   async function exportInvoice(recipientId) {
-    if (ctx.reportKind !== 'clients') {
-      toast('Switch to Clients to export invoices', true);
+    if (ctx.reportId !== 'clients') {
+      toast('Open Transfers by client to export invoices', true);
       return;
     }
     // Prefer an explicit client (per-card button); otherwise the Client dropdown.
@@ -680,43 +756,143 @@ export function mountReportsPanel(route) {
     });
   }
 
-  function paint() {
-    if (isInsight()) {
-      stopCollab();
-      insights.ensure(ctx.reportKind, insightFilters());
-      root.innerHTML = `
-        <p class="projections-lead muted">${escapeHtml(insights.lead(ctx.reportKind))}</p>
-        ${ctx.detailLoaded ? insights.render(ctx.reportKind, insightFilters()) : loadingWidget('Loading sales and recon…')}`;
-      initIcons(root);
-      insights.bind(root, ctx.reportKind);
+  function fileStem(title) {
+    const eventName = (ctx.event?.name || 'event').replace(/[^\w\s.-]/g, '');
+    return `${eventName} ${title}`.trim();
+  }
+
+  function names() {
+    const map = new Map();
+    (ctx.products || []).forEach((p) => { if (p?.id) map.set(p.id, p.name || 'Product'); });
+    (ctx.libraryProducts || []).forEach((p) => {
+      if (p?.id && !map.has(p.id)) map.set(p.id, p.name || 'Product');
+    });
+    return map;
+  }
+
+  function productRecord(productId) {
+    const ep = (ctx.event?.event_products || []).find((row) => row.product_id === productId);
+    if (ep?.product) return ep.product;
+    return (ctx.libraryProducts || []).find((p) => p.id === productId) || null;
+  }
+
+  function currentRegister() {
+    const shared = {
+      event: ctx.event,
+      names: names(),
+      dateFrom: ctx.dateFrom,
+      dateTo: ctx.dateTo,
+      supplierId: ctx.supplierId,
+    };
+    if (ctx.reportId === 'deliveries') return buildDeliveryRegister({ ...shared, deliveries: ctx.deliveries });
+    if (ctx.reportId === 'wastage') return buildWastageRegister({ ...shared, batches: ctx.wastageBatches });
+    if (ctx.reportId === 'counts') {
+      return buildCountRegister({
+        ...shared,
+        sessions: ctx.countSessions,
+        linesBySession: ctx.countLines,
+      });
+    }
+    if (ctx.reportId === 'products') return buildProductRegister({ event: ctx.event });
+    if (ctx.reportId === 'orders') {
+      return buildOrderRegister({
+        ...shared,
+        orders: ctx.orders,
+        suppliers: ctx.suppliers,
+      });
+    }
+    if (ctx.reportId === 'transfers') {
+      return buildTransferRegister({
+        ...shared,
+        transfers: ctx.transfers,
+        warehouses: ctx.warehouses,
+      });
+    }
+    if (ctx.reportId === 'closing') {
+      return buildClosingRegister({ event: ctx.event, closingRows: ctx.closingRows });
+    }
+    return null;
+  }
+
+  function menuExportType() {
+    if (ctx.reportId === 'menu-client') return 'client';
+    if (ctx.reportId === 'menu-sor') return 'sor';
+    return 'designer';
+  }
+
+  function menuModel() {
+    return buildMenuExport(menuExportType(), {
+      lines: ctx.menuLines,
+      scenarios: ctx.menuScenarios,
+      scenarioIds: ctx.menuScenarioIds,
+      rateSource: ctx.rateSource || 'menu',
+      includeInternal: !!ctx.includeInternal && isOrgAdmin() && menuExportType() === 'client',
+    });
+  }
+
+  function allowedEntry() {
+    const entry = reportById(ctx.reportId);
+    if (!entry) return null;
+    if (entry.feature && !can(entry.feature)) return null;
+    return entry;
+  }
+
+  function syncChrome() {
+    const entry = allowedEntry();
+    if (!entry) {
+      setTopbarToolbarStrips(null);
+      setTopbarFilterSuppressed(true);
       return;
     }
-    const isClients = ctx.reportKind === 'clients';
+    const items = (entry.formats || []).map((key) => {
+      const spec = formatSpec(key);
+      return spec ? {
+        id: spec.action,
+        icon: spec.icon,
+        label: spec.menu,
+        title: spec.menu,
+      } : null;
+    }).filter(Boolean);
+    const printOnly = entry.formats.length === 1 && entry.formats[0] === 'print';
+    setTopbarToolbarStrips(items.length ? [{
+      id: 'data',
+      label: printOnly ? 'Print' : 'Export',
+      items: [{
+        id: 'report-export',
+        kind: 'menu',
+        icon: printOnly ? 'printer' : 'download',
+        label: printOnly ? 'Print' : 'Export',
+        title: printOnly ? 'Print' : 'Export',
+        items,
+      }],
+    }] : null);
+    setTopbarFilterSuppressed(!entry.filters);
+  }
+
+  function selectReport(id) {
+    const next = id || '';
+    if (next && !visibleReports(can).some((entry) => entry.id === next)) return;
+    ctx.reportId = next;
+    patchTableFilterState('reports', { reportId: next });
+    compute();
+    paint();
+  }
+
+  function renderClientsBody() {
     const recipients = clientsWithTransfers();
-
-    let body = '';
-    let lead = '';
-
-    if (isClients) {
-      const report = ctx.clientReport || {
-        recipientCount: 0,
-        transferCount: 0,
-        lineCount: 0,
-        totalQty: 0,
-        totalCost: 0,
-        missingPriceCount: 0,
-        recipientRows: [],
-      };
-      lead = 'Use the filter menu to pick a client and date range. Edit unit prices and add an internal markup % — markup is baked into invoice prices and not shown as its own line.';
-      if (!recipients.length) {
-        body = emptyState({
-          iconHtml: icon('arrow-left-right', { size: 22 }),
-          title: 'No client transfers yet',
-          copy: 'Log a transfer to a recipient (Artist Liaison, Production, etc.) on the Transfers page.',
-          variant: 'admin',
-        });
-      } else if (!ctx.recipientId) {
-        body = `
+    const report = ctx.clientReport || {
+      recipientCount: 0, transferCount: 0, lineCount: 0, totalQty: 0, totalCost: 0, missingPriceCount: 0, recipientRows: [],
+    };
+    if (!recipients.length) {
+      return emptyState({
+        iconHtml: icon('arrow-left-right', { size: 22 }),
+        title: 'No client transfers yet',
+        copy: 'Log a transfer to a recipient (Artist Liaison, Production, etc.) on the Transfers page.',
+        variant: 'admin',
+      });
+    }
+    if (!ctx.recipientId) {
+      return `
         ${renderClientStats(report)}
         ${emptyState({
           iconHtml: icon('funnel', { size: 22 }),
@@ -724,38 +900,251 @@ export function mountReportsPanel(route) {
           copy: 'Open the filter menu and pick a client to see transfer detail and invoice pricing.',
           variant: 'admin',
         })}`;
-      } else {
-        body = `
-        ${renderClientStats(report)}
-        <div class="reports-client-detail">${renderClientDetail(report)}</div>`;
-      }
-    } else {
-      const report = ctx.supplierReport || {
-        deliveryCount: 0,
-        lineCount: 0,
-        totalQty: 0,
-        totalCost: 0,
-        missingPriceCount: 0,
-        supplierCount: 0,
-        supplierRows: [],
-        deliveryRows: [],
-      };
-      const bySupplier = ctx.supplierView === 'suppliers';
-      lead = 'Total cost of stock transferred in from suppliers (deliveries). Use the filter menu for report type, supplier, dates, quantity basis, and view.';
-      body = `
-        ${renderSupplierStats(report)}
-        <section class="admin-surface projections-table-section">
-          ${bySupplier ? renderSupplierTable(report) : renderDeliveryTable(report)}
-        </section>`;
     }
+    return `
+      ${renderClientStats(report)}
+      <div class="reports-client-detail">${renderClientDetail(report)}</div>`;
+  }
 
-    root.innerHTML = `
-      <p class="projections-lead muted">${escapeHtml(lead)}</p>
-      ${body}`;
+  function renderSuppliersBody() {
+    const report = ctx.supplierReport || {
+      deliveryCount: 0, lineCount: 0, totalQty: 0, totalCost: 0, missingPriceCount: 0, supplierCount: 0, supplierRows: [], deliveryRows: [],
+    };
+    const bySupplier = ctx.supplierView === 'suppliers';
+    return `
+      ${renderSupplierStats(report)}
+      <section class="admin-surface projections-table-section">
+        ${bySupplier ? renderSupplierTable(report) : renderDeliveryTable(report)}
+      </section>`;
+  }
+
+  function renderVolumeBody() {
+    if (!ctx.detailLoaded) return loadingWidget('Loading sales and recon…');
+    const groups = volumeReportGroups(reconRows());
+    const rows = groups.flatMap((group) => group.products.map((row) => ({
+      cells: {
+        category: group.category,
+        product: row?.p?.name || 'Unnamed product',
+        pack: row?.p?.case_size || '',
+        plu: fmtQty(row.plu),
+        uplift: fmtQty((Number(row.plu) || 0) * 1.05),
+        consumption: fmtQty(row.consumption),
+      },
+    })));
+    return renderDataTable({
+      columns: [
+        { key: 'category', label: 'Category' },
+        { key: 'product', label: 'Product' },
+        { key: 'pack', label: 'Case size' },
+        { key: 'plu', label: 'PLU', num: true },
+        { key: 'uplift', label: 'PLU + 5%', num: true },
+        { key: 'consumption', label: 'Consumption', num: true },
+      ],
+      rows,
+    }, { title: 'No product data', copy: 'Volume is built from this event’s products and recon.' });
+  }
+
+  function renderReconBody() {
+    if (!ctx.detailLoaded) return loadingWidget('Loading sales and recon…');
+    const titles = { red: 'Action needed', yellow: 'Review', green: 'Done', blue: 'None returned' };
+    const rows = reconRows().filter((row) => !row.reconHidden).map((row) => ({
+      cells: {
+        status: titles[row.reconStatus] || '',
+        item: row.p?.name || '',
+        supplier: row.supplierName || '',
+        delivered: fmtQty(row.delivered),
+        closing: fmtQty(row.closingCases),
+        consumption: fmtQty(row.consumption),
+        variance: fmtQty(row.variance),
+        budget: row.budgetCost != null ? fmtCost(row.budgetCost) : '',
+      },
+    }));
+    return renderDataTable({
+      columns: [
+        { key: 'status', label: 'Status' },
+        { key: 'item', label: 'Item' },
+        { key: 'supplier', label: 'Supplier' },
+        { key: 'delivered', label: 'Delivered', num: true },
+        { key: 'closing', label: 'Closing cases', num: true },
+        { key: 'consumption', label: 'Consumption', num: true },
+        { key: 'variance', label: 'Variance', num: true },
+        { key: 'budget', label: 'Budget', num: true },
+      ],
+      rows,
+    }, { title: 'Nothing to reconcile', copy: 'Add products to this event to build the recon.' });
+  }
+
+  function renderMenuOptions() {
+    if (ctx.reportId !== 'menu-client' || !ctx.menuLoaded) return '';
+    const checks = (ctx.menuScenarios || []).map((s) => `
+      <label class="plan-check"><input type="checkbox" data-menu-scenario="${escapeHtml(s.id)}" ${ctx.menuScenarioIds.includes(s.id) ? 'checked' : ''}>
+        ${escapeHtml(s.name || 'Scenario')}</label>`).join('');
+    const internal = isOrgAdmin()
+      ? `<label class="plan-check"><input type="checkbox" id="reportsInternal" ${ctx.includeInternal ? 'checked' : ''}>
+          Include internal cost per serve and GP %</label>`
+      : '';
+    return `<div class="reports-menu-options">${checks || '<span class="muted">No pricing scenarios on this event.</span>'}${internal}</div>`;
+  }
+
+  function renderMenuBody() {
+    if (!ctx.menuLoaded) return loadingWidget('Loading menu…');
+    const model = menuModel();
+    const columns = [
+      { key: 'category', label: 'Category' },
+      ...model.columns.map((col) => ({ key: col.key, label: col.label, num: !!(col.money || col.pct) })),
+    ];
+    const rows = model.groups.flatMap((group) => group.rows.map((row) => ({
+      cells: {
+        category: group.category,
+        ...Object.fromEntries(model.columns.map((col) => [col.key, formatCell(cellValue(row, col), col)])),
+      },
+    })));
+    const note = model.missingRates
+      ? `<p class="muted">${model.missingRates} item${model.missingRates === 1 ? '' : 's'} ${menuExportType() === 'sor' ? 'left off — no rate' : 'without a menu price'}.</p>`
+      : '';
+    return `${renderMenuOptions()}${note}${renderDataTable({ columns, rows }, {
+      title: 'Nothing on the menu',
+      copy: 'Add products on Menu & GP before exporting.',
+    })}`;
+  }
+
+  function renderPrintBody() {
+    const scope = ctx.printScope || 'all';
+    const label = scope === 'event'
+      ? 'the whole event catalogue'
+      : scope.startsWith('bar:')
+        ? 'one location'
+        : 'one sheet per location';
+    const which = ctx.reportId === 'closing-sheets' ? 'closing count sheets' : 'count sheets';
+    return `<p class="projections-lead muted">Prints blank ${which} for ${escapeHtml(label)}. Choose the scope in the filter menu.</p>`;
+  }
+
+  function renderAuditBody() {
+    if (ctx.auditError) {
+      return emptyState({
+        iconHtml: icon('circle-alert', { size: 22 }),
+        title: 'Audit failed',
+        copy: ctx.auditError,
+        variant: 'admin',
+      });
+    }
+    if (!ctx.auditLoaded) return loadingWidget('Running forensic audit…');
+    const report = ctx.auditReport;
+    const summary = report?.summary || { errors: 0, warns: 0, infos: 0 };
+    const rows = (report?.findings || []).map((f) => ({
+      cells: {
+        severity: f.severity || '',
+        check: CHECK_META[f.checkId]?.label || f.checkId || '',
+        product: f.productName || '',
+        message: f.message || '',
+      },
+    }));
+    return `
+      <p class="muted">${summary.errors} errors · ${summary.warns} warnings · ${summary.infos} info</p>
+      ${renderDataTable({
+        columns: [
+          { key: 'severity', label: 'Severity' },
+          { key: 'check', label: 'Check' },
+          { key: 'product', label: 'Product' },
+          { key: 'message', label: 'Message' },
+        ],
+        rows,
+      }, { title: 'No findings', copy: 'This audit run did not report any issues.' })}`;
+  }
+
+  function renderRegisterBody() {
+    if (!ctx.detailLoaded) return loadingWidget('Loading event data…');
+    const register = currentRegister();
+    if (!register) return '';
+    return renderDataTable(register, {
+      title: 'Nothing to show',
+      copy: 'Nothing on this event matches the current filters.',
+    });
+  }
+
+  function renderActiveBody() {
+    if (isInsight()) {
+      insights.ensure(ctx.reportId, insightFilters());
+      return ctx.detailLoaded
+        ? insights.render(ctx.reportId, insightFilters())
+        : loadingWidget('Loading sales and recon…');
+    }
+    if (ctx.reportId === 'clients') return renderClientsBody();
+    if (ctx.reportId === 'suppliers') return renderSuppliersBody();
+    if (ctx.reportId === 'volume') return renderVolumeBody();
+    if (ctx.reportId === 'recon') return renderReconBody();
+    if (ctx.reportId.startsWith('menu-')) return renderMenuBody();
+    if (ctx.reportId === 'count-sheets' || ctx.reportId === 'closing-sheets') return renderPrintBody();
+    if (ctx.reportId === 'audit') return renderAuditBody();
+    return renderRegisterBody();
+  }
+
+  function paintLibrary() {
+    const entries = visibleReports(can);
+    root.innerHTML = renderReportLibrary(entries, ctx.search);
     initIcons(root);
-    bind();
-    if (isClients) startCollab();
+    const input = root.querySelector('#reportsSearch');
+    if (input) {
+      input.oninput = () => {
+        ctx.search = input.value;
+        const body = root.querySelector('#reportsLibraryBody');
+        const shell = document.createElement('div');
+        shell.innerHTML = renderReportLibrary(entries, ctx.search);
+        const next = shell.querySelector('#reportsLibraryBody');
+        if (body && next) body.innerHTML = next.innerHTML;
+        initIcons(body || root);
+        bindReportCards();
+      };
+    }
+    bindReportCards();
+  }
+
+  function bindReportCards() {
+    root.querySelectorAll('[data-open-report]').forEach((btn) => {
+      btn.onclick = () => selectReport(btn.dataset.openReport || '');
+    });
+  }
+
+  function paint() {
+    syncChrome();
+    const entry = allowedEntry();
+    if (!entry) {
+      stopCollab();
+      paintLibrary();
+      return;
+    }
+    root.innerHTML = `${renderWorkspaceHead(entry)}${renderActiveBody()}`;
+    initIcons(root);
+    root.querySelector('[data-reports-back]')?.addEventListener('click', () => selectReport(''));
+    root.querySelectorAll('[data-report-action]').forEach((btn) => {
+      btn.onclick = () => {
+        runExport(btn.dataset.reportAction, btn.dataset.reportRecord || '').catch((err) => {
+          toast(err.message || 'Export failed', true);
+        });
+      };
+    });
+    root.querySelectorAll('[data-menu-scenario]').forEach((box) => {
+      box.onchange = () => {
+        const id = box.dataset.menuScenario;
+        const set = new Set(ctx.menuScenarioIds);
+        if (box.checked) set.add(id);
+        else set.delete(id);
+        ctx.menuScenarioIds = [...set];
+        paint();
+      };
+    });
+    const internal = root.querySelector('#reportsInternal');
+    if (internal) {
+      internal.onchange = () => {
+        ctx.includeInternal = internal.checked;
+        paint();
+      };
+    }
+    if (isInsight()) insights.bind(root, ctx.reportId);
+    else bind();
+    if (ctx.reportId === 'clients') startCollab();
     else stopCollab();
+    ensureExtras();
   }
 
   function pushFilterContext() {
@@ -763,6 +1152,10 @@ export function mountReportsPanel(route) {
       recipients: clientsWithTransfers().map((r) => ({ id: r.id, name: r.name })),
       suppliers: (ctx.suppliers || []).map((s) => ({ value: s.id, label: s.name })),
       locations: insights.locations(),
+      bars: (ctx.event?.bars || [])
+        .filter((bar) => !isBoneYard(bar))
+        .map((bar) => ({ id: bar.id, name: bar.name || 'Bar' })),
+      scenarios: (ctx.menuScenarios || []).map((s) => ({ id: s.id, name: s.name || 'Scenario' })),
     });
   }
 
@@ -783,7 +1176,7 @@ export function mountReportsPanel(route) {
     compute();
     paint();
 
-    const [deliveries, transfers, sales, recipes, wastage, closingRows, supplierReturns, mapping] = await Promise.all([
+    const [deliveries, transfers, sales, recipes, wastage, closingRows, supplierReturns, mapping, orders, sessions, warehouses, barProducts] = await Promise.all([
       DB.deliveries.forEvent(ctx.eventId),
       DB.transfers.forEvent(ctx.eventId),
       loadSalesBundle(DB, ctx.event),
@@ -792,7 +1185,16 @@ export function mountReportsPanel(route) {
       DB.closing.forEvent(ctx.eventId).catch(() => []),
       DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
       loadEventCocktailMapping(ctx.eventId).catch(() => ({ cocktails: [], menuItems: [] })),
+      listPurchaseOrders(ctx.eventId).catch(() => []),
+      DB.stockCounts.forEvent(ctx.eventId).catch(() => []),
+      DB.warehouses.list().catch(() => []),
+      DB.barProducts.forEvent(ctx.eventId).catch(() => []),
     ]);
+    if (ctx.abort) return;
+    const linePairs = await Promise.all((sessions || []).map(async (session) => {
+      const lines = await DB.stockCounts.lines(session.id).catch(() => []);
+      return [session.id, lines || []];
+    }));
     if (ctx.abort) return;
     ctx.deliveries = deliveries || [];
     ctx.transfers = transfers || [];
@@ -805,40 +1207,342 @@ export function mountReportsPanel(route) {
     ctx.wastageBatches = wastage || [];
     ctx.closingRows = closingRows || [];
     ctx.supplierReturns = supplierReturns || [];
+    ctx.orders = orders || [];
+    ctx.countSessions = sessions || [];
+    ctx.countLines = new Map(linePairs);
+    ctx.warehouses = warehouses || [];
+    ctx.barProducts = barProducts || [];
     ctx.detailLoaded = true;
     pushFilterContext();
     compute();
     paint();
   }
 
+  async function loadMenuExport() {
+    if (ctx.menuLoaded || ctx.menuLoading) return;
+    ctx.menuLoading = true;
+    try {
+      const [event, items, products, cocktails, scenarios] = await Promise.all([
+        loadEventPricing(ctx.eventId),
+        listEventMenu(ctx.eventId),
+        loadLibraryProducts(),
+        listEventCocktails(ctx.eventId).catch((err) => (isCocktailSchemaMissing(err) ? [] : Promise.reject(err))),
+        listScenarios(ctx.eventId).catch(() => []),
+      ]);
+      if (ctx.abort) return;
+      const productById = new Map((products || []).map((p) => [p.id, p]));
+      const grouped = groupMenuItems(items || []);
+      const baseMap = new Map();
+      grouped.forEach((list, pid) => {
+        const base = baseMenuItem(list);
+        if (base) baseMap.set(pid, { ...base, portion: 1 });
+      });
+      const lines = (items || []).map((item) => resolveMenuLine(item, {
+        product: productById.get(item.product_id), event, caseSizes: ctx.caseSizes,
+      }));
+      (cocktails || []).forEach((cocktail) => {
+        lines.push(resolveCocktailLine(cocktail, cocktail.ingredients, {
+          productById, items: baseMap, caseSizes: ctx.caseSizes, event,
+        }));
+      });
+      ctx.menuLines = lines;
+      ctx.menuScenarios = scenarios || [];
+      ctx.menuVatRate = lines.find((line) => line.included)?.vatRate ?? 0.2;
+      if (!ctx.menuScenarioInit) {
+        ctx.menuScenarioIds = (scenarios || []).filter((s) => s.client_visible).map((s) => s.id);
+        ctx.menuScenarioInit = true;
+      }
+      ctx.menuLoaded = true;
+    } catch (err) {
+      ctx.menuLines = [];
+      ctx.menuLoaded = true;
+      toast(err.message || 'Couldn’t load the menu', true);
+    } finally {
+      ctx.menuLoading = false;
+    }
+  }
+
+  async function loadAudit() {
+    if (ctx.auditLoaded || ctx.auditLoading) return;
+    ctx.auditLoading = true;
+    ctx.auditError = null;
+    const DB = getDB();
+    try {
+      const [
+        event, caseSizes, products, suppliers, closing, sales,
+        recipes, wastage, transfers, supplierReturns, deliveries, distRows, syncQueueStats,
+        mapping,
+      ] = await Promise.all([
+        loadEventFull(ctx.eventId),
+        loadCaseSizes(),
+        loadLibraryProducts(),
+        loadSuppliers(),
+        DB.closing.forEvent(ctx.eventId),
+        loadSalesBundle(DB, ctx.event),
+        loadRecipesFull().catch(() => []),
+        DB.wastage.forEvent(ctx.eventId).catch(() => []),
+        DB.transfers.forEvent(ctx.eventId).catch(() => []),
+        DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
+        DB.deliveries.forEvent(ctx.eventId).catch(() => []),
+        DB.distribution.forEvent(ctx.eventId).catch(() => []),
+        getQueueStats().catch(() => ({ pending: 0, failed: 0, total: 0 })),
+        loadEventCocktailMapping(ctx.eventId).catch(() => ({ cocktails: [], menuItems: [] })),
+      ]);
+      if (ctx.abort) return;
+      const report = runEventAudit({
+        event,
+        eventId: ctx.eventId,
+        caseSizes,
+        products,
+        suppliers,
+        closingRows: closing || [],
+        tillRows: sales.active.tillRows,
+        modifierRows: sales.active.modifierRows,
+        recipes: recipes || [],
+        wastageBatches: wastage || [],
+        transfers: transfers || [],
+        supplierReturns: supplierReturns || [],
+        deliveries: deliveries || [],
+        distRows: distRows || [],
+        bars: event?.bars || [],
+        isBoneYard,
+        syncQueueStats,
+        cocktails: mapping.cocktails,
+        menuItems: mapping.menuItems,
+      });
+      ctx.auditReport = {
+        eventId: report.eventId,
+        ranAt: report.ranAt,
+        summary: report.summary,
+        findings: report.findings,
+      };
+      ctx.auditLoaded = true;
+    } catch (err) {
+      ctx.auditError = err.message || 'Audit failed';
+      ctx.auditLoaded = true;
+    } finally {
+      ctx.auditLoading = false;
+    }
+  }
+
+  async function ensureExtras() {
+    const id = ctx.reportId;
+    if (!id || ctx.abort) return;
+    let changed = false;
+    if (id.startsWith('menu-') && !ctx.menuLoaded && !ctx.menuLoading) {
+      await loadMenuExport();
+      changed = true;
+    }
+    if (id === 'audit' && !ctx.auditLoaded && !ctx.auditLoading) {
+      await loadAudit();
+      changed = true;
+    }
+    if (id === 'orders' && !ctx.libraryLoaded) {
+      ctx.libraryLoaded = true;
+      try {
+        ctx.libraryProducts = await loadLibraryProducts() || [];
+        changed = true;
+      } catch { /* names fall back to the event list */ }
+    }
+    if (ctx.abort || ctx.reportId !== id || !changed) return;
+    pushFilterContext();
+    paint();
+  }
+
+  function printTarget() {
+    const raw = ctx.printScope || 'all';
+    if (raw.startsWith('bar:')) return { scope: 'bar', barId: raw.slice(4) };
+    return { scope: raw === 'event' ? 'event' : 'all', barId: '' };
+  }
+
+  async function runMenuExport(format) {
+    if (!ctx.menuLoaded) {
+      toast('Menu is still loading', true);
+      return;
+    }
+    const model = menuModel();
+    if (!model.count) {
+      toast('Nothing on the menu to export', true);
+      return;
+    }
+    const spec = await commitMenuExport({
+      type: menuExportType(),
+      format,
+      model,
+      scenarioIds: ctx.menuScenarioIds,
+      rateSource: ctx.rateSource,
+      event: ctx.event,
+      eventId: ctx.eventId,
+      vatRate: ctx.menuVatRate,
+    });
+    toast(`${spec.label} exported`);
+  }
+
+  async function runPurchaseOrderPdf(id) {
+    const row = (currentRegister()?.rows || []).find((item) => item.id === id);
+    if (!row?.po) {
+      toast('That order is not in this report', true);
+      return;
+    }
+    const supplier = (ctx.suppliers || []).find((s) => s.id === row.po.supplier_id) || null;
+    const lines = (row.po.purchase_order_lines || []).map((line) => {
+      const product = productRecord(line.product_id);
+      const offer = findOfferForSupplier(product, row.po.supplier_id);
+      return {
+        name: product?.name || names().get(line.product_id) || 'Product',
+        pack: offer?.pack_size || product?.case_size || '',
+        qty_cases: line.qty_cases,
+        case_price: line.case_price,
+      };
+    });
+    await generatePurchaseOrderPDF({ po: row.po, supplier, event: ctx.event, lines });
+    toast('Purchase order downloaded');
+  }
+
+  async function runDeliveryNote(id) {
+    const transfer = (ctx.transfers || []).find((item) => item.id === id);
+    if (!transfer) {
+      toast('That transfer is not in this report', true);
+      return;
+    }
+    const ends = transferEnds(transfer, ctx.event, ctx.warehouses);
+    await generateDeliveryNotePDF({
+      eventName: ctx.event?.name || '',
+      recipientName: ends.to,
+      date: transfer.transferred_at ? new Date(transfer.transferred_at) : new Date(),
+      lines: (transfer.lines || []).map((line) => ({
+        productId: line.product_id,
+        cases: Number(line.qty) || 0,
+        singles: Number(line.singles) || 0,
+      })),
+      productInfo: (productId) => {
+        const product = productRecord(productId);
+        return { name: product?.name || 'Product', size: product?.case_size || '' };
+      },
+    });
+    toast('Delivery note downloaded');
+  }
+
+  async function runPalletSticker(id) {
+    const row = (currentRegister()?.rows || []).find((item) => item.id === id);
+    const sticker = row?.sticker;
+    if (!sticker?.cases) {
+      toast('No closing cases to print', true);
+      return;
+    }
+    await generatePalletStickerPDF({
+      destinationLabel: 'Warehouse',
+      productName: sticker.productName,
+      caseSize: sticker.caseSize,
+      pallets: [sticker.cases],
+    });
+    toast('Pallet sticker downloaded');
+  }
+
+  function runPrintSheets() {
+    if (!ctx.event) {
+      toast('Event is still loading', true);
+      return;
+    }
+    const { scope, barId } = printTarget();
+    const run = ctx.reportId === 'closing-sheets' ? printClosingCountSheet : printCountSheets;
+    const result = run({
+      event: ctx.event,
+      barProducts: ctx.barProducts,
+      caseSizes: ctx.caseSizes,
+      scope,
+      barId,
+    });
+    if (result?.error) {
+      toast(result.error, true);
+      return;
+    }
+    toast('Print window opened');
+  }
+
+  async function runExport(action, recordId = '') {
+    if (action === 'export-csv' || action === 'export-reports') {
+      if (ctx.reportId === 'recon') {
+        const rows = reconRows().filter((row) => !row.reconHidden);
+        downloadBlob(`${fileStem('Post Event Recon')}.csv`, reconCsv(rows));
+        toast('CSV downloaded');
+        return;
+      }
+      if (isInsight()) {
+        insights.exportCsv(ctx.reportId, insightFilters());
+        return;
+      }
+      if (String(ctx.reportId).startsWith('menu-')) {
+        await runMenuExport('csv');
+        return;
+      }
+      exportCsv();
+      return;
+    }
+    if (action === 'export-pdf' || action === 'export-report-pdf') {
+      if (isInsight()) {
+        await insights.exportPdf(ctx.reportId, insightFilters());
+        return;
+      }
+      if (String(ctx.reportId).startsWith('menu-')) await runMenuExport('pdf');
+      return;
+    }
+    if (action === 'export-xlsx' || action === 'export-volume') {
+      if (ctx.reportId === 'volume') {
+        exportVolumeExcel();
+        return;
+      }
+      if (String(ctx.reportId).startsWith('menu-')) await runMenuExport('xlsx');
+    }
+    if (action === 'export-invoice') {
+      await exportInvoice(recordId || currentRecipientFilter());
+      return;
+    }
+    if (action === 'export-json') {
+      if (!ctx.auditReport) {
+        toast('Audit is still running', true);
+        return;
+      }
+      downloadBlob(
+        auditExportFilename(ctx.auditReport, ctx.eventId),
+        JSON.stringify(auditExportDocument(ctx.auditReport), null, 2),
+        'application/json',
+      );
+      toast('JSON downloaded');
+      return;
+    }
+    if (action === 'export-print') {
+      runPrintSheets();
+      return;
+    }
+    if (action === 'po-pdf') {
+      await runPurchaseOrderPdf(recordId);
+      return;
+    }
+    if (action === 'delivery-note') {
+      await runDeliveryNote(recordId);
+      return;
+    }
+    if (action === 'pallet-sticker') await runPalletSticker(recordId);
+  }
+
   function onToolbar(e) {
-    if (e.detail?.action === 'export-reports') {
-      e.detail.handled = true;
-      if (isInsight()) insights.exportCsv(ctx.reportKind, insightFilters());
-      else exportCsv();
-      return;
-    }
-    if (e.detail?.action === 'export-report-pdf') {
-      e.detail.handled = true;
-      insights.exportPdf(ctx.reportKind, insightFilters()).catch((err) => toast(err.message || 'PDF failed', true));
-      return;
-    }
-    if (e.detail?.action === 'export-invoice') {
-      e.detail.handled = true;
-      exportInvoice(currentRecipientFilter());
-      return;
-    }
-    if (e.detail?.action === 'export-volume') {
-      e.detail.handled = true;
-      exportVolumeExcel();
-    }
+    const action = e.detail?.action;
+    const known = new Set([
+      'export-csv', 'export-pdf', 'export-xlsx', 'export-invoice', 'export-json', 'export-print',
+      'export-reports', 'export-report-pdf', 'export-volume',
+    ]);
+    if (!known.has(action)) return;
+    e.detail.handled = true;
+    runExport(action).catch((err) => toast(err.message || 'Export failed', true));
   }
 
   function onTableFilter(e) {
     if (e.detail?.panel !== 'reports') return;
     const values = e.detail?.values;
     if (!values) return;
-    ctx.reportKind = values.kind || 'clients';
+    const nextId = values.reportId || '';
+    ctx.reportId = nextId && visibleReports(can).some((entry) => entry.id === nextId) ? nextId : '';
     ctx.supplierId = values.supplierId || '';
     ctx.recipientId = values.recipientId || '';
     ctx.dateFrom = values.dates?.from || '';
@@ -847,6 +1551,8 @@ export function mountReportsPanel(route) {
     ctx.supplierView = values.supplierView || 'suppliers';
     ctx.salesGroup = values.salesGroup || 'item';
     ctx.location = values.location || '';
+    ctx.printScope = values.printScope || 'all';
+    ctx.rateSource = values.rateSource || 'menu';
     compute();
     paint();
   }
@@ -854,6 +1560,7 @@ export function mountReportsPanel(route) {
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
 
+  syncChrome();
   reload().catch((err) => {
     reportError(err, { source: 'admin.reports.load', silent: true });
     root.innerHTML = errorState({
@@ -868,6 +1575,8 @@ export function mountReportsPanel(route) {
   return () => {
     ctx.abort = true;
     stopCollab();
+    setTopbarToolbarStrips(null);
+    setTopbarFilterSuppressed(false);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
   };

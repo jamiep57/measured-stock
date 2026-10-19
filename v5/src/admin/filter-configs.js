@@ -928,7 +928,7 @@ export const wastageConfig = simpleEventConfig({
 export const reportsConfig = simpleEventConfig({
   id: 'reports',
   defaults: () => ({
-    kind: 'clients',
+    reportId: '',
     recipientId: '',
     supplierId: '',
     dates: { from: '', to: '' },
@@ -936,26 +936,21 @@ export const reportsConfig = simpleEventConfig({
     supplierView: 'suppliers',
     salesGroup: 'item',
     location: '',
+    printScope: 'all',
+    rateSource: 'menu',
   }),
   buildFilterSections(state, context) {
-    const kind = state?.kind || 'clients';
-    const sections = [{
-      id: 'kind',
-      label: 'Report type',
-      type: 'radio',
-      options: [
-        { value: 'headlines', label: 'Headlines' },
-        { value: 'sales', label: 'Sales' },
-        { value: 'revenue', label: 'Revenue & GP' },
-        { value: 'loose', label: 'Loose stock' },
-        { value: 'clients', label: 'Transfers by client' },
-        { value: 'suppliers', label: 'Supplier delivery cost' },
-      ],
-    }];
-    if (kind === 'revenue' || kind === 'loose') return sections;
-    sections.push({ id: 'dates', label: 'Date', type: 'date-range' });
-    if (kind === 'sales' || kind === 'headlines') {
-      if (kind === 'sales') {
+    const id = state?.reportId || '';
+    if (!id) return [];
+    const dates = { id: 'dates', label: 'Date', type: 'date-range' };
+    if (id === 'revenue' || id === 'loose' || id === 'volume' || id === 'recon'
+      || id === 'products' || id === 'closing' || id === 'audit'
+      || id === 'menu-designer' || id === 'menu-client') {
+      return [];
+    }
+    if (id === 'sales' || id === 'headlines') {
+      const sections = [dates];
+      if (id === 'sales') {
         sections.push({
           id: 'salesGroup',
           label: 'Group by',
@@ -981,22 +976,52 @@ export const reportsConfig = simpleEventConfig({
       }
       return sections;
     }
-    const recipients = context.recipients || [];
-    const suppliers = context.suppliers || [];
-    if (kind === 'clients' && recipients.length) {
-      sections.push({
-        id: 'recipientId',
-        label: 'Client',
+    if (id === 'count-sheets' || id === 'closing-sheets') {
+      const bars = context.bars || [];
+      return [{
+        id: 'printScope',
+        label: id === 'closing-sheets' ? 'Closing sheets' : 'Count sheets',
         type: 'radio',
         scroll: true,
         options: [
-          { value: '', label: 'Select a client' },
-          ...recipients.map((r) => ({ value: r.id || r.value, label: r.name || r.label })),
+          { value: 'all', label: 'All locations' },
+          { value: 'event', label: 'Whole event' },
+          ...bars.map((b) => ({ value: `bar:${b.id}`, label: b.name || 'Bar' })),
         ],
-      });
+      }];
     }
-    if (kind === 'clients') return sections;
-    if (suppliers.length) {
+    if (id === 'menu-sor') {
+      const scenarios = context.scenarios || [];
+      return [{
+        id: 'rateSource',
+        label: 'Rates from',
+        type: 'radio',
+        scroll: true,
+        options: [
+          { value: 'menu', label: 'Event menu prices' },
+          ...scenarios.map((s) => ({ value: s.id, label: s.name || 'Scenario' })),
+        ],
+      }];
+    }
+    const sections = [dates];
+    const recipients = context.recipients || [];
+    const suppliers = context.suppliers || [];
+    if (id === 'clients') {
+      if (recipients.length) {
+        sections.push({
+          id: 'recipientId',
+          label: 'Client',
+          type: 'radio',
+          scroll: true,
+          options: [
+            { value: '', label: 'Select a client' },
+            ...recipients.map((r) => ({ value: r.id || r.value, label: r.name || r.label })),
+          ],
+        });
+      }
+      return sections;
+    }
+    if ((id === 'suppliers' || id === 'deliveries' || id === 'orders') && suppliers.length) {
       sections.push({
         id: 'supplierId',
         label: 'Supplier',
@@ -1008,23 +1033,25 @@ export const reportsConfig = simpleEventConfig({
         ],
       });
     }
-    sections.push({
-      id: 'qtyMode',
-      label: 'Quantity basis',
-      type: 'segment',
-      options: [
-        { value: 'received', label: 'Received' },
-        { value: 'invoiced', label: 'Invoiced' },
-      ],
-    }, {
-      id: 'supplierView',
-      label: 'Supplier view',
-      type: 'segment',
-      options: [
-        { value: 'suppliers', label: 'By supplier' },
-        { value: 'deliveries', label: 'By delivery' },
-      ],
-    });
+    if (id === 'suppliers') {
+      sections.push({
+        id: 'qtyMode',
+        label: 'Quantity basis',
+        type: 'segment',
+        options: [
+          { value: 'received', label: 'Received' },
+          { value: 'invoiced', label: 'Invoiced' },
+        ],
+      }, {
+        id: 'supplierView',
+        label: 'Supplier view',
+        type: 'segment',
+        options: [
+          { value: 'suppliers', label: 'By supplier' },
+          { value: 'deliveries', label: 'By delivery' },
+        ],
+      });
+    }
     return sections;
   },
   sortOptions: null,

@@ -286,58 +286,8 @@ export const PANEL_TOOLBAR = {
       ],
     },
   ],
-  reports: [
-    {
-      id: 'data',
-      label: 'Export',
-      items: [
-        {
-          id: 'export-reports',
-          icon: 'download',
-          label: 'Export CSV',
-          title: 'Download report as CSV',
-        },
-        {
-          id: 'export-invoice',
-          icon: 'file-text',
-          label: 'Export invoice',
-          title: 'Download client transfer invoice PDF',
-        },
-        {
-          id: 'export-report-pdf',
-          icon: 'file-text',
-          label: 'Export PDF',
-          title: 'Event headlines or loose stock statement as a PDF',
-        },
-        {
-          id: 'export-volume',
-          icon: 'download',
-          label: 'Export volume Excel',
-          title: 'Download a formatted Excel workbook grouped by product category',
-        },
-      ],
-    },
-  ],
-  summary: [
-    {
-      id: 'data',
-      label: 'Export',
-      items: [
-        {
-          id: 'export-reports',
-          icon: 'download',
-          label: 'Export CSV',
-          title: 'Download report as CSV',
-        },
-        {
-          id: 'export-invoice',
-          icon: 'file-text',
-          label: 'Export invoice',
-          title: 'Download client transfer invoice PDF',
-        },
-      ],
-    },
-  ],
+  reports: null,
+  summary: null,
   sales: [
     {
       id: 'item-sales',

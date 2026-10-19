@@ -16,6 +16,7 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { loadingTableRow } from '../../components/loading-widget.js';
 import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { ADMIN_TOOLBAR_ACTION } from '../topbar-toolbar.js';
+import { reconCsv } from '../../lib/recon-csv.js';
 import { ADMIN_TABLE_FILTER } from '../table-filter.js';
 import {
   RECON_COLS,
@@ -994,35 +995,7 @@ export function mountReconPanel(route) {
 
   function exportCsv() {
     const rows = allRows().filter((r) => !r.reconHidden);
-    const headers = [
-      'Status', 'Item', 'Case Size', 'ABV', 'Price', 'Supplier', 'Units per case',
-      'Delivered', 'Invoiced', 'Closing (Cases)', 'Closing (Singles)',
-      'Returned to supplier', 'Transferred', 'Wastage', 'Consumption', 'PLU', 'Variance', 'Variance %',
-      'Consumption Charge', 'Loose Charge', 'PLU Charge', 'Invoice Charge', 'Budget Cost', 'Notes',
-    ];
-    const esc = (v) => {
-      const s = String(v ?? '');
-      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines = [headers.map(esc).join(',')];
-    rows.forEach((r) => {
-      lines.push([
-        STATUS_TITLES[r.reconStatus] || '',
-        r.p.name, r.p.case_size || '',
-        r.p.abv != null ? `${Number(r.p.abv).toFixed(2)}%` : '',
-        r.rowPrice ? r.rowPrice.toFixed(2) : '',
-        r.supplierName, r.ups || '',
-        r.delivered, r.invoiced, r.closingCases, r.closingSingles,
-        r.supplierReturns, r.transferred, r.wastage, r.consumption, r.plu,
-        r.variance, r.variancePct != null ? `${r.variancePct}%` : '',
-        r.consumptionCharge, r.consumptionLooseCharge, r.pluCharge, r.invoiceCharge,
-        r.budgetCost, r.reconNote,
-      ].map(esc).join(','));
-    });
-    const totals = reconTotals(rows);
-    lines.push(Array(headers.length - 1).fill('').concat([totals.totBudget.toFixed(2)]).map(esc).join(','));
-
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([reconCsv(rows)], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${(ctx.event?.name || 'event').replace(/[^\w\s.-]/g, '')} Post Event Recon.csv`;

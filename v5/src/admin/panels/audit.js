@@ -21,6 +21,8 @@ import {
 import { hrefForRoute } from '../router.js';
 import {
   CHECK_META,
+  auditExportDocument,
+  auditExportFilename,
   filterFindings,
   runEventAudit,
 } from '../../lib/forensics.js';
@@ -41,29 +43,10 @@ function severityLabel(s) {
 }
 
 function downloadJson(report, eventId) {
-  const payload = {
-    eventId: report.eventId,
-    ranAt: report.ranAt,
-    summary: report.summary,
-    findings: report.findings.map((f) => ({
-      id: f.id,
-      checkId: f.checkId,
-      severity: f.severity,
-      productId: f.productId,
-      productName: f.productName,
-      expected: f.expected,
-      actual: f.actual,
-      delta: f.delta,
-      message: f.message,
-      fixHint: f.fixHint,
-      relatedPanel: f.relatedPanel,
-      detail: f.detail,
-    })),
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(auditExportDocument(report), null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `forensic-audit-${eventId || 'event'}-${(report.ranAt || '').slice(0, 10)}.json`;
+  a.download = auditExportFilename(report, eventId);
   a.click();
   URL.revokeObjectURL(a.href);
 }
