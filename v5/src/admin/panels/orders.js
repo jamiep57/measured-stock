@@ -272,6 +272,40 @@ export function mountOrdersPanel(route) {
       </div>`;
   }
 
+  function orderSupplierOptions(product) {
+    const current = preferredSupplierId(product);
+    const seen = new Set();
+    const options = [];
+    (product?.product_suppliers || []).forEach((offer) => {
+      if (!offer?.supplier_id || seen.has(offer.supplier_id)) return;
+      seen.add(offer.supplier_id);
+      options.push({
+        id: offer.supplier_id,
+        name: offer.supplier?.name || ctx.supplierById.get(offer.supplier_id)?.name || 'Supplier',
+      });
+    });
+    ctx.suppliers.forEach((supplier) => {
+      if (!supplier?.id || seen.has(supplier.id)) return;
+      seen.add(supplier.id);
+      options.push({ id: supplier.id, name: supplier.name || 'Supplier' });
+    });
+    if (current && !seen.has(current)) {
+      options.push({ id: current, name: ctx.supplierById.get(current)?.name || 'Supplier' });
+    }
+    options.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    return { current, options };
+  }
+
+  function supplierSelectHtml(product) {
+    const { current, options } = orderSupplierOptions(product);
+    const dis = locked() ? 'disabled' : '';
+    const blank = current ? '' : '<option value="">Choose supplier</option>';
+    const opts = options.map((opt) => (
+      `<option value="${escapeHtml(opt.id)}"${opt.id === current ? ' selected' : ''}>${escapeHtml(opt.name)}</option>`
+    )).join('');
+    return `<select class="ord-supplier-select" data-order-supplier="${escapeHtml(product?.id || '')}" aria-label="Supplier to order from" title="Who this product is ordered from" ${dis}>${blank}${opts}</select>`;
+  }
+
   function rowHtml(r) {
     const p = ctx.productById.get(r.productId);
     const supplier = ctx.supplierById.get(preferredSupplierId(p));
@@ -299,7 +333,7 @@ export function mountOrdersPanel(route) {
           ${pack ? `<span class="dist-item-meta">${escapeHtml(pack)}</span>` : ''}
         </div>
       </th>
-      <td class="plan-cell ord-supplier" title="${escapeHtml(supplier?.name || 'No preferred supplier')}">${supplier?.name ? `<span class="ord-supplier-name">${escapeHtml(supplier.name)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="plan-cell ord-supplier">${p ? supplierSelectHtml(p) : '<span class="muted">—</span>'}</td>
       <td class="plan-cell">${plannedInput}</td>
       <td class="plan-cell plan-out">${qty(r.confirmed)}${r.confirmedSource === 'manual' ? ' <span class="dist-bar-tag" title="Entered on the event before purchase orders — not linked to an order">manual</span>' : ''}</td>
       <td class="plan-cell plan-out">${r.pending ? qty(r.pending) : '—'}</td>
@@ -313,7 +347,7 @@ export function mountOrdersPanel(route) {
     const rows = visibleRows();
     const head = `<tr>
       <th class="dist-th dist-sticky plan-col-product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div></th>
-      <th class="dist-th plan-th plan-th--supplier" title="Preferred supplier for this product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Supplier</span></div></th>
+      <th class="dist-th plan-th plan-th--supplier" title="Who this product is ordered from. Purchase orders use this supplier."><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Supplier</span></div></th>
       ${[
         ['QTY Required', 'Cases needed — projected serves ÷ serves per case, plus buffer', 'plan-th--qty'],
         ['Confirmed', 'Cases on confirmed purchase orders'],
@@ -1552,7 +1586,72 @@ export function mountOrdersPanel(route) {
     refreshForecastOutputs();
   }
 
+  function rememberPreferredSupplier(product, supplierId, offer) {
+    const offers = product.product_suppliers || (product.product_suppliers = []);
+    if (offer && !offers.some((row) => row.supplier_id === supplierId)) offers.push(offer);
+    offers.forEach((row) => { row.is_preferred = row.supplier_id === supplierId; });
+    const chosen = offers.find((row) => row.supplier_id === supplierId);
+    product.supplier_id = supplierId;
+    if (chosen?.case_price != null) product.case_price = chosen.case_price;
+    if (chosen?.unit_price != null) product.unit_price = chosen.unit_price;
+  }
+
+  async function setOrderSupplier(productId, supplierId) {
+    const product = ctx.productById.get(productId);
+    if (!product || locked()) return;
+    const previous = preferredSupplierId(product);
+    if (!supplierId || supplierId === previous) return;
+    const select = panel.querySelector(`[data-order-supplier="${CSS.escape(productId)}"]`);
+    if (select) select.disabled = true;
+    try {
+      const DB = getDB();
+      const existing = (product.product_suppliers || []).find((row) => row.supplier_id === supplierId);
+      let offer = existing || null;
+      if (existing?.id) {
+        await DB.update('product_suppliers', `id=eq.${existing.id}`, { is_preferred: true });
+      } else if (existing) {
+        await DB.update('product_suppliers', `product_id=eq.${product.id}&supplier_id=eq.${supplierId}`, { is_preferred: true });
+      } else {
+        const current = (product.product_suppliers || []).find((row) => row.is_preferred)
+          || (product.product_suppliers || [])[0]
+          || null;
+        offer = await DB.productSuppliers.create({
+          product_id: product.id,
+          supplier_id: supplierId,
+          is_preferred: true,
+          sku: current?.sku || product.sku || '',
+          case_price: current?.case_price ?? product.case_price ?? null,
+          unit_price: current?.unit_price ?? product.unit_price ?? null,
+          pack_size: current?.pack_size || product.case_size || '',
+          units_per_case: current?.units_per_case ?? product.units_per_case ?? null,
+          ...(current?.purchase_case_size_id ? { purchase_case_size_id: current.purchase_case_size_id } : {}),
+        });
+        if (offer) offer.supplier = ctx.supplierById.get(supplierId) || null;
+      }
+      rememberPreferredSupplier(product, supplierId, offer);
+      const supplierIds = new Set(ctx.rows.map((r) => preferredSupplierId(ctx.productById.get(r.productId))).filter(Boolean));
+      setTableFilterContext('orders', {
+        suppliers: [...supplierIds]
+          .map((id) => ({ value: id, label: ctx.supplierById.get(id)?.name || 'Unknown' }))
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      });
+      repaintBody();
+    } catch (err) {
+      reportError(err, { source: 'admin.orders.supplier', silent: true });
+      toast(err.message || 'Could not change supplier', true);
+      if (select) select.value = previous || '';
+    } finally {
+      const next = panel.querySelector(`[data-order-supplier="${CSS.escape(productId)}"]`);
+      if (next) next.disabled = locked();
+    }
+  }
+
   function onPanelChange(e) {
+    const supplierSelect = e.target.closest('[data-order-supplier]');
+    if (supplierSelect) {
+      void setOrderSupplier(supplierSelect.dataset.orderSupplier, supplierSelect.value);
+      return;
+    }
     if (e.target.id !== 'ordCsvFile') return;
     const file = e.target.files?.[0];
     e.target.value = '';
