@@ -9,6 +9,9 @@ import {
   getDB, loadLibraryProducts, loadCategories, loadSuppliers, loadCaseSizes,
 } from '../../db.js';
 import { productStockPack } from '../../pack-metrics.js';
+import { formatAbv } from '../../lib/menu-exports.js';
+import { palletQtyOf, KEG_COUPLER_TYPES, DISPENSE_GAS_TYPES } from '../../lib/product-attributes.js';
+import { LIBRARY_EXTRA_COLUMNS } from '../filter-configs.js';
 import { productSupplierSearchText } from '../../components/product-search.js';
 import { skeletonTableRows } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
@@ -82,6 +85,13 @@ function categoryBadge(cat) {
   return `<span class="lib-cat-badge">${escapeHtml(cat.name)}</span>`;
 }
 
+function optionLabel(options, value) {
+  if (!value || value === 'none') return '';
+  const found = options.find((o) => o.value === value);
+  if (!found) return String(value);
+  return found.label.split(' (')[0];
+}
+
 function sortValue(p, key, caseSizes) {
   switch (key) {
     case 'category': return (p.category?.name) || '';
@@ -91,6 +101,10 @@ function sortValue(p, key, caseSizes) {
     case 'case_price': return Number(p.case_price) || 0;
     case 'unit_price': return Number(p.unit_price) || 0;
     case 'case_size': return p.case_size || productStockPack(p, caseSizes).label || '';
+    case 'abv': return Number(p.abv) || 0;
+    case 'pallet_qty': return palletQtyOf(p, caseSizes) || 0;
+    case 'keg_coupler': return optionLabel(KEG_COUPLER_TYPES, p.keg_coupler_type).toLowerCase();
+    case 'dispense_gas': return optionLabel(DISPENSE_GAS_TYPES, p.dispense_gas_type).toLowerCase();
     default: return String(p[key] || '').toLowerCase();
   }
 }
@@ -100,7 +114,45 @@ function productHaystack(p, caseSizes) {
   return [
     p.name, p.sku, p.case_size, pack.label,
     p.category?.name, preferredSupplier(p), productSupplierSearchText(p),
+    p.abv, optionLabel(KEG_COUPLER_TYPES, p.keg_coupler_type),
+    optionLabel(DISPENSE_GAS_TYPES, p.dispense_gas_type),
   ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function extraHeaderHtml() {
+  return LIBRARY_EXTRA_COLUMNS.map((col) => `
+    <th class="${col.numeric ? 'lib-num' : ''}" data-col="${col.value}" data-sort="${col.value}">${escapeHtml(col.label)}</th>`).join('');
+}
+
+function extraCellHtml(p, caseSizes) {
+  return LIBRARY_EXTRA_COLUMNS.map((col) => {
+    const cls = col.numeric ? ' class="lib-num"' : '';
+    return `<td${cls} data-col="${col.value}">${extraCellValue(p, col.value, caseSizes)}</td>`;
+  }).join('');
+}
+
+function extraCellValue(p, key, caseSizes) {
+  if (key === 'abv') return escapeHtml(formatAbv(p.abv) || '—');
+  if (key === 'pallet_qty') {
+    const own = Number(p.pallet_qty);
+    const qty = palletQtyOf(p, caseSizes);
+    if (qty == null) return '—';
+    const auto = Number.isFinite(own) && own > 0 ? '' : ' <span class="muted lib-auto-tag">auto</span>';
+    return `${escapeHtml(String(qty))}${auto}`;
+  }
+  if (key === 'keg_coupler') {
+    const label = optionLabel(KEG_COUPLER_TYPES, p.keg_coupler_type);
+    if (!label) return '—';
+    const full = KEG_COUPLER_TYPES.find((o) => o.value === p.keg_coupler_type)?.label || label;
+    return `<span title="${escapeHtml(full)}">${escapeHtml(label)}</span>`;
+  }
+  if (key === 'dispense_gas') {
+    const label = optionLabel(DISPENSE_GAS_TYPES, p.dispense_gas_type);
+    if (!label) return '—';
+    const full = DISPENSE_GAS_TYPES.find((o) => o.value === p.dispense_gas_type)?.label || label;
+    return `<span title="${escapeHtml(full)}">${escapeHtml(label)}</span>`;
+  }
+  return '—';
 }
 
 function mergeToolbarStrips(selectedCount) {
@@ -158,11 +210,12 @@ function renderShell() {
               <th class="lib-num" data-sort="units_per_case">Units/case</th>
               <th class="lib-num" data-sort="case_price">Case £</th>
               <th class="lib-num" data-sort="unit_price">Unit £</th>
+              ${extraHeaderHtml()}
               <th class="lib-act"></th>
             </tr>
           </thead>
           <tbody id="libBody">
-            ${skeletonTableRows(10, { rows: 8 })}
+            ${skeletonTableRows(10 + LIBRARY_EXTRA_COLUMNS.length, { rows: 8 })}
           </tbody>
         </table>
         <div class="lib-empty" id="libEmpty" hidden>No products match.</div>
@@ -193,12 +246,6 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
     const menuMeta = p.menu_name && p.menu_name !== p.name
       ? `<span class="lib-prod-sku muted">Menu: ${escapeHtml(p.menu_name)}</span>`
       : '';
-    const dispense = [
-      p.keg_coupler_type && p.keg_coupler_type !== 'none' ? `${p.keg_coupler_type} coupler` : '',
-      p.dispense_gas_type && p.dispense_gas_type !== 'none' ? p.dispense_gas_type : '',
-      p.pallet_qty ? `${p.pallet_qty}/pallet` : '',
-    ].filter(Boolean).join(' · ');
-    const dispenseMeta = dispense ? `<span class="lib-prod-sku muted">${escapeHtml(dispense)}</span>` : '';
     return `
       <tr data-pid="${escapeHtml(p.id)}" data-product-name="${escapeHtml((p.name || '').toLowerCase())}"
         class="${isSel ? 'lib-selected' : ''}${mergeMode ? ' lib-row--merge' : ''}">
@@ -207,10 +254,12 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
             ${isSel ? 'checked' : ''} aria-label="Select ${escapeHtml(p.name || 'product')}">` : ''}
         </td>
         <td>
-          <span class="lib-prod-name">${escapeHtml(p.name || 'Product')}</span>
-          ${menuMeta}
-          ${skuMeta}
-          ${dispenseMeta}
+          <div class="lib-prod">
+            <span class="lib-prod-name">${escapeHtml(p.name || 'Product')}</span>
+            ${packLabel ? `<span class="lib-prod-pack">${escapeHtml(packLabel)}</span>` : ''}
+            ${menuMeta}
+            ${skuMeta}
+          </div>
         </td>
         <td>${escapeHtml(packLabel)}</td>
         <td>${escapeHtml(countAs)}${auto}</td>
@@ -219,6 +268,7 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
         <td class="lib-num">${p.units_per_case != null ? escapeHtml(String(p.units_per_case)) : '—'}</td>
         <td class="lib-num">${fmtMoney(p.case_price) || '—'}</td>
         <td class="lib-num">${fmtMoney(p.unit_price) || '—'}</td>
+        ${extraCellHtml(p, caseSizes)}
         <td class="lib-act">
           ${mergeMode ? '' : `<button type="button" class="topbar-tool del-card-action" data-edit="${escapeHtml(p.id)}"
             title="Edit product" aria-label="Edit ${escapeHtml(p.name || 'product')}">
@@ -246,6 +296,7 @@ export function mountLibraryPanel() {
   let caseSizes = [];
   let sortKey = 'name';
   let sortDir = 1;
+  let visibleColumns = LIBRARY_EXTRA_COLUMNS.map((c) => c.value);
   let filterCat = '';
   let filterSup = '';
   let filterSupIds = [];
@@ -262,6 +313,7 @@ export function mountLibraryPanel() {
       : (seeded.supplierFilter ? [seeded.supplierFilter] : []);
     sortKey = seeded.sortKey || 'name';
     sortDir = seeded.sortDir === 'desc' ? -1 : 1;
+    if (Array.isArray(seeded.visibleColumns)) visibleColumns = seeded.visibleColumns;
   }
 
   let mergeChosen = [];
@@ -373,11 +425,19 @@ export function mountLibraryPanel() {
       }
     }
     updateSortHeaders();
+    syncColumnVisibility();
 
     if (productFilter.productId) {
       const target = bodyEl.querySelector(`[data-pid="${productFilter.productId}"]`);
       target?.scrollIntoView({ block: 'nearest' });
     }
+  }
+
+  function syncColumnVisibility() {
+    const on = new Set(visibleColumns);
+    tableEl?.querySelectorAll('[data-col]').forEach((el) => {
+      el.classList.toggle('lib-col-off', !on.has(el.dataset.col));
+    });
   }
 
   function applyTableFilterValues(values) {
@@ -389,6 +449,7 @@ export function mountLibraryPanel() {
       : (values.supplierFilter ? [values.supplierFilter] : []);
     sortKey = values.sortKey || 'name';
     sortDir = values.sortDir === 'desc' ? -1 : 1;
+    if (Array.isArray(values.visibleColumns)) visibleColumns = values.visibleColumns;
   }
 
   function openProductForm(editId) {
@@ -624,7 +685,7 @@ export function mountLibraryPanel() {
 
   refresh().catch((err) => {
     reportError(err, { source: 'admin.library.refresh', silent: true });
-    bodyEl.innerHTML = `<tr><td colspan="10">${errorState({
+    bodyEl.innerHTML = `<tr><td colspan="${10 + LIBRARY_EXTRA_COLUMNS.length}">${errorState({
       title: 'Couldn’t load library',
       copy: err.message || 'Failed to load',
       variant: 'admin',

@@ -11,7 +11,7 @@ import {
   extractCategoryNames,
 } from '../admin/filter-helpers.js';
 import { getTableFilterConfig } from '../admin/table-filter.js';
-import { ALL_FILTER_CONFIGS } from '../admin/filter-configs.js';
+import { ALL_FILTER_CONFIGS, libraryConfig } from '../admin/filter-configs.js';
 
 describe('tableFilterIsActive', () => {
   it('detects checkbox and radio differences from defaults', () => {
@@ -211,5 +211,45 @@ describe('filter config registry', () => {
     expect(getTableFilterConfig({ view: 'suppliers' })?.id).toBe('suppliers');
     expect(getTableFilterConfig({ view: 'audit' })?.id).toBe('audit');
     expect(getTableFilterConfig({ view: 'settings' })).toBeNull();
+  });
+});
+
+describe('library column visibility', () => {
+  function apiFor(state, { tab = 'filter' } = {}) {
+    let current = state;
+    return {
+      getState: () => current,
+      setState(next) { current = next; },
+      getContext: () => ({ categories: ['Beer'], suppliers: [] }),
+      getActiveTab: () => tab,
+      emit() {},
+      remount() {},
+      syncUi() {},
+      touch() {},
+    };
+  }
+
+  it('adds a Columns tab and reports the checked extra columns', () => {
+    const api = apiFor(libraryConfig.defaults());
+    const tabs = libraryConfig.buildTabs(api);
+    expect(tabs.map((t) => t.id)).toEqual(['filter', 'sort', 'columns']);
+    const columns = tabs.find((t) => t.id === 'columns');
+    expect(columns.sections[0].options.map((o) => o.label)).toEqual([
+      'ABV', 'Pallet qty', 'Keg coupler', 'Dispense gas',
+    ]);
+    expect(libraryConfig.toValues(libraryConfig.defaults()).visibleColumns).toEqual([
+      'abv', 'pallet_qty', 'keg_coupler', 'dispense_gas',
+    ]);
+    expect(libraryConfig.toValues({ ...libraryConfig.defaults(), columns: ['abv', 'dispense_gas'] }).visibleColumns)
+      .toEqual(['abv', 'dispense_gas']);
+  });
+
+  it('chips a hidden column and restores it when the chip is removed', () => {
+    const api = apiFor({ ...libraryConfig.defaults(), columns: ['abv'] });
+    const chips = libraryConfig.buildActiveItems(api);
+    expect(chips.some((c) => c.id === 'columns-hidden:pallet_qty')).toBe(true);
+    expect(chips.some((c) => c.id.startsWith('columns:'))).toBe(false);
+    libraryConfig.removeActiveItem(api, 'columns-hidden:keg_coupler');
+    expect(api.getState().columns).toEqual(['abv', 'keg_coupler']);
   });
 });

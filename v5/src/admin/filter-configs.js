@@ -1185,10 +1185,30 @@ function viewConfig({
   };
 }
 
-export const libraryConfig = viewConfig({
+export const LIBRARY_EXTRA_COLUMNS = [
+  { value: 'abv', label: 'ABV', numeric: true },
+  { value: 'pallet_qty', label: 'Pallet qty', numeric: true },
+  { value: 'keg_coupler', label: 'Keg coupler', numeric: false },
+  { value: 'dispense_gas', label: 'Dispense gas', numeric: false },
+];
+
+/** Shown extra columns, in table order. Missing state means all of them. */
+export function libraryVisibleColumns(state) {
+  const all = LIBRARY_EXTRA_COLUMNS.map((c) => c.value);
+  if (!Array.isArray(state?.columns)) return all;
+  return all.filter((id) => state.columns.includes(id));
+}
+
+const libraryBase = viewConfig({
   id: 'library',
-  defaults: () => ({ category: '', supplierId: [], sort: 'name', sortDir: 'asc' }),
-  persist: { keys: ['sort', 'sortDir'], storageKey: 'v5LibraryTableFilter' },
+  defaults: () => ({
+    category: '',
+    supplierId: [],
+    sort: 'name',
+    sortDir: 'asc',
+    columns: LIBRARY_EXTRA_COLUMNS.map((c) => c.value),
+  }),
+  persist: { keys: ['sort', 'sortDir', 'columns'], storageKey: 'v5LibraryTableFilter' },
   buildFilterSections(_state, context) {
     const sections = [];
     if (context.categories?.length) {
@@ -1225,6 +1245,10 @@ export const libraryConfig = viewConfig({
     { value: 'units_per_case', label: 'Units / case' },
     { value: 'case_price', label: 'Case price' },
     { value: 'unit_price', label: 'Unit price' },
+    { value: 'abv', label: 'ABV' },
+    { value: 'pallet_qty', label: 'Pallet qty' },
+    { value: 'keg_coupler', label: 'Keg coupler' },
+    { value: 'dispense_gas', label: 'Dispense gas' },
   ],
   toValues(state) {
     const suppliers = Array.isArray(state.supplierId)
@@ -1236,9 +1260,70 @@ export const libraryConfig = viewConfig({
       supplierFilters: suppliers,
       sortKey: state.sort || 'name',
       sortDir: state.sortDir || 'asc',
+      visibleColumns: libraryVisibleColumns(state),
     };
   },
 });
+
+export const libraryConfig = {
+  ...libraryBase,
+  buildTabs(api) {
+    const tabs = libraryBase.buildTabs(api);
+    const shown = libraryVisibleColumns(api.getState());
+    tabs.push({
+      id: 'columns',
+      label: 'Columns',
+      icon: 'columns',
+      sections: [{
+        id: 'columns',
+        label: 'Extra columns',
+        type: 'checkbox',
+        showCount: true,
+        hideCountWhenFull: true,
+        options: LIBRARY_EXTRA_COLUMNS,
+      }],
+      values: { columns: shown },
+      onChange(_id, value) {
+        api.setState({ ...api.getState(), columns: value });
+        api.syncUi();
+        api.emit();
+      },
+      onReset() {
+        api.setState({
+          ...api.getState(),
+          columns: LIBRARY_EXTRA_COLUMNS.map((c) => c.value),
+        });
+        api.syncUi();
+        api.emit();
+      },
+    });
+    return tabs;
+  },
+  buildActiveItems(api) {
+    const items = libraryBase.buildActiveItems(api)
+      .filter((item) => !String(item.id).startsWith('columns:'));
+    if (api.getActiveTab() === 'columns') return items;
+    const shown = new Set(libraryVisibleColumns(api.getState()));
+    LIBRARY_EXTRA_COLUMNS.forEach((col) => {
+      if (!shown.has(col.value)) items.push({ id: `columns-hidden:${col.value}`, label: col.label });
+    });
+    return items;
+  },
+  removeActiveItem(api, id) {
+    if (String(id).startsWith('columns-hidden:')) {
+      const key = id.slice('columns-hidden:'.length);
+      const state = api.getState();
+      const shown = new Set(libraryVisibleColumns(state));
+      shown.add(key);
+      api.setState({
+        ...state,
+        columns: LIBRARY_EXTRA_COLUMNS.map((c) => c.value).filter((col) => shown.has(col)),
+      });
+      return true;
+    }
+    return libraryBase.removeActiveItem(api, id);
+  },
+};
 
 export const kitLibraryConfig = viewConfig({
   id: 'kit-library',
