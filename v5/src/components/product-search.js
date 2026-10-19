@@ -362,14 +362,18 @@ export function mountProductSearch(container, options = {}) {
       return hay.includes(query);
     }).slice(0, 40);
 
-    if (!filteredPools.length && !filteredProducts.length) {
-      if (canOfferCreate && q.trim()) {
-        list.innerHTML = `
-          <div class="product-search-empty">No products match “${escapeHtml(q.trim())}”</div>
-          <button type="button" class="product-search-item product-search-create-trigger">
+    const createHtml = canOfferCreate && q.trim()
+      ? `<button type="button" class="product-search-item product-search-create-trigger">
             <span class="product-search-name">+ Create “${escapeHtml(q.trim())}”</span>
             <span class="product-search-meta">Add to library and ${escapeHtml(createContextLabel)}</span>
-          </button>`;
+          </button>`
+      : '';
+
+    if (!filteredPools.length && !filteredProducts.length) {
+      if (createHtml) {
+        list.innerHTML = `
+          <div class="product-search-empty">No products match “${escapeHtml(q.trim())}”</div>
+          ${createHtml}`;
       } else {
         list.innerHTML = '<div class="product-search-empty">No matches</div>';
       }
@@ -396,7 +400,7 @@ export function mountProductSearch(container, options = {}) {
         </button>`;
       }).join('');
 
-      list.innerHTML = poolHtml + productHtml;
+      list.innerHTML = poolHtml + productHtml + createHtml;
     }
     list.hidden = false;
     syncListPosition();

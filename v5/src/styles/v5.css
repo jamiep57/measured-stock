@@ -1374,6 +1374,15 @@ body.app-drawer-open { overflow: hidden; }
 .product-search-create-trigger .product-search-name {
   color: var(--accent);
 }
+.product-search-item + .product-search-create-trigger {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  position: sticky;
+  bottom: 0;
+  background: var(--card);
+}
 
 /* Delivery line cards */
 .del-products { display: flex; flex-direction: column; gap: 10px; }
