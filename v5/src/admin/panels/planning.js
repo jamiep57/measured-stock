@@ -1861,7 +1861,7 @@ export function mountPlanningPanel(route) {
       title: 'Save menu',
       bodyHtml: `
         <div class="admin-drawer-form">
-          <p class="admin-modal-confirm-msg">Saves the ${count} item${count === 1 ? '' : 's'} on this menu — products with their prices, and cocktails with their recipes. You can apply it to any event. Projected serves and deal costs stay on this event.</p>
+          <p class="admin-modal-confirm-msg">Saves the ${count} item${count === 1 ? '' : 's'} on this menu — products with their prices, and cocktails with their recipes. You can load it onto any event. Projected serves and deal costs stay on this event.</p>
           <label class="admin-field"><span class="admin-label">Name</span>
             <input class="admin-input" id="savedMenuName" maxlength="60" value="${escapeHtml(suggested)}" placeholder="e.g. Festival bar"></label>
           <p class="plan-form-err" id="savedMenuErr" hidden></p>
@@ -1954,7 +1954,7 @@ export function mountPlanningPanel(route) {
     }
 
     const el = openModal({
-      title: 'Apply menu',
+      title: 'Load menu',
       bodyHtml: menus.length ? `
         <div class="admin-drawer-form">
           <p class="admin-modal-confirm-msg">Copies the saved menu onto this event. Products already here keep their prices unless you overwrite them. Projected serves and deal costs are left alone.</p>
@@ -1963,12 +1963,12 @@ export function mountPlanningPanel(route) {
           <label class="plan-check"><input type="checkbox" id="applyRefresh"> Overwrite prices already on this event</label>
           <p class="plan-form-err" id="applyMenuErr" hidden></p>
         </div>` : `
-        <p class="admin-modal-confirm-msg">No saved menus yet. Save this event’s menu, then apply that same menu to any other event.</p>`,
+        <p class="admin-modal-confirm-msg">No saved menus yet. Save this event’s menu, then load that same menu onto any other event.</p>`,
       footHtml: `
         <div class="admin-modal-confirm-foot">
           ${menus.length ? '<button type="button" class="admin-drawer-btn admin-drawer-btn--danger" data-delete>Delete</button>' : ''}
           <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>${menus.length ? 'Apply menu' : 'Save this menu'}</button>
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok>${menus.length ? 'Load menu' : 'Save this menu'}</button>
         </div>`,
     });
     el.querySelector('[data-cancel]').onclick = closeModal;
@@ -2033,13 +2033,13 @@ export function mountPlanningPanel(route) {
         await reload();
         const addedLabel = `${added} added`;
         toast(refresh
-          ? `${menu.name} applied — ${addedLabel}, prices overwritten`
+          ? `${menu.name} loaded — ${addedLabel}, prices overwritten`
           : (added
             ? `${addedLabel} from ${menu.name}. Existing prices were left as they are.`
             : `Everything on ${menu.name} is already on this menu. Prices were left as they are.`));
       } catch (e2) {
         el.querySelector('[data-ok]').disabled = false;
-        err.textContent = e2.message || 'Could not apply menu';
+        err.textContent = e2.message || 'Could not load menu';
         err.hidden = false;
       }
     };

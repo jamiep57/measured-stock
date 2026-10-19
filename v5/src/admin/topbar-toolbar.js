@@ -51,16 +51,15 @@ export const PANEL_TOOLBAR = {
       items: [
         {
           id: 'plan-save-menu',
-          icon: 'copy',
-          label: 'Save menu',
-          title: 'Save this event’s menu so it can be applied to any event',
+          icon: 'save',
+          title: 'Save menu',
           primary: true,
         },
         {
           id: 'plan-apply-menu',
           icon: 'library',
-          label: 'Apply menu',
-          title: 'Copy a saved menu onto this event',
+          label: 'Load menu',
+          title: 'Load a saved menu onto this event',
         },
         {
           id: 'plan-add-product',
