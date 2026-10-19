@@ -1681,7 +1681,7 @@ export const ordersConfig = simpleEventConfig({
       type: 'segment',
       options: [
         { value: 'all', label: 'All' },
-        { value: 'attention', label: 'Gaps' },
+        { value: 'attention', label: 'Variance' },
         { value: 'short', label: 'Short' },
         { value: 'over', label: 'Over' },
         { value: 'ok', label: 'Matched' },

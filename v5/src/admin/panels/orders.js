@@ -244,13 +244,13 @@ export function mountOrdersPanel(route) {
       .filter((po) => po.status === 'confirmed')
       .reduce((sum, po) => sum + orderLinesTotal(po.purchase_order_lines).total, 0);
     return `
-      <div class="plan-kpi"><span class="plan-kpi-label">Planned</span><span class="plan-kpi-value">${qty(s.planned)}</span>
+      <div class="plan-kpi"><span class="plan-kpi-label">QTY Required</span><span class="plan-kpi-value">${qty(s.planned)}</span>
         <span class="plan-kpi-sub muted">cases from projected serves${ctx.buffer ? ` +${ctx.buffer}%` : ''}</span></div>
       <div class="plan-kpi"><span class="plan-kpi-label">Confirmed</span><span class="plan-kpi-value">${qty(s.confirmed)}</span>
         <span class="plan-kpi-sub muted">${money(value)} on confirmed orders</span></div>
       <div class="plan-kpi"><span class="plan-kpi-label">Pending</span><span class="plan-kpi-value">${qty(s.pending)}</span>
         <span class="plan-kpi-sub muted">on draft / sent orders</span></div>
-      <div class="plan-kpi"><span class="plan-kpi-label">Gaps</span><span class="plan-kpi-value">${s.short + s.over}</span>
+      <div class="plan-kpi"><span class="plan-kpi-label">Variance</span><span class="plan-kpi-value">${s.short + s.over}</span>
         <span class="plan-kpi-sub muted">${s.short ? `<span class="plan-dot plan-dot--red"></span>${s.short} short ` : ''}${s.over ? `<span class="plan-dot plan-dot--amber"></span>${s.over} over` : ''}${!s.short && !s.over ? 'Orders match the plan' : ''}</span></div>`;
   }
 
@@ -284,8 +284,8 @@ export function mountOrdersPanel(route) {
     const plannedInput = `<input type="text" inputmode="decimal" autocomplete="off" class="num-math plan-cell-input plan-cell-input--sm"
       data-planned="${escapeHtml(r.productId)}" value="${escapeHtml(item?.planned_qty_override != null ? String(item.planned_qty_override) : '')}"
       placeholder="${escapeHtml(src === 'projection' && r.planned != null ? String(r.planned) : '')}"
-      title="${onMenu ? 'Override planned cases — leave blank to use projected serves' : 'Add to the event menu to plan this product'}"
-      aria-label="Planned cases" ${dis}>`;
+      title="${onMenu ? 'Override qty required — leave blank to use projected serves' : 'Add to the event menu to plan this product'}"
+      aria-label="Qty required" ${dis}>`;
     const gapCls = GAP_META[r.status] || GAP_META.none;
     const refs = [...new Set(r.refs)].map((ref) => {
       const po = ctx.orders.find((o) => o.reference === ref);
@@ -303,7 +303,7 @@ export function mountOrdersPanel(route) {
       <td class="plan-cell">${plannedInput}</td>
       <td class="plan-cell plan-out">${qty(r.confirmed)}${r.confirmedSource === 'manual' ? ' <span class="dist-bar-tag" title="Entered on the event before purchase orders — not linked to an order">manual</span>' : ''}</td>
       <td class="plan-cell plan-out">${r.pending ? qty(r.pending) : '—'}</td>
-      <td class="plan-cell plan-cell--key plan-out">${badge(gapCls, `title="${escapeHtml(r.gap == null ? 'No plan' : `${signed(r.gap)} cases vs plan`)}"`)} <span class="ord-gap">${r.gap ? signed(r.gap) : ''}</span></td>
+      <td class="plan-cell plan-cell--key plan-out">${badge(gapCls, `title="${escapeHtml(r.gap == null ? 'No plan' : `${signed(r.gap)} cases vs qty required`)}"`)} <span class="ord-gap">${r.gap ? signed(r.gap) : ''}</span></td>
       <td class="plan-cell ord-status-cell">${marker}</td>
       <td class="plan-cell ord-refs">${refs || '<span class="muted">—</span>'}</td>
     </tr>`;
@@ -315,13 +315,13 @@ export function mountOrdersPanel(route) {
       <th class="dist-th dist-sticky plan-col-product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div></th>
       <th class="dist-th plan-th plan-th--supplier" title="Preferred supplier for this product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Supplier</span></div></th>
       ${[
-        ['Planned', 'Cases needed — projected serves ÷ serves per case, plus buffer'],
+        ['QTY Required', 'Cases needed — projected serves ÷ serves per case, plus buffer', 'plan-th--qty'],
         ['Confirmed', 'Cases on confirmed purchase orders'],
         ['Pending', 'Cases on draft or sent orders'],
-        ['Gap', 'Confirmed minus planned'],
+        ['Variance', 'Confirmed minus qty required'],
         ['Status', 'Current order status for this product'],
         ['Orders', 'Purchase orders including this product'],
-      ].map(([l, t]) => `<th class="dist-th plan-th" title="${escapeHtml(t)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(l)}</span></div></th>`).join('')}
+      ].map(([l, t, extra]) => `<th class="dist-th plan-th${extra ? ` ${extra}` : ''}" title="${escapeHtml(t)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(l)}</span></div></th>`).join('')}
     </tr>`;
     const body = rows.length
       ? rows.map(rowHtml).join('')
@@ -1028,7 +1028,7 @@ export function mountOrdersPanel(route) {
             <thead><tr>
               <th>Product</th>
               <th>Pack</th>
-              <th class="num" title="Cases the plan expects">Planned</th>
+              <th class="num" title="Cases the plan expects">QTY Required</th>
               <th class="num">Cases</th>
               <th class="num">Case price</th>
               <th class="num">Amount</th>

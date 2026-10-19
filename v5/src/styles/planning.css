@@ -1205,6 +1205,10 @@
   width: 168px;
   min-width: 148px;
 }
+.ord-grid th.plan-th--qty {
+  width: 108px;
+  min-width: 108px;
+}
 .ord-grid td.ord-supplier {
   width: 168px;
   max-width: 220px;
