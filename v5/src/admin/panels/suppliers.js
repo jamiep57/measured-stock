@@ -22,6 +22,97 @@ function fmtGbp(n) {
   return `£${Number(n).toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
+function colourKey(cat) {
+  const key = cat?.colour_key || String(cat?.name || '').toLowerCase();
+  if (key.includes('beer')) return 'beer';
+  if (key.includes('cider')) return 'cider';
+  if (key.includes('wine')) return 'wine';
+  if (key.includes('spirit')) return 'spirits';
+  if (key.includes('soft') || key.includes('seltzer') || key.includes('water')) return 'softs';
+  if (['beer', 'cider', 'wine', 'rtd', 'softs', 'spirits'].includes(key)) return key;
+  return 'rtd';
+}
+
+function categoryBadge(cat) {
+  if (!cat?.name) return '<span class="muted">—</span>';
+  const key = colourKey(cat);
+  return `<span class="cat-badge cat-badge--${escapeHtml(key)}">${escapeHtml(cat.name)}</span>`;
+}
+
+function textOrNull(id) {
+  return ($(id)?.value || '').trim() || null;
+}
+
+/** Account manager falls back to the original single contact. */
+function roleContact(s, role) {
+  const name = s?.[`${role}_name`] || (role === 'account_manager' ? s?.contact_name : '') || '';
+  const phone = s?.[`${role}_phone`] || (role === 'account_manager' ? s?.phone : '') || '';
+  const email = s?.[`${role}_email`] || (role === 'account_manager' ? s?.email : '') || '';
+  return {
+    name: String(name).trim(),
+    phone: String(phone).trim(),
+    email: String(email).trim(),
+  };
+}
+
+function supplierSearchText(s) {
+  const roles = ['account_manager', 'orders', 'accounts'].map((role) => roleContact(s, role));
+  return [
+    s.name, s.address, s.contact_name, s.email, s.phone,
+    ...roles.flatMap((c) => [c.name, c.phone, c.email]),
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function contactCard(label, iconName, contact) {
+  const lines = [];
+  if (contact.name) {
+    lines.push(`<div class="sup-contact-name">${escapeHtml(contact.name)}</div>`);
+  }
+  if (contact.phone) {
+    const tel = contact.phone.replace(/[^\d+]/g, '');
+    const inner = `${icon('phone', { size: 13 })}<span>${escapeHtml(contact.phone)}</span>`;
+    lines.push(tel
+      ? `<a class="sup-contact-line" href="tel:${escapeHtml(tel)}">${inner}</a>`
+      : `<span class="sup-contact-line">${inner}</span>`);
+  }
+  if (contact.email) {
+    const inner = `${icon('mail', { size: 13 })}<span>${escapeHtml(contact.email)}</span>`;
+    const mailto = /^[^\s@]+@[^\s@]+$/.test(contact.email);
+    lines.push(mailto
+      ? `<a class="sup-contact-line" href="mailto:${escapeHtml(contact.email)}">${inner}</a>`
+      : `<span class="sup-contact-line">${inner}</span>`);
+  }
+  const body = lines.length
+    ? lines.join('')
+    : '<p class="sup-contact-empty">No contact yet</p>';
+  return `
+    <article class="sup-contact-card">
+      <header class="sup-contact-role">${icon(iconName, { size: 14 })}<span>${escapeHtml(label)}</span></header>
+      ${body}
+    </article>`;
+}
+
+function contactFormGroup(title, ids) {
+  return `
+    <section class="sup-form-group">
+      <h3 class="sup-form-group-title">${escapeHtml(title)}</h3>
+      <div class="admin-field">
+        <label class="admin-label" for="${ids.name}">Name</label>
+        <input class="admin-input" type="text" id="${ids.name}" placeholder="Optional" autocomplete="name">
+      </div>
+      <div class="admin-field-grid">
+        <div class="admin-field">
+          <label class="admin-label" for="${ids.phone}">Phone</label>
+          <input class="admin-input" type="tel" id="${ids.phone}" placeholder="Optional" autocomplete="tel">
+        </div>
+        <div class="admin-field">
+          <label class="admin-label" for="${ids.email}">Email</label>
+          <input class="admin-input" type="email" id="${ids.email}" placeholder="Optional" autocomplete="email">
+        </div>
+      </div>
+    </section>`;
+}
+
 function clampSor(raw) {
   let sor = parseQty(raw);
   if (!Number.isFinite(sor)) sor = 0;
@@ -72,7 +163,7 @@ function renderShell() {
 function renderListItems(suppliers, selectedId, query, sort = 'name') {
   const q = (query || '').trim().toLowerCase();
   const list = (suppliers || [])
-    .filter((s) => !q || (s.name || '').toLowerCase().includes(q))
+    .filter((s) => !q || supplierSearchText(s).includes(q))
     .slice()
     .sort((a, b) => {
       const cmp = (a.name || '').localeCompare(b.name || '');
@@ -121,7 +212,7 @@ function renderDetail(s, products) {
               <th>Product</th>
               <th>Pack size</th>
               <th>Category</th>
-              <th>Case price</th>
+              <th class="num">Case price</th>
             </tr>
           </thead>
           <tbody>
@@ -129,15 +220,14 @@ function renderDetail(s, products) {
               const pack = (row?.pack_size) || p.case_size || '—';
               const price = row ? row.case_price : p.case_price;
               const pref = row ? row.is_preferred : (p.supplier_id === s.id);
-              const cat = p.category?.name || '—';
               return `<tr>
                 <td>
                   <span class="catalog-table-primary">${escapeHtml(p.name || 'Product')}</span>
                   ${pref ? '<span class="catalog-tag">pref</span>' : ''}
                 </td>
                 <td>${escapeHtml(pack)}</td>
-                <td>${escapeHtml(cat)}</td>
-                <td>${price != null ? escapeHtml(fmtGbp(price)) : '—'}</td>
+                <td>${categoryBadge(p.category)}</td>
+                <td class="num">${price != null ? escapeHtml(fmtGbp(price)) : '—'}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -151,44 +241,41 @@ function renderDetail(s, products) {
       className: 'empty--inline',
     });
 
+  const manager = roleContact(s, 'account_manager');
+  const orders = roleContact(s, 'orders');
+  const accounts = roleContact(s, 'accounts');
+
   return `
-    <div class="catalog-detail-head">
-      <div class="catalog-detail-head-main">
-        <h2 class="del-card-pill-title"><span class="del-card-pill-name">${escapeHtml(s.name || 'Supplier')}</span></h2>
-        <p class="catalog-detail-meta">
-          ${rows.length} price line${rows.length !== 1 ? 's' : ''} · SOR ${sor}%
-        </p>
+    <div class="sup-detail">
+      <div class="catalog-detail-head">
+        <div class="catalog-detail-head-main">
+          <h2 class="del-card-pill-title"><span class="del-card-pill-name">${escapeHtml(s.name || 'Supplier')}</span></h2>
+          <div class="sup-chips">
+            <span class="sup-chip">${rows.length} price line${rows.length !== 1 ? 's' : ''}</span>
+            <span class="sup-chip">SOR ${sor}%</span>
+          </div>
+        </div>
+        <button type="button" class="topbar-tool topbar-tool--label topbar-tool--primary" id="supEditBtn"
+          title="Edit supplier" aria-label="Edit supplier">
+          ${icon('pencil', { size: 16, strokeWidth: 2.5 })}<span>Edit</span>
+        </button>
       </div>
-      <button type="button" class="topbar-tool topbar-tool--label topbar-tool--primary" id="supEditBtn"
-        title="Edit supplier" aria-label="Edit supplier">
-        ${icon('pencil', { size: 16, strokeWidth: 2.5 })}<span>Edit</span>
-      </button>
-    </div>
-    <div class="catalog-ro-grid">
-      <div class="catalog-ro-field">
-        <span class="catalog-ro-label">Contact name</span>
-        <span class="catalog-ro-value">${roValue(s.contact_name)}</span>
+      <div class="sup-contacts">
+        ${contactCard('Account manager', 'user', manager)}
+        ${contactCard('Orders', 'shopping-cart', orders)}
+        ${contactCard('Accounts', 'wallet', accounts)}
       </div>
-      <div class="catalog-ro-field">
-        <span class="catalog-ro-label">Email</span>
-        <span class="catalog-ro-value">${roValue(s.email)}</span>
-      </div>
-      <div class="catalog-ro-field">
-        <span class="catalog-ro-label">Phone</span>
-        <span class="catalog-ro-value">${roValue(s.phone)}</span>
-      </div>
-      <div class="catalog-ro-field">
-        <span class="catalog-ro-label">Default SOR %</span>
-        <span class="catalog-ro-value">${sor}%</span>
-      </div>
-      <div class="catalog-ro-field catalog-ro-field--full">
+      <div class="sup-address">
         <span class="catalog-ro-label">Address</span>
-        <span class="catalog-ro-value">${roValue(s.address)}</span>
+        <span class="sup-address-value">${roValue(s.address)}</span>
       </div>
-    </div>
-    <div class="catalog-detail-section">
-      <h3 class="catalog-section-title">Products</h3>
-      ${productTable}
+      <div class="catalog-detail-section">
+        <div class="sup-section-head">
+          <h3 class="catalog-section-title">Products</h3>
+          <span class="sup-section-meta">${rows.length} linked</span>
+        </div>
+        ${productTable}
+      </div>
     </div>`;
 }
 
@@ -264,12 +351,25 @@ export function mountSuppliersPanel() {
       return;
     }
 
+    const managerName = textOrNull('supAmName');
+    const managerPhone = textOrNull('supAmPhone');
+    const managerEmail = textOrNull('supAmEmail');
     const patch = {
       name,
-      contact_name: ($('supContact')?.value || '').trim() || null,
-      email: ($('supEmail')?.value || '').trim() || null,
-      phone: ($('supPhone')?.value || '').trim() || null,
-      address: ($('supAddress')?.value || '').trim() || null,
+      account_manager_name: managerName,
+      account_manager_phone: managerPhone,
+      account_manager_email: managerEmail,
+      orders_name: textOrNull('supOrdName'),
+      orders_phone: textOrNull('supOrdPhone'),
+      orders_email: textOrNull('supOrdEmail'),
+      accounts_name: textOrNull('supAccName'),
+      accounts_phone: textOrNull('supAccPhone'),
+      accounts_email: textOrNull('supAccEmail'),
+      // Keep the original contact columns aligned with the account manager.
+      contact_name: managerName,
+      phone: managerPhone,
+      email: managerEmail,
+      address: textOrNull('supAddress'),
       default_sor_pct: clampSor($('supSor')?.value),
     };
 
@@ -326,26 +426,13 @@ export function mountSuppliersPanel() {
             <label class="admin-label" for="supName">Name</label>
             <input class="admin-input" type="text" id="supName" required placeholder="Supplier name">
           </div>
-          <div class="admin-field-grid">
-            <div class="admin-field">
-              <label class="admin-label" for="supContact">Contact name</label>
-              <input class="admin-input" type="text" id="supContact" placeholder="Optional">
-            </div>
-            <div class="admin-field">
-              <label class="admin-label" for="supSor">Default SOR %</label>
-              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="supSor" placeholder="0">
-            </div>
+          <div class="admin-field">
+            <label class="admin-label" for="supSor">Default SOR %</label>
+            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="supSor" placeholder="0">
           </div>
-          <div class="admin-field-grid">
-            <div class="admin-field">
-              <label class="admin-label" for="supEmail">Email</label>
-              <input class="admin-input" type="email" id="supEmail" placeholder="Optional">
-            </div>
-            <div class="admin-field">
-              <label class="admin-label" for="supPhone">Phone</label>
-              <input class="admin-input" type="tel" id="supPhone" placeholder="Optional">
-            </div>
-          </div>
+          ${contactFormGroup('Account manager', { name: 'supAmName', phone: 'supAmPhone', email: 'supAmEmail' })}
+          ${contactFormGroup('Orders', { name: 'supOrdName', phone: 'supOrdPhone', email: 'supOrdEmail' })}
+          ${contactFormGroup('Accounts', { name: 'supAccName', phone: 'supAccPhone', email: 'supAccEmail' })}
           <div class="admin-field">
             <label class="admin-label" for="supAddress">Address</label>
             <textarea class="admin-textarea" id="supAddress" rows="3" placeholder="Optional"></textarea>
@@ -363,11 +450,20 @@ export function mountSuppliersPanel() {
     });
 
     if (s) {
+      const manager = roleContact(s, 'account_manager');
+      const orders = roleContact(s, 'orders');
+      const accounts = roleContact(s, 'accounts');
       $('supName').value = s.name || '';
-      $('supContact').value = s.contact_name || '';
       $('supSor').value = s.default_sor_pct != null ? String(s.default_sor_pct) : '';
-      $('supEmail').value = s.email || '';
-      $('supPhone').value = s.phone || '';
+      $('supAmName').value = manager.name;
+      $('supAmPhone').value = manager.phone;
+      $('supAmEmail').value = manager.email;
+      $('supOrdName').value = orders.name;
+      $('supOrdPhone').value = orders.phone;
+      $('supOrdEmail').value = orders.email;
+      $('supAccName').value = accounts.name;
+      $('supAccPhone').value = accounts.phone;
+      $('supAccEmail').value = accounts.email;
       $('supAddress').value = s.address || '';
     }
 
