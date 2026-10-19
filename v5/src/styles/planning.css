@@ -21,6 +21,47 @@
   align-items: flex-end;
   gap: 10px 14px;
 }
+.plan-panel .plan-settings { align-items: center; }
+.plan-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
+}
+.plan-settings-btn:hover,
+.plan-settings-btn[aria-expanded="true"] {
+  background: var(--secondary);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--foreground));
+}
+.plan-settings-btn .lucide-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.plan-settings-pop {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 2px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--secondary) 45%, var(--card));
+}
+.plan-settings-pop[hidden] { display: none !important; }
+.plan-settings-pop .plan-field--sm { width: 128px; }
 .plan-field { min-width: 180px; margin: 0; }
 .plan-field--sm { min-width: 0; width: 120px; }
 .plan-settings-meta {
