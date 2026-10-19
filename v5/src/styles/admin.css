@@ -4129,6 +4129,43 @@ body.admin-drawer-open {
 .lib-table[hidden] {
   display: none;
 }
+/* Product form — quieter labels, grouped fields, extras only when relevant */
+.pf-form {
+  gap: 18px;
+}
+.pf-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pf-group + .pf-group {
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+.pf-form .admin-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.pf-form .wst-form-hint {
+  margin: 0;
+}
+.pf-form .wst-form-hint:empty,
+.pf-form .admin-field[hidden],
+.pf-form .admin-field-grid[hidden] {
+  display: none;
+}
+.pf-form .lib-offers {
+  margin-bottom: 2px;
+}
+.pf-form .lib-offer-row {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .lib-offers {
   display: flex;
   flex-direction: column;

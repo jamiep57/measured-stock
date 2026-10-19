@@ -92,6 +92,12 @@ function caseSizeSummary(cs) {
   return parts.join(' · ') || cs.label || '';
 }
 
+function caseSizeIsKeg(cs) {
+  if (!cs) return false;
+  if (String(cs.stock_unit || '').toLowerCase() === 'keg') return true;
+  return /\bkeg\b/i.test(String(cs.label || ''));
+}
+
 /**
  * @param {object} opts
  * @param {object|null} [opts.product]
@@ -148,29 +154,34 @@ export function openProductFormSheet(opts) {
         `<option value="${escapeHtml(cs.id)}"${cs.id === (p?.stock_case_size_id || p?.case_size_id) ? ' selected' : ''}>${escapeHtml(cs.label)} — ${escapeHtml(caseSizeSummary(cs))}</option>`),
   ].join('');
 
+  const initialCaseSize = caseSizes.find((cs) => cs.id === (p?.stock_case_size_id || p?.case_size_id)) || null;
+  const showKegFields = caseSizeIsKeg(initialCaseSize) || !!(p?.keg_coupler_type || p?.dispense_gas_type);
+  const showPoolFraction = !!(p?.pool_name || '').trim();
+
   const eventBlock = eventContext
     ? `
-      <div class="admin-field">
-        <label class="admin-label" for="epEditOrdered">Cases ordered</label>
-        <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="epEditOrdered"
-          value="${eventContext.qtyOrdered != null && eventContext.qtyOrdered !== '' ? escapeHtml(String(eventContext.qtyOrdered)) : ''}"
-          placeholder="0">
-      </div>
-      <div class="admin-field-grid">
+      <div class="pf-group">
         <div class="admin-field">
-          <span class="admin-label">Counted in</span>
-          <div class="ep-edit-stat">${escapeHtml(eventContext.countedIn ?? '—')}</div>
+          <label class="admin-label" for="epEditOrdered">Cases ordered</label>
+          <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="epEditOrdered"
+            value="${eventContext.qtyOrdered != null && eventContext.qtyOrdered !== '' ? escapeHtml(String(eventContext.qtyOrdered)) : ''}"
+            placeholder="0">
         </div>
-        <div class="admin-field">
-          <span class="admin-label">Variance</span>
-          <div class="ep-edit-stat">${escapeHtml(eventContext.variance ?? '—')}</div>
+        <div class="admin-field-grid">
+          <div class="admin-field">
+            <span class="admin-label">Counted in</span>
+            <div class="ep-edit-stat">${escapeHtml(eventContext.countedIn ?? '—')}</div>
+          </div>
+          <div class="admin-field">
+            <span class="admin-label">Variance</span>
+            <div class="ep-edit-stat">${escapeHtml(eventContext.variance ?? '—')}</div>
+          </div>
+          <div class="admin-field">
+            <span class="admin-label">Opening</span>
+            <div class="ep-edit-stat">${escapeHtml(eventContext.opening ?? '—')}</div>
+          </div>
         </div>
-        <div class="admin-field">
-          <span class="admin-label">Opening</span>
-          <div class="ep-edit-stat">${escapeHtml(eventContext.opening ?? '—')}</div>
-        </div>
-      </div>
-      <p class="wst-form-hint muted">Counted in and opening come from deliveries.</p>`
+      </div>`
     : '';
 
   const dangerLabel = eventContext
@@ -186,69 +197,70 @@ export function openProductFormSheet(opts) {
       if (fn) setTimeout(fn, 0);
     },
     bodyHtml: `
-      <div class="admin-drawer-form">
+      <div class="admin-drawer-form pf-form">
         <div class="del-form-err" id="libErr"></div>
-        <div class="admin-field">
-          <label class="admin-label" for="libName">Name</label>
-          <input class="admin-input" type="text" id="libName" required placeholder="${p ? 'Product name' : 'Search LWC, TWE or type a name'}">
-          ${p ? '' : '<p class="wst-form-hint muted" id="libLwcHint">Type a name to search LWC and The Whisky Exchange.</p>'}
-        </div>
-        <div class="admin-field">
-          <label class="admin-label" for="libMenuName">Menu name</label>
-          <input class="admin-input" type="text" id="libMenuName" maxlength="120" placeholder="Customer-facing name, e.g. Utopian Premium British Lager">
-          <p class="wst-form-hint muted">Shown on menus and client exports. Leave blank to use the product name.</p>
-        </div>
-        <div class="admin-field-grid">
+        <div class="pf-group">
           <div class="admin-field">
-            <label class="admin-label" for="libCategoryId">Category</label>
-            <select class="admin-select" id="libCategoryId">${catOpts}</select>
+            <label class="admin-label" for="libName">Name</label>
+            <input class="admin-input" type="text" id="libName" required placeholder="${p ? 'Product name' : 'Search LWC, TWE or type a name'}">
+            ${p ? '' : '<p class="wst-form-hint muted" id="libLwcHint">Type a name to search LWC and The Whisky Exchange.</p>'}
           </div>
           <div class="admin-field">
-            <label class="admin-label" for="libSku">SKU</label>
-            <input class="admin-input" type="text" id="libSku" placeholder="Optional">
+            <label class="admin-label" for="libMenuName">Menu name</label>
+            <input class="admin-input" type="text" id="libMenuName" maxlength="120" placeholder="On menus, if different" title="Shown on menus and client exports. Blank uses the product name.">
+          </div>
+          <div class="admin-field-grid">
+            <div class="admin-field">
+              <label class="admin-label" for="libCategoryId">Category</label>
+              <select class="admin-select" id="libCategoryId">${catOpts}</select>
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="libSku">SKU</label>
+              <input class="admin-input" type="text" id="libSku" placeholder="Optional">
+            </div>
           </div>
         </div>
-        <div class="admin-field">
-          <label class="admin-label" for="libCaseSizeId">Standard case size</label>
-          <select class="admin-select" id="libCaseSizeId">${csOpts}</select>
-          <p class="wst-form-hint muted">Stock pack, units per case, count-as, and servings per unit come from the catalogue.</p>
-        </div>
-        <div class="admin-field-grid">
+        <div class="pf-group">
           <div class="admin-field">
-            <label class="admin-label" for="libAbv">ABV (%)</label>
-            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libAbv" placeholder="Optional">
+            <label class="admin-label" for="libCaseSizeId">Case size</label>
+            <select class="admin-select" id="libCaseSizeId" title="Pack, units per case, count-as, and servings come from this case size.">${csOpts}</select>
+          </div>
+          <div class="admin-field-grid">
+            <div class="admin-field">
+              <label class="admin-label" for="libAbv">ABV %</label>
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libAbv" placeholder="Optional">
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="libPalletQty">Pallet</label>
+              <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libPalletQty" placeholder="Cases">
+              <p class="wst-form-hint muted" id="libPalletHint"></p>
+            </div>
+          </div>
+          <div class="admin-field-grid" id="libKegFields"${showKegFields ? '' : ' hidden'}>
+            <div class="admin-field">
+              <label class="admin-label" for="libCoupler">Keg coupler</label>
+              <select class="admin-select" id="libCoupler">${optionList(KEG_COUPLER_TYPES, p?.keg_coupler_type || '')}</select>
+            </div>
+            <div class="admin-field">
+              <label class="admin-label" for="libGas">Dispense gas</label>
+              <select class="admin-select" id="libGas">${optionList(DISPENSE_GAS_TYPES, p?.dispense_gas_type || '')}</select>
+            </div>
           </div>
           <div class="admin-field">
-            <label class="admin-label" for="libPalletQty">Pallet quantity</label>
-            <input class="admin-input num-math" type="text" inputmode="decimal" autocomplete="off" id="libPalletQty" placeholder="Cases per pallet">
-            <p class="wst-form-hint muted" id="libPalletHint"></p>
+            <label class="admin-label" for="libPoolName">Volume pool</label>
+            <input class="admin-input" type="text" id="libPoolName" placeholder="Optional, e.g. House Vodka" title="Groups interchangeable SKUs. Manage members on the Volume pools page.">
+          </div>
+          <div class="admin-field" id="libPoolFractionField"${showPoolFraction ? '' : ' hidden'}>
+            <label class="admin-label" for="libPoolFraction">Serving fraction</label>
+            <div id="libPoolFractionMount"></div>
           </div>
         </div>
-        <div class="admin-field-grid">
+        <div class="pf-group">
           <div class="admin-field">
-            <label class="admin-label" for="libCoupler">Keg coupler</label>
-            <select class="admin-select" id="libCoupler">${optionList(KEG_COUPLER_TYPES, p?.keg_coupler_type || '')}</select>
+            <span class="admin-label">Suppliers</span>
+            <div id="libOffers" class="lib-offers"></div>
+            <button type="button" class="admin-drawer-btn" id="libAddOffer">Add supplier</button>
           </div>
-          <div class="admin-field">
-            <label class="admin-label" for="libGas">Dispense gas</label>
-            <select class="admin-select" id="libGas">${optionList(DISPENSE_GAS_TYPES, p?.dispense_gas_type || '')}</select>
-          </div>
-        </div>
-        <div class="admin-field">
-          <label class="admin-label" for="libPoolName">Volume pool</label>
-          <input class="admin-input" type="text" id="libPoolName" placeholder="e.g. House Vodka, Lemon-lime soft">
-          <p class="wst-form-hint muted">Optional group for interchangeable SKUs. Prefer the Volume pools page to manage members.</p>
-        </div>
-        <div class="admin-field" id="libPoolFractionField">
-          <label class="admin-label" for="libPoolFraction">Pool fraction / serving</label>
-          <div id="libPoolFractionMount"></div>
-          <p class="wst-form-hint muted">Fraction of one case/SKU per serving when in a pool (e.g. 1/24, 1/12). Stays as typed.</p>
-        </div>
-        <div class="admin-field">
-          <span class="admin-label">Suppliers &amp; prices</span>
-          <p class="wst-form-hint muted">One row per supplier. Price is per case (or per bottle/keg for singles).</p>
-          <div id="libOffers" class="lib-offers"></div>
-          <button type="button" class="admin-drawer-btn" id="libAddOffer">+ Add supplier</button>
         </div>
         ${eventBlock}
       </div>`,
@@ -280,10 +292,32 @@ export function openProductFormSheet(opts) {
     if (!hint) return;
     const caseSizeId = $('libCaseSizeId')?.value || null;
     const fallback = palletQtyOf({ stock_case_size_id: caseSizeId }, caseSizes);
-    hint.textContent = fallback ? `Blank uses case size default (${fallback}).` : '';
+    hint.textContent = fallback ? `Blank uses ${fallback} from the case size.` : '';
   }
+
+  function syncKegFields() {
+    const el = $('libKegFields');
+    if (!el) return;
+    const hasValue = !!($('libCoupler')?.value || $('libGas')?.value);
+    el.hidden = !(caseSizeIsKeg(caseSizes.find((c) => c.id === ($('libCaseSizeId')?.value || ''))) || hasValue);
+  }
+
+  function syncPoolFractionField() {
+    const el = $('libPoolFractionField');
+    if (!el) return;
+    el.hidden = !($('libPoolName')?.value || '').trim();
+  }
+
   syncPalletHint();
-  $('libCaseSizeId')?.addEventListener('change', syncPalletHint);
+  syncKegFields();
+  syncPoolFractionField();
+  $('libCaseSizeId')?.addEventListener('change', () => {
+    syncPalletHint();
+    syncKegFields();
+  });
+  $('libCoupler')?.addEventListener('change', syncKegFields);
+  $('libGas')?.addEventListener('change', syncKegFields);
+  $('libPoolName')?.addEventListener('input', syncPoolFractionField);
 
   const poolFractionMount = $('libPoolFractionMount');
   const poolFraction = poolFractionMount
@@ -352,7 +386,7 @@ export function openProductFormSheet(opts) {
     return `
       <div class="lib-offer-row" data-offer-id="${escapeHtml(offerId)}" data-supplier-id="${escapeHtml(row.supplier_id || '')}">
         <div class="lib-offer-sup-mount"></div>
-        <input type="text" inputmode="decimal" autocomplete="off" class="admin-input lib-offer-price num-math" placeholder="Price £"
+        <input type="text" inputmode="decimal" autocomplete="off" class="admin-input lib-offer-price num-math" placeholder="£ / case"
           value="${priceVal !== '' ? escapeHtml(String(priceVal)) : ''}">
         <label class="lib-offer-pref" title="Preferred purchase option">
           <input type="radio" name="${escapeHtml(offerPrefName)}"${row.is_preferred ? ' checked' : ''}>
