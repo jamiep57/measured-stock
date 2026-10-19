@@ -256,4 +256,32 @@ describe('library column visibility', () => {
     libraryConfig.removeActiveItem(api, 'columns-hidden:keg_coupler');
     expect(api.getState().visibleColumns).toEqual(['name', 'abv', 'keg_coupler']);
   });
+
+  it('shows columns in a saved order and keeps that order when one is hidden', () => {
+    const columnOrder = [
+      'supplier',
+      ...LIBRARY_COLUMNS.map((col) => col.value).filter((id) => id !== 'supplier'),
+    ];
+    const api = apiFor({
+      ...libraryConfig.defaults(),
+      columnOrder,
+      visibleColumns: columnOrder,
+    });
+    expect(libraryConfig.toValues(api.getState()).visibleColumns.slice(0, 3)).toEqual([
+      'supplier', 'name', 'case_size',
+    ]);
+    const columns = libraryConfig.buildTabs(api).find((tab) => tab.id === 'columns');
+    columns.onChange('visibleColumns', columnOrder.filter((id) => id !== 'abv'));
+    const shown = libraryConfig.toValues(api.getState()).visibleColumns;
+    expect(shown[0]).toBe('supplier');
+    expect(shown).not.toContain('abv');
+    expect(api.getState().columnOrder[0]).toBe('supplier');
+    columns.onReset();
+    expect(libraryConfig.toValues(api.getState()).columnOrder).toEqual(
+      LIBRARY_COLUMNS.map((col) => col.value),
+    );
+    expect(libraryConfig.toValues(api.getState()).visibleColumns).toEqual(
+      LIBRARY_COLUMNS.map((col) => col.value),
+    );
+  });
 });

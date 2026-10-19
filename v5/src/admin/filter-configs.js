@@ -1200,13 +1200,69 @@ export const LIBRARY_COLUMNS = [
   { value: 'dispense_gas', label: 'Dispense gas' },
 ];
 
+/**
+ * Full column order. A saved list is kept; unknown ids are dropped and any
+ * new column is slotted beside the one it normally follows.
+ */
+export function reconcileLibraryColumnOrder(saved) {
+  const defaults = LIBRARY_COLUMNS.map((c) => c.value);
+  const allowed = new Set(defaults);
+  if (!Array.isArray(saved) || !saved.length) return defaults.slice();
+
+  const order = [];
+  const seen = new Set();
+  saved.forEach((id) => {
+    if (typeof id !== 'string' || !allowed.has(id) || seen.has(id)) return;
+    order.push(id);
+    seen.add(id);
+  });
+  if (!order.length) return defaults.slice();
+
+  defaults.forEach((id, index) => {
+    if (seen.has(id)) return;
+    let insertAt = null;
+    for (let j = index - 1; j >= 0; j -= 1) {
+      const at = order.indexOf(defaults[j]);
+      if (at !== -1) {
+        insertAt = at + 1;
+        break;
+      }
+    }
+    if (insertAt == null) {
+      insertAt = order.length;
+      for (let j = index + 1; j < defaults.length; j += 1) {
+        const at = order.indexOf(defaults[j]);
+        if (at !== -1) {
+          insertAt = at;
+          break;
+        }
+      }
+    }
+    order.splice(insertAt, 0, id);
+    seen.add(id);
+  });
+  return order;
+}
+
+/** Move one column to sit immediately before or after another. */
+export function moveLibraryColumn(order, fromId, toId, place) {
+  if (!fromId || !toId || fromId === toId) return order.slice();
+  if (place !== 'before' && place !== 'after') return order.slice();
+  if (!order.includes(fromId) || !order.includes(toId)) return order.slice();
+  const next = order.filter((id) => id !== fromId);
+  let index = next.indexOf(toId);
+  if (place === 'after') index += 1;
+  next.splice(index, 0, fromId);
+  return next;
+}
+
 /** Shown columns, in table order. Product stays on. Missing state means all of them. */
 export function libraryVisibleColumns(state) {
-  const all = LIBRARY_COLUMNS.map((c) => c.value);
+  const order = reconcileLibraryColumnOrder(state?.columnOrder);
   const locked = LIBRARY_COLUMNS.filter((c) => c.locked).map((c) => c.value);
-  if (!Array.isArray(state?.visibleColumns)) return all;
+  if (!Array.isArray(state?.visibleColumns)) return order;
   const shown = new Set([...locked, ...state.visibleColumns]);
-  return all.filter((id) => shown.has(id));
+  return order.filter((id) => shown.has(id));
 }
 
 const libraryBase = viewConfig({
@@ -1218,7 +1274,7 @@ const libraryBase = viewConfig({
     sortDir: 'asc',
     visibleColumns: LIBRARY_COLUMNS.map((c) => c.value),
   }),
-  persist: { keys: ['sort', 'sortDir', 'visibleColumns'], storageKey: 'v5LibraryTableFilter' },
+  persist: { keys: ['sort', 'sortDir', 'visibleColumns', 'columnOrder'], storageKey: 'v5LibraryTableFilter' },
   buildFilterSections(_state, context) {
     const sections = [];
     if (context.categories?.length) {
@@ -1271,6 +1327,7 @@ const libraryBase = viewConfig({
       sortKey: state.sort || 'name',
       sortDir: state.sortDir || 'asc',
       visibleColumns: libraryVisibleColumns(state),
+      columnOrder: reconcileLibraryColumnOrder(state.columnOrder),
     };
   },
 });
@@ -1310,6 +1367,7 @@ export const libraryConfig = {
         api.setState({
           ...api.getState(),
           visibleColumns: LIBRARY_COLUMNS.map((c) => c.value),
+          columnOrder: LIBRARY_COLUMNS.map((c) => c.value),
         });
         api.syncUi();
         api.emit();

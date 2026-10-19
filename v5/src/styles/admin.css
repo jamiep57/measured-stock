@@ -4056,6 +4056,19 @@ body.admin-drawer-open {
 .lib-table thead th.lib-sort-active {
   color: var(--foreground);
 }
+.lib-table thead th.lib-th--move {
+  cursor: grab;
+  touch-action: none;
+}
+.lib-table.lib-col-dragging,
+.lib-table.lib-col-dragging thead,
+.lib-table.lib-col-dragging thead * {
+  cursor: grabbing;
+  user-select: none;
+}
+.lib-table thead th.lib-th--dragging { opacity: 0.4; }
+.lib-table thead th.lib-th--drop-before { box-shadow: inset 3px 0 0 var(--foreground); }
+.lib-table thead th.lib-th--drop-after { box-shadow: inset -3px 0 0 var(--foreground); }
 .lib-table tbody td {
   padding: 10px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);

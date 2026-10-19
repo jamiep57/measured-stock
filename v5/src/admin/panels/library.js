@@ -10,7 +10,7 @@ import {
 import { productStockPack } from '../../pack-metrics.js';
 import { formatAbv } from '../../lib/menu-exports.js';
 import { palletQtyOf, KEG_COUPLER_TYPES, DISPENSE_GAS_TYPES } from '../../lib/product-attributes.js';
-import { LIBRARY_COLUMNS } from '../filter-configs.js';
+import { LIBRARY_COLUMNS, moveLibraryColumn, reconcileLibraryColumnOrder } from '../filter-configs.js';
 import { productSupplierSearchText } from '../../components/product-search.js';
 import { skeletonTableRows } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
@@ -118,13 +118,28 @@ function productHaystack(p, caseSizes) {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
-function columnHeaderHtml() {
-  return LIBRARY_COLUMNS.map((col) => `
-    <th class="${col.numeric ? 'lib-num' : ''}" data-col="${col.value}" data-sort="${col.value}">${escapeHtml(col.label)}</th>`).join('');
+function columnsFor(order, shown) {
+  const byId = new Map(LIBRARY_COLUMNS.map((col) => [col.value, col]));
+  const allow = Array.isArray(shown) ? new Set(shown) : null;
+  const cols = [];
+  const seen = new Set();
+  reconcileLibraryColumnOrder(order).forEach((id) => {
+    if (seen.has(id) || (allow && !allow.has(id))) return;
+    const col = byId.get(id);
+    if (!col) return;
+    seen.add(id);
+    cols.push(col);
+  });
+  return cols;
 }
 
-function columnCellHtml(p, caseSizes, parts) {
-  return LIBRARY_COLUMNS.map((col) => {
+function columnHeaderHtml(order, shown) {
+  return columnsFor(order, shown).map((col) => `
+    <th class="lib-th--move${col.numeric ? ' lib-num' : ''}" data-col="${col.value}" data-sort="${col.value}" title="Drag to reorder. Click to sort.">${escapeHtml(col.label)}</th>`).join('');
+}
+
+function columnCellHtml(p, caseSizes, parts, order, shown) {
+  return columnsFor(order, shown).map((col) => {
     const cls = col.numeric ? ' class="lib-num"' : '';
     return `<td${cls} data-col="${col.value}">${columnCellValue(col.value, p, caseSizes, parts)}</td>`;
   }).join('');
@@ -232,7 +247,7 @@ function renderShell() {
     </div>`;
 }
 
-function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected) {
+function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected, order, shown) {
   const sorted = rows.slice().sort((a, b) => {
     const av = sortValue(a, sortKey, caseSizes);
     const bv = sortValue(b, sortKey, caseSizes);
@@ -262,7 +277,7 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
           ${mergeMode ? `<input type="checkbox" class="lib-sel-check" data-sel="${escapeHtml(p.id)}"
             ${isSel ? 'checked' : ''} aria-label="Select ${escapeHtml(p.name || 'product')}">` : ''}
         </td>
-        ${columnCellHtml(p, caseSizes, { packLabel, countAs, auto, menuMeta, skuMeta })}
+        ${columnCellHtml(p, caseSizes, { packLabel, countAs, auto, menuMeta, skuMeta }, order, shown)}
       </tr>`;
   }).join('');
 }
@@ -285,6 +300,7 @@ export function mountLibraryPanel() {
   let sortKey = 'name';
   let sortDir = 1;
   let visibleColumns = LIBRARY_COLUMNS.map((c) => c.value);
+  let columnOrder = reconcileLibraryColumnOrder(null);
   let filterCat = '';
   let filterSup = '';
   let filterSupIds = [];
@@ -302,6 +318,7 @@ export function mountLibraryPanel() {
     sortKey = seeded.sortKey || 'name';
     sortDir = seeded.sortDir === 'desc' ? -1 : 1;
     if (Array.isArray(seeded.visibleColumns)) visibleColumns = seeded.visibleColumns;
+    if (Array.isArray(seeded.columnOrder)) columnOrder = reconcileLibraryColumnOrder(seeded.columnOrder);
   }
 
   let mergeChosen = [];
@@ -376,8 +393,17 @@ export function mountLibraryPanel() {
     paintTable();
   }
 
+  function paintHead() {
+    const row = tableEl?.querySelector('thead tr');
+    if (!row) return;
+    const sel = row.querySelector('.lib-sel-col');
+    const selHtml = sel ? sel.outerHTML : '<th class="lib-sel-col" aria-label="Select"></th>';
+    row.innerHTML = `${selHtml}${columnHeaderHtml(columnOrder, visibleColumns)}`;
+  }
+
   function paintTable() {
     const rows = filteredProducts();
+    paintHead();
     if (countEl) {
       countEl.textContent = `${rows.length} of ${products.length} product${products.length !== 1 ? 's' : ''}`;
     }
@@ -388,7 +414,9 @@ export function mountLibraryPanel() {
     } else {
       if (emptyEl) emptyEl.hidden = true;
       if (tableEl) tableEl.hidden = false;
-      bodyEl.innerHTML = renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected);
+      bodyEl.innerHTML = renderTableRows(
+        rows, caseSizes, sortKey, sortDir, mergeMode, selected, columnOrder, visibleColumns,
+      );
       bodyEl.querySelectorAll('tr[data-pid]').forEach((tr) => {
         tr.onclick = (e) => {
           if (e.target.closest('input, button, a, label')) return;
@@ -434,6 +462,7 @@ export function mountLibraryPanel() {
     sortKey = values.sortKey || 'name';
     sortDir = values.sortDir === 'desc' ? -1 : 1;
     if (Array.isArray(values.visibleColumns)) visibleColumns = values.visibleColumns;
+    if (Array.isArray(values.columnOrder)) columnOrder = reconcileLibraryColumnOrder(values.columnOrder);
   }
 
   function openProductForm(editId) {
@@ -599,7 +628,124 @@ export function mountLibraryPanel() {
     paintTable();
   }
 
+  let colDrag = null;
+  let suppressHeaderClick = false;
+
+  function clearColumnDragMarks() {
+    tableEl?.querySelectorAll('.lib-th--drop-before, .lib-th--drop-after, .lib-th--dragging').forEach((el) => {
+      el.classList.remove('lib-th--drop-before', 'lib-th--drop-after', 'lib-th--dragging');
+    });
+  }
+
+  function headerAt(clientX, clientY) {
+    const wrap = tableEl?.closest('.lib-table-wrap');
+    if (!wrap) return null;
+    const rect = wrap.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+    const headers = [...tableEl.querySelectorAll('thead th[data-col]')];
+    return headers.find((thEl) => {
+      const box = thEl.getBoundingClientRect();
+      return clientX >= box.left && clientX <= box.right;
+    }) || null;
+  }
+
+  function markColumnDrop(clientX, clientY) {
+    tableEl?.querySelectorAll('.lib-th--drop-before, .lib-th--drop-after').forEach((el) => {
+      el.classList.remove('lib-th--drop-before', 'lib-th--drop-after');
+    });
+    colDrag.overId = null;
+    colDrag.place = null;
+    const hit = headerAt(clientX, clientY);
+    if (!hit || hit.dataset.col === colDrag.id) return;
+    const box = hit.getBoundingClientRect();
+    const after = clientX > box.left + box.width / 2;
+    hit.classList.add(after ? 'lib-th--drop-after' : 'lib-th--drop-before');
+    colDrag.overId = hit.dataset.col;
+    colDrag.place = after ? 'after' : 'before';
+  }
+
+  function applyColumnMove(fromId, toId, place) {
+    const order = reconcileLibraryColumnOrder(columnOrder);
+    const next = moveLibraryColumn(order, fromId, toId, place);
+    if (next.length === order.length && next.every((id, i) => id === order[i])) return;
+    columnOrder = next;
+    paintTable();
+    patchTableFilterState('library', { columnOrder: next });
+  }
+
+  function onColPointerDown(e) {
+    if (e.button !== 0) return;
+    const thEl = e.target.closest('thead th[data-col]');
+    if (!thEl || !tableEl?.contains(thEl)) return;
+    colDrag = {
+      id: thEl.dataset.col,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      x: e.clientX,
+      y: e.clientY,
+      active: false,
+      th: thEl,
+      overId: null,
+      place: null,
+      raf: 0,
+    };
+  }
+
+  function onColPointerMove(e) {
+    if (!colDrag || e.pointerId !== colDrag.pointerId) return;
+    colDrag.x = e.clientX;
+    colDrag.y = e.clientY;
+    if (!colDrag.active) {
+      const dx = e.clientX - colDrag.startX;
+      const dy = e.clientY - colDrag.startY;
+      if (dx * dx + dy * dy < 25) return;
+      colDrag.active = true;
+      colDrag.th.classList.add('lib-th--dragging');
+      tableEl.classList.add('lib-col-dragging');
+      try { colDrag.th.setPointerCapture(e.pointerId); } catch { /* already released */ }
+      const step = () => {
+        if (!colDrag?.active) return;
+        const wrap = tableEl.closest('.lib-table-wrap');
+        if (wrap) {
+          const rect = wrap.getBoundingClientRect();
+          if (colDrag.x < rect.left + 48) wrap.scrollLeft -= 14;
+          else if (colDrag.x > rect.right - 48) wrap.scrollLeft += 14;
+        }
+        markColumnDrop(colDrag.x, colDrag.y);
+        colDrag.raf = requestAnimationFrame(step);
+      };
+      colDrag.raf = requestAnimationFrame(step);
+    }
+    markColumnDrop(colDrag.x, colDrag.y);
+    e.preventDefault();
+  }
+
+  function endColDrag(e) {
+    if (!colDrag || e.pointerId !== colDrag.pointerId) return;
+    colDrag.x = e.clientX;
+    colDrag.y = e.clientY;
+    if (colDrag.active) markColumnDrop(colDrag.x, colDrag.y);
+    const drag = colDrag;
+    colDrag = null;
+    if (drag.raf) cancelAnimationFrame(drag.raf);
+    tableEl?.classList.remove('lib-col-dragging');
+    try { drag.th.releasePointerCapture(drag.pointerId); } catch { /* not captured */ }
+    clearColumnDragMarks();
+    if (!drag.active) return;
+    suppressHeaderClick = true;
+    setTimeout(() => { suppressHeaderClick = false; }, 400);
+    if (e.type === 'pointercancel' || !drag.overId || !drag.place) return;
+    applyColumnMove(drag.id, drag.overId, drag.place);
+  }
+
+  tableEl?.addEventListener('pointerdown', onColPointerDown);
+  document.addEventListener('pointermove', onColPointerMove);
+  document.addEventListener('pointerup', endColDrag);
+  document.addEventListener('pointercancel', endColDrag);
+
   tableEl?.querySelector('thead')?.addEventListener('click', (e) => {
+    if (suppressHeaderClick) return;
     const th = e.target.closest('th[data-sort]');
     if (!th) return;
     const key = th.dataset.sort;
@@ -677,8 +823,15 @@ export function mountLibraryPanel() {
     bindEmptyRetry(bodyEl, () => refresh());
   });
 
+  paintHead();
+
   return () => {
+    if (colDrag?.raf) cancelAnimationFrame(colDrag.raf);
     setTopbarToolbarStrips(null);
+    tableEl?.removeEventListener('pointerdown', onColPointerDown);
+    document.removeEventListener('pointermove', onColPointerMove);
+    document.removeEventListener('pointerup', endColDrag);
+    document.removeEventListener('pointercancel', endColDrag);
     document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbarAction);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
