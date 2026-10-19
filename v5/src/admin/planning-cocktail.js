@@ -108,8 +108,9 @@ function readNumber(input, { max, required } = {}) {
  * }} opts
  */
 function sheetTitle(draft) {
+  if (!draft.id) return 'Recipe builder';
   const label = drinkKindMeta(draft.drink_kind).label.toLowerCase();
-  return draft.id ? `Edit ${label}` : `New ${label}`;
+  return `Edit ${label}`;
 }
 
 export function openCocktailEditor(opts) {

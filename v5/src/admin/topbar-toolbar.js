@@ -68,16 +68,10 @@ export const PANEL_TOOLBAR = {
           title: 'Add a library product to this event menu',
         },
         {
-          id: 'plan-add-cocktail',
+          id: 'plan-recipe-builder',
           icon: 'martini',
-          label: 'Cocktail',
-          title: 'Create a cocktail sold as one drink, costed from its stock products',
-        },
-        {
-          id: 'plan-add-spirit-mixer',
-          icon: 'glass-water',
-          label: 'Spirit & mixer',
-          title: 'Spirit plus mixer, sold as one drink and costed from its stock products. Sits under Spirit & mixers.',
+          label: 'Recipe builder',
+          title: 'Build a cocktail or a spirit and mixer, sold as one drink and costed from its stock products',
         },
         {
           id: 'plan-add-scenario',

@@ -740,9 +740,9 @@ export function mountPlanningPanel(route) {
       panel.innerHTML = emptyState({
         iconHtml: icon('calculator', { size: 22 }),
         title: 'Plan this event’s menu',
-        copy: 'Add products and set prices here, or sell a cocktail or a spirit and mixer as one drink costed from its ingredients. Save the menu when you want to reuse it on another event.',
+        copy: 'Add products and set prices here, or build a recipe sold as one drink and costed from its ingredients. Save the menu when you want to reuse it on another event.',
         variant: 'admin',
-        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-add-product>Add product</button> <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-add-cocktail>Create cocktail</button> <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-add-spirit-mixer>Spirit & mixer</button>',
+        ctaHtml: '<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-add-product>Add product</button> <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-add-cocktail>Recipe builder</button>',
       });
       return;
     }
@@ -1480,11 +1480,7 @@ export function mountPlanningPanel(route) {
       return;
     }
     if (e.target.closest('[data-add-cocktail]')) {
-      openCocktail(null, { drinkKind: 'cocktail' });
-      return;
-    }
-    if (e.target.closest('[data-add-spirit-mixer]')) {
-      openCocktail(null, { drinkKind: 'spirit_mixer' });
+      openCocktail(null);
       return;
     }
     const edit = e.target.closest('[data-edit-cocktail]');
@@ -2089,8 +2085,7 @@ export function mountPlanningPanel(route) {
       'plan-save-menu': () => { void openSaveMenu(); },
       'plan-apply-menu': () => { void openApplyMenu(); },
       'plan-add-product': openAddProduct,
-      'plan-add-cocktail': () => openCocktail(null, { drinkKind: 'cocktail' }),
-      'plan-add-spirit-mixer': () => openCocktail(null, { drinkKind: 'spirit_mixer' }),
+      'plan-recipe-builder': () => openCocktail(null),
       'plan-add-scenario': openAddScenario,
       'plan-costs': toggleCostLock,
       'plan-export': () => {
