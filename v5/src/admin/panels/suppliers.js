@@ -16,6 +16,7 @@ import { confirmDialog } from '../../components/modal.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
+import { addressFromSupplier, formatAddress, normalisePostcode } from '../../lib/address.js';
 
 function fmtGbp(n) {
   if (n == null || !Number.isFinite(Number(n))) return '';
@@ -57,8 +58,10 @@ function roleContact(s, role) {
 
 function supplierSearchText(s) {
   const roles = ['account_manager', 'orders', 'accounts'].map((role) => roleContact(s, role));
+  const address = addressFromSupplier(s);
   return [
-    s.name, s.address, s.contact_name, s.email, s.phone,
+    s.name, formatAddress(address), s.contact_name, s.email, s.phone,
+    address.postcode,
     ...roles.flatMap((c) => [c.name, c.phone, c.email]),
   ].filter(Boolean).join(' ').toLowerCase();
 }
@@ -90,6 +93,28 @@ function contactCard(label, iconName, contact) {
       <header class="sup-contact-role">${icon(iconName, { size: 14 })}<span>${escapeHtml(label)}</span></header>
       ${body}
     </article>`;
+}
+
+function addressFormGroup() {
+  const field = (id, label, opts = {}) => `
+    <div class="admin-field">
+      <label class="admin-label" for="${id}">${label}</label>
+      <input class="admin-input" type="text" id="${id}" placeholder="${opts.placeholder || 'Optional'}" autocomplete="${opts.autocomplete || 'off'}"${opts.extra || ''}>
+    </div>`;
+  return `
+    <section class="sup-form-group">
+      <h3 class="sup-form-group-title">Address</h3>
+      ${field('supAddr1', 'Address line 1', { autocomplete: 'address-line1' })}
+      ${field('supAddr2', 'Address line 2', { autocomplete: 'address-line2' })}
+      <div class="admin-field-grid">
+        ${field('supAddrTown', 'Town', { autocomplete: 'address-level3' })}
+        ${field('supAddrCity', 'City', { autocomplete: 'address-level2' })}
+      </div>
+      <div class="admin-field-grid">
+        ${field('supAddrCounty', 'County', { autocomplete: 'address-level1' })}
+        ${field('supAddrPostcode', 'Postcode', { autocomplete: 'postal-code', placeholder: 'e.g. EX17 6DA', extra: ' autocapitalize="characters" spellcheck="false"' })}
+      </div>
+    </section>`;
 }
 
 function contactFormGroup(title, ids) {
@@ -267,7 +292,7 @@ function renderDetail(s, products) {
       </div>
       <div class="sup-address">
         <span class="catalog-ro-label">Address</span>
-        <span class="sup-address-value">${roValue(s.address)}</span>
+        <span class="sup-address-value">${roValue(formatAddress(addressFromSupplier(s)))}</span>
       </div>
       <div class="catalog-detail-section">
         <div class="sup-section-head">
@@ -369,9 +394,22 @@ export function mountSuppliersPanel() {
       contact_name: managerName,
       phone: managerPhone,
       email: managerEmail,
-      address: textOrNull('supAddress'),
+      address_line1: textOrNull('supAddr1'),
+      address_line2: textOrNull('supAddr2'),
+      town: textOrNull('supAddrTown'),
+      city: textOrNull('supAddrCity'),
+      county: textOrNull('supAddrCounty'),
+      postcode: normalisePostcode(textOrNull('supAddrPostcode') || '') || null,
       default_sor_pct: clampSor($('supSor')?.value),
     };
+    patch.address = formatAddress({
+      line1: patch.address_line1,
+      line2: patch.address_line2,
+      town: patch.town,
+      city: patch.city,
+      county: patch.county,
+      postcode: patch.postcode,
+    }) || null;
 
     const btn = $('supSave');
     btn.disabled = true;
@@ -433,10 +471,7 @@ export function mountSuppliersPanel() {
           ${contactFormGroup('Account manager', { name: 'supAmName', phone: 'supAmPhone', email: 'supAmEmail' })}
           ${contactFormGroup('Orders', { name: 'supOrdName', phone: 'supOrdPhone', email: 'supOrdEmail' })}
           ${contactFormGroup('Accounts', { name: 'supAccName', phone: 'supAccPhone', email: 'supAccEmail' })}
-          <div class="admin-field">
-            <label class="admin-label" for="supAddress">Address</label>
-            <textarea class="admin-textarea" id="supAddress" rows="3" placeholder="Optional"></textarea>
-          </div>
+          ${addressFormGroup()}
           <p class="wst-form-hint muted">SOR % is the default sale-or-return allowance for products from this supplier.</p>
         </div>`,
       footHtml: `
@@ -464,7 +499,13 @@ export function mountSuppliersPanel() {
       $('supAccName').value = accounts.name;
       $('supAccPhone').value = accounts.phone;
       $('supAccEmail').value = accounts.email;
-      $('supAddress').value = s.address || '';
+      const address = addressFromSupplier(s);
+      $('supAddr1').value = address.line1;
+      $('supAddr2').value = address.line2;
+      $('supAddrTown').value = address.town;
+      $('supAddrCity').value = address.city;
+      $('supAddrCounty').value = address.county;
+      $('supAddrPostcode').value = address.postcode;
     }
 
     $('supCancel').onclick = closeSheet;
