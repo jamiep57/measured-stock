@@ -6,6 +6,7 @@ let closeTimer = null;
 let lastFocus = null;
 let onKeyDown = null;
 let drawerToastObserver = null;
+let sheetGeneration = 0;
 
 function clearDrawerToastLift() {
   drawerToastObserver?.disconnect();
@@ -50,7 +51,8 @@ function focusables(root) {
   )].filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
 }
 
-function finishClose(sheet) {
+function finishClose(sheet, generation) {
+  if (generation != null && generation !== sheetGeneration) return;
   if (sheet.hidden) return;
   if (closeTimer) {
     clearTimeout(closeTimer);
@@ -83,6 +85,7 @@ function finishClose(sheet) {
 
 export function openSheet({ title, bodyHtml, footHtml, onClose, variant }) {
   const sheet = $('sheet');
+  sheetGeneration += 1;
   if (closeTimer) {
     clearTimeout(closeTimer);
     closeTimer = null;
@@ -146,18 +149,22 @@ export function openSheet({ title, bodyHtml, footHtml, onClose, variant }) {
 
 export function closeSheet() {
   const sheet = $('sheet');
+  const generation = sheetGeneration;
   if (isAnimatedDrawer(sheet) && sheet.classList.contains('sheet--visible')) {
     sheet.classList.remove('sheet--visible');
     const onEnd = (e) => {
       if (e.target !== sheet || e.propertyName !== 'transform') return;
       sheet.removeEventListener('transitionend', onEnd);
-      finishClose(sheet);
+      finishClose(sheet, generation);
     };
     sheet.addEventListener('transitionend', onEnd);
-    closeTimer = setTimeout(() => finishClose(sheet), 320);
+    closeTimer = setTimeout(() => {
+      sheet.removeEventListener('transitionend', onEnd);
+      finishClose(sheet, generation);
+    }, 320);
     return;
   }
-  finishClose(sheet);
+  finishClose(sheet, generation);
 }
 
 export function initSheet() {

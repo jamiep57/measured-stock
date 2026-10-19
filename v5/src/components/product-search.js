@@ -10,6 +10,7 @@
  *     allowCreate: false,
  *     categories: [],    // for create modal
  *     onCreateProduct,  // async ({ name, category_id, case_size_id, sku, abv }) => { productId, product }
+ *     onCreateRequest,  // (name) => void — open your own form instead of the short create modal
  *     onSelect({ productId, poolName, product }),
  *   })
  */
@@ -78,11 +79,14 @@ export function mountProductSearch(container, options = {}) {
     placeholder = 'Search products…',
     allowCreate = false,
     createContextLabel = 'this event',
+    query = '',
     dropdownFixed = false,
     onCreateProduct,
+    onCreateRequest,
     onSelect,
     onFilter,
   } = options;
+  const canOfferCreate = allowCreate && (onCreateProduct || onCreateRequest);
 
   let items = normaliseProducts(products);
   let poolItems = normalisePools(pools);
@@ -359,7 +363,7 @@ export function mountProductSearch(container, options = {}) {
     }).slice(0, 40);
 
     if (!filteredPools.length && !filteredProducts.length) {
-      if (allowCreate && onCreateProduct && q.trim()) {
+      if (canOfferCreate && q.trim()) {
         list.innerHTML = `
           <div class="product-search-empty">No products match “${escapeHtml(q.trim())}”</div>
           <button type="button" class="product-search-item product-search-create-trigger">
@@ -428,7 +432,14 @@ export function mountProductSearch(container, options = {}) {
     if (createBtn) {
       e.preventDefault();
       e.stopPropagation();
-      openCreateModal(input.value);
+      const typed = String(input.value || '').trim();
+      if (onCreateRequest) {
+        list.hidden = true;
+        resetListPosition();
+        onCreateRequest(typed);
+        return;
+      }
+      openCreateModal(typed);
       return;
     }
     const poolBtn = e.target.closest('[data-pool]');
@@ -457,6 +468,8 @@ export function mountProductSearch(container, options = {}) {
   } else if (value) {
     const sel = items.find((p) => p._productId === value);
     if (sel) input.value = sel.name;
+  } else if (query) {
+    input.value = query;
   }
   syncPackDisplay();
 

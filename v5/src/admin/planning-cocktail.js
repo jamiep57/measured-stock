@@ -68,11 +68,12 @@ function draftFrom(cocktail, categories) {
   };
   if (!cocktail?.id) {
     const name = base.name;
+    const follows = cocktail?.squareFollowsName !== false;
     return {
       ...base,
       id: null,
-      square_item_name: cocktail?.square_item_name || name,
-      squareFollowsName: true,
+      square_item_name: follows ? (cocktail?.square_item_name || name) : (cocktail?.square_item_name || ''),
+      squareFollowsName: follows,
     };
   }
   const name = cocktail.name || '';
@@ -121,7 +122,7 @@ function sheetTitle(draft) {
 }
 
 export function openCocktailEditor(opts) {
-  const { ctx, locked, nameTaken, squareTaken, onSaved, onDeleted, onCreateProduct } = opts;
+  const { ctx, locked, nameTaken, squareTaken, onSaved, onDeleted, onCreateRequest } = opts;
   const draft = draftFrom(opts.cocktail, ctx.categories);
   const dis = locked ? 'disabled' : '';
 
@@ -246,9 +247,22 @@ export function openCocktailEditor(opts) {
       categories: ctx.categories,
       caseSizes: ctx.caseSizes,
       placeholder: draft.ingredients.length ? 'Add another product…' : 'Search stock to add…',
-      allowCreate: !!onCreateProduct,
+      allowCreate: !!onCreateRequest,
       createContextLabel: 'this recipe',
-      onCreateProduct,
+      onCreateRequest: (name) => {
+        if (draft.ingredients.length >= MAX_COCKTAIL_INGREDIENTS) {
+          showErr(`A drink can use up to ${MAX_COCKTAIL_INGREDIENTS} products.`);
+          return;
+        }
+        draft.name = document.getElementById('cocktailName')?.value ?? draft.name;
+        draft.category = document.getElementById('cocktailCategory')?.value ?? draft.category;
+        draft.square_item_name = document.getElementById('cocktailSquare')?.value ?? draft.square_item_name;
+        draft.square_variation = document.getElementById('cocktailVariation')?.value ?? draft.square_variation;
+        onCreateRequest(name, {
+          ...draft,
+          ingredients: draft.ingredients.map((ing) => ({ ...ing })),
+        });
+      },
       onSelect: ({ productId }) => {
         if (!productId) return;
         if (draft.ingredients.some((ing) => ing.product_id === productId)) {

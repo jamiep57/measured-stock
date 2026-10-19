@@ -11,11 +11,12 @@ import { icon } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { emptyState, errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { reportError } from '../../lib/client-errors.js';
-import { getDB, loadCaseSizes, loadLibraryProducts, loadCategories, loadServeSizes } from '../../db.js';
+import { loadCaseSizes, loadLibraryProducts, loadCategories, loadServeSizes, loadSuppliers } from '../../db.js';
 import { can } from '../../lib/permissions.js';
 import { openModal, closeModal, confirmDialog } from '../../components/modal.js';
 import { openSheet, closeSheet } from '../../components/sheet.js';
 import { mountProductSearch, productSupplierSearchText } from '../../components/product-search.js';
+import { openProductFormSheet } from '../product-form-sheet.js';
 import { openMenuExportDialog } from '../planning-export.js';
 import { openCocktailEditor } from '../planning-cocktail.js';
 import {
@@ -90,29 +91,10 @@ import { closeServeSizeMenu, openServeSizeMenu } from '../serve-size-menu.js';
 
 const SAVE_DEBOUNCE_MS = 450;
 
-async function createLibraryProduct(ctx, { name, category_id, case_size_id, sku, abv }) {
-  const cs = (ctx.caseSizes || []).find((c) => c.id === case_size_id);
-  const category = (ctx.categories || []).find((c) => c.id === category_id);
-  const created = await getDB().products.create({
-    name: name.trim(),
-    category_id: category_id || null,
-    case_size_id: case_size_id || null,
-    case_size: cs?.label || null,
-    units_per_case: cs?.units_per_case ?? 1,
-    stock_unit: cs?.stock_unit || null,
-    sku: sku || null,
-    abv: abv != null ? abv : null,
-  });
-  if (!created?.id) throw new Error('Could not create that product');
-  const product = {
-    ...created,
-    category: category
-      ? { id: category.id, name: category.name, colour_key: category.colour_key }
-      : (created.category || null),
-  };
+function rememberLibraryProduct(ctx, product) {
+  if (!product?.id) return;
   ctx.productById.set(product.id, product);
   if (!ctx.products.some((p) => p.id === product.id)) ctx.products.push(product);
-  return { productId: product.id, product };
 }
 
 const NUMERIC_FIELDS = {
@@ -1607,19 +1589,59 @@ export function mountPlanningPanel(route) {
     else paint();
   }
 
+  async function openNewProductForm(name, { onCreated, onDismiss, onClosed } = {}) {
+    if (!can('stock.products_edit')) {
+      toast('You can’t change product information', true);
+      return;
+    }
+    if (!ctx.suppliers) {
+      try {
+        ctx.suppliers = await loadSuppliers();
+      } catch (err) {
+        toast(err.message || 'Could not load suppliers', true);
+        return;
+      }
+    }
+    openProductFormSheet({
+      initialName: name || '',
+      categories: ctx.categories,
+      suppliers: ctx.suppliers,
+      caseSizes: ctx.caseSizes,
+      onSaved: async ({ productId, product }) => {
+        rememberLibraryProduct(ctx, product);
+        if (onCreated) await onCreated(productId);
+      },
+      onClosed,
+      onDismiss,
+    });
+  }
+
   function openCocktail(id, extra = {}) {
     if (!ensureCocktails()) return;
     if (!id && locked()) { toast('Pricing is locked for this event', true); return; }
-    const cocktail = id ? ctx.cocktails.get(id) : (extra.seed || null);
+    const cocktail = extra.seed || (id ? ctx.cocktails.get(id) : null);
     if (id && !cocktail) return;
     const convertItemId = extra.convertItemId || null;
+    const reopen = (next) => openCocktail(next?.id || null, { ...extra, seed: next, convertItemId });
     openCocktailEditor({
       cocktail,
       drinkKind: extra.drinkKind,
       ctx,
       locked: locked(),
-      onCreateProduct: can('stock.products_edit')
-        ? (fields) => createLibraryProduct(ctx, fields)
+      onCreateRequest: can('stock.products_edit')
+        ? (name, snapshot) => {
+          let draft = snapshot;
+          void openNewProductForm(name, {
+            onCreated: (productId) => {
+              draft = {
+                ...draft,
+                ingredients: [...(draft.ingredients || []), { product_id: productId, measures: 1 }],
+              };
+            },
+            onClosed: () => reopen(draft),
+            onDismiss: () => reopen(draft),
+          });
+        }
         : null,
       nameTaken: (name, exceptId) => {
         const key = name.trim().toLowerCase();
@@ -1748,7 +1770,7 @@ export function mountPlanningPanel(route) {
     requestAnimationFrame(() => el.querySelector(needsCurrentName ? '#sizeCurrent' : '#sizeName')?.focus());
   }
 
-  function openAddProduct() {
+  function openAddProduct(prefill = '') {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
     openSheet({
       title: 'Add product to event menu',
@@ -1761,38 +1783,46 @@ export function mountPlanningPanel(route) {
       categories: ctx.categories,
       caseSizes: ctx.caseSizes,
       placeholder: 'Search library to add…',
+      query: prefill,
       allowCreate: can('stock.products_edit'),
       createContextLabel: 'this menu',
-      onCreateProduct: (fields) => createLibraryProduct(ctx, fields),
-      onSelect: async ({ productId }) => {
-        const existing = itemsForProduct(productId);
-        const onMenu = existing.filter((item) => item.included !== false);
-        if (onMenu.length) {
-          closeSheet();
-          openAddSize(baseMenuItem(onMenu));
-          return;
-        }
-        if (existing.length) {
-          closeSheet();
-          await Promise.all(existing.map((item) => setItemField(item.id, 'included', true, { immediate: true })));
-          showMenu();
-          toast(`${ctx.productById.get(productId)?.name || 'Product'} is back on the menu`);
-          return;
-        }
-        try {
-          const saved = await insertEventMenuItem(ctx.eventId, productId, { included: true });
-          if (!saved?.id) throw new Error('Could not add that product');
-          ctx.items.set(saved.id, saved);
-          lineFor(saved.id);
-          closeSheet();
-          paintGrid();
-          toast(`${ctx.productById.get(productId)?.name || 'Product'} added to menu`);
-        } catch (err) {
-          toast(err.message || 'Add failed', true);
-        }
+      onCreateRequest: (name) => {
+        void openNewProductForm(name, {
+          onCreated: (productId) => addSelectedProduct(productId),
+          onDismiss: () => openAddProduct(name),
+        });
       },
+      onSelect: async ({ productId }) => addSelectedProduct(productId),
     });
     $('planAddCancel').onclick = closeSheet;
+  }
+
+  async function addSelectedProduct(productId) {
+    const existing = itemsForProduct(productId);
+    const onMenu = existing.filter((item) => item.included !== false);
+    if (onMenu.length) {
+      closeSheet();
+      openAddSize(baseMenuItem(onMenu));
+      return;
+    }
+    if (existing.length) {
+      closeSheet();
+      await Promise.all(existing.map((item) => setItemField(item.id, 'included', true, { immediate: true })));
+      showMenu();
+      toast(`${ctx.productById.get(productId)?.name || 'Product'} is back on the menu`);
+      return;
+    }
+    try {
+      const saved = await insertEventMenuItem(ctx.eventId, productId, { included: true });
+      if (!saved?.id) throw new Error('Could not add that product');
+      ctx.items.set(saved.id, saved);
+      lineFor(saved.id);
+      closeSheet();
+      paintGrid();
+      toast(`${ctx.productById.get(productId)?.name || 'Product'} added to menu`);
+    } catch (err) {
+      toast(err.message || 'Add failed', true);
+    }
   }
 
   function openAddScenario() {

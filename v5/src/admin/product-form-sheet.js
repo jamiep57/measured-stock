@@ -99,7 +99,10 @@ function caseSizeSummary(cs) {
  * @param {object[]} opts.suppliers
  * @param {object[]} opts.caseSizes
  * @param {boolean} [opts.allowDelete]
+ * @param {string} [opts.initialName] — prefilled name when creating
  * @param {(result: { productId: string, created: boolean, product: object }) => void|Promise<void>} [opts.onSaved]
+ * @param {() => void} [opts.onDismiss] — sheet closed without saving
+ * @param {() => void} [opts.onClosed] — sheet finished closing after a save
  * @param {(productId: string) => void|Promise<void>} [opts.onDeleted]
  * @param {object|null} [opts.eventContext] — when set, also edits event cases ordered
  * @param {number|string|null} [opts.eventContext.qtyOrdered]
@@ -119,7 +122,10 @@ export function openProductFormSheet(opts) {
     suppliers: suppliersIn = [],
     caseSizes = [],
     allowDelete = false,
+    initialName = '',
     onSaved,
+    onDismiss,
+    onClosed,
     onDeleted,
     eventContext = null,
   } = opts || {};
@@ -171,9 +177,14 @@ export function openProductFormSheet(opts) {
     ? 'Remove from event'
     : (allowDelete && p ? 'Delete' : null);
 
+  let completed = false;
   openSheet({
     title: p ? 'Edit product' : 'New product',
     variant: 'admin-full',
+    onClose: () => {
+      const fn = completed ? onClosed : onDismiss;
+      if (fn) setTimeout(fn, 0);
+    },
     bodyHtml: `
       <div class="admin-drawer-form">
         <div class="del-form-err" id="libErr"></div>
@@ -260,6 +271,8 @@ export function openProductFormSheet(opts) {
     $('libPoolName').value = p.pool_name || '';
     $('libMenuName').value = p.menu_name || '';
     $('libPalletQty').value = p.pallet_qty != null ? String(p.pallet_qty) : '';
+  } else if (initialName) {
+    $('libName').value = initialName;
   }
 
   function syncPalletHint() {
@@ -708,6 +721,7 @@ export function openProductFormSheet(opts) {
         })),
       };
 
+      completed = true;
       closeSheet();
       if (onSaved) await onSaved({ productId, created, product: savedProduct, qtyOrdered });
       const eventNote = eventIdsToReprice.length
@@ -753,6 +767,10 @@ export function openProductFormSheet(opts) {
     $('epEditOrdered')?.focus();
     $('epEditOrdered')?.select();
   } else {
-    $('libName')?.focus();
+    requestAnimationFrame(() => {
+      const nameEl = $('libName');
+      nameEl?.focus();
+      if (initialName) nameEl?.select();
+    });
   }
 }
