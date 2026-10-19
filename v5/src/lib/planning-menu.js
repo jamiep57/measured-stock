@@ -6,6 +6,9 @@
  *               (this is the price of one inner unit: a can, bottle, or keg)
  *               A library price change updates the event only when someone
  *               confirms it. Until then the event keeps the copied price.
+ *   deal column Menu & GP shows the case price (unit price × units in the
+ *               case). A typed deal is divided back to the unit price
+ *               before it is stored.
  *   case price  the supplier case price. A stored unit price is used only
  *               when there is no case price. Never multiply the case price
  *               by the pack again — that turns a £7.28 case into £174.72.
@@ -88,6 +91,21 @@ export function resolveUnitCost(item, product, unitsPerCase, captured) {
   const live = liveUnitCost(product, unitsPerCase);
   if (live != null) return { unitCost: live, source: 'supplier' };
   return { unitCost: null, source: null };
+}
+
+/** Price of one case. A keg is one unit, so the case price is the keg price. */
+export function casePriceFromUnit(unitCost, unitsPerCase) {
+  const unit = num(unitCost);
+  if (unit == null) return null;
+  return unit * packUnits(null, unitsPerCase);
+}
+
+/** Price of one can, bottle or keg, from the price of one case. */
+export function unitPriceFromCase(casePrice, unitsPerCase) {
+  const price = num(casePrice);
+  if (price == null) return null;
+  const units = packUnits(null, unitsPerCase);
+  return price / units;
 }
 
 export function eventVatRate(year) {

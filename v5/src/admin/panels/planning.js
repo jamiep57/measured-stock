@@ -33,12 +33,14 @@ import { openSquareMenuSync } from '../square-menu-sync.js';
 import { ADMIN_TABLE_FILTER, getTableFilterValues, setTableFilterContext } from '../table-filter.js';
 import { formatGpPct, roundUpToStep } from '../../lib/gp.js';
 import {
+  casePriceFromUnit,
   menuTotals,
   formatPlanningPriceInput,
   parsePlanningNumber,
   resolveMenuLine,
   resolveUnitCost,
   scenarioGp,
+  unitPriceFromCase,
 } from '../../lib/planning-menu.js';
 import {
   movePlanningColumn,
@@ -367,7 +369,7 @@ export function mountPlanningPanel(route) {
     if (id === 'serves') return th(id, 'Target serves', 'Target serves for the event', 'plan-th--narrow');
     if (id === 'revenue') return th(id, 'Revenue', 'Projected revenue inc VAT');
     if (id === 'gp-amount') return th(id, 'GP £', 'Projected GP £ (ex VAT)');
-    if (id === 'deal') return th(id, 'Deal cost', 'Agreed price of one can, bottle or keg. Cost per serve is this times the units in the case, divided once by Serves');
+    if (id === 'deal') return th(id, 'Deal cost', 'Agreed price of one case. Cost per serve is this divided by Serves');
     if (id === 'deal-ref') return th(id, 'Deal ref', 'Deal or agreement reference', 'plan-th--ref');
     if (id.startsWith('scenario:')) {
       const s = ctx.scenarios.find((x) => scenarioColumnId(x.id) === id);
@@ -507,7 +509,8 @@ export function mountPlanningPanel(route) {
         line.unitsPerCase,
         ctx.eventPrices.get(line.productId) || null,
       );
-      return `<td class="plan-cell">${cellInput('unit_cost_override', item.unit_cost_override, { placeholder: basis.unitCost, label: 'Deal cost per unit', money: true })}</td>`;
+      const units = line.unitsPerCase;
+      return `<td class="plan-cell">${cellInput('unit_cost_override', casePriceFromUnit(item.unit_cost_override, units), { placeholder: casePriceFromUnit(basis.unitCost, units), label: 'Deal cost per case', money: true })}</td>`;
     }
     if (id === 'deal-ref') {
       return `<td class="plan-cell plan-cell--text">${cellInput('deal_ref', item.deal_ref, { text: true, placeholder: 'Ref', label: 'Deal reference' })}</td>`;
@@ -973,7 +976,7 @@ export function mountPlanningPanel(route) {
       const input = tr?.querySelector(`[data-field="${CSS.escape(field)}"]`);
       if (!input || document.activeElement === input) return;
       if (field === 'deal_ref') input.value = value || '';
-      else if (field === 'unit_cost_override') input.value = formatPlanningPriceInput(value);
+      else if (field === 'unit_cost_override') input.value = formatPlanningPriceInput(casePriceFromUnit(value, lineFor(row.id)?.unitsPerCase));
       else input.value = value == null ? '' : String(value);
     });
     const save = async () => {
@@ -1062,7 +1065,10 @@ export function mountPlanningPanel(route) {
     const ok = parsed.ok && !(spec.positive && parsed.value === 0);
     input.classList.toggle('is-invalid', !ok);
     if (!ok) return;
-    setItemField(itemId, field, parsed.value);
+    const value = field === 'unit_cost_override'
+      ? unitPriceFromCase(parsed.value, lineFor(itemId)?.unitsPerCase)
+      : parsed.value;
+    setItemField(itemId, field, value);
   }
 
   let colDrag = null;

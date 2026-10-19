@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveMenuLine, resolveUnitCost, menuTotals, scenarioGp, parsePlanningNumber,
-  formatPlanningPriceInput,
+  formatPlanningPriceInput, casePriceFromUnit, unitPriceFromCase,
 } from './planning-menu.js';
 
 describe('parsePlanningNumber', () => {
@@ -166,6 +166,20 @@ describe('Camden Pale Ale 24×330ml', () => {
   it('still divides the case price once when Serves is changed', () => {
     const line = resolveMenuLine({ product_id: 'camden', serves_per_unit: 12 }, ctx);
     expect(line.costPerServe).toBeCloseTo(33 / 12, 10);
+  });
+
+  it('shows the deal as the £33 case and stores a typed case as the can price', () => {
+    expect(casePriceFromUnit(1.375, 24)).toBe(33);
+    expect(formatPlanningPriceInput(casePriceFromUnit(7.28 / 24, 24))).toBe('7.28');
+    expect(casePriceFromUnit(117, 1)).toBe(117);
+    expect(unitPriceFromCase(null, 24)).toBeNull();
+    const line = resolveMenuLine(
+      { product_id: 'camden', unit_cost_override: unitPriceFromCase(30, 24) },
+      ctx,
+    );
+    expect(line.caseCost).toBeCloseTo(30, 10);
+    expect(line.costPerServe).toBeCloseTo(30 / 24, 10);
+    expect(casePriceFromUnit(line.unitCost, line.unitsPerCase)).toBeCloseTo(30, 10);
   });
 });
 
