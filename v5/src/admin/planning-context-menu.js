@@ -4,7 +4,6 @@
  */
 
 import { escapeHtml } from '../lib/util.js';
-import { drinkKindMeta } from '../lib/menu-cocktails.js';
 import { PLANNING_MARK_IDS } from '../lib/planning-marks.js';
 
 const COLUMN_LABELS = {
@@ -84,17 +83,16 @@ function hideMenuAction(kind, included, usedInDrink) {
     return {
       id: 'toggle-menu',
       label: 'Hide from menu',
-      note: 'Taken off the sold menu. It stays in the cocktail and is still ordered.',
+      note: 'Taken off the sold menu. It stays in the recipe and is still ordered.',
     };
   }
   return { id: 'toggle-menu', label: 'Hide from menu', note: 'It stays under Off menu.' };
 }
 
-export function planningContextActions({ kind, drinkKind, included, usedInDrink, colId, locked, hasRequired }) {
+export function planningContextActions({ kind, included, usedInDrink, colId, locked, hasRequired }) {
   const cell = [];
   const item = [];
   const editable = !locked && !!editablePlanningField(kind, colId);
-  const drink = drinkKindMeta(drinkKind).label.toLowerCase();
   if (!locked && hasRequired) {
     cell.push({ id: 'use-required', label: 'Use required price' });
   }
@@ -104,7 +102,7 @@ export function planningContextActions({ kind, drinkKind, included, usedInDrink,
   if (editable) cell.push({ id: 'clear', label: 'Clear cell' });
 
   if (kind === 'cocktail') {
-    item.push({ id: 'edit-cocktail', label: `Edit ${drink}`, note: 'Recipe, price and section' });
+    item.push({ id: 'edit-cocktail', label: 'Edit recipe', note: 'Ingredients, price and category' });
   } else if (!locked) {
     item.push({
       id: 'add-size',
@@ -112,20 +110,15 @@ export function planningContextActions({ kind, drinkKind, included, usedInDrink,
       note: 'Same product, its own price. A half is 0.5 of one serve.',
     });
     item.push({
-      id: 'make-cocktail',
-      label: 'Make into cocktail',
-      note: 'One measure of this product. This line comes off the menu.',
-    });
-    item.push({
-      id: 'make-spirit-mixer',
-      label: 'Make into spirit & mixer',
-      note: 'Spirit plus what it’s mixed with. This line comes off the menu.',
+      id: 'make-recipe',
+      label: 'Make into recipe',
+      note: 'Sold as one drink, costed from this product. This line comes off the menu.',
     });
   }
   if (!locked) {
     item.push(hideMenuAction(kind, included, usedInDrink));
     if (kind === 'cocktail') {
-      item.push({ id: 'delete-cocktail', label: `Delete ${drink}`, danger: true, note: 'Removes the recipe from this event.' });
+      item.push({ id: 'delete-cocktail', label: 'Delete recipe', danger: true, note: 'Removes the recipe from this event.' });
     }
   }
   return { cell, item };

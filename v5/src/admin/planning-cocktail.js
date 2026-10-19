@@ -1,7 +1,7 @@
 /**
  * Create / edit a recipe drink from Menu & GP.
- * A cocktail and a spirit & mixer share one selling price. Cost is the stock
- * measures added together. The section they sit in is chosen in the editor.
+ * One selling price. Cost is the stock measures added together.
+ * The recipe sits in the menu category chosen here.
  */
 
 import { escapeHtml, toast } from '../lib/util.js';
@@ -10,7 +10,14 @@ import { openSheet, closeSheet } from '../components/sheet.js';
 import { confirmDialog } from '../components/modal.js';
 import { mountProductSearch } from '../components/product-search.js';
 import { parsePlanningNumber } from '../lib/planning-menu.js';
-import { drinkKindMeta, drinkKindOf, MAX_COCKTAIL_INGREDIENTS, resolveCocktailLine } from '../lib/menu-cocktails.js';
+import {
+  MAX_COCKTAIL_INGREDIENTS,
+  matchRecipeCategory,
+  recipeCategory,
+  recipeCategoryChoices,
+  recipeDrinkKind,
+  resolveCocktailLine,
+} from '../lib/menu-cocktails.js';
 import {
   createEventCocktail,
   deleteEventCocktail,
@@ -41,49 +48,51 @@ function pourWarning(part) {
   return 'Costed as one serve for the whole unit. Set Serves on that product if a bottle or keg pours more than once.';
 }
 
-function draftFrom(cocktail, drinkKind) {
-  const kind = drinkKindOf(cocktail?.drink_kind || drinkKind);
-  if (!cocktail) {
+const RECIPE_LEAD = 'Sold as one drink in the category you choose. The cost is the stock products below added together — one measure is one serve of that product. A double is 2.';
+const RECIPE_EMPTY = 'Add the stock products in this drink.';
+
+function draftFrom(cocktail, categories) {
+  const category = matchRecipeCategory(recipeCategory(cocktail), categories);
+  const base = {
+    category,
+    name: cocktail?.name || '',
+    serve_label: cocktail?.serve_label || '',
+    square_variation: cocktail?.square_variation || '',
+    menu_price: cocktail?.menu_price ?? null,
+    target_gp_pct: cocktail?.target_gp_pct ?? null,
+    projected_serves: cocktail?.projected_serves ?? null,
+    ingredients: (cocktail?.ingredients || []).map((ing) => ({
+      product_id: ing.product_id,
+      measures: ing.measures,
+    })),
+  };
+  if (!cocktail?.id) {
+    const name = base.name;
     return {
+      ...base,
       id: null,
-      drink_kind: kind,
-      name: '',
-      serve_label: '',
-      square_item_name: '',
-      square_variation: '',
+      square_item_name: cocktail?.square_item_name || name,
       squareFollowsName: true,
-      menu_price: null,
-      target_gp_pct: null,
-      projected_serves: null,
-      ingredients: [],
     };
   }
   const name = cocktail.name || '';
   const square = cocktail.square_item_name || '';
   return {
+    ...base,
     id: cocktail.id,
-    drink_kind: kind,
     name,
-    serve_label: cocktail.serve_label || '',
     square_item_name: square,
-    square_variation: cocktail.square_variation || '',
     squareFollowsName: !!square.trim() && square.trim().toLowerCase() === name.trim().toLowerCase(),
-    menu_price: cocktail.menu_price ?? null,
-    target_gp_pct: cocktail.target_gp_pct ?? null,
-    projected_serves: cocktail.projected_serves ?? null,
-    ingredients: (cocktail.ingredients || []).map((ing) => ({
-      product_id: ing.product_id,
-      measures: ing.measures,
-    })),
   };
 }
 
-function kindOption(id, checked, disabled) {
-  const meta = drinkKindMeta(id);
-  return `<label class="plan-drink-kind-opt${checked ? ' is-selected' : ''}">
-    <input type="radio" name="drinkKind" value="${id}" ${checked ? 'checked' : ''} ${disabled}>
-    <span><strong>${escapeHtml(meta.label)}</strong><small>Sits under ${escapeHtml(meta.category)}</small></span>
-  </label>`;
+function categoryField(categories, current, disabled) {
+  const options = recipeCategoryChoices(categories, current).map((name) => {
+    const selected = name === current ? ' selected' : '';
+    return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
+  }).join('');
+  return `<label class="admin-field"><span class="admin-label">Category</span>
+    <select class="admin-select" id="cocktailCategory" ${disabled}>${options}</select></label>`;
 }
 
 function readNumber(input, { max, required } = {}) {
@@ -108,29 +117,23 @@ function readNumber(input, { max, required } = {}) {
  * }} opts
  */
 function sheetTitle(draft) {
-  if (!draft.id) return 'Recipe builder';
-  const label = drinkKindMeta(draft.drink_kind).label.toLowerCase();
-  return `Edit ${label}`;
+  return draft.id ? 'Edit recipe' : 'Recipe builder';
 }
 
 export function openCocktailEditor(opts) {
   const { ctx, locked, nameTaken, squareTaken, onSaved, onDeleted } = opts;
-  const draft = draftFrom(opts.cocktail, opts.drinkKind);
+  const draft = draftFrom(opts.cocktail, ctx.categories);
   const dis = locked ? 'disabled' : '';
-  const meta = () => drinkKindMeta(draft.drink_kind);
 
   openSheet({
     title: sheetTitle(draft),
     variant: 'admin-full',
     bodyHtml: `
-      <p class="muted plan-sheet-lead" id="cocktailLead">${escapeHtml(meta().lead)}</p>
+      <p class="muted plan-sheet-lead" id="cocktailLead">${escapeHtml(RECIPE_LEAD)}</p>
       <div class="admin-drawer-form">
-        <div class="plan-drink-kind" role="radiogroup" aria-label="Menu section">
-          ${kindOption('cocktail', draft.drink_kind === 'cocktail', dis)}
-          ${kindOption('spirit_mixer', draft.drink_kind === 'spirit_mixer', dis)}
-        </div>
+        ${categoryField(ctx.categories, draft.category, dis)}
         <label class="admin-field"><span class="admin-label">Name</span>
-          <input class="admin-input" id="cocktailName" maxlength="80" value="${escapeHtml(draft.name)}" placeholder="${escapeHtml(meta().namePlaceholder)}" ${dis}></label>
+          <input class="admin-input" id="cocktailName" maxlength="80" value="${escapeHtml(draft.name)}" placeholder="e.g. Margarita" ${dis}></label>
         <div class="plan-form-row">
           <label class="admin-field"><span class="admin-label">Square item</span>
             <input class="admin-input" id="cocktailSquare" maxlength="200" value="${escapeHtml(draft.square_item_name)}" placeholder="Till name, if different" ${dis}></label>
@@ -175,8 +178,9 @@ export function openCocktailEditor(opts) {
   function lineNow() {
     return resolveCocktailLine({
       id: draft.id,
-      name: draft.name || meta().label,
-      drink_kind: draft.drink_kind,
+      name: draft.name || 'Recipe',
+      category: draft.category,
+      drink_kind: recipeDrinkKind(draft.category),
       included: true,
       menu_price: draft.menu_price,
       target_gp_pct: draft.target_gp_pct,
@@ -188,7 +192,7 @@ export function openCocktailEditor(opts) {
   function paintSummary() {
     const line = lineNow();
     if (!draft.ingredients.length) {
-      summaryEl.innerHTML = `<p class="muted">${escapeHtml(meta().emptyIngredients)}</p>`;
+      summaryEl.innerHTML = `<p class="muted">${escapeHtml(RECIPE_EMPTY)}</p>`;
       return;
     }
     if (line.costPerServe == null) {
@@ -197,7 +201,7 @@ export function openCocktailEditor(opts) {
     }
     const gp = line.menuPrice == null ? 'Set a menu price to see GP' : `GP ${formatGpPct(line.gpPct)}`;
     const required = line.requiredPrice != null ? ` · required ${money(line.requiredPrice)}` : '';
-    summaryEl.innerHTML = `<p><strong>${money(line.costPerServe)}</strong> cost per ${escapeHtml(meta().costNoun)} · ${gp}${required}</p>`;
+    summaryEl.innerHTML = `<p><strong>${money(line.costPerServe)}</strong> cost per drink · ${gp}${required}</p>`;
   }
 
   function paintIngs() {
@@ -331,21 +335,8 @@ export function openCocktailEditor(opts) {
       },
     });
   });
-  document.querySelectorAll('input[name="drinkKind"]').forEach((input) => {
-    input.addEventListener('change', () => {
-      if (!input.checked || locked) return;
-      draft.drink_kind = drinkKindOf(input.value);
-      document.querySelectorAll('.plan-drink-kind-opt').forEach((opt) => {
-        opt.classList.toggle('is-selected', !!opt.querySelector('input[name="drinkKind"]')?.checked);
-      });
-      const title = document.getElementById('sheetTitle');
-      if (title) title.textContent = sheetTitle(draft);
-      const lead = document.getElementById('cocktailLead');
-      if (lead) lead.textContent = meta().lead;
-      const name = document.getElementById('cocktailName');
-      if (name) name.placeholder = meta().namePlaceholder;
-      paintSummary();
-    });
+  document.getElementById('cocktailCategory').addEventListener('change', (e) => {
+    draft.category = e.target.value;
   });
 
   document.getElementById('cocktailCancel').onclick = () => { closeServeSizeMenu(); closeSheet(); };
@@ -353,7 +344,7 @@ export function openCocktailEditor(opts) {
   if (deleteBtn) {
     deleteBtn.onclick = async () => {
       const ok = await confirmDialog({
-        title: `Delete ${meta().label.toLowerCase()}`,
+        title: 'Delete recipe',
         message: `Remove “${draft.name || 'this drink'}” from this event’s menu? The stock products stay in the library.`,
         confirmLabel: 'Delete',
       });
@@ -362,7 +353,7 @@ export function openCocktailEditor(opts) {
         await deleteEventCocktail(draft.id);
         closeSheet();
         onDeleted(draft.id);
-        toast(`${meta().label} removed`);
+        toast('Recipe removed');
       } catch (err) {
         showErr(err.message || 'Could not delete this drink');
       }
@@ -372,11 +363,15 @@ export function openCocktailEditor(opts) {
   document.getElementById('cocktailSave').onclick = async () => {
     closeServeSizeMenu();
     draft.name = document.getElementById('cocktailName').value;
+    draft.category = document.getElementById('cocktailCategory').value.trim();
     const name = draft.name.trim();
+    const category = draft.category;
     const square = (draft.squareFollowsName
       ? name
       : document.getElementById('cocktailSquare').value).trim();
     const variation = document.getElementById('cocktailVariation').value.trim();
+    if (!category) { showErr('Choose a category'); return; }
+    if (category.length > 80) { showErr('Category must be 80 characters or fewer'); return; }
     if (!name) { showErr('Name is required'); return; }
     if (name.length > 80) { showErr('Name must be 80 characters or fewer'); return; }
     if (square.length > 200) { showErr('Square item must be 200 characters or fewer'); return; }
@@ -403,7 +398,8 @@ export function openCocktailEditor(opts) {
     if (!price || !target || !projected) { showErr('Check the price, target and projected serves'); return; }
     const fields = {
       name,
-      drink_kind: drinkKindOf(draft.drink_kind),
+      category,
+      drink_kind: recipeDrinkKind(category),
       serve_label: draft.serve_label.trim() || null,
       square_item_name: square || null,
       square_variation: variation || null,
@@ -424,7 +420,7 @@ export function openCocktailEditor(opts) {
       }
       closeSheet();
       onSaved(saved);
-      if (!opts.quiet) toast(draft.id ? `${meta().label} saved` : `${name} added to the menu`);
+      if (!opts.quiet) toast(draft.id ? 'Recipe saved' : `${name} added to the menu`);
     } catch (err) {
       btn.disabled = false;
       const msg = String(err?.message || '');

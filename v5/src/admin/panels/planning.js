@@ -45,7 +45,7 @@ import {
   scenarioColumnId,
   writePlanningColumnOrder,
 } from '../../lib/planning-columns.js';
-import { cocktailLineKey, drinkKindMeta, resolveCocktailLine } from '../../lib/menu-cocktails.js';
+import { cocktailLineKey, resolveCocktailLine } from '../../lib/menu-cocktails.js';
 import { serveSizeOf } from '../../lib/menu-exports.js';
 import {
   PLANNING_MARK_IDS,
@@ -616,7 +616,7 @@ export function mountPlanningPanel(route) {
         <div class="plan-item">
           <button type="button" class="plan-cocktail-open" data-edit-cocktail="${escapeHtml(line.cocktailId)}">
             <span class="dist-item-name" title="${escapeHtml(line.name)}">${escapeHtml(line.name)}</span>
-            <span class="dist-item-meta">${escapeHtml(drinkKindMeta(line.drinkKind).label)}</span>
+            <span class="dist-item-meta">Recipe</span>
             ${serve}
           </button>
           ${rowMenuButton(line.name)}
@@ -1262,18 +1262,18 @@ export function mountPlanningPanel(route) {
     else setItemField(line.itemId, field, null);
   }
 
-  function makeCocktailFromProduct(itemId, drinkKind) {
+  function makeCocktailFromProduct(itemId) {
     if (!ensureCocktails()) return;
     if (locked()) { toast('Pricing is locked for this event', true); return; }
     const item = ctx.items.get(itemId);
     const line = lineFor(itemId);
     if (!item || !line) return;
-    const name = (line.menuName || line.name || drinkKindMeta(drinkKind).label).trim().slice(0, 80);
+    const name = (line.menuName || line.name || 'Recipe').trim().slice(0, 80);
+    const category = String(line.category || '').trim();
     openCocktail(null, {
-      drinkKind,
       seed: {
         name,
-        drink_kind: drinkKind,
+        category: category && category !== 'Uncategorised' ? category : 'Cocktails',
         square_item_name: name,
         serve_label: item.serve_label || line.serveLabel || '',
         menu_price: item.menu_price ?? null,
@@ -1310,10 +1310,9 @@ export function mountPlanningPanel(route) {
 
   async function deleteCocktailFromMenu(line) {
     if (locked()) { toast('Pricing is locked for this event', true); return; }
-    const drink = drinkKindMeta(line.drinkKind).label.toLowerCase();
-    const name = line.name || `this ${drink}`;
+    const name = line.name || 'this recipe';
     const ok = await confirmDialog({
-      title: `Delete ${drink}`,
+      title: 'Delete recipe',
       message: `Remove “${name}” from this event? The stock products stay in the library.`,
       confirmLabel: 'Delete',
     });
@@ -1323,7 +1322,7 @@ export function mountPlanningPanel(route) {
       ctx.cocktails.delete(line.cocktailId);
       ctx.lines.delete(cocktailLineKey(line.cocktailId));
       showMenu();
-      toast(`${drinkKindMeta(line.drinkKind).label} removed`);
+      toast('Recipe removed');
     } catch (err) {
       toast(err.message || 'Could not delete cocktail', true);
     }
@@ -1336,8 +1335,7 @@ export function mountPlanningPanel(route) {
     else if (id === 'paste') await pasteCell(row, colId);
     else if (id === 'clear') clearPlanningCell(row, line, colId);
     else if (id === 'add-size') openAddSize(ctx.items.get(line.itemId));
-    else if (id === 'make-cocktail') makeCocktailFromProduct(line.itemId, 'cocktail');
-    else if (id === 'make-spirit-mixer') makeCocktailFromProduct(line.itemId, 'spirit_mixer');
+    else if (id === 'make-recipe') makeCocktailFromProduct(line.itemId);
     else if (id === 'edit-cocktail') openCocktail(line.cocktailId);
     else if (id === 'toggle-menu') await toggleOnMenu(line);
     else if (id === 'delete-cocktail') await deleteCocktailFromMenu(line);
@@ -1580,7 +1578,7 @@ export function mountPlanningPanel(route) {
           const size = source?.serve_label ? ` ${source.serve_label}` : '';
           const removed = await setItemField(convertItemId, 'included', false, { immediate: true });
           if (removed) {
-            toast(`${saved.name || drinkKindMeta(saved.drink_kind).label} is on the menu. ${productName}${size} was taken off so it isn’t counted twice.`);
+            toast(`${saved.name || 'Recipe'} is on the menu. ${productName}${size} was taken off so it isn’t counted twice.`);
           }
         }
         showMenu();

@@ -70,7 +70,7 @@ export const PANEL_TOOLBAR = {
           id: 'plan-recipe-builder',
           icon: 'martini',
           label: 'Recipe builder',
-          title: 'Build a cocktail or a spirit and mixer, sold as one drink and costed from its stock products',
+          title: 'Build a drink from stock products and choose which category it sits in',
         },
         {
           id: 'plan-add-scenario',

@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   cocktailServesByProduct,
+  matchRecipeCategory,
   projectedServesWithCocktails,
+  recipeCategory,
+  recipeCategoryChoices,
   resolveCocktailLine,
 } from './menu-cocktails.js';
 
@@ -78,6 +81,16 @@ describe('resolveCocktailLine', () => {
     expect(line.costPerServe).toBeCloseTo(2, 10);
   });
 
+  it('uses the chosen category instead of a drink type', () => {
+    const line = resolveCocktailLine(
+      { id: 'c3', name: 'House lager', category: 'Draught beer', drink_kind: 'cocktail', menu_price: 6 },
+      [{ product_id: 'teq', measures: 1 }],
+      ctx,
+    );
+    expect(line.category).toBe('Draught beer');
+    expect(line.kind).toBe('cocktail');
+  });
+
   it('files a spirit and mixer in its own section', () => {
     const line = resolveCocktailLine(
       { id: 'c2', name: 'Vodka Red Bull', drink_kind: 'spirit_mixer', menu_price: 8 },
@@ -98,6 +111,22 @@ describe('resolveCocktailLine', () => {
     );
     expect(line.costPerServe).toBeNull();
     expect(line.gpPct).toBeNull();
+  });
+});
+
+describe('recipeCategory', () => {
+  it('keeps an older spirit and mixer in that section until a category is chosen', () => {
+    expect(recipeCategory({ drink_kind: 'spirit_mixer' })).toBe('Spirit & mixers');
+    expect(recipeCategory({ category: 'Wine', drink_kind: 'spirit_mixer' })).toBe('Wine');
+    expect(recipeCategoryChoices(
+      [{ name: 'Wine' }, { name: 'Cocktails' }, { name: '' }],
+      'Spirit & mixers',
+    )).toEqual(['Cocktails', 'Spirit & mixers', 'Wine']);
+    expect(recipeCategoryChoices(
+      [{ name: 'COCKTAILS' }, { name: 'WINE' }],
+      'Cocktails',
+    )).toEqual(['COCKTAILS', 'WINE']);
+    expect(matchRecipeCategory('Cocktails', [{ name: 'COCKTAILS' }])).toBe('COCKTAILS');
   });
 });
 

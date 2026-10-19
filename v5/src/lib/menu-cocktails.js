@@ -5,8 +5,7 @@
  * recipe added together: one measure is one serve of that product, using
  * the same cost and serves-per-unit as that product’s own menu line.
  *
- * Cocktails and spirit & mixers share that recipe. They sit in different
- * menu sections: a vodka and Red Bull is a spirit & mixer, not a cocktail.
+ * The recipe sits in whichever menu category you choose.
  */
 
 import { gpPct, gpPerServe, gpStatus, netFromGross, requiredPrice } from './gp.js';
@@ -38,6 +37,8 @@ export const DRINK_KINDS = {
   },
 };
 
+export const DEFAULT_RECIPE_CATEGORY = COCKTAIL_CATEGORY;
+
 /** @param {string|null|undefined} value */
 export function drinkKindOf(value) {
   return value === 'spirit_mixer' ? 'spirit_mixer' : 'cocktail';
@@ -46,6 +47,50 @@ export function drinkKindOf(value) {
 /** @param {string|null|undefined} value */
 export function drinkKindMeta(value) {
   return DRINK_KINDS[drinkKindOf(value)];
+}
+
+/** Menu section for a recipe. An explicit category wins over the older drink kind. */
+export function recipeCategory(cocktail) {
+  const named = String(cocktail?.category || '').trim();
+  if (named) return named.slice(0, 80);
+  return drinkKindMeta(cocktail?.drink_kind).category;
+}
+
+/** Legacy column still stored beside the category. */
+export function recipeDrinkKind(category) {
+  return String(category || '').trim().toLowerCase() === SPIRIT_MIXER_CATEGORY.toLowerCase()
+    ? 'spirit_mixer'
+    : 'cocktail';
+}
+
+/**
+ * Library categories, the recipe’s current section, and Cocktails when
+ * the library has no category of that name. Matching names keep the
+ * library spelling, so “Cocktails” and “COCKTAILS” are one choice.
+ */
+export function recipeCategoryChoices(categories, current) {
+  const names = [];
+  const seen = new Set();
+  const add = (name) => {
+    const trimmed = String(name || '').trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) return;
+    seen.add(key);
+    names.push(trimmed);
+  };
+  (categories || []).forEach((category) => add(category?.name));
+  add(current);
+  if (!seen.has('cocktails')) add(DEFAULT_RECIPE_CATEGORY);
+  return names.sort((a, b) => a.localeCompare(b, 'en-GB'));
+}
+
+/** Use the library’s spelling when the stored section is the same name. */
+export function matchRecipeCategory(category, categories) {
+  const named = String(category || '').trim() || DEFAULT_RECIPE_CATEGORY;
+  const match = (categories || []).find((categoryRow) => (
+    String(categoryRow?.name || '').trim().toLowerCase() === named.toLowerCase()
+  ));
+  return match?.name ? String(match.name).trim() : named;
 }
 
 function num(v) {
@@ -160,11 +205,11 @@ export function resolveCocktailLine(cocktail, ingredients, ctx = {}) {
   const amberBand = num(event?.gp_amber_band) ?? 5;
   const revenueGross = menuPrice != null && serves != null ? menuPrice * serves : null;
   const perServe = gpPerServe(menuPrice, costPerServe, vatRate);
-  const drink = drinkKindMeta(cocktail?.drink_kind);
+  const category = recipeCategory(cocktail);
 
   return {
     kind: 'cocktail',
-    drinkKind: drink.id,
+    drinkKind: recipeDrinkKind(category),
     cocktailId: cocktail?.id || null,
     productId: null,
     name: String(cocktail?.name || '').trim(),
@@ -172,7 +217,7 @@ export function resolveCocktailLine(cocktail, ingredients, ctx = {}) {
     caseSize: '',
     stockUnit: null,
     abv: null,
-    category: drink.category,
+    category,
     included: cocktail?.included !== false,
     serveLabel: cocktail?.serve_label || null,
     ingredientSummary: parts.map((p) => p.name).filter((n) => n && n !== 'Removed product').join(' · '),
