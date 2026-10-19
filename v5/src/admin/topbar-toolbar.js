@@ -105,6 +105,11 @@ export const PANEL_TOOLBAR = {
           label: 'Sync to Square',
           title: 'Preview and push this menu and its prices to Square',
         },
+        {
+          id: 'plan-settings',
+          icon: 'settings',
+          title: 'Menu settings',
+        },
       ],
     },
   ],

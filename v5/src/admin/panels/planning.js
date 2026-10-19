@@ -679,59 +679,91 @@ export function mountPlanningPanel(route) {
   }
 
   function settingsHtml() {
-    const dis = locked() ? 'disabled' : '';
     const snapshots = [...ctx.items.values()].filter((i) => i.unit_cost_snapshot != null).length;
     const costState = snapshots
       ? `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Costs locked (${snapshots})</span>`
       : '<span class="plan-chip">Live supplier costs</span>';
-    const targetLabel = inputValue(ctx.event?.target_gp_pct);
-    const amberLabel = inputValue(ctx.event?.gp_amber_band ?? 5);
     return `
-      <button type="button" class="plan-settings-btn" id="planSettingsBtn"
-        aria-expanded="false" aria-haspopup="dialog" aria-controls="planSettingsPop"
-        title="Target GP ${escapeHtml(targetLabel || '—')}%, amber band ${escapeHtml(amberLabel)} pts">
-        ${icon('settings', { size: 15 })}
-        <span>Settings</span>
-      </button>
       <div class="plan-settings-meta">
         ${locked() ? `<span class="plan-chip plan-chip--locked">${icon('lock', { size: 12 })} Event ${escapeHtml(ctx.event.status)} — pricing is read-only</span>` : ''}
         ${costState}
-      </div>
-      <div class="plan-settings-pop" id="planSettingsPop" role="dialog" aria-label="Menu settings" hidden>
-        <label class="admin-field plan-field plan-field--sm">
-          <span class="admin-label">Target GP %</span>
-          <input type="text" inputmode="decimal" autocomplete="off" class="admin-input num-math" id="planTarget"
-            value="${escapeHtml(targetLabel)}"
-            placeholder="70" ${dis}>
-        </label>
-        <label class="admin-field plan-field plan-field--sm">
-          <span class="admin-label">Amber band (pts)</span>
-          <input type="text" inputmode="decimal" autocomplete="off" class="admin-input num-math" id="planAmber"
-            value="${escapeHtml(amberLabel)}" ${dis}>
-        </label>
       </div>`;
+  }
+
+  function settingsFieldsHtml() {
+    const dis = locked() ? 'disabled' : '';
+    const targetLabel = inputValue(ctx.event?.target_gp_pct);
+    const amberLabel = inputValue(ctx.event?.gp_amber_band ?? 5);
+    return `
+      <label class="admin-field plan-field plan-field--sm">
+        <span class="admin-label">Target GP %</span>
+        <input type="text" inputmode="decimal" autocomplete="off" class="admin-input num-math" id="planTarget"
+          value="${escapeHtml(targetLabel)}"
+          placeholder="70" ${dis}>
+      </label>
+      <label class="admin-field plan-field plan-field--sm">
+        <span class="admin-label">Amber band (pts)</span>
+        <input type="text" inputmode="decimal" autocomplete="off" class="admin-input num-math" id="planAmber"
+          value="${escapeHtml(amberLabel)}" ${dis}>
+      </label>`;
+  }
+
+  function settingsToolbarButton() {
+    return document.querySelector('[data-toolbar-action="plan-settings"]');
+  }
+
+  function mountSettingsPopover() {
+    const btn = settingsToolbarButton();
+    if (!btn) return null;
+    let wrap = btn.parentElement;
+    if (!wrap?.classList.contains('topbar-tool-wrap')) {
+      wrap = document.createElement('div');
+      wrap.className = 'topbar-tool-wrap';
+      btn.replaceWith(wrap);
+      wrap.appendChild(btn);
+    }
+    let pop = wrap.querySelector('#planSettingsPop');
+    if (!pop) {
+      pop = document.createElement('div');
+      pop.id = 'planSettingsPop';
+      pop.className = 'topbar-menu plan-settings-pop';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Menu settings');
+      pop.hidden = true;
+      pop.addEventListener('input', onSettingsInput);
+      wrap.appendChild(pop);
+    }
+    pop.innerHTML = settingsFieldsHtml();
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-controls', 'planSettingsPop');
+    return pop;
   }
 
   function closeSettingsPopover() {
     const pop = $('planSettingsPop');
-    const btn = $('planSettingsBtn');
+    const btn = settingsToolbarButton();
     if (pop) pop.hidden = true;
     btn?.setAttribute('aria-expanded', 'false');
   }
 
-  function toggleSettingsPopover() {
-    const pop = $('planSettingsPop');
-    const btn = $('planSettingsBtn');
+  function openSettingsPopover() {
+    if (!ctx.event) return;
+    const pop = mountSettingsPopover();
+    const btn = settingsToolbarButton();
     if (!pop || !btn) return;
-    const open = pop.hidden;
-    pop.hidden = !open;
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (!open) return;
+    pop.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
     const input = pop.querySelector('#planTarget');
     if (input && !input.disabled) {
       input.focus();
       input.select();
     }
+  }
+
+  function toggleSettingsPopover() {
+    const pop = $('planSettingsPop');
+    if (pop && !pop.hidden) closeSettingsPopover();
+    else openSettingsPopover();
   }
 
   function paint() {
@@ -1446,12 +1478,6 @@ export function mountPlanningPanel(route) {
       suppressHeaderClick = false;
       return;
     }
-    if (e.target.closest('#planSettingsBtn')) {
-      e.preventDefault();
-      toggleSettingsPopover();
-      return;
-    }
-    if (e.target.closest('#planSettingsPop')) return;
     const hideBtn = e.target.closest('[data-hide-menu]');
     if (hideBtn) {
       e.preventDefault();
@@ -2079,6 +2105,7 @@ export function mountPlanningPanel(route) {
 
   function onToolbarAction(e) {
     const action = e.detail?.action;
+    if (action !== 'plan-settings') closeSettingsPopover();
     const handlers = {
       'plan-save-menu': () => { void openSaveMenu(); },
       'plan-apply-menu': () => { void openApplyMenu(); },
@@ -2091,6 +2118,7 @@ export function mountPlanningPanel(route) {
         openMenuExportDialog(ctx);
       },
       'square-menu-sync': () => { void openSquareMenuSync(ctx.eventId); },
+      'plan-settings': toggleSettingsPopover,
     };
     if (!handlers[action]) return;
     e.detail.handled = true;
@@ -2172,7 +2200,7 @@ export function mountPlanningPanel(route) {
   function onDocumentClick(e) {
     const pop = $('planSettingsPop');
     if (!pop || pop.hidden) return;
-    if (e.target.closest?.('#planSettingsPop, #planSettingsBtn')) return;
+    if (e.target.closest?.('#planSettingsPop, [data-toolbar-action="plan-settings"]')) return;
     closeSettingsPopover();
   }
 
