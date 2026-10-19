@@ -30,7 +30,7 @@ const SKIP_ROW = [
 
 const CARD = [
   'a.event-card',
-  'button.ord-card',
+  'article.ord-rail-row',
   'article.del-card',
   'button.catalog-list-item',
   '.dash-stat',
@@ -55,7 +55,7 @@ const NAME = [
   '.catalog-list-name',
   '.catalog-table-primary',
   '.event-card-name',
-  '.ord-card-ref',
+  '.ord-rail-ref',
   '.del-record-supplier',
   '.del-card-title',
   '.del-card-pill-name',
@@ -161,7 +161,7 @@ function columnLabel(cell, row) {
 
 function kindOf(el) {
   if (el.matches('.ord-row')) return 'orders';
-  if (el.matches('.ord-card')) return 'order-card';
+  if (el.matches('.ord-rail-row')) return 'order-card';
   if (el.matches('.ep-prod-row')) return 'products';
   if (el.matches('.cnt-prod-row')) return 'counts';
   if (el.matches('.cl-row')) return 'closing';
