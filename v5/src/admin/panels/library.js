@@ -4,7 +4,6 @@
  */
 
 import { $, escapeHtml, toast } from '../../lib/util.js';
-import { icon } from '../../lib/icons.js';
 import {
   getDB, loadLibraryProducts, loadCategories, loadSuppliers, loadCaseSizes,
 } from '../../db.js';
@@ -222,11 +221,10 @@ function renderShell() {
             <tr>
               <th class="lib-sel-col" aria-label="Select"></th>
               ${columnHeaderHtml()}
-              <th class="lib-act"></th>
             </tr>
           </thead>
           <tbody id="libBody">
-            ${skeletonTableRows(LIBRARY_COLUMNS.length + 2, { rows: 8 })}
+            ${skeletonTableRows(LIBRARY_COLUMNS.length + 1, { rows: 8 })}
           </tbody>
         </table>
         <div class="lib-empty" id="libEmpty" hidden>No products match.</div>
@@ -265,12 +263,6 @@ function renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected)
             ${isSel ? 'checked' : ''} aria-label="Select ${escapeHtml(p.name || 'product')}">` : ''}
         </td>
         ${columnCellHtml(p, caseSizes, { packLabel, countAs, auto, menuMeta, skuMeta })}
-        <td class="lib-act">
-          ${mergeMode ? '' : `<button type="button" class="topbar-tool del-card-action" data-edit="${escapeHtml(p.id)}"
-            title="Edit product" aria-label="Edit ${escapeHtml(p.name || 'product')}">
-            ${icon('pencil', { size: 16 })}
-          </button>`}
-        </td>
       </tr>`;
   }).join('');
 }
@@ -397,10 +389,11 @@ export function mountLibraryPanel() {
       if (emptyEl) emptyEl.hidden = true;
       if (tableEl) tableEl.hidden = false;
       bodyEl.innerHTML = renderTableRows(rows, caseSizes, sortKey, sortDir, mergeMode, selected);
-      bodyEl.querySelectorAll('[data-edit]').forEach((btn) => {
-        btn.onclick = (e) => {
-          e.stopPropagation();
-          openProductForm(btn.dataset.edit);
+      bodyEl.querySelectorAll('tr[data-pid]').forEach((tr) => {
+        tr.onclick = (e) => {
+          if (e.target.closest('input, button, a, label')) return;
+          if (mergeMode) toggleRowSel(tr.dataset.pid);
+          else openProductForm(tr.dataset.pid);
         };
       });
       bodyEl.querySelectorAll('[data-sel]').forEach((input) => {
@@ -414,11 +407,6 @@ export function mountLibraryPanel() {
         };
         input.onclick = (e) => e.stopPropagation();
       });
-      if (mergeMode) {
-        bodyEl.querySelectorAll('tr[data-pid]').forEach((tr) => {
-          tr.onclick = () => toggleRowSel(tr.dataset.pid);
-        });
-      }
     }
     updateSortHeaders();
     syncColumnVisibility();
@@ -681,7 +669,7 @@ export function mountLibraryPanel() {
 
   refresh().catch((err) => {
     reportError(err, { source: 'admin.library.refresh', silent: true });
-    bodyEl.innerHTML = `<tr><td colspan="${LIBRARY_COLUMNS.length + 2}">${errorState({
+    bodyEl.innerHTML = `<tr><td colspan="${LIBRARY_COLUMNS.length + 1}">${errorState({
       title: 'Couldn’t load library',
       copy: err.message || 'Failed to load',
       variant: 'admin',

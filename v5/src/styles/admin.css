@@ -3878,7 +3878,7 @@ body.admin-drawer-open {
 .lib-table tbody tr.lib-selected td {
   background: color-mix(in srgb, var(--secondary) 70%, var(--card));
 }
-.lib-table tbody tr.lib-row--merge {
+.lib-table tbody tr[data-pid] {
   cursor: pointer;
 }
 .lib-sel-check {

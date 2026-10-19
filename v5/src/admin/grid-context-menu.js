@@ -325,7 +325,9 @@ function clickAction(row, id) {
   else if (id === 'edit-recon') row.querySelector('[data-rcn-edit]')?.click();
   else if (id === 'edit-button') {
     const host = row.querySelector?.('[data-edit]') ? row : (row.closest?.('article') || row);
-    host.querySelector('[data-edit]')?.click();
+    const btn = host.querySelector('[data-edit]');
+    if (btn) btn.click();
+    else row.click();
   } else if (id === 'edit-recipe') row.querySelector('[data-edit-cocktail]')?.click();
   else if (id === 'edit-user') row.querySelector('[data-act="edit"]')?.click();
   else if (id === 'activate-user') row.querySelector('[data-act="activate"]')?.click();
@@ -365,7 +367,8 @@ function openAt(target, point) {
     canSticker: enabledAction(el, 'sticker'),
     canEdit: !!el.querySelector?.('[data-edit], [data-rcn-edit]')
       || !!el.closest?.('article')?.querySelector?.('[data-edit]')
-      || kind === 'products',
+      || kind === 'products'
+      || (kind === 'library' && !!el.dataset?.pid && !el.classList.contains('lib-row--merge')),
     canEditRecipe: !!el.querySelector?.('[data-edit-cocktail]'),
     canActivate: !!el.querySelector?.('[data-act="activate"]'),
     canInvoice: !!(el.closest?.('article') || el).querySelector?.('[data-invoice-recipient]'),
