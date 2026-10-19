@@ -24,6 +24,16 @@ export function safeFilePart(s) {
   return String(s || 'export').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'export';
 }
 
+/** Split address and party fields on newlines and drop blank lines. */
+export function expandLines(lines) {
+  return (lines || []).flatMap((line) => (
+    String(line ?? '')
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+  ));
+}
+
 function logoSize(logo, maxW, maxH) {
   const aspect = logo.width / logo.height;
   let w = maxW;
@@ -96,13 +106,30 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
    * `parties` is a row of labelled blocks beneath the first rule.
    */
   ctx.header = ({ meta = [], parties = [] } = {}) => {
-    ctx.setFont('bold', 28, BRAND.ink);
-    doc.text(String(title).toUpperCase(), ml, 24);
+    doc.setCharSpace(0.4);
+    ctx.setFont('bold', 26, BRAND.ink);
+    doc.text(String(title).toUpperCase(), ml, 22);
+    doc.setCharSpace(0);
     doc.setFillColor(...BRAND.gold);
-    doc.rect(ml, 27.5, 14, 0.9, 'F');
+    doc.rect(ml, 26, 16, 1.1, 'F');
 
     let my = 35;
     meta.filter(Boolean).forEach((line, i) => {
+      if (line && typeof line === 'object') {
+        const size = line.size || (line.label ? 9.5 : 11);
+        if (line.label) {
+          ctx.setFont('bold', 7.2, BRAND.muted);
+          doc.text(String(line.label).toUpperCase(), ml, my);
+          ctx.setFont(line.strong ? 'bold' : 'normal', size, BRAND.ink);
+          doc.text(fitText(doc, line.value ?? '—', 78), ml + 28, my);
+          my += 5.6;
+        } else {
+          ctx.setFont('bold', size, BRAND.ink);
+          doc.text(fitText(doc, line.value ?? '', 90), ml, my);
+          my += 7;
+        }
+        return;
+      }
       ctx.setFont(i === 0 ? 'bold' : 'normal', 9.5, i === 0 ? BRAND.ink : BRAND.grey);
       doc.text(String(line), ml, my);
       my += 5;
@@ -120,27 +147,38 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
       ry += 4;
     });
 
-    let y = Math.max(my, ry) + 3;
-    ctx.hairline(y);
+    let y = Math.max(my, ry) + 4;
+    ctx.hairline(y, 0.35, BRAND.rule);
     if (parties.length) {
-      y += 7;
-      const colW = contentW / parties.length;
-      let maxLines = 0;
+      y += 6.5;
+      const weights = parties.map((p) => (Number(p.width) > 0 ? Number(p.width) : 1));
+      const weightSum = weights.reduce((sum, w) => sum + w, 0);
+      const labelY = y;
+      let bottom = y + 5;
+      let x = ml;
       parties.forEach((p, i) => {
-        const x = ml + colW * i;
+        const colW = (weights[i] / weightSum) * contentW;
+        const maxW = Math.max(12, colW - 6);
         ctx.setFont('bold', 7, BRAND.muted);
-        doc.text(String(p.label || '').toUpperCase(), x, y);
-        const lines = (p.lines || []).filter(Boolean);
-        lines.forEach((line, li) => {
-          ctx.setFont(li === 0 ? 'bold' : 'normal', li === 0 ? 10.5 : 9, li === 0 ? BRAND.ink : BRAND.grey);
-          doc.text(fitText(doc, line, colW - 4), x, y + 5.5 + li * 4.6);
+        doc.text(String(p.label || '').toUpperCase(), x, labelY);
+        let ly = labelY + 5.8;
+        expandLines(p.lines).forEach((line, li) => {
+          const isName = li === 0;
+          ctx.setFont(isName ? 'bold' : 'normal', isName ? 11 : 9, isName ? BRAND.ink : BRAND.grey);
+          const wrapped = doc.splitTextToSize(String(line), maxW);
+          wrapped.forEach((part) => {
+            doc.text(part, x, ly);
+            ly += isName ? 4.8 : 4.15;
+          });
+          if (isName) ly += 0.6;
         });
-        maxLines = Math.max(maxLines, lines.length);
+        bottom = Math.max(bottom, ly);
+        x += colW;
       });
-      y += 5.5 + Math.max(1, maxLines) * 4.6;
-      ctx.hairline(y);
+      y = bottom + 1.5;
+      ctx.hairline(y, 0.35, BRAND.rule);
     }
-    ctx.y = y + 9;
+    ctx.y = y + 8;
     return ctx.y;
   };
 
@@ -195,15 +233,20 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     let x = ml;
     widths.forEach((w) => { xs.push(x); x += w; });
 
+    const cellX = (i, right) => {
+      const pad = right ? (i === columns.length - 1 ? 0 : 1.4) : 0.4;
+      return right ? xs[i] + widths[i] - pad : xs[i] + pad;
+    };
+
     const drawHead = () => {
       ctx.setFont('bold', 7, BRAND.muted);
       columns.forEach((c, i) => {
         const right = c.align === 'right';
-        doc.text(String(c.label || '').toUpperCase(), right ? xs[i] + widths[i] - 1 : xs[i], ctx.y, right ? { align: 'right' } : undefined);
+        doc.text(String(c.label || '').toUpperCase(), cellX(i, right), ctx.y, right ? { align: 'right' } : undefined);
       });
-      ctx.y += 2.5;
-      ctx.hairline(ctx.y, 0.4, BRAND.ink);
-      ctx.y += 1;
+      ctx.y += 2.8;
+      ctx.hairline(ctx.y, 0.45, BRAND.ink);
+      ctx.y += 0.4;
     };
 
     ctx.ensureSpace(rowH * 3);
@@ -224,10 +267,10 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
         doc.rect(ml, ctx.y, contentW, rowH, 'F');
       }
       columns.forEach((c, i) => {
-        ctx.setFont(row.bold ? 'bold' : 'normal', size, c.muted ? BRAND.grey : BRAND.ink);
-        const text = fitText(doc, row.cells[i] ?? '', widths[i] - 2);
         const right = c.align === 'right';
-        doc.text(text, right ? xs[i] + widths[i] - 1 : xs[i], ctx.y + rowH * 0.64, right ? { align: 'right' } : undefined);
+        ctx.setFont(row.bold || c.strong ? 'bold' : 'normal', size, c.muted ? BRAND.grey : BRAND.ink);
+        const text = fitText(doc, row.cells[i] ?? '', widths[i] - (right ? 2 : 2.4));
+        doc.text(text, cellX(i, right), ctx.y + rowH * 0.66, right ? { align: 'right' } : undefined);
       });
       ctx.y += rowH;
       doc.setDrawColor(...BRAND.rule);
@@ -237,17 +280,47 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     ctx.y += 4;
   };
 
-  /** Right-aligned label/value pairs (totals). */
+  /**
+   * Label/value pairs in a block on the right. Labels share a left edge
+   * and values share the right margin, with a rule above the main total.
+   */
   ctx.totals = (pairs) => {
-    ctx.ensureSpace(pairs.length * 6 + 8);
-    ctx.y += 2;
-    const labelX = pageW - mr - 42;
+    if (!pairs.length) return;
+    const gap = 8;
+    const ruleAt = pairs.findLastIndex((pair) => pair[2]) >= 0
+      ? pairs.findLastIndex((pair) => pair[2])
+      : pairs.length - 1;
+    let blockW = 72;
     pairs.forEach(([label, value, strong], i) => {
-      const isLast = i === pairs.length - 1;
-      ctx.setFont(strong || isLast ? 'bold' : 'normal', strong || isLast ? 10.5 : 9, strong || isLast ? BRAND.ink : BRAND.grey);
-      doc.text(String(label).toUpperCase(), labelX, ctx.y, { align: 'right' });
+      const emphasize = i === ruleAt;
+      ctx.setFont(emphasize || strong ? 'bold' : 'normal', emphasize ? 8.5 : 8, BRAND.ink);
+      const labelW = doc.getTextWidth(String(label).toUpperCase());
+      ctx.setFont(emphasize ? 'bold' : 'normal', emphasize ? 12 : 9.5, BRAND.ink);
+      const valueW = doc.getTextWidth(String(value));
+      blockW = Math.max(blockW, labelW + valueW + gap);
+    });
+    blockW = Math.min(blockW, contentW * 0.78);
+    const x0 = pageW - mr - blockW;
+    ctx.ensureSpace(pairs.length * 8 + 8);
+    ctx.y += 2;
+    pairs.forEach(([label, value], i) => {
+      const emphasize = i === ruleAt;
+      if (emphasize) {
+        doc.setDrawColor(...BRAND.ink);
+        doc.setLineWidth(0.4);
+        doc.line(x0, ctx.y - 1.6, pageW - mr, ctx.y - 1.6);
+        ctx.y += 3.2;
+      }
+      const labelText = String(label).toUpperCase();
+      ctx.setFont(emphasize ? 'bold' : 'normal', emphasize ? 8.5 : 8, emphasize ? BRAND.ink : BRAND.grey);
+      const valueSize = emphasize ? 12 : 9.5;
+      ctx.setFont(emphasize ? 'bold' : 'normal', valueSize, BRAND.ink);
+      const valueW = doc.getTextWidth(String(value));
+      ctx.setFont(emphasize ? 'bold' : 'normal', emphasize ? 8.5 : 8, emphasize ? BRAND.ink : BRAND.grey);
+      doc.text(fitText(doc, labelText, Math.max(16, blockW - valueW - gap)), x0, ctx.y);
+      ctx.setFont(emphasize ? 'bold' : 'normal', valueSize, BRAND.ink);
       doc.text(String(value), pageW - mr, ctx.y, { align: 'right' });
-      ctx.y += 6;
+      ctx.y += emphasize ? 7.5 : 5.8;
     });
   };
 
@@ -273,7 +346,8 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     const pages = doc.getNumberOfPages();
     for (let p = 1; p <= pages; p++) {
       doc.setPage(p);
-      ctx.setFont('normal', 7, BRAND.muted);
+      ctx.hairline(pageH - 15, 0.25, BRAND.rule);
+      ctx.setFont('normal', 7.5, BRAND.muted);
       const left = ctx.footerLeft || `${INVOICE_FROM.name} · ${INVOICE_FROM.website}`;
       doc.text(fitText(doc, left, contentW - 28), ml, pageH - 9);
       if (ctx.footerNote) doc.text(ctx.footerNote, pageW / 2, pageH - 9, { align: 'center' });
