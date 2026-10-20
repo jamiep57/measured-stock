@@ -418,13 +418,22 @@ export function mountOrdersPanel(route) {
     return null;
   }
 
-  function statusMarker(status) {
-    if (!status || status === 'cancelled') return '<span class="muted">—</span>';
-    const at = ORDER_STEPS.findIndex((step) => step.id === status);
-    return `<ol class="ord-steps" aria-label="Order status">${ORDER_STEPS.map((step, i) => {
-      const cls = i < at ? 'is-done' : (i === at ? 'is-current' : '');
-      return `<li class="${cls}">${escapeHtml(step.label)}</li>`;
-    }).join('')}</ol>`;
+  function shortWhen(d) {
+    if (!d) return '';
+    const [y, m, day] = String(d).slice(0, 10).split('-').map(Number);
+    if (!y || !m || !day) return '';
+    const dt = new Date(y, m - 1, day);
+    if (Number.isNaN(dt.getTime())) return '';
+    return dt.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: y === new Date().getFullYear() ? undefined : 'numeric',
+    });
+  }
+
+  function orderBucket(status) {
+    if (status === 'sent' || status === 'confirmed' || status === 'cancelled') return status;
+    return 'draft';
   }
 
   function statusChip(status) {
@@ -453,12 +462,14 @@ export function mountOrdersPanel(route) {
     if (extra) {
       buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-po-action="raise" data-supplier-id="${escapeHtml(po.supplier_id)}">Raise PO</button>`);
     }
-    if (po.status === 'draft' || po.status === 'sent') {
-      buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-po-action="confirm" data-po-id="${escapeHtml(po.id)}" ${needsLine}>Confirm order</button>`);
-    }
     if (po.status === 'draft') {
       buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-po-action="sent" data-po-id="${escapeHtml(po.id)}" ${needsLine}>Mark sent</button>`);
-      buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--danger" data-po-action="delete" data-po-id="${escapeHtml(po.id)}">Delete</button>`);
+    }
+    if (po.status === 'draft' || po.status === 'sent') {
+      buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-po-action="confirm" data-po-id="${escapeHtml(po.id)}" ${needsLine}>Confirm</button>`);
+    }
+    if (po.status === 'draft') {
+      buttons.push(`<button type="button" class="ord-rail-icon" data-po-action="delete" data-po-id="${escapeHtml(po.id)}" aria-label="Delete order" title="Delete order">${icon('trash', { size: 14 })}</button>`);
     }
     return buttons.join('');
   }
@@ -471,32 +482,98 @@ export function mountOrdersPanel(route) {
     return [po.reference, po.status, sup?.name, ...names].join(' ').toLowerCase().includes(q);
   }
 
+  function orderValue(po) {
+    return orderLinesTotal(po.purchase_order_lines).total;
+  }
+
+  function orderCardHtml(po) {
+    const sup = ctx.supplierById.get(po.supplier_id);
+    const t = orderLinesTotal(po.purchase_order_lines);
+    const cases = (po.purchase_order_lines || []).reduce((s, l) => s + Number(l.qty_cases || 0), 0);
+    const actions = orderActionButtons(po);
+    const bucket = orderBucket(po.status);
+    const deliver = shortWhen(po.delivery_date);
+    const slot = po.delivery_time === 'am' || po.delivery_time === 'pm' ? po.delivery_time.toUpperCase() : '';
+    const deliverLabel = deliver ? `Deliver ${deliver}${slot ? `, ${slot}` : ''}` : '';
+    const unpriced = t.lines > t.priced ? `${t.lines - t.priced} unpriced` : '';
+    const caseCount = Number(cases);
+    const bits = [
+      po.reference || 'New order',
+      `${t.lines} line${t.lines === 1 ? '' : 's'}`,
+      `${qty(cases)} case${caseCount === 1 ? '' : 's'}`,
+      deliverLabel,
+      unpriced,
+    ].filter(Boolean);
+    const meta = bits.map((bit, i) => {
+      const cls = i === 0 ? ' class="ord-rail-ref"' : '';
+      return `<span${cls}>${escapeHtml(bit)}</span>`;
+    }).join('');
+    const unnamed = !sup?.name;
+    const amount = t.lines > 0 && t.priced === 0
+      ? '<p class="ord-rail-amount ord-rail-amount--empty" title="No prices on this order">—</p>'
+      : `<p class="ord-rail-amount">${money(t.total)}</p>`;
+    const cancelled = bucket === 'cancelled' ? '<p class="ord-rail-cancelled">Cancelled</p>' : '';
+    return `<article class="ord-rail-row ord-rail-row--${bucket}${bucket === 'cancelled' ? ' ord-rail-row--cancelled' : ''}" data-open-po="${escapeHtml(po.id)}">
+      <div class="ord-rail-ident">
+        <h3 class="ord-rail-sup${unnamed ? ' ord-rail-sup--empty' : ''}">${escapeHtml(sup?.name || 'Unknown supplier')}</h3>
+        <p class="ord-rail-meta">${meta}</p>
+        ${cancelled}
+      </div>
+      <div class="ord-rail-side">
+        ${amount}
+        ${actions ? `<div class="ord-rail-actions">${actions}</div>` : ''}
+      </div>
+    </article>`;
+  }
+
   function ordersRailHtml() {
     const q = ctx.query.trim();
-    const orderRows = ctx.orders.slice().reverse().filter(orderMatchesQuery).map((po) => {
-      const meta = STATUS_META[po.status] || STATUS_META.draft;
-      const sup = ctx.supplierById.get(po.supplier_id);
-      const t = orderLinesTotal(po.purchase_order_lines);
-      const cases = (po.purchase_order_lines || []).reduce((s, l) => s + Number(l.qty_cases || 0), 0);
-      const actions = orderActionButtons(po);
-      const marker = po.status === 'cancelled' ? badge(meta) : statusMarker(po.status);
-      return `<article class="ord-rail-row${po.status === 'cancelled' ? ' ord-rail-row--cancelled' : ''}" data-open-po="${escapeHtml(po.id)}">
-        <div class="ord-rail-main">
-          <span class="ord-rail-top"><span class="ord-rail-ref">${escapeHtml(po.reference)}</span></span>
-          <span class="ord-rail-sup">${escapeHtml(sup?.name || 'Unknown supplier')}</span>
-          <span class="ord-rail-meta">${t.lines} line${t.lines === 1 ? '' : 's'} · ${qty(cases)} cases · ${money(t.total)}</span>
-        </div>
-        <div class="ord-rail-status">${marker}</div>
-        ${actions ? `<div class="ord-rail-actions">${actions}</div>` : '<div class="ord-rail-actions"></div>'}
-      </article>`;
-    }).join('');
-    if (!orderRows) {
-      const empty = q
-        ? 'No purchase orders match this search.'
-        : 'No purchase orders yet. Use <strong>Generate orders</strong> for every shortfall, or <strong>New order</strong>.';
-      return `<p class="ord-rail-empty muted">${empty}</p>`;
+    const matched = ctx.orders.slice().reverse().filter(orderMatchesQuery);
+    if (!matched.length) {
+      const title = q ? 'No matching orders' : 'No purchase orders yet';
+      const copy = q
+        ? 'Nothing in this list matches that search.'
+        : 'Generate orders for every shortfall, or start a new order.';
+      return `<div class="ord-ledger-empty">
+        <p class="ord-ledger-empty-title">${title}</p>
+        <p class="ord-ledger-empty-copy">${copy}</p>
+      </div>`;
     }
-    return orderRows;
+
+    const buckets = [
+      { id: 'draft', label: 'Draft' },
+      { id: 'sent', label: 'Sent' },
+      { id: 'confirmed', label: 'Confirmed' },
+      { id: 'cancelled', label: 'Cancelled' },
+    ].map((group) => {
+      const rows = matched.filter((po) => orderBucket(po.status) === group.id);
+      const total = rows.reduce((sum, po) => sum + orderValue(po), 0);
+      return { ...group, rows, total };
+    });
+
+    const stats = buckets.filter((group) => group.id !== 'cancelled' || group.rows.length);
+    const summary = `<div class="ord-ledger-summary" aria-label="Order totals">${stats.map((group) => {
+      const n = group.rows.length;
+      const value = n ? money(group.total) : '—';
+      const sub = `${group.label} · ${n}`;
+      return `<div class="ord-ledger-stat${n ? '' : ' is-empty'}">
+        <span class="ord-ledger-stat-value">${value}</span>
+        <span class="ord-ledger-stat-label">${escapeHtml(sub)}</span>
+      </div>`;
+    }).join('')}</div>`;
+
+    const sections = buckets.filter((group) => group.rows.length).map((group) => {
+      const n = group.rows.length;
+      return `<section class="ord-ledger-group">
+        <header class="ord-ledger-group-head">
+          <h2 class="ord-ledger-group-label">${escapeHtml(group.label)}</h2>
+          <p class="ord-ledger-group-meta">${n} ${n === 1 ? 'order' : 'orders'} · ${money(group.total)}</p>
+        </header>
+        <div class="ord-ledger-stack">${group.rows.map(orderCardHtml).join('')}</div>
+      </section>`;
+    }).join('');
+
+    return summary + sections;
   }
 
   function forecastLines() {
@@ -1020,17 +1097,12 @@ export function mountOrdersPanel(route) {
     const meta = STATUS_META[status];
 
     const ev = ctx.event || {};
-    const eventWhen = ev.start_date
-      ? (ev.end_date && ev.end_date !== ev.start_date
-        ? `${fmtDate(ev.start_date)} – ${fmtDate(ev.end_date)}`
-        : fmtDate(ev.start_date))
-      : '';
+    const collection = ev.end_date || ev.start_date || '';
     const contactBits = [ev.delivery_contact_name, ev.delivery_contact_phone].filter(Boolean);
     const deliverLines = [
       ev.venue,
       ev.venue_postcode,
       formatWhat3Words(ev.what3words),
-      eventWhen,
       contactBits.length ? `On site  ${contactBits.join(' · ')}` : '',
     ].filter(Boolean);
     const factLink = ev.delivery_fact_sheet_url
@@ -1062,6 +1134,8 @@ export function mountOrdersPanel(route) {
                 <dd><input type="date" class="ord-doc-field" id="ordDate" value="${escapeHtml(po?.order_date || today())}" ${hdis}></dd>
                 <dt>Deliver by</dt>
                 <dd><input type="date" class="ord-doc-field" id="ordDelivery" value="${escapeHtml(po?.delivery_date || ev.start_date || '')}" ${dateDis}></dd>
+                <dt>Collect by</dt>
+                <dd><input type="date" class="ord-doc-field" id="ordCollection" value="${escapeHtml(collection)}" disabled></dd>
                 <dt>Delivery time</dt>
                 <dd>
                   <select class="ord-doc-field" id="ordDeliveryTime" ${dateDis}>
