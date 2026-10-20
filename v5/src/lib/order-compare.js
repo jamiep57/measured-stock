@@ -212,3 +212,18 @@ export function orderLinesTotal(lines) {
   });
   return { total: Math.round(total * 100) / 100, priced, lines: (lines || []).length };
 }
+
+/** UK standard rate. Purchase-order case prices are stored ex VAT. */
+export const PURCHASE_ORDER_VAT_RATE = 0.2;
+
+/**
+ * @param {number} net ex-VAT order value
+ * @param {number} [vatRate]
+ * @returns {{ ex: number, vat: number, inc: number, rate: number }}
+ */
+export function orderValueVat(net, vatRate = PURCHASE_ORDER_VAT_RATE) {
+  const rate = Number.isFinite(Number(vatRate)) ? Number(vatRate) : PURCHASE_ORDER_VAT_RATE;
+  const ex = Math.round((Number(net) || 0) * 100) / 100;
+  const vat = Math.round(ex * rate * 100) / 100;
+  return { ex, vat, inc: Math.round((ex + vat) * 100) / 100, rate };
+}

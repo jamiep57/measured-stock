@@ -5,6 +5,7 @@ import {
   compareSummary,
   draftOrdersFromShortfalls,
   orderLinesTotal,
+  orderValueVat,
   orderedByProduct,
   plannedCases,
   plannedProductCases,
@@ -133,5 +134,11 @@ describe('orderLinesTotal', () => {
       { qty_cases: 3, case_price: 95 },
       { qty_cases: 2, case_price: null },
     ])).toEqual({ total: 285, priced: 1, lines: 2 });
+  });
+});
+
+describe('orderValueVat', () => {
+  it('adds 20% VAT to an ex-VAT order value', () => {
+    expect(orderValueVat(2867.57)).toEqual({ ex: 2867.57, vat: 573.51, inc: 3441.08, rate: 0.2 });
   });
 });

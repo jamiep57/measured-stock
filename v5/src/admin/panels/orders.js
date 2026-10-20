@@ -39,6 +39,7 @@ import {
   compareSummary,
   draftOrdersFromShortfalls,
   orderLinesTotal,
+  orderValueVat,
   orderedByProduct,
   plannedProductCases,
   preferredSupplierId,
@@ -1162,6 +1163,8 @@ export function mountOrdersPanel(route) {
 
     function paintTotal() {
       const t = orderLinesTotal(state.lines);
+      const vat = orderValueVat(t.total);
+      const vatPct = Math.round(vat.rate * 100);
       const cases = state.lines.reduce((s, l) => s + (Number(l.qty_cases) || 0), 0);
       const el = $('ordLinesTotal');
       if (!el) return;
@@ -1171,7 +1174,9 @@ export function mountOrdersPanel(route) {
       el.innerHTML = `
         <div class="ord-doc-total"><span>Total cases</span><strong>${qty(cases)}</strong></div>
         ${unpriced}
-        <div class="ord-doc-total ord-doc-total--due"><span>Order value <em>ex VAT</em></span><strong>${money(t.total)}</strong></div>`;
+        <div class="ord-doc-total"><span>Order value <em>ex VAT</em></span><strong>${money(t.total)}</strong></div>
+        <div class="ord-doc-total"><span>VAT <em>${vatPct}%</em></span><strong>${money(vat.vat)}</strong></div>
+        <div class="ord-doc-total ord-doc-total--due"><span>Order value <em>inc VAT</em></span><strong>${money(vat.inc)}</strong></div>`;
     }
 
     $('ordLinesBody').addEventListener('input', (e) => {
