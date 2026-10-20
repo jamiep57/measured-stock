@@ -13,9 +13,31 @@ import { authFetch } from '../../lib/auth.js';
 
 const PAGE_SIZE = 100;
 
+const PO_START_MAX = 9999999;
+
+/** Lowest purchase-order number an organisation may choose. */
+export function parsePoStartNumber(value) {
+  const raw = String(value ?? '').trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 1 || n > PO_START_MAX) return null;
+  return n;
+}
+
+/** Preview of the reference a start number would produce. */
+export function formatPoStartReference(n) {
+  return `PO-${String(n).padStart(5, '0')}`;
+}
+
+function poStartHint(n) {
+  if (n == null) return 'Enter a whole number from 1.';
+  return `New orders start at ${formatPoStartReference(n)}. If that number is already used, the next free number is used instead.`;
+}
+
 export function renderOrganisationSection() {
   const org = getActiveOrganisation();
   const admin = isOrgAdmin();
+  const disabled = admin ? '' : 'disabled';
   return `
     <section class="settings-section">
       <header class="settings-card-head">
@@ -28,10 +50,17 @@ export function renderOrganisationSection() {
         <label class="admin-field">
           <span class="admin-label">Name</span>
           <input type="text" class="admin-input" id="settingsOrgName" maxlength="80"
-            value="${escapeHtml(org?.name || '')}" ${admin ? '' : 'disabled'} />
+            value="${escapeHtml(org?.name || '')}" ${disabled} />
         </label>
         <p class="muted settings-org-role">Your role: <strong>${escapeHtml(roleLabel(org?.role))}</strong></p>
-        ${admin ? '<div><button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsOrgSave">Save</button></div>' : ''}
+        <div class="settings-org-divider" role="presentation"></div>
+        <label class="admin-field">
+          <span class="admin-label">Purchase order numbers start from</span>
+          <input type="number" class="admin-input" id="settingsPoStart" min="1" max="${PO_START_MAX}" step="1"
+            inputmode="numeric" ${disabled} />
+          <p class="admin-hint muted" id="settingsPoStartHint">${escapeHtml(poStartHint(null))}</p>
+        </label>
+        ${admin ? '<div><button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="settingsOrgSave" disabled>Save</button></div>' : ''}
       </div>
     </section>`;
 }
@@ -158,20 +187,40 @@ export function mountSquareSection() {
 export function mountOrganisationSection() {
   const btn = $('settingsOrgSave');
   const input = /** @type {HTMLInputElement|null} */ ($('settingsOrgName'));
+  const poInput = /** @type {HTMLInputElement|null} */ ($('settingsPoStart'));
+  const hint = $('settingsPoStartHint');
   const org = getActiveOrganisation();
-  if (!btn || !input || !org) return () => {};
+  if (!input || !poInput || !org) return () => {};
+
+  let disposed = false;
+  const admin = isOrgAdmin();
+  if (admin) poInput.setAttribute('disabled', '');
+
+  const paintHint = () => {
+    if (hint) hint.textContent = poStartHint(parsePoStartNumber(poInput.value));
+  };
 
   const onSave = async () => {
+    if (!btn) return;
     const name = input.value.trim();
+    const start = parsePoStartNumber(poInput.value);
     if (!name) {
       toast('Name is required', true);
       return;
     }
+    if (start == null) {
+      toast('Purchase order numbers must start from a whole number between 1 and 9,999,999', true);
+      return;
+    }
     btn.setAttribute('disabled', '');
     try {
-      await getDB().update('organisations', `id=eq.${encodeURIComponent(org.id)}`, { name, updated_at: new Date().toISOString() });
+      await getDB().update('organisations', `id=eq.${encodeURIComponent(org.id)}`, {
+        name,
+        po_start_number: start,
+        updated_at: new Date().toISOString(),
+      });
       org.name = name;
-      toast('Organisation renamed');
+      toast('Organisation saved');
       document.getElementById('sidebarWorkspaceSub')?.replaceChildren(document.createTextNode(name));
     } catch (err) {
       toast(String(err?.message || err), true);
@@ -179,8 +228,37 @@ export function mountOrganisationSection() {
       btn.removeAttribute('disabled');
     }
   };
-  btn.addEventListener('click', onSave);
-  return () => btn.removeEventListener('click', onSave);
+
+  async function loadStart() {
+    try {
+      const rows = await getDB().select(
+        'organisations',
+        `?id=eq.${encodeURIComponent(org.id)}&select=po_start_number`,
+      );
+      if (disposed) return;
+      const start = Number(rows?.[0]?.po_start_number) || 1;
+      poInput.value = String(start);
+      paintHint();
+    } catch (err) {
+      if (disposed) return;
+      if (hint) hint.textContent = 'Purchase order start number could not be loaded.';
+      toast(String(err?.message || err), true);
+    } finally {
+      if (!disposed && admin) {
+        poInput.removeAttribute('disabled');
+        btn?.removeAttribute('disabled');
+      }
+    }
+  }
+
+  btn?.addEventListener('click', onSave);
+  poInput.addEventListener('input', paintHint);
+  loadStart();
+  return () => {
+    disposed = true;
+    btn?.removeEventListener('click', onSave);
+    poInput.removeEventListener('input', paintHint);
+  };
 }
 
 export function renderHistorySection() {

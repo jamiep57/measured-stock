@@ -105,6 +105,26 @@ END $$;
 -- Draft orders can be deleted (lines cascade).
 DELETE FROM public.purchase_orders WHERE id = '00000000-0000-0000-0000-0000000000a2';
 
+-- The organisation start number is a floor. Existing numbers are not reused,
+-- and lowering the floor does not rewind past the highest number already used.
+UPDATE public.organisations SET po_start_number = 500 WHERE id = public.default_org_id();
+INSERT INTO public.purchase_orders (id, event_id, supplier_id) VALUES
+  ('00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-000000000051');
+UPDATE public.organisations SET po_start_number = 1 WHERE id = public.default_org_id();
+INSERT INTO public.purchase_orders (id, event_id, supplier_id) VALUES
+  ('00000000-0000-0000-0000-0000000000a4', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-000000000051');
+DO $$
+BEGIN
+  ASSERT (SELECT reference FROM public.purchase_orders WHERE id = '00000000-0000-0000-0000-0000000000a3') = 'PO-00500',
+    'start number raises the first new reference';
+  ASSERT (SELECT reference FROM public.purchase_orders WHERE id = '00000000-0000-0000-0000-0000000000a4') = 'PO-00501',
+    'lowering the start number does not reuse a higher reference';
+END $$;
+DELETE FROM public.purchase_orders WHERE id IN (
+  '00000000-0000-0000-0000-0000000000a3',
+  '00000000-0000-0000-0000-0000000000a4'
+);
+
 -- Staff cannot see orders.
 SELECT set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', true);
 DO $$

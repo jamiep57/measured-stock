@@ -9789,8 +9789,9 @@ label.collab-cell--peer {
 }
 
 /* ---------- Settings: organisation + change history ---------- */
-.settings-org-form { max-width: 420px; gap: 12px; }
-.settings-org-role { font-size: 12px; }
+.settings-org-form { max-width: 420px; gap: 12px; padding: 16px 16px 20px; }
+.settings-org-role { font-size: 12px; margin: 0; }
+.settings-org-divider { height: 1px; margin: 4px 0; background: var(--border); }
 .settings-history-filters { display: flex; gap: 8px; }
 .settings-history-filters .admin-select { max-width: 220px; }
 .settings-history { overflow-x: auto; }
