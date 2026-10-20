@@ -816,7 +816,7 @@ export function mountOrdersPanel(route) {
         </div>
         <div class="ord-tab-body" data-ord-pane="orders" ${tab === 'orders' ? '' : 'hidden'}>
           <section class="plan-head admin-surface">
-            <div class="plan-settings-meta">${lockChip()}<span class="plan-chip">Orders never change stock — only deliveries do</span></div>
+            ${lockChip() ? `<div class="plan-settings-meta">${lockChip()}</div>` : ''}
             <div class="plan-kpis" id="ordKpis">${kpisHtml()}</div>
           </section>
           <div class="dist-grid-wrap plan-grid-wrap ord-grid-wrap">
