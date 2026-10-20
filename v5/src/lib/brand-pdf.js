@@ -113,6 +113,12 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     doc.setFillColor(...BRAND.gold);
     doc.rect(ml, 26, 16, 1.1, 'F');
 
+    ctx.setFont('bold', 7.2, BRAND.muted);
+    let labelCol = 28;
+    meta.filter((line) => line && typeof line === 'object' && line.label).forEach((line) => {
+      labelCol = Math.max(labelCol, doc.getTextWidth(String(line.label).toUpperCase()) + 4);
+    });
+
     let my = 35;
     meta.filter(Boolean).forEach((line, i) => {
       if (line && typeof line === 'object') {
@@ -121,7 +127,7 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
           ctx.setFont('bold', 7.2, BRAND.muted);
           doc.text(String(line.label).toUpperCase(), ml, my);
           ctx.setFont(line.strong ? 'bold' : 'normal', size, BRAND.ink);
-          doc.text(fitText(doc, line.value ?? '—', 78), ml + 28, my);
+          doc.text(fitText(doc, line.value ?? '—', 78), ml + labelCol, my);
           my += 5.6;
         } else {
           ctx.setFont('bold', size, BRAND.ink);
@@ -395,13 +401,18 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     const pages = doc.getNumberOfPages();
     for (let p = 1; p <= pages; p++) {
       doc.setPage(p);
-      ctx.hairline(pageH - 15, 0.25, BRAND.rule);
       ctx.setFont('normal', 7.5, BRAND.muted);
       const left = ctx.footerLeft || `${INVOICE_FROM.name} · ${INVOICE_FROM.website}`;
-      doc.text(fitText(doc, left, contentW - 28), ml, pageH - 9);
-      if (ctx.footerNote) doc.text(ctx.footerNote, pageW / 2, pageH - 9, { align: 'center' });
       const pageText = ctx.pageLabel ? ctx.pageLabel(p, pages) : `${p} / ${pages}`;
-      doc.text(pageText, pageW - mr, pageH - 9, { align: 'right' });
+      const pageGap = doc.getTextWidth(pageText) + 6;
+      const lines = doc.splitTextToSize(String(left), Math.max(40, contentW - pageGap));
+      const lineH = 3.4;
+      const lastY = pageH - 9;
+      const firstY = lastY - (lines.length - 1) * lineH;
+      ctx.hairline(lines.length === 1 ? pageH - 15 : firstY - 4.5, 0.25, BRAND.rule);
+      lines.forEach((line, i) => doc.text(line, ml, firstY + i * lineH));
+      if (ctx.footerNote && lines.length === 1) doc.text(ctx.footerNote, pageW / 2, lastY, { align: 'center' });
+      doc.text(pageText, pageW - mr, lastY, { align: 'right' });
     }
     if (download) doc.save(filename);
     return { filename, pages, doc };

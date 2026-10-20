@@ -37,6 +37,14 @@ function collectionDate(event) {
   return event?.end_date || event?.start_date || null;
 }
 
+function dateWithSlot(date, time) {
+  const when = formatDocDate(date);
+  const slot = deliveryTimeLabel(time);
+  return slot ? `${when} ${slot}` : when;
+}
+
+const COMPANY_FOOTER = 'VV Events LTD T/A Measured | Registered in England and Wales | Company No. 14660281 | Registered Office: 124 City Road, London, City Road, London, England, EC1V 2NX';
+
 function loadPdfLib() {
   if (typeof window !== 'undefined' && window.PDFLib?.PDFDocument) return Promise.resolve(window.PDFLib);
   if (!pdfLibPromise) {
@@ -141,7 +149,7 @@ function downloadPdf(bytes, filename) {
 
 /**
  * @param {{
- *   po: { reference: string, status: string, order_date?: string, delivery_date?: string, delivery_time?: string, supplier_ref?: string, notes?: string },
+ *   po: { reference: string, status: string, order_date?: string, delivery_date?: string, delivery_time?: string, collection_time?: string, supplier_ref?: string, notes?: string },
  *   supplier: { name: string, contact_name?: string, email?: string, phone?: string, address?: string }|null,
  *   event: { name: string, venue?: string, venue_postcode?: string, start_date?: string, end_date?: string, what3words?: string, delivery_contact_name?: string, delivery_contact_phone?: string, delivery_fact_sheet_url?: string, delivery_fact_sheet_name?: string }|null,
  *   lines: Array<{ name: string, pack?: string, qty_cases: number, case_price: number|null }>,
@@ -163,17 +171,18 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
 
   const ctx = await createBrandDoc({ title: 'Purchase order' });
   ctx.continuationNote = po.reference;
+  ctx.footerLeft = COMPANY_FOOTER;
 
   const status = STATUS_LABEL[po.status] || po.status;
   const time = deliveryTimeLabel(po.delivery_time);
   const collection = collectionDate(event);
+  const collectSlot = deliveryTimeLabel(po.collection_time);
   ctx.header({
     meta: [
       { value: po.reference, size: 12 },
       { label: 'Order date', value: po.order_date ? formatDocDate(po.order_date) : '—' },
-      po.delivery_date ? { label: 'Deliver by', value: formatDocDate(po.delivery_date), strong: true } : null,
-      collection ? { label: 'Collect by', value: formatDocDate(collection), strong: true } : null,
-      time ? { label: 'Delivery time', value: time, strong: true } : null,
+      po.delivery_date ? { label: 'Delivery date', value: dateWithSlot(po.delivery_date, po.delivery_time), strong: true } : null,
+      collection ? { label: 'Collection date', value: dateWithSlot(collection, po.collection_time), strong: true } : null,
       po.supplier_ref ? { label: 'Your ref', value: po.supplier_ref } : null,
       status !== 'Confirmed' && status !== 'Sent' ? { label: 'Status', value: status } : null,
     ],
@@ -244,7 +253,7 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
   }
 
   const confirmWhen = collection
-    ? (time ? `the ${time} delivery and the collection date` : 'the delivery and collection dates')
+    ? (time || collectSlot ? 'the delivery and collection dates and times' : 'the delivery and collection dates')
     : (time ? `the ${time} delivery` : 'the delivery date');
   const confirmText = `Please confirm the quantities, prices and ${confirmWhen} by reply, quoting ${po.reference}.`;
   const factNote = (fact?.kind === 'pdf' || fact?.kind === 'image')

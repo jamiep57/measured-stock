@@ -1132,16 +1132,22 @@ export function mountOrdersPanel(route) {
               <dl class="ord-doc-meta">
                 <dt>Order date</dt>
                 <dd><input type="date" class="ord-doc-field" id="ordDate" value="${escapeHtml(po?.order_date || today())}" ${hdis}></dd>
-                <dt>Deliver by</dt>
-                <dd><input type="date" class="ord-doc-field" id="ordDelivery" value="${escapeHtml(po?.delivery_date || ev.start_date || '')}" ${dateDis}></dd>
-                <dt>Collect by</dt>
-                <dd><input type="date" class="ord-doc-field" id="ordCollection" value="${escapeHtml(collection)}" disabled></dd>
-                <dt>Delivery time</dt>
-                <dd>
-                  <select class="ord-doc-field" id="ordDeliveryTime" ${dateDis}>
-                    <option value="">—</option>
+                <dt>Delivery date</dt>
+                <dd class="ord-doc-slot-row">
+                  <input type="date" class="ord-doc-field" id="ordDelivery" value="${escapeHtml(po?.delivery_date || ev.start_date || '')}" ${dateDis}>
+                  <select class="ord-doc-field ord-doc-slot" id="ordDeliveryTime" aria-label="Delivery time" ${dateDis}>
+                    <option value="">AM/PM</option>
                     <option value="am"${po?.delivery_time === 'am' ? ' selected' : ''}>AM</option>
                     <option value="pm"${po?.delivery_time === 'pm' ? ' selected' : ''}>PM</option>
+                  </select>
+                </dd>
+                <dt>Collection date</dt>
+                <dd class="ord-doc-slot-row">
+                  <input type="date" class="ord-doc-field" id="ordCollection" value="${escapeHtml(collection)}" disabled>
+                  <select class="ord-doc-field ord-doc-slot" id="ordCollectionTime" aria-label="Collection time" ${dateDis}>
+                    <option value="">AM/PM</option>
+                    <option value="am"${po?.collection_time === 'am' ? ' selected' : ''}>AM</option>
+                    <option value="pm"${po?.collection_time === 'pm' ? ' selected' : ''}>PM</option>
                   </select>
                 </dd>
                 <dt>Your ref</dt>
@@ -1367,6 +1373,7 @@ export function mountOrdersPanel(route) {
         order_date: $('ordDate')?.value || null,
         delivery_date: $('ordDelivery')?.value || null,
         delivery_time: $('ordDeliveryTime')?.value || null,
+        collection_time: $('ordCollectionTime')?.value || null,
         supplier_ref: $('ordSupRef')?.value.trim() || null,
         notes: $('ordNotes')?.value.trim() || null,
         include_vat: state.includeVat,
@@ -1394,7 +1401,7 @@ export function mountOrdersPanel(route) {
       } else if (headerEditable) {
         saved = await updatePurchaseOrder(po.id, h);
       } else {
-        saved = await updatePurchaseOrder(po.id, { delivery_date: h.delivery_date, delivery_time: h.delivery_time, supplier_ref: h.supplier_ref, notes: h.notes });
+        saved = await updatePurchaseOrder(po.id, { delivery_date: h.delivery_date, delivery_time: h.delivery_time, collection_time: h.collection_time, supplier_ref: h.supplier_ref, notes: h.notes });
       }
       if (editable) await savePurchaseOrderLines(po.id, state.lines, po.purchase_order_lines || []);
       return saved;
