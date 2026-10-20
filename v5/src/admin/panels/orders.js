@@ -57,6 +57,7 @@ import {
   savePurchaseOrderLines,
   updatePurchaseOrder,
 } from '../../lib/orders-data.js';
+import { formatWhat3Words } from '../../lib/delivery-details.js';
 import { readTillFile } from '../../lib/till-import.js';
 import {
   buildForecastLines,
@@ -307,7 +308,12 @@ export function mountOrdersPanel(route) {
     return `<select class="ord-supplier-select" data-order-supplier="${escapeHtml(product?.id || '')}" aria-label="Supplier to order from" title="${escapeHtml(currentName || 'Suppliers linked to this product')}" ${dis}>${opts}</select>`;
   }
 
-  function rowHtml(r) {
+  function rowSupplierKey(r) {
+    const p = ctx.productById.get(r.productId);
+    return preferredSupplierId(p) || '';
+  }
+
+  function rowHtml(r, supplierBreak = false) {
     const p = ctx.productById.get(r.productId);
     const supplier = ctx.supplierById.get(preferredSupplierId(p));
     const pack = packLabel(p, supplier?.id);
@@ -327,7 +333,7 @@ export function mountOrdersPanel(route) {
       return po ? `<button type="button" class="ord-ref" data-open-po="${escapeHtml(po.id)}">${escapeHtml(ref)}</button>` : '';
     }).join('');
     const marker = statusChip(productOrderStatus(r.productId));
-    return `<tr class="dist-prod-row ord-row" data-pid="${escapeHtml(r.productId)}">
+    return `<tr class="dist-prod-row ord-row${supplierBreak ? ' ord-row--supplier-break' : ''}" data-pid="${escapeHtml(r.productId)}">
       <th class="dist-sticky plan-col-product" scope="row">
         <div class="dist-item">
           <span class="dist-item-name" title="${escapeHtml(p?.name || '')}">${escapeHtml(p?.name || 'Unknown product')}</span>
@@ -375,8 +381,8 @@ export function mountOrdersPanel(route) {
       ? `data-po-action="confirm" data-po-id="${escapeHtml(po.id)}"`
       : 'disabled';
     return `<div class="ord-row-actions">
-      <button type="button" class="ord-icon-btn" aria-label="Raise PO" title="${escapeHtml(raiseTitle)}" ${raiseAttrs}>${icon('shopping-cart', { size: 14 })}</button>
-      <button type="button" class="ord-icon-btn" aria-label="Confirm order" title="${escapeHtml(confirmTitle)}" ${confirmAttrs}>${icon('clipboard-check', { size: 14 })}</button>
+      <button type="button" class="ord-icon-btn" aria-label="Raise PO" title="${escapeHtml(raiseTitle)}" ${raiseAttrs}>${icon('shopping-cart', { size: 16 })}</button>
+      <button type="button" class="ord-icon-btn" aria-label="Confirm order" title="${escapeHtml(confirmTitle)}" ${confirmAttrs}>${icon('clipboard-check', { size: 16 })}</button>
     </div>`;
   }
 
@@ -395,8 +401,15 @@ export function mountOrdersPanel(route) {
       ].map(([l, t, extra]) => `<th class="dist-th plan-th${extra ? ` ${extra}` : ''}" title="${escapeHtml(t)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(l)}</span></div></th>`).join('')}
       <th class="dist-th plan-th ord-actions-th" aria-label="Actions"></th>
     </tr>`;
+    const grouped = (ctx.filter.sort || 'gap') === 'supplier';
+    let previousSupplier = null;
     const body = rows.length
-      ? rows.map(rowHtml).join('')
+      ? rows.map((r, i) => {
+        const key = rowSupplierKey(r);
+        const supplierBreak = grouped && i > 0 && key !== previousSupplier;
+        previousSupplier = key;
+        return rowHtml(r, supplierBreak);
+      }).join('')
       : `<tr><td colspan="9" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
     return `<thead id="ordHead">${head}</thead><tbody id="ordBody">${body}</tbody>`;
   }
@@ -457,6 +470,7 @@ export function mountOrdersPanel(route) {
     }
     if (po.status === 'draft') {
       buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-po-action="sent" data-po-id="${escapeHtml(po.id)}" ${needsLine}>Mark sent</button>`);
+      buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--danger" data-po-action="delete" data-po-id="${escapeHtml(po.id)}">Delete</button>`);
     }
     return buttons.join('');
   }
@@ -470,27 +484,7 @@ export function mountOrdersPanel(route) {
   }
 
   function ordersRailHtml() {
-    const q = ctx.query.trim().toLowerCase();
-    const { orders: groups, unassigned } = shortfallGroups();
-    const raiseRows = groups.filter((group) => !draftForSupplier(group.supplierId)).filter((group) => {
-      if (!q) return true;
-      const sup = ctx.supplierById.get(group.supplierId);
-      return (sup?.name || '').toLowerCase().includes(q);
-    }).map((group) => {
-      const sup = ctx.supplierById.get(group.supplierId);
-      const cases = group.lines.reduce((sum, line) => sum + line.qty_cases, 0);
-      return `<article class="ord-rail-row">
-        <div class="ord-rail-main">
-          <span class="ord-rail-top"><span class="ord-rail-ref">Not raised</span></span>
-          <span class="ord-rail-sup">${escapeHtml(sup?.name || 'Supplier')}</span>
-          <span class="ord-rail-meta muted">${group.lines.length} product${group.lines.length === 1 ? '' : 's'} · ${qty(cases)} cases still short</span>
-        </div>
-        <div class="ord-rail-status"></div>
-        <div class="ord-rail-actions">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-po-action="raise" data-supplier-id="${escapeHtml(group.supplierId)}">Raise PO</button>
-        </div>
-      </article>`;
-    }).join('');
+    const q = ctx.query.trim();
     const orderRows = ctx.orders.slice().reverse().filter(orderMatchesQuery).map((po) => {
       const meta = STATUS_META[po.status] || STATUS_META.draft;
       const sup = ctx.supplierById.get(po.supplier_id);
@@ -508,16 +502,13 @@ export function mountOrdersPanel(route) {
         ${actions ? `<div class="ord-rail-actions">${actions}</div>` : '<div class="ord-rail-actions"></div>'}
       </article>`;
     }).join('');
-    const missing = unassigned.length
-      ? `<p class="ord-rail-note muted">${unassigned.length} product${unassigned.length === 1 ? ' has' : 's have'} no supplier, so ${unassigned.length === 1 ? 'it can’t' : 'they can’t'} be raised from here.</p>`
-      : '';
-    if (!raiseRows && !orderRows) {
+    if (!orderRows) {
       const empty = q
         ? 'No purchase orders match this search.'
         : 'No purchase orders yet. Use <strong>Generate orders</strong> for every shortfall, or <strong>New order</strong>.';
-      return `<p class="ord-rail-empty muted">${empty}</p>${q ? '' : missing}`;
+      return `<p class="ord-rail-empty muted">${empty}</p>`;
     }
-    return `${raiseRows}${orderRows}${missing}`;
+    return orderRows;
   }
 
   function forecastLines() {
@@ -1045,7 +1036,17 @@ export function mountOrdersPanel(route) {
         ? `${fmtDate(ev.start_date)} – ${fmtDate(ev.end_date)}`
         : fmtDate(ev.start_date))
       : '';
-    const deliverLines = [ev.venue, ev.venue_postcode, eventWhen].filter(Boolean);
+    const contactBits = [ev.delivery_contact_name, ev.delivery_contact_phone].filter(Boolean);
+    const deliverLines = [
+      ev.venue,
+      ev.venue_postcode,
+      formatWhat3Words(ev.what3words),
+      eventWhen,
+      contactBits.length ? `On site  ${contactBits.join(' · ')}` : '',
+    ].filter(Boolean);
+    const factLink = ev.delivery_fact_sheet_url
+      ? `<a class="ord-doc-fact" href="${escapeHtml(ev.delivery_fact_sheet_url)}" target="_blank" rel="noopener noreferrer">${icon('file-text', { size: 14 })} ${escapeHtml(ev.delivery_fact_sheet_name || 'Delivery fact sheet')}</a>`
+      : '';
     const statusWhen = [
       po?.sent_at ? `Sent ${fmtDate(po.sent_at)}` : '',
       po?.confirmed_at ? `Confirmed ${fmtDate(po.confirmed_at)}` : '',
@@ -1072,6 +1073,14 @@ export function mountOrdersPanel(route) {
                 <dd><input type="date" class="ord-doc-field" id="ordDate" value="${escapeHtml(po?.order_date || today())}" ${hdis}></dd>
                 <dt>Deliver by</dt>
                 <dd><input type="date" class="ord-doc-field" id="ordDelivery" value="${escapeHtml(po?.delivery_date || ev.start_date || '')}" ${dateDis}></dd>
+                <dt>Delivery time</dt>
+                <dd>
+                  <select class="ord-doc-field" id="ordDeliveryTime" ${dateDis}>
+                    <option value="">—</option>
+                    <option value="am"${po?.delivery_time === 'am' ? ' selected' : ''}>AM</option>
+                    <option value="pm"${po?.delivery_time === 'pm' ? ' selected' : ''}>PM</option>
+                  </select>
+                </dd>
                 <dt>Your ref</dt>
                 <dd><input type="text" class="ord-doc-field" id="ordSupRef" maxlength="80" value="${escapeHtml(po?.supplier_ref || '')}" placeholder="Confirmation no." ${dateDis}></dd>
               </dl>
@@ -1093,7 +1102,7 @@ export function mountOrdersPanel(route) {
             <section>
               <h3>Deliver to</h3>
               <p class="ord-doc-party-name">${escapeHtml(ev.name || 'This event')}</p>
-              <div class="ord-doc-party-lines">${deliverLines.map((l) => `<span>${escapeHtml(l)}</span>`).join('')}</div>
+              <div class="ord-doc-party-lines">${deliverLines.map((l) => `<span>${escapeHtml(l)}</span>`).join('')}${factLink}</div>
             </section>
           </div>
           <table class="ord-lines ord-doc-lines">
@@ -1269,6 +1278,7 @@ export function mountOrdersPanel(route) {
         supplier_id: state.supplierId || $('ordSupplier')?.value || null,
         order_date: $('ordDate')?.value || null,
         delivery_date: $('ordDelivery')?.value || null,
+        delivery_time: $('ordDeliveryTime')?.value || null,
         supplier_ref: $('ordSupRef')?.value.trim() || null,
         notes: $('ordNotes')?.value.trim() || null,
       };
@@ -1295,7 +1305,7 @@ export function mountOrdersPanel(route) {
       } else if (headerEditable) {
         saved = await updatePurchaseOrder(po.id, h);
       } else {
-        saved = await updatePurchaseOrder(po.id, { delivery_date: h.delivery_date, supplier_ref: h.supplier_ref, notes: h.notes });
+        saved = await updatePurchaseOrder(po.id, { delivery_date: h.delivery_date, delivery_time: h.delivery_time, supplier_ref: h.supplier_ref, notes: h.notes });
       }
       if (editable) await savePurchaseOrderLines(po.id, state.lines, po.purchase_order_lines || []);
       return saved;
@@ -1743,6 +1753,20 @@ export function mountOrdersPanel(route) {
     toast('Order marked as sent');
   }
 
+  async function deleteOrderQuick(poId) {
+    const po = ctx.orders.find((row) => row.id === poId);
+    if (!po || locked() || po.status !== 'draft') return false;
+    const ok = await confirmDialog({
+      title: 'Delete order',
+      message: `Delete ${po.reference}? This can’t be undone.`,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return false;
+    await deletePurchaseOrder(po.id);
+    toast('Order deleted');
+    return true;
+  }
+
   async function confirmOrderQuick(poId) {
     const po = ctx.orders.find((row) => row.id === poId);
     if (!po || locked()) return;
@@ -1772,7 +1796,11 @@ export function mountOrdersPanel(route) {
       actionBtn.disabled = true;
       const run = action === 'raise'
         ? raiseForSupplier(supplierId)
-        : (action === 'sent' ? markOrderSent(poId) : confirmOrderQuick(poId));
+        : action === 'sent'
+          ? markOrderSent(poId)
+          : action === 'delete'
+            ? deleteOrderQuick(poId)
+            : confirmOrderQuick(poId);
       void run.then((changed) => {
         if (changed === false) {
           actionBtn.disabled = false;

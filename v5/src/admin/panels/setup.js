@@ -2,6 +2,7 @@
  * Admin event setup — details, bars, and transfer recipients.
  */
 
+import { factSheetKind } from '../../lib/delivery-details.js';
 import { $, escapeHtml, toast } from '../../lib/util.js';
 import { icon } from '../../lib/icons.js';
 import { getDB, loadEventLite } from '../../db.js';
@@ -112,6 +113,58 @@ function renderShell() {
 
         <section class="setup-section admin-surface">
           <div class="setup-section-head">
+            <h2 class="setup-section-title">Delivery</h2>
+            <p class="setup-section-desc muted">Shown on purchase orders so the driver can find the site and who to call. AM or PM is chosen on each order.</p>
+          </div>
+          <div class="setup-fields">
+            <div class="setup-field">
+              <div class="setup-field-row">
+                <label class="admin-label" for="setupWhat3Words">What3Words</label>
+                <span class="setup-field-saved" id="setupSaved-what3words"></span>
+              </div>
+              <input class="admin-input" type="text" id="setupWhat3Words" data-field="what3words" maxlength="80" placeholder="///filled.count.soap" autocomplete="off">
+            </div>
+            <div class="setup-field setup-field--spacer" aria-hidden="true"></div>
+            <div class="setup-field">
+              <div class="setup-field-row">
+                <label class="admin-label" for="setupDeliveryName">Point of contact</label>
+                <span class="setup-field-saved" id="setupSaved-delivery_contact_name"></span>
+              </div>
+              <input class="admin-input" type="text" id="setupDeliveryName" data-field="delivery_contact_name" maxlength="120" placeholder="Name" autocomplete="name">
+            </div>
+            <div class="setup-field">
+              <div class="setup-field-row">
+                <label class="admin-label" for="setupDeliveryPhone">Phone</label>
+                <span class="setup-field-saved" id="setupSaved-delivery_contact_phone"></span>
+              </div>
+              <input class="admin-input" type="tel" id="setupDeliveryPhone" data-field="delivery_contact_phone" maxlength="40" placeholder="Phone number" autocomplete="tel">
+            </div>
+            <div class="setup-field setup-field--full">
+              <div class="setup-field-row">
+                <label class="admin-label" for="setupFactFile">Delivery fact sheet</label>
+                <span class="setup-field-saved" id="setupSaved-delivery_fact_sheet_url"></span>
+              </div>
+              <div class="setup-image-row">
+                <div class="setup-image-preview setup-image-preview--empty" id="setupFactPreview" aria-hidden="true">
+                  ${icon('file-text', { size: 20 })}
+                </div>
+                <div class="setup-image-actions">
+                  <input type="file" id="setupFactFile" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" hidden>
+                  <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="setupFactPick">
+                    ${icon('upload', { size: 14 })} Upload fact sheet
+                  </button>
+                  <a class="admin-drawer-btn admin-drawer-btn--solid" id="setupFactOpen" href="#" target="_blank" rel="noopener noreferrer" hidden>View</a>
+                  <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="setupFactClear" hidden>Remove</button>
+                  <p class="setup-fact-name" id="setupFactName" hidden></p>
+                  <p class="wst-form-hint muted" style="margin:0">PDF or image for the driver. It is attached to the purchase order PDF.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="setup-section admin-surface">
+          <div class="setup-section-head">
             <h2 class="setup-section-title">Bars</h2>
             <p class="setup-section-desc muted">Bars scoped to this event — used in distribution, counts, and transfers.</p>
           </div>
@@ -209,7 +262,69 @@ function paintEventFields(event) {
   $('setupStart').value = event.start_date || '';
   $('setupEnd').value = event.end_date || '';
   $('setupTarget').value = event.target_revenue != null ? String(event.target_revenue) : '';
+  $('setupWhat3Words').value = event.what3words || '';
+  $('setupDeliveryName').value = event.delivery_contact_name || '';
+  $('setupDeliveryPhone').value = event.delivery_contact_phone || '';
   paintEventImage(event.image_url || null);
+  paintFactSheet(event);
+}
+
+const FACT_SHEET_MAX_BYTES = 20 * 1024 * 1024;
+
+function factSheetExt(file) {
+  const fromName = (file.name || '').split('.').pop()?.toLowerCase();
+  if (fromName === 'pdf') return 'pdf';
+  if (fromName === 'png') return 'png';
+  if (fromName === 'webp') return 'webp';
+  if (fromName === 'jpg' || fromName === 'jpeg') return 'jpg';
+  const type = file.type || '';
+  if (type === 'application/pdf') return 'pdf';
+  if (type === 'image/png') return 'png';
+  if (type === 'image/webp') return 'webp';
+  if (type === 'image/jpeg') return 'jpg';
+  return '';
+}
+
+function paintFactSheet(ev) {
+  const preview = $('setupFactPreview');
+  const clearBtn = $('setupFactClear');
+  const openLink = $('setupFactOpen');
+  const pickBtn = $('setupFactPick');
+  const nameEl = $('setupFactName');
+  const url = ev?.delivery_fact_sheet_url || '';
+  const name = ev?.delivery_fact_sheet_name || 'Delivery fact sheet';
+  if (!preview) return;
+
+  if (url) {
+    const kind = factSheetKind(name || url, '');
+    preview.classList.remove('setup-image-preview--empty');
+    preview.innerHTML = kind === 'image'
+      ? `<img src="${escapeHtml(url)}" alt="">`
+      : icon('file-text', { size: 20 });
+    if (clearBtn) clearBtn.hidden = false;
+    if (openLink) {
+      openLink.hidden = false;
+      openLink.href = url;
+    }
+    if (pickBtn) pickBtn.innerHTML = `${icon('upload', { size: 14 })} Replace`;
+    if (nameEl) {
+      nameEl.hidden = false;
+      nameEl.textContent = name;
+    }
+  } else {
+    preview.classList.add('setup-image-preview--empty');
+    preview.innerHTML = icon('file-text', { size: 20 });
+    if (clearBtn) clearBtn.hidden = true;
+    if (openLink) {
+      openLink.hidden = true;
+      openLink.removeAttribute('href');
+    }
+    if (pickBtn) pickBtn.innerHTML = `${icon('upload', { size: 14 })} Upload fact sheet`;
+    if (nameEl) {
+      nameEl.hidden = true;
+      nameEl.textContent = '';
+    }
+  }
 }
 
 function imageExt(file) {
@@ -341,6 +456,78 @@ export function mountSetupPanel(route, state = { events: [] }) {
       if (file) saveEventImage(file);
     });
     $('setupImageClear')?.addEventListener('click', () => clearEventImage());
+  }
+
+  async function saveFactSheet(file) {
+    if (!event?.id || !file) return;
+    const ext = factSheetExt(file);
+    if (!ext) {
+      toast('Upload a PDF or an image', true);
+      return;
+    }
+    if (file.size > FACT_SHEET_MAX_BYTES) {
+      toast('Fact sheet must be under 20 MB', true);
+      return;
+    }
+    const pickBtn = $('setupFactPick');
+    const prevLabel = pickBtn?.innerHTML;
+    if (pickBtn) {
+      pickBtn.disabled = true;
+      pickBtn.textContent = 'Uploading…';
+    }
+    try {
+      const path = `events/${event.id}/fact-sheet-${Date.now()}.${ext}`;
+      const url = await getDB().uploadImage(EVENT_IMAGE_BUCKET, path, file);
+      const name = (file.name || `fact-sheet.${ext}`).slice(0, 180);
+      await getDB().events.update(event.id, {
+        delivery_fact_sheet_url: url,
+        delivery_fact_sheet_name: name,
+      });
+      event.delivery_fact_sheet_url = url;
+      event.delivery_fact_sheet_name = name;
+      paintFactSheet(event);
+      flashSaved('delivery_fact_sheet_url', false);
+      toast('Delivery fact sheet saved');
+    } catch (err) {
+      flashSaved('delivery_fact_sheet_url', true, (err.message || 'Upload failed').slice(0, 48));
+      toast(err.message || 'Fact sheet upload failed', true);
+    } finally {
+      if (pickBtn) {
+        pickBtn.disabled = false;
+        pickBtn.innerHTML = prevLabel || `${icon('upload', { size: 14 })} Replace`;
+        paintFactSheet(event);
+      }
+    }
+  }
+
+  async function clearFactSheet() {
+    if (!event?.id) return;
+    try {
+      await getDB().events.update(event.id, {
+        delivery_fact_sheet_url: null,
+        delivery_fact_sheet_name: null,
+      });
+      event.delivery_fact_sheet_url = null;
+      event.delivery_fact_sheet_name = null;
+      const fileInput = $('setupFactFile');
+      if (fileInput) fileInput.value = '';
+      paintFactSheet(event);
+      flashSaved('delivery_fact_sheet_url', false);
+      toast('Delivery fact sheet removed');
+    } catch (err) {
+      flashSaved('delivery_fact_sheet_url', true, (err.message || 'Failed').slice(0, 48));
+      toast(err.message || 'Could not remove fact sheet', true);
+    }
+  }
+
+  function wireFactSheet() {
+    const fileInput = $('setupFactFile');
+    $('setupFactPick')?.addEventListener('click', () => fileInput?.click());
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (file) saveFactSheet(file);
+    });
+    $('setupFactClear')?.addEventListener('click', () => clearFactSheet());
   }
 
   function openBarForm(barId) {
@@ -484,6 +671,7 @@ export function mountSetupPanel(route, state = { events: [] }) {
 
   wireAutosave();
   wireEventImage();
+  wireFactSheet();
 
   async function boot() {
     try {
@@ -506,6 +694,7 @@ export function mountSetupPanel(route, state = { events: [] }) {
         if (!panel) return;
         wireAutosave();
         wireEventImage();
+        wireFactSheet();
         await boot();
       });
     }

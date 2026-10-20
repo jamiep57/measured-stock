@@ -4308,6 +4308,16 @@ body.admin-drawer-open {
   gap: 8px;
   align-items: center;
 }
+.setup-fact-name {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#setupFactOpen { text-decoration: none; }
 .setup-pills {
   display: flex;
   flex-wrap: wrap;

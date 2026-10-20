@@ -1177,6 +1177,12 @@
   padding: 2px 8px;
 }
 .ord-status-cell { white-space: nowrap; }
+.ord-grid tbody tr.ord-row:has(+ tr.ord-row--supplier-break) > * {
+  border-bottom-color: transparent;
+}
+.ord-grid tbody tr.ord-row--supplier-break > * {
+  border-top: 2px solid color-mix(in srgb, var(--foreground) 28%, var(--border));
+}
 .ord-grid .dist-item {
   display: flex;
   flex-direction: column;
@@ -1263,37 +1269,52 @@
 }
 .ord-grid th.ord-actions-th,
 .ord-grid td.ord-actions {
-  width: 68px;
-  min-width: 68px;
-  padding-right: 8px !important;
+  width: 96px;
+  min-width: 96px;
+  padding: 4px 8px !important;
   text-align: right;
 }
 .ord-row-actions {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 2px;
+  gap: var(--tb-control-gap, 8px);
 }
+/* Same outlined icon control as the topbar profile and toolbar buttons. */
 .ord-icon-btn {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--tb-control-h, 36px);
+  height: var(--tb-control-h, 36px);
+  flex-shrink: 0;
   padding: 0;
-  color: var(--muted-foreground);
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--tb-control-radius, var(--radius));
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
   cursor: pointer;
 }
+.ord-icon-btn .lucide-icon {
+  width: var(--tb-icon-size, 16px);
+  height: var(--tb-icon-size, 16px);
+}
 .ord-icon-btn:hover:not(:disabled) {
-  color: var(--foreground);
   background: var(--secondary);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--foreground));
+  color: var(--foreground);
+}
+.ord-icon-btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 .ord-icon-btn:disabled {
-  opacity: 0.28;
-  cursor: default;
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ord-icon-btn:active:not(:disabled) { transform: none; }
 }
 .ord-refs { white-space: nowrap; }
 .ord-ref {
@@ -1464,6 +1485,21 @@
   line-height: 1.4;
   color: var(--muted-foreground);
   white-space: pre-line;
+}
+.ord-doc-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: none;
+}
+.ord-doc-fact:hover { text-decoration: underline; }
+select.ord-doc-field {
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
 }
 .ord-doc-lines { margin-top: 6px; }
 .ord-doc-lines .num { width: 1%; white-space: nowrap; }
