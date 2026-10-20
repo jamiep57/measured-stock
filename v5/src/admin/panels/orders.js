@@ -245,7 +245,7 @@ export function mountOrdersPanel(route) {
       .filter((po) => po.status === 'confirmed')
       .reduce((sum, po) => sum + orderLinesTotal(po.purchase_order_lines).total, 0);
     return `
-      <div class="plan-kpi"><span class="plan-kpi-label">QTY Required</span><span class="plan-kpi-value">${qty(s.planned)}</span>
+      <div class="plan-kpi"><span class="plan-kpi-label">QTY to order</span><span class="plan-kpi-value">${qty(s.planned)}</span>
         <span class="plan-kpi-sub muted">cases from projected serves${ctx.buffer ? ` +${ctx.buffer}%` : ''}</span></div>
       <div class="plan-kpi"><span class="plan-kpi-label">Confirmed</span><span class="plan-kpi-value">${qty(s.confirmed)}</span>
         <span class="plan-kpi-sub muted">${money(value)} on confirmed orders</span></div>
@@ -303,7 +303,8 @@ export function mountOrdersPanel(route) {
     const opts = options.map((opt) => (
       `<option value="${escapeHtml(opt.id)}"${opt.id === current ? ' selected' : ''}>${escapeHtml(opt.name)}</option>`
     )).join('');
-    return `<select class="ord-supplier-select" data-order-supplier="${escapeHtml(product?.id || '')}" aria-label="Supplier to order from" title="Suppliers linked to this product" ${dis}>${opts}</select>`;
+    const currentName = options.find((opt) => opt.id === current)?.name || '';
+    return `<select class="ord-supplier-select" data-order-supplier="${escapeHtml(product?.id || '')}" aria-label="Supplier to order from" title="${escapeHtml(currentName || 'Suppliers linked to this product')}" ${dis}>${opts}</select>`;
   }
 
   function rowHtml(r) {
@@ -319,7 +320,7 @@ export function mountOrdersPanel(route) {
       data-planned="${escapeHtml(r.productId)}" value="${escapeHtml(item?.planned_qty_override != null ? String(item.planned_qty_override) : '')}"
       placeholder="${escapeHtml(src === 'projection' && r.planned != null ? String(r.planned) : '')}"
       title="${onMenu ? 'Override qty required — leave blank to use projected serves' : 'Add to the event menu to plan this product'}"
-      aria-label="Qty required" ${dis}>`;
+      aria-label="Qty to order" ${dis}>`;
     const gapCls = GAP_META[r.status] || GAP_META.none;
     const refs = [...new Set(r.refs)].map((ref) => {
       const po = ctx.orders.find((o) => o.reference === ref);
@@ -385,7 +386,7 @@ export function mountOrdersPanel(route) {
       <th class="dist-th dist-sticky plan-col-product"><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Product</span></div></th>
       <th class="dist-th plan-th plan-th--supplier" title="Who this product is ordered from. Purchase orders use this supplier."><div class="dist-bar-head dist-bar-head--left"><span class="dist-bar-name">Supplier</span></div></th>
       ${[
-        ['QTY Required', 'Cases needed — projected serves ÷ serves per case, plus buffer', 'plan-th--qty'],
+        ['QTY to order', 'Cases needed — projected serves ÷ serves per case, plus buffer', 'plan-th--qty'],
         ['Confirmed', 'Cases on confirmed purchase orders'],
         ['Pending', 'Cases on draft or sent orders'],
         ['Variance', 'Confirmed minus qty required'],
@@ -469,27 +470,7 @@ export function mountOrdersPanel(route) {
   }
 
   function ordersRailHtml() {
-    const q = ctx.query.trim().toLowerCase();
-    const { orders: groups, unassigned } = shortfallGroups();
-    const raiseRows = groups.filter((group) => !draftForSupplier(group.supplierId)).filter((group) => {
-      if (!q) return true;
-      const sup = ctx.supplierById.get(group.supplierId);
-      return (sup?.name || '').toLowerCase().includes(q);
-    }).map((group) => {
-      const sup = ctx.supplierById.get(group.supplierId);
-      const cases = group.lines.reduce((sum, line) => sum + line.qty_cases, 0);
-      return `<article class="ord-rail-row">
-        <div class="ord-rail-main">
-          <span class="ord-rail-top"><span class="ord-rail-ref">Not raised</span></span>
-          <span class="ord-rail-sup">${escapeHtml(sup?.name || 'Supplier')}</span>
-          <span class="ord-rail-meta muted">${group.lines.length} product${group.lines.length === 1 ? '' : 's'} · ${qty(cases)} cases still short</span>
-        </div>
-        <div class="ord-rail-status"></div>
-        <div class="ord-rail-actions">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-po-action="raise" data-supplier-id="${escapeHtml(group.supplierId)}">Raise PO</button>
-        </div>
-      </article>`;
-    }).join('');
+    const q = ctx.query.trim();
     const orderRows = ctx.orders.slice().reverse().filter(orderMatchesQuery).map((po) => {
       const meta = STATUS_META[po.status] || STATUS_META.draft;
       const sup = ctx.supplierById.get(po.supplier_id);
@@ -507,16 +488,13 @@ export function mountOrdersPanel(route) {
         ${actions ? `<div class="ord-rail-actions">${actions}</div>` : '<div class="ord-rail-actions"></div>'}
       </article>`;
     }).join('');
-    const missing = unassigned.length
-      ? `<p class="ord-rail-note muted">${unassigned.length} product${unassigned.length === 1 ? ' has' : 's have'} no supplier, so ${unassigned.length === 1 ? 'it can’t' : 'they can’t'} be raised from here.</p>`
-      : '';
-    if (!raiseRows && !orderRows) {
+    if (!orderRows) {
       const empty = q
         ? 'No purchase orders match this search.'
         : 'No purchase orders yet. Use <strong>Generate orders</strong> for every shortfall, or <strong>New order</strong>.';
-      return `<p class="ord-rail-empty muted">${empty}</p>${q ? '' : missing}`;
+      return `<p class="ord-rail-empty muted">${empty}</p>`;
     }
-    return `${raiseRows}${orderRows}${missing}`;
+    return orderRows;
   }
 
   function forecastLines() {
