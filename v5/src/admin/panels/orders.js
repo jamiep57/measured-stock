@@ -284,13 +284,12 @@ export function mountOrdersPanel(route) {
         name: offer.supplier?.name || ctx.supplierById.get(offer.supplier_id)?.name || 'Supplier',
       });
     });
-    ctx.suppliers.forEach((supplier) => {
-      if (!supplier?.id || seen.has(supplier.id)) return;
-      seen.add(supplier.id);
-      options.push({ id: supplier.id, name: supplier.name || 'Supplier' });
-    });
-    if (current && !seen.has(current)) {
-      options.push({ id: current, name: ctx.supplierById.get(current)?.name || 'Supplier' });
+    // Legacy products can still carry supplier_id without an offer row.
+    if (current && !seen.has(current) && current === product?.supplier_id) {
+      options.push({
+        id: current,
+        name: ctx.supplierById.get(current)?.name || product?.supplier?.name || 'Supplier',
+      });
     }
     options.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
     return { current, options };
@@ -298,12 +297,12 @@ export function mountOrdersPanel(route) {
 
   function supplierSelectHtml(product) {
     const { current, options } = orderSupplierOptions(product);
+    if (!options.length) return '<span class="muted" title="No suppliers linked to this product">—</span>';
     const dis = locked() ? 'disabled' : '';
-    const blank = current ? '' : '<option value="">Choose supplier</option>';
     const opts = options.map((opt) => (
       `<option value="${escapeHtml(opt.id)}"${opt.id === current ? ' selected' : ''}>${escapeHtml(opt.name)}</option>`
     )).join('');
-    return `<select class="ord-supplier-select" data-order-supplier="${escapeHtml(product?.id || '')}" aria-label="Supplier to order from" title="Who this product is ordered from" ${dis}>${blank}${opts}</select>`;
+    return `<select class="ord-supplier-select" data-order-supplier="${escapeHtml(product?.id || '')}" aria-label="Supplier to order from" title="Suppliers linked to this product" ${dis}>${opts}</select>`;
   }
 
   function rowHtml(r) {
