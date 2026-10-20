@@ -6,6 +6,7 @@ import {
   draftOrdersFromShortfalls,
   orderLinesTotal,
   orderValueVat,
+  orderVatFigures,
   orderedByProduct,
   plannedCases,
   plannedProductCases,
@@ -140,5 +141,11 @@ describe('orderLinesTotal', () => {
 describe('orderValueVat', () => {
   it('adds 20% VAT to an ex-VAT order value', () => {
     expect(orderValueVat(2867.57)).toEqual({ ex: 2867.57, vat: 573.51, inc: 3441.08, rate: 0.2 });
+  });
+});
+
+describe('orderVatFigures', () => {
+  it('drops VAT when the order has it switched off', () => {
+    expect(orderVatFigures(2867.57, false)).toEqual({ includeVat: false, ex: 2867.57, vat: 0, inc: 2867.57, rate: 0 });
   });
 });

@@ -227,3 +227,12 @@ export function orderValueVat(net, vatRate = PURCHASE_ORDER_VAT_RATE) {
   const vat = Math.round(ex * rate * 100) / 100;
   return { ex, vat, inc: Math.round((ex + vat) * 100) / 100, rate };
 }
+
+/** Figures for an order whose VAT can be switched off. Case prices stay ex VAT. */
+export function orderVatFigures(net, includeVat = true) {
+  if (includeVat === false) {
+    const ex = orderValueVat(net, 0).ex;
+    return { includeVat: false, ex, vat: 0, inc: ex, rate: 0 };
+  }
+  return { includeVat: true, ...orderValueVat(net) };
+}

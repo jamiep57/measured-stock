@@ -5,7 +5,7 @@
 
 import { createBrandDoc, expandLines, formatDocDate, formatMoney, safeFilePart } from './brand-pdf.js';
 import { deliveryTimeLabel, factSheetKind, formatWhat3Words } from './delivery-details.js';
-import { orderLinesTotal, orderValueVat } from './order-compare.js';
+import { orderLinesTotal, orderVatFigures } from './order-compare.js';
 
 const PDF_LIB_URL = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
 let pdfLibPromise;
@@ -226,12 +226,16 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
   const pairs = [['Total cases', String(totalCases)]];
   if (anyPrice) {
     const { total, priced, lines: count } = orderLinesTotal(lines);
-    const vat = orderValueVat(total);
+    const vat = orderVatFigures(total, po.include_vat !== false);
     const vatPct = Math.round(vat.rate * 100);
     if (priced < count) pairs.push(['Unpriced lines', String(count - priced)]);
-    pairs.push(['Order value (ex VAT)', formatMoney(total)]);
-    pairs.push([`VAT (${vatPct}%)`, formatMoney(vat.vat)]);
-    pairs.push(['Order value (inc VAT)', formatMoney(vat.inc), true]);
+    if (vat.includeVat) {
+      pairs.push(['Order value (ex VAT)', formatMoney(total)]);
+      pairs.push([`VAT (${vatPct}%)`, formatMoney(vat.vat)]);
+      pairs.push(['Order value (inc VAT)', formatMoney(vat.inc), true]);
+    } else {
+      pairs.push(['Order value', formatMoney(total), true]);
+    }
   }
   ctx.totals(pairs);
 

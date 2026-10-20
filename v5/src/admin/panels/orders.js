@@ -39,7 +39,7 @@ import {
   compareSummary,
   draftOrdersFromShortfalls,
   orderLinesTotal,
-  orderValueVat,
+  orderVatFigures,
   orderedByProduct,
   plannedProductCases,
   preferredSupplierId,
@@ -1022,6 +1022,7 @@ export function mountOrdersPanel(route) {
     const state = {
       supplierId: po?.supplier_id || '',
       lines: (po?.purchase_order_lines || []).map((l) => ({ ...l })),
+      includeVat: po?.include_vat !== false,
     };
     const status = po?.status || 'draft';
     const editable = !locked() && (status === 'draft' || status === 'sent');
@@ -1209,7 +1210,7 @@ export function mountOrdersPanel(route) {
 
     function paintTotal() {
       const t = orderLinesTotal(state.lines);
-      const vat = orderValueVat(t.total);
+      const vat = orderVatFigures(t.total, state.includeVat);
       const vatPct = Math.round(vat.rate * 100);
       const cases = state.lines.reduce((s, l) => s + (Number(l.qty_cases) || 0), 0);
       const el = $('ordLinesTotal');
@@ -1217,12 +1218,23 @@ export function mountOrdersPanel(route) {
       const unpriced = t.priced < t.lines
         ? `<div class="ord-doc-total"><span>Unpriced lines</span><strong>${t.lines - t.priced}</strong></div>`
         : '';
+      const vatSwitch = `
+        <div class="ord-doc-total ord-doc-vat">
+          <span>VAT</span>
+          <button type="button" class="access-switch${state.includeVat ? ' is-on' : ''}${editable ? '' : ' is-locked'}" id="ordVat" role="switch" aria-checked="${state.includeVat ? 'true' : 'false'}" aria-label="Include VAT" ${editable ? '' : 'disabled'}>
+            <span class="access-switch-knob"></span>
+          </button>
+        </div>`;
+      const valueRows = vat.includeVat
+        ? `<div class="ord-doc-total"><span>Order value <em>ex VAT</em></span><strong>${money(t.total)}</strong></div>
+        <div class="ord-doc-total"><span>VAT <em>${vatPct}%</em></span><strong>${money(vat.vat)}</strong></div>
+        <div class="ord-doc-total ord-doc-total--due"><span>Order value <em>inc VAT</em></span><strong>${money(vat.inc)}</strong></div>`
+        : `<div class="ord-doc-total ord-doc-total--due"><span>Order value</span><strong>${money(t.total)}</strong></div>`;
       el.innerHTML = `
+        ${vatSwitch}
         <div class="ord-doc-total"><span>Total cases</span><strong>${qty(cases)}</strong></div>
         ${unpriced}
-        <div class="ord-doc-total"><span>Order value <em>ex VAT</em></span><strong>${money(t.total)}</strong></div>
-        <div class="ord-doc-total"><span>VAT <em>${vatPct}%</em></span><strong>${money(vat.vat)}</strong></div>
-        <div class="ord-doc-total ord-doc-total--due"><span>Order value <em>inc VAT</em></span><strong>${money(vat.inc)}</strong></div>`;
+        ${valueRows}`;
     }
 
     $('ordLinesBody').addEventListener('input', (e) => {
@@ -1271,6 +1283,20 @@ export function mountOrdersPanel(route) {
         },
       });
     }
+    $('ordLinesTotal')?.addEventListener('click', (e) => {
+      if (!editable || !e.target.closest('#ordVat')) return;
+      const next = !state.includeVat;
+      state.includeVat = next;
+      paintTotal();
+      if (!po?.id) return;
+      updatePurchaseOrder(po.id, { include_vat: next }).then((saved) => {
+        if (saved) po = { ...po, ...saved, include_vat: next };
+      }).catch((err) => {
+        state.includeVat = !next;
+        paintTotal();
+        showErr(err.message || 'Could not update VAT');
+      });
+    });
     paintLines();
 
     function readHeader() {
@@ -1281,6 +1307,7 @@ export function mountOrdersPanel(route) {
         delivery_time: $('ordDeliveryTime')?.value || null,
         supplier_ref: $('ordSupRef')?.value.trim() || null,
         notes: $('ordNotes')?.value.trim() || null,
+        include_vat: state.includeVat,
       };
     }
 
@@ -1417,6 +1444,7 @@ export function mountOrdersPanel(route) {
       if (r.op === 'INSERT') what = 'Created order';
       else if (r.op === 'DELETE') what = 'Deleted order';
       else if (r.old_data?.status !== r.new_data?.status) what = `Status ${r.old_data?.status} → ${r.new_data?.status}`;
+      else if ((r.changed_cols || []).includes('include_vat')) what = r.new_data?.include_vat === false ? 'VAT turned off' : 'VAT turned on';
       else what = `Updated ${(r.changed_cols || []).filter((c) => c !== 'updated_at').join(', ') || 'order'}`;
     } else {
       const data = r.new_data || r.old_data || {};
