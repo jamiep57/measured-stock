@@ -299,10 +299,41 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
   };
 
   /**
+   * Drop the cursor so the next `needed` millimetres finish on the
+   * bottom margin. A short page keeps its closing block low; a full
+   * page carries that block onto a new page, still on the bottom.
+   */
+  ctx.anchorBottom = (needed) => {
+    const limit = pageH - bottom;
+    if (ctx.y + needed <= limit) {
+      ctx.y = limit - needed;
+      return;
+    }
+    doc.addPage();
+    ctx.continuationHeader();
+    if (ctx.y + needed <= limit) ctx.y = limit - needed;
+  };
+
+  /** Height `ctx.totals` will consume, matching its row spacing. */
+  ctx.measureTotals = (pairs) => {
+    if (!pairs?.length) return 0;
+    const ruleAt = pairs.findLastIndex((pair) => pair[2]) >= 0
+      ? pairs.findLastIndex((pair) => pair[2])
+      : pairs.length - 1;
+    let h = 2;
+    pairs.forEach((_, i) => {
+      if (i === ruleAt) h += 3.2;
+      h += i === ruleAt ? 7.5 : 5.8;
+    });
+    return h;
+  };
+
+  /**
    * Label/value pairs in a block on the right. Labels share a left edge
    * and values share the right margin, with a rule above the main total.
+   * `anchored` skips the page-break check — the caller already placed y.
    */
-  ctx.totals = (pairs) => {
+  ctx.totals = (pairs, { anchored = false } = {}) => {
     if (!pairs.length) return;
     const gap = 8;
     const ruleAt = pairs.findLastIndex((pair) => pair[2]) >= 0
@@ -319,7 +350,7 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     });
     blockW = Math.min(blockW, contentW * 0.78);
     const x0 = pageW - mr - blockW;
-    ctx.ensureSpace(pairs.length * 8 + 8);
+    if (!anchored) ctx.ensureSpace(pairs.length * 8 + 8);
     ctx.y += 2;
     pairs.forEach(([label, value], i) => {
       const emphasize = i === ruleAt;

@@ -21,13 +21,6 @@ function addressLines(value) {
   return expandLines([value]).map((line) => line.replace(/,\s*$/, ''));
 }
 
-function eventWhen(event) {
-  if (!event?.start_date) return null;
-  const start = formatDocDate(event.start_date);
-  if (!event.end_date || event.end_date === event.start_date) return `Event ${start}`;
-  return `Event ${start} – ${formatDocDate(event.end_date)}`;
-}
-
 function deliverToLines(event) {
   const words = formatWhat3Words(event?.what3words);
   const contact = [event?.delivery_contact_name, event?.delivery_contact_phone].filter(Boolean);
@@ -36,8 +29,12 @@ function deliverToLines(event) {
     event?.venue_postcode,
     words || null,
     contact.length ? `On site  ${contact.join(' · ')}` : null,
-    eventWhen(event),
   ];
+}
+
+/** Collection is the end of the event, or the start when it is a single day. */
+function collectionDate(event) {
+  return event?.end_date || event?.start_date || null;
 }
 
 function loadPdfLib() {
@@ -169,11 +166,13 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
 
   const status = STATUS_LABEL[po.status] || po.status;
   const time = deliveryTimeLabel(po.delivery_time);
+  const collection = collectionDate(event);
   ctx.header({
     meta: [
       { value: po.reference, size: 12 },
       { label: 'Order date', value: po.order_date ? formatDocDate(po.order_date) : '—' },
       po.delivery_date ? { label: 'Deliver by', value: formatDocDate(po.delivery_date), strong: true } : null,
+      collection ? { label: 'Collect by', value: formatDocDate(collection), strong: true } : null,
       time ? { label: 'Delivery time', value: time, strong: true } : null,
       po.supplier_ref ? { label: 'Your ref', value: po.supplier_ref } : null,
       status !== 'Confirmed' && status !== 'Sent' ? { label: 'Status', value: status } : null,
@@ -222,6 +221,12 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
   });
   ctx.table(columns, rows, { rowH: 8, size: 9.5 });
 
+  if (po.notes) {
+    ctx.y += 6;
+    ctx.sectionTitle('Notes');
+    ctx.paragraph(po.notes);
+  }
+
   const totalCases = lines.reduce((s, l) => s + (Number(l.qty_cases) || 0), 0);
   const pairs = [['Total cases', String(totalCases)]];
   if (anyPrice) {
@@ -237,28 +242,26 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
       pairs.push(['Order value', formatMoney(total), true]);
     }
   }
-  ctx.totals(pairs);
 
-  if (po.notes) {
-    ctx.y += 6;
-    ctx.sectionTitle('Notes');
-    ctx.paragraph(po.notes);
-  }
+  const confirmWhen = collection
+    ? (time ? `the ${time} delivery and the collection date` : 'the delivery and collection dates')
+    : (time ? `the ${time} delivery` : 'the delivery date');
+  const confirmText = `Please confirm the quantities, prices and ${confirmWhen} by reply, quoting ${po.reference}.`;
+  const factNote = (fact?.kind === 'pdf' || fact?.kind === 'image')
+    ? 'A delivery fact sheet for the driver follows this order.'
+    : (factMissing && event?.delivery_fact_sheet_url ? `Delivery fact sheet: ${event.delivery_fact_sheet_url}` : '');
+
+  ctx.setFont('normal', 8.5);
+  const confirmH = 8 + 6 + ctx.doc.splitTextToSize(confirmText, ctx.contentW).length * 4.25 + 2;
+  const factH = factNote ? ctx.doc.splitTextToSize(factNote, ctx.contentW).length * 4.25 + 2 : 0;
+  ctx.anchorBottom(ctx.measureTotals(pairs) + confirmH + factH);
+  ctx.totals(pairs, { anchored: true });
+
   ctx.y += 8;
-  ctx.ensureSpace(14);
   ctx.hairline(ctx.y, 0.25);
   ctx.y += 6;
-  const confirmWhen = time ? `the ${time} delivery` : 'the delivery date';
-  ctx.paragraph(
-    `Please confirm the quantities, prices and ${confirmWhen} by reply, quoting ${po.reference}.`,
-    { size: 8.5 },
-  );
-
-  if (fact?.kind === 'pdf' || fact?.kind === 'image') {
-    ctx.paragraph('A delivery fact sheet for the driver follows this order.', { size: 8.5 });
-  } else if (factMissing && event?.delivery_fact_sheet_url) {
-    ctx.paragraph(`Delivery fact sheet: ${event.delivery_fact_sheet_url}`, { size: 8.5 });
-  }
+  ctx.paragraph(confirmText, { size: 8.5 });
+  if (factNote) ctx.paragraph(factNote, { size: 8.5 });
   if (fact?.kind === 'image') await embedFactSheetImage(ctx, fact.blob);
 
   const filename = `${safeFilePart(po.reference)}_${safeFilePart(supplier?.name)}.pdf`;
