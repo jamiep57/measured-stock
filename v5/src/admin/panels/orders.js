@@ -712,7 +712,7 @@ export function mountOrdersPanel(route) {
     const button = (id, label) => `<button type="button" class="sales-tab${tab === id ? ' sales-tab--active' : ''}" data-ord-tab="${id}" role="tab" aria-selected="${tab === id}">${label}</button>`;
     return `
       <div class="sales-tabs ord-tabs" role="tablist">
-        ${button('take', 'Take')}
+        ${button('take', 'Projections')}
         ${button('orders', 'Purchase orders')}
         ${button('ledger', `Orders${count}`)}
       </div>`;
