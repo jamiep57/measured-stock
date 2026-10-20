@@ -1098,7 +1098,6 @@ export function mountOrdersPanel(route) {
           <table class="ord-lines ord-doc-lines">
             <thead><tr>
               <th>Product</th>
-              <th>Pack</th>
               <th class="num" title="Cases the plan expects">QTY Required</th>
               <th class="num">Cases</th>
               <th class="num">Case price</th>
@@ -1178,15 +1177,15 @@ export function mountOrdersPanel(route) {
       const body = $('ordLinesBody');
       if (!body) return;
       if (!state.lines.length) {
-        body.innerHTML = '<tr><td colspan="7" class="muted ord-lines-empty">No lines yet — add a product below.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="muted ord-lines-empty">No lines yet — add a product below.</td></tr>';
       } else {
         body.innerHTML = state.lines.map((l, i) => {
           const p = ctx.productById.get(l.product_id);
           const row = ctx.rows.find((r) => r.productId === l.product_id);
+          const pack = packLabel(p, state.supplierId);
           const amount = l.case_price != null && l.qty_cases != null ? Number(l.case_price) * Number(l.qty_cases) : null;
           return `<tr data-i="${i}">
-            <td><span class="ord-line-name">${escapeHtml(p?.name || 'Unknown')}</span></td>
-            <td class="ord-doc-pack">${escapeHtml(packLabel(p, state.supplierId) || '—')}</td>
+            <td><span class="ord-line-product"><span class="ord-line-name">${escapeHtml(p?.name || 'Unknown')}</span>${pack ? `<span class="ord-doc-pack">${escapeHtml(pack)}</span>` : ''}</span></td>
             <td class="num muted">${row?.planned != null ? qty(row.planned) : '—'}</td>
             <td class="num"><input type="text" inputmode="decimal" class="num-math plan-cell-input ord-doc-qty" data-line-qty value="${escapeHtml(l.qty_cases ?? '')}" aria-label="Cases" ${dis}></td>
             <td class="num"><label class="ord-doc-money"><span>£</span><input type="text" inputmode="decimal" class="num-math plan-cell-input ord-doc-price" data-line-price value="${escapeHtml(l.case_price ?? '')}" aria-label="Case price" ${dis}></label></td>

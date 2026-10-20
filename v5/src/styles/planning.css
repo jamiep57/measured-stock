@@ -1462,13 +1462,21 @@
   white-space: pre-line;
 }
 .ord-doc-lines { margin-top: 6px; }
-.ord-doc-lines .num,
-.ord-doc-pack { width: 1%; white-space: nowrap; }
+.ord-doc-lines .num { width: 1%; white-space: nowrap; }
 .ord-doc-lines td:last-child,
 .ord-doc-lines th:last-child { width: 28px; padding-right: 0; }
+.ord-line-product {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ord-doc-lines .ord-line-name { flex: 0 1 auto; }
 .ord-doc-pack {
+  flex: none;
   color: var(--muted-foreground);
   font-size: 12px;
+  white-space: nowrap;
 }
 .ord-doc .plan-cell-input {
   width: 100%;

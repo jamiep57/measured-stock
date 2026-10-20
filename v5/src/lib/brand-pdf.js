@@ -268,9 +268,27 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
       }
       columns.forEach((c, i) => {
         const right = c.align === 'right';
+        const raw = row.cells[i];
+        const value = raw && typeof raw === 'object' ? (raw.text ?? '') : (raw ?? '');
+        const note = raw && typeof raw === 'object' ? String(raw.note || '') : '';
+        const maxW = widths[i] - (right ? 2 : 2.4);
+        const y = ctx.y + rowH * 0.66;
+        if (note && !right) {
+          ctx.setFont('normal', Math.max(size - 1, 7), BRAND.grey);
+          const noteW = doc.getTextWidth(note);
+          const gap = 2.2;
+          ctx.setFont(row.bold || c.strong ? 'bold' : 'normal', size, BRAND.ink);
+          const text = fitText(doc, value, Math.max(16, maxW - noteW - gap));
+          const x = cellX(i, false);
+          const nameW = doc.getTextWidth(text);
+          doc.text(text, x, y);
+          ctx.setFont('normal', Math.max(size - 1, 7), BRAND.grey);
+          doc.text(note, x + nameW + gap, y);
+          return;
+        }
         ctx.setFont(row.bold || c.strong ? 'bold' : 'normal', size, c.muted ? BRAND.grey : BRAND.ink);
-        const text = fitText(doc, row.cells[i] ?? '', widths[i] - (right ? 2 : 2.4));
-        doc.text(text, cellX(i, right), ctx.y + rowH * 0.66, right ? { align: 'right' } : undefined);
+        const text = fitText(doc, value, maxW);
+        doc.text(text, cellX(i, right), y, right ? { align: 'right' } : undefined);
       });
       ctx.y += rowH;
       doc.setDrawColor(...BRAND.rule);

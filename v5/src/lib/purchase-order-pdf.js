@@ -205,8 +205,7 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
 
   const anyPrice = lines.some((l) => l.case_price != null);
   const columns = [
-    { label: 'Product', width: 46 },
-    { label: 'Pack', width: 22, muted: true },
+    { label: 'Product', width: 68 },
     { label: 'Cases', width: 12, align: 'right' },
   ];
   if (anyPrice) {
@@ -214,7 +213,7 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
     columns.push({ label: 'Amount', width: 18, align: 'right', strong: true });
   }
   const rows = lines.map((l, i) => {
-    const cells = [l.name, l.pack || '', String(l.qty_cases)];
+    const cells = [{ text: l.name, note: l.pack || '' }, String(l.qty_cases)];
     if (anyPrice) {
       cells.push(l.case_price == null ? '—' : formatMoney(Number(l.case_price)));
       cells.push(l.case_price == null ? '—' : formatMoney(Number(l.case_price) * Number(l.qty_cases)));
