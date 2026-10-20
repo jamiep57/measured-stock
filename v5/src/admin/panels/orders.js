@@ -39,6 +39,7 @@ import {
   compareSummary,
   draftOrdersFromShortfalls,
   orderLinesTotal,
+  orderPayable,
   orderVatFigures,
   orderedByProduct,
   plannedProductCases,
@@ -244,7 +245,7 @@ export function mountOrdersPanel(route) {
     const s = compareSummary(ctx.rows);
     const value = ctx.orders
       .filter((po) => po.status === 'confirmed')
-      .reduce((sum, po) => sum + orderLinesTotal(po.purchase_order_lines).total, 0);
+      .reduce((sum, po) => sum + orderPayable(po.purchase_order_lines, po.delivery_cost).net, 0);
     return `
       <div class="plan-kpi"><span class="plan-kpi-label">QTY to order</span><span class="plan-kpi-value">${qty(s.planned)}</span>
         <span class="plan-kpi-sub muted">cases from projected serves${ctx.buffer ? ` +${ctx.buffer}%` : ''}</span></div>
@@ -483,7 +484,7 @@ export function mountOrdersPanel(route) {
   }
 
   function orderValue(po) {
-    return orderLinesTotal(po.purchase_order_lines).total;
+    return orderPayable(po.purchase_order_lines, po.delivery_cost).net;
   }
 
   function orderCardHtml(po) {
@@ -509,9 +510,10 @@ export function mountOrdersPanel(route) {
       return `<span${cls}>${escapeHtml(bit)}</span>`;
     }).join('');
     const unnamed = !sup?.name;
-    const amount = t.lines > 0 && t.priced === 0
+    const net = orderValue(po);
+    const amount = t.lines > 0 && t.priced === 0 && !(Number(po.delivery_cost) > 0)
       ? '<p class="ord-rail-amount ord-rail-amount--empty" title="No prices on this order">—</p>'
-      : `<p class="ord-rail-amount">${money(t.total)}</p>`;
+      : `<p class="ord-rail-amount">${money(net)}</p>`;
     const cancelled = bucket === 'cancelled' ? '<p class="ord-rail-cancelled">Cancelled</p>' : '';
     return `<article class="ord-rail-row ord-rail-row--${bucket}${bucket === 'cancelled' ? ' ord-rail-row--cancelled' : ''}" data-open-po="${escapeHtml(po.id)}">
       <div class="ord-rail-ident">
@@ -1088,6 +1090,8 @@ export function mountOrdersPanel(route) {
       supplierId: po?.supplier_id || '',
       lines: (po?.purchase_order_lines || []).map((l) => ({ ...l })),
       includeVat: po?.include_vat !== false,
+      deliveryCost: po?.delivery_cost == null || po?.delivery_cost === '' ? null : Number(po.delivery_cost),
+      deliveryInvalid: false,
     };
     const status = po?.status || 'draft';
     const editable = !locked() && (status === 'draft' || status === 'sent');
@@ -1276,10 +1280,22 @@ export function mountOrdersPanel(route) {
       paintTotal();
     }
 
+    function payableNow() {
+      return orderPayable(state.lines, state.deliveryCost);
+    }
+
+    function valueRowsHtml() {
+      const vat = orderVatFigures(payableNow().net, state.includeVat);
+      const vatPct = Math.round(vat.rate * 100);
+      return vat.includeVat
+        ? `<div class="ord-doc-total"><span>Order value <em>ex VAT</em></span><strong>${money(vat.ex)}</strong></div>
+        <div class="ord-doc-total"><span>VAT <em>${vatPct}%</em></span><strong>${money(vat.vat)}</strong></div>
+        <div class="ord-doc-total ord-doc-total--due"><span>Order value <em>inc VAT</em></span><strong>${money(vat.inc)}</strong></div>`
+        : `<div class="ord-doc-total ord-doc-total--due"><span>Order value</span><strong>${money(vat.ex)}</strong></div>`;
+    }
+
     function paintTotal() {
       const t = orderLinesTotal(state.lines);
-      const vat = orderVatFigures(t.total, state.includeVat);
-      const vatPct = Math.round(vat.rate * 100);
       const cases = state.lines.reduce((s, l) => s + (Number(l.qty_cases) || 0), 0);
       const el = $('ordLinesTotal');
       if (!el) return;
@@ -1293,16 +1309,16 @@ export function mountOrdersPanel(route) {
             <span class="access-switch-knob"></span>
           </button>
         </div>`;
-      const valueRows = vat.includeVat
-        ? `<div class="ord-doc-total"><span>Order value <em>ex VAT</em></span><strong>${money(t.total)}</strong></div>
-        <div class="ord-doc-total"><span>VAT <em>${vatPct}%</em></span><strong>${money(vat.vat)}</strong></div>
-        <div class="ord-doc-total ord-doc-total--due"><span>Order value <em>inc VAT</em></span><strong>${money(vat.inc)}</strong></div>`
-        : `<div class="ord-doc-total ord-doc-total--due"><span>Order value</span><strong>${money(t.total)}</strong></div>`;
+      const deliveryLabel = state.includeVat ? 'Delivery cost <em>ex VAT</em>' : 'Delivery cost';
       el.innerHTML = `
         ${vatSwitch}
         <div class="ord-doc-total"><span>Total cases</span><strong>${qty(cases)}</strong></div>
         ${unpriced}
-        ${valueRows}`;
+        <div class="ord-doc-total">
+          <span>${deliveryLabel}</span>
+          <label class="ord-doc-money"><span>£</span><input type="text" inputmode="decimal" class="num-math plan-cell-input" id="ordDeliveryCost" value="${escapeHtml(state.deliveryCost ?? '')}" aria-label="Delivery cost" ${dis}></label>
+        </div>
+        <div class="ord-doc-value-rows">${valueRowsHtml()}</div>`;
     }
 
     $('ordLinesBody').addEventListener('input', (e) => {
@@ -1351,6 +1367,16 @@ export function mountOrdersPanel(route) {
         },
       });
     }
+    $('ordLinesTotal')?.addEventListener('input', (e) => {
+      if (e.target.id !== 'ordDeliveryCost') return;
+      const parsed = parsePlanningNumber(e.target.value, { max: 1000000 });
+      e.target.classList.toggle('is-invalid', !parsed.ok);
+      state.deliveryInvalid = !parsed.ok;
+      if (!parsed.ok) return;
+      state.deliveryCost = parsed.value;
+      const rows = $('ordLinesTotal')?.querySelector('.ord-doc-value-rows');
+      if (rows) rows.innerHTML = valueRowsHtml();
+    });
     $('ordLinesTotal')?.addEventListener('click', (e) => {
       if (!editable || !e.target.closest('#ordVat')) return;
       const next = !state.includeVat;
@@ -1377,6 +1403,7 @@ export function mountOrdersPanel(route) {
         supplier_ref: $('ordSupRef')?.value.trim() || null,
         notes: $('ordNotes')?.value.trim() || null,
         include_vat: state.includeVat,
+        delivery_cost: state.deliveryCost,
       };
     }
 
@@ -1384,6 +1411,7 @@ export function mountOrdersPanel(route) {
       const h = readHeader();
       if (!h.supplier_id) return 'Choose a supplier';
       if (!h.order_date) return 'Order date is required';
+      if (state.deliveryInvalid) return 'Delivery cost needs a number';
       if (h.delivery_date && h.delivery_date < h.order_date) return 'Delivery date is before the order date';
       if (state.lines.some((l) => !(Number(l.qty_cases) > 0))) return 'Every line needs a quantity above zero';
       return '';

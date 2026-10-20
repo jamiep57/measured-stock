@@ -1756,6 +1756,7 @@ select.ord-doc-field {
 }
 .ord-doc-vat { align-items: center; }
 .ord-doc-vat .access-switch { justify-self: end; }
+.ord-doc-value-rows { display: contents; }
 .ord-doc-total {
   display: grid;
   grid-template-columns: 168px 112px;
@@ -1763,6 +1764,8 @@ select.ord-doc-field {
   align-items: baseline;
   font-size: 13px;
 }
+.ord-doc-total .ord-doc-money { justify-self: end; }
+.ord-doc-total .ord-doc-money .plan-cell-input { max-width: 9ch; }
 .ord-doc-total span { color: var(--muted-foreground); }
 .ord-doc-total em { font-style: normal; font-size: 11px; }
 .ord-doc-total strong {

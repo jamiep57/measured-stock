@@ -213,6 +213,24 @@ export function orderLinesTotal(lines) {
   return { total: Math.round(total * 100) / 100, priced, lines: (lines || []).length };
 }
 
+/** Ex-VAT delivery charge. Blank or invalid counts as none. */
+export function orderDeliveryCost(value) {
+  const n = num(value);
+  if (n == null || n < 0) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+/** Goods plus delivery, both ex VAT. */
+export function orderPayable(lines, deliveryCost) {
+  const goods = orderLinesTotal(lines);
+  const delivery = orderDeliveryCost(deliveryCost);
+  return {
+    ...goods,
+    delivery,
+    net: Math.round((goods.total + delivery) * 100) / 100,
+  };
+}
+
 /** UK standard rate. Purchase-order case prices are stored ex VAT. */
 export const PURCHASE_ORDER_VAT_RATE = 0.2;
 

@@ -5,7 +5,7 @@
  */
 
 import { storedToForm } from '../stock-entry.js';
-import { orderLinesTotal } from './order-compare.js';
+import { orderPayable } from './order-compare.js';
 
 const ORDER_STATUS = {
   draft: 'Draft',
@@ -249,7 +249,7 @@ export function buildOrderRegister({
     .map((po) => {
       const lines = po.purchase_order_lines || [];
       const cases = lines.reduce((sum, line) => sum + (Number(line.qty_cases) || 0), 0);
-      const total = orderLinesTotal(lines);
+      const total = orderPayable(lines, po.delivery_cost);
       return {
         id: po.id,
         action: lines.length ? 'po-pdf' : '',
@@ -261,7 +261,7 @@ export function buildOrderRegister({
           delivery: (po.delivery_date || '').slice(0, 10),
           lines: String(lines.length),
           cases: trimNum(cases),
-          total: total.priced ? total.total.toFixed(2) : '',
+          total: total.priced || total.delivery > 0 ? total.net.toFixed(2) : '',
         },
         po,
         lineNames: lines.map((line) => ({

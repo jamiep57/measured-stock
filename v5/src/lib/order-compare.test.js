@@ -5,6 +5,7 @@ import {
   compareSummary,
   draftOrdersFromShortfalls,
   orderLinesTotal,
+  orderPayable,
   orderValueVat,
   orderVatFigures,
   orderedByProduct,
@@ -135,6 +136,18 @@ describe('orderLinesTotal', () => {
       { qty_cases: 3, case_price: 95 },
       { qty_cases: 2, case_price: null },
     ])).toEqual({ total: 285, priced: 1, lines: 2 });
+  });
+});
+
+describe('orderPayable', () => {
+  it('adds an ex-VAT delivery cost to the goods', () => {
+    expect(orderPayable([
+      { qty_cases: 1, case_price: 18 },
+    ], 10)).toEqual({ total: 18, priced: 1, lines: 1, delivery: 10, net: 28 });
+  });
+
+  it('treats a blank delivery cost as zero', () => {
+    expect(orderPayable([{ qty_cases: 1, case_price: 18 }], null).net).toBe(18);
   });
 });
 

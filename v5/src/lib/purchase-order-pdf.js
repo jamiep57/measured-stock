@@ -5,7 +5,7 @@
 
 import { createBrandDoc, expandLines, formatDocDate, formatMoney, safeFilePart } from './brand-pdf.js';
 import { deliveryTimeLabel, factSheetKind, formatWhat3Words } from './delivery-details.js';
-import { orderLinesTotal, orderVatFigures } from './order-compare.js';
+import { orderLinesTotal, orderPayable, orderVatFigures } from './order-compare.js';
 
 const PDF_LIB_URL = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
 let pdfLibPromise;
@@ -149,7 +149,7 @@ function downloadPdf(bytes, filename) {
 
 /**
  * @param {{
- *   po: { reference: string, status: string, order_date?: string, delivery_date?: string, delivery_time?: string, collection_time?: string, supplier_ref?: string, notes?: string },
+ *   po: { reference: string, status: string, order_date?: string, delivery_date?: string, delivery_time?: string, collection_time?: string, delivery_cost?: number|null, supplier_ref?: string, notes?: string },
  *   supplier: { name: string, contact_name?: string, email?: string, phone?: string, address?: string }|null,
  *   event: { name: string, venue?: string, venue_postcode?: string, start_date?: string, end_date?: string, what3words?: string, delivery_contact_name?: string, delivery_contact_phone?: string, delivery_fact_sheet_url?: string, delivery_fact_sheet_name?: string }|null,
  *   lines: Array<{ name: string, pack?: string, qty_cases: number, case_price: number|null }>,
@@ -237,18 +237,20 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
   }
 
   const totalCases = lines.reduce((s, l) => s + (Number(l.qty_cases) || 0), 0);
+  const payable = orderPayable(lines, po.delivery_cost);
   const pairs = [['Total cases', String(totalCases)]];
-  if (anyPrice) {
-    const { total, priced, lines: count } = orderLinesTotal(lines);
-    const vat = orderVatFigures(total, po.include_vat !== false);
+  if (anyPrice || payable.delivery > 0) {
+    const { priced, lines: count } = orderLinesTotal(lines);
+    const vat = orderVatFigures(payable.net, po.include_vat !== false);
     const vatPct = Math.round(vat.rate * 100);
     if (priced < count) pairs.push(['Unpriced lines', String(count - priced)]);
+    if (payable.delivery > 0) pairs.push(['Delivery', formatMoney(payable.delivery)]);
     if (vat.includeVat) {
-      pairs.push(['Order value (ex VAT)', formatMoney(total)]);
+      pairs.push(['Order value (ex VAT)', formatMoney(payable.net)]);
       pairs.push([`VAT (${vatPct}%)`, formatMoney(vat.vat)]);
       pairs.push(['Order value (inc VAT)', formatMoney(vat.inc), true]);
     } else {
-      pairs.push(['Order value', formatMoney(total), true]);
+      pairs.push(['Order value', formatMoney(payable.net), true]);
     }
   }
 
