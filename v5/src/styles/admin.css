@@ -1882,6 +1882,9 @@ body.admin-drawer-open {
   transform: translate(-50%, calc(-50% + 8px));
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
+.admin-modal--tall {
+  width: min(880px, calc(100vw - 32px));
+}
 .admin-modal--visible {
   opacity: 1;
   transform: translate(-50%, -50%);

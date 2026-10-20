@@ -33,6 +33,23 @@ function normName(v) {
   return String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/** Stable key for one till item in a sales file. */
+export function saleItemKey(row) {
+  return [normName(row?.name), normName(row?.variation), normName(row?.sku)].join('|');
+}
+
+/**
+ * True when one name is the other plus a pack size or extra words,
+ * so "Camden Pale Ale" can suggest "Camden Pale Ale 24×330ml".
+ */
+function looseNamesMatch(a, b) {
+  if (!a || !b || a === b) return false;
+  const [longer, shorter] = a.length >= b.length ? [a, b] : [b, a];
+  if (shorter.length < 6 || !longer.startsWith(shorter)) return false;
+  const next = longer.charAt(shorter.length);
+  return next === ' ' || next === '-' || next === '/' || next === '(' || next === '×';
+}
+
 function roundServes(n) {
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.round(n);
@@ -249,6 +266,28 @@ function saleIsAmbiguous(row, lines) {
   return ids.size > 1;
 }
 
+/**
+ * A unique menu product or cocktail whose name extends the till name, or the reverse.
+ * Exact matches are handled separately so this only fills gaps.
+ */
+function looseNameHit(row, lines) {
+  const want = normName(row?.name);
+  if (want.length < 6) return null;
+  const included = (lines || []).filter((line) => line.included !== false);
+  const hits = [];
+  included.forEach((line) => {
+    const names = [line.productName, line.menuName, line.name].map(normName).filter(Boolean);
+    if (!names.some((name) => looseNamesMatch(name, want))) return;
+    hits.push(line);
+  });
+  const ids = new Set(hits.map((line) => (line.kind === 'cocktail' ? `cocktail:${line.key}` : line.productId)));
+  if (ids.size !== 1) return null;
+  const id = [...ids][0];
+  const chosen = hits.filter((line) => (line.kind === 'cocktail' ? `cocktail:${line.key}` : line.productId) === id);
+  if (chosen[0]?.kind === 'cocktail') return chosen[0];
+  return pickSize(chosen, row?.variation);
+}
+
 /** Cocktail Square name, then a one-product recipe, then SKU, then name. */
 export function matchSaleToLine(row, lines, { recipes = [], products = [], caseSizes = [] } = {}) {
   const included = (lines || []).filter((line) => line.included !== false);
@@ -272,11 +311,85 @@ function salesAmount(row) {
   return net > 0 ? net : 0;
 }
 
+function lineFromMappings(row, lines, mappings) {
+  const chosen = mappings?.[saleItemKey(row)];
+  if (!chosen) return null;
+  return (lines || []).find((line) => line.key === chosen && line.included !== false) || null;
+}
+
+/**
+ * One row per till item, with takings summed. Rows with no takings are left out.
+ */
+export function groupSalesItems(tillRows) {
+  const byKey = new Map();
+  (tillRows || []).forEach((row) => {
+    const amount = salesAmount(row);
+    if (!(amount > 0)) return;
+    const key = saleItemKey(row);
+    const prev = byKey.get(key) || {
+      key,
+      name: String(row?.name || '').trim() || 'Unknown',
+      variation: String(row?.variation || '').trim(),
+      sku: String(row?.sku || '').trim(),
+      category: String(row?.category || '').trim(),
+      amount: 0,
+      itemsSold: 0,
+    };
+    prev.amount += amount;
+    prev.itemsSold += Number(row?.items_sold) || 0;
+    if (!prev.category && row?.category) prev.category = String(row.category).trim();
+    byKey.set(key, prev);
+  });
+  const total = [...byKey.values()].reduce((sum, row) => sum + row.amount, 0);
+  return [...byKey.values()]
+    .map((row) => ({
+      ...row,
+      amount: roundMoney(row.amount),
+      itemsSold: Math.round(row.itemsSold),
+      pct: total > 0 ? (row.amount / total) * 100 : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name) || a.variation.localeCompare(b.variation));
+}
+
+/**
+ * Starting map for the import wizard.
+ * `auto` is an exact menu line. `suggest` is a unique longer or shorter name.
+ * Ambiguous names are left blank so the user picks the product.
+ */
+export function suggestSaleMappings(items, lines, options = {}) {
+  return (items || []).map((item) => {
+    const exact = matchSaleToLine(item, lines, options);
+    if (exact) return { saleKey: item.key, lineKey: exact.key, confidence: 'auto' };
+    if (saleIsAmbiguous(item, lines)) return { saleKey: item.key, lineKey: '', confidence: 'ambiguous' };
+    const loose = looseNameHit(item, lines);
+    if (loose) return { saleKey: item.key, lineKey: loose.key, confidence: 'suggest' };
+    return { saleKey: item.key, lineKey: '', confidence: 'none' };
+  });
+}
+
+/** Label for one row of the mapping wizard. */
+export function saleMappingStatus(mapping, suggestion) {
+  const lineKey = mapping || '';
+  const suggested = suggestion?.lineKey || '';
+  const confidence = suggestion?.confidence || 'none';
+  if (lineKey) {
+    if (lineKey === suggested && confidence === 'auto') return { kind: 'auto', label: 'Matched' };
+    if (lineKey === suggested && confidence === 'suggest') return { kind: 'suggest', label: 'Similar name' };
+    return { kind: 'mapped', label: 'Mapped' };
+  }
+  if (confidence === 'ambiguous') return { kind: 'need', label: 'Pick one' };
+  if (confidence === 'auto' || confidence === 'suggest') return { kind: 'skip', label: 'Left out' };
+  return { kind: 'need', label: 'Choose a product' };
+}
+
 /**
  * Historical mix from a till export. Shares are of the whole file,
  * so unmatched sales stay as a percentage the menu does not cover.
+ * `options.mappings` is `{ [saleItemKey]: lineKey }` from the import wizard.
+ * A blank line key leaves that item out.
  */
 export function mixFromSales(tillRows, lines, options = {}) {
+  const explicit = options.mappings != null;
   let total = 0;
   const byLine = new Map();
   const unmatched = new Map();
@@ -284,14 +397,16 @@ export function mixFromSales(tillRows, lines, options = {}) {
     const amount = salesAmount(row);
     if (!(amount > 0)) return;
     total += amount;
-    const line = matchSaleToLine(row, lines, options);
+    const line = explicit
+      ? lineFromMappings(row, lines, options.mappings)
+      : matchSaleToLine(row, lines, options);
     if (!line) {
-      const key = `${normName(row.name)}|${normName(row.variation)}`;
+      const key = explicit ? saleItemKey(row) : `${normName(row.name)}|${normName(row.variation)}`;
       const prev = unmatched.get(key) || {
         name: String(row.name || '').trim() || 'Unknown',
         variation: String(row.variation || '').trim(),
         amount: 0,
-        reason: saleIsAmbiguous(row, lines) ? 'ambiguous' : 'unknown',
+        reason: explicit ? 'skipped' : (saleIsAmbiguous(row, lines) ? 'ambiguous' : 'unknown'),
       };
       prev.amount += amount;
       unmatched.set(key, prev);

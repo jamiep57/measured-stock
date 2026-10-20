@@ -1945,6 +1945,77 @@ select.ord-doc-field {
 .ord-mix-preview { max-height: 320px; overflow: auto; }
 .ord-mix-note { margin: 0 0 8px; font-size: 13px; }
 
+.ord-map {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.ord-map .sq-steps { margin-bottom: 2px; }
+.ord-map .sq-step:disabled { opacity: 0.45; cursor: default; }
+.ord-map .sq-step:disabled:hover { background: transparent; }
+.ord-map-summary { margin: 0; font-size: 13px; font-weight: 600; }
+.ord-map-hint { margin: 0; font-size: 12px; }
+.ord-map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ord-map-tools .admin-input {
+  flex: 1 1 220px;
+  min-width: 200px;
+  height: 32px;
+  font-size: 13px;
+}
+.ord-map-list {
+  max-height: min(420px, 48vh);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ord-map-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ord-map-table th,
+.ord-map-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  text-align: left;
+}
+.ord-map-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ord-map-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.ord-map-table thead th.num { text-align: right; }
+.ord-map-item { display: flex; flex-direction: column; gap: 2px; min-width: 140px; }
+.ord-map-meta { font-size: 12px; color: var(--muted-foreground); }
+.ord-map-table .admin-select {
+  width: 100%;
+  min-width: 200px;
+  height: 32px;
+  font-size: 13px;
+}
+.ord-map-status { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ord-map-status--auto { color: var(--success); }
+.ord-map-status--suggest,
+.ord-map-status--need { color: var(--warning); }
+.ord-map-status--skip { color: var(--muted-foreground); font-weight: 500; }
+.ord-map-row--need td:first-child,
+.ord-map-row--suggest td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+
 /* Small icon button, used by reports */
 
 .acct-icon-btn {

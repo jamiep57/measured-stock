@@ -5,8 +5,11 @@ import {
   groupForecastLines,
   keepMixServes,
   matchedTakingsTarget,
+  groupSalesItems,
   mixFromSales,
   mixPct,
+  saleMappingStatus,
+  suggestSaleMappings,
   mixSharesOfMatched,
   plannedOrderCost,
   roughCases,
@@ -193,6 +196,113 @@ describe('sales mix', () => {
     ], [pint, pinned]);
     expect(mix.lines.map((row) => row.key)).toEqual(['pint']);
     expect(mix.unmatched[0].name).toBe('Margarita');
+  });
+
+  it('groups a file by item and ignores rows with no takings', () => {
+    const items = groupSalesItems([
+      { name: 'Old Pale', variation: 'Pint', sku: '', gross_sales: 30, items_sold: 4 },
+      { name: 'Old Pale', variation: 'Pint', sku: '', gross_sales: 10, items_sold: 1 },
+      { name: 'Old Pale', variation: 'Half', gross_sales: 5, items_sold: 2 },
+      { name: 'Free Pour', variation: 'Regular', gross_sales: 0, net_sales: 0, items_sold: 3 },
+    ]);
+    expect(items.map((item) => [item.name, item.variation, item.amount, item.itemsSold])).toEqual([
+      ['Old Pale', 'Pint', 40, 5],
+      ['Old Pale', 'Half', 5, 2],
+    ]);
+  });
+
+  it('suggests an exact line, a longer product name, and a blank when nothing fits', () => {
+    const can = {
+      ...priced,
+      key: 'can',
+      name: 'Camden Pale Ale 24×330ml',
+      productName: 'Camden Pale Ale 24×330ml',
+      menuName: 'Camden Pale Ale 24×330ml',
+      serveLabel: null,
+      category: 'Beer',
+    };
+    const lagerPint = {
+      ...priced,
+      key: 'lager-pint',
+      productId: 'p2',
+      name: 'Utopian Lager 50L',
+      productName: 'Utopian Lager 50L',
+      menuName: 'Utopian Lager 50L',
+      serveLabel: 'Pint',
+      sku: 'U1',
+    };
+    const lagerHalf = { ...lagerPint, key: 'lager-half', serveLabel: 'Half', portion: 0.5 };
+    const items = groupSalesItems([
+      { name: 'Camden Pale Ale 24×330ml', variation: 'Regular', gross_sales: 30 },
+      { name: 'Utopian Lager', variation: 'Half', gross_sales: 20 },
+      { name: 'Mystery Sour', variation: 'Regular', gross_sales: 10 },
+    ]);
+    const suggestions = suggestSaleMappings(items, [can, lagerPint, lagerHalf]);
+    const byName = (name) => suggestions.find((row) => items.find((item) => item.key === row.saleKey)?.name === name);
+    expect(byName('Camden Pale Ale 24×330ml')).toMatchObject({ lineKey: 'can', confidence: 'auto' });
+    expect(byName('Utopian Lager')).toMatchObject({ lineKey: 'lager-half', confidence: 'suggest' });
+    expect(byName('Mystery Sour')).toMatchObject({ lineKey: '', confidence: 'none' });
+    expect(saleMappingStatus('lager-half', byName('Utopian Lager')).label).toBe('Similar name');
+    expect(saleMappingStatus('', byName('Mystery Sour')).label).toBe('Choose a product');
+    expect(saleMappingStatus('can', { lineKey: 'pint', confidence: 'auto' }).label).toBe('Mapped');
+    expect(saleMappingStatus('', { lineKey: 'pint', confidence: 'auto' }).label).toBe('Left out');
+  });
+
+  it('does not suggest a shared brand when two products fit', () => {
+    const zero = {
+      ...priced,
+      key: 'zero',
+      name: 'Heineken 0.0 Lager 24×330ml',
+      productName: 'Heineken 0.0 Lager 24×330ml',
+      menuName: 'Heineken 0.0 Lager 24×330ml',
+    };
+    const silver = {
+      ...priced,
+      key: 'silver',
+      productId: 'p2',
+      sku: 'H2',
+      name: 'Heineken Silver 24×330ml',
+      productName: 'Heineken Silver 24×330ml',
+      menuName: 'Heineken Silver 24×330ml',
+    };
+    const items = groupSalesItems([{ name: 'Heineken', variation: 'Regular', gross_sales: 10 }]);
+    expect(suggestSaleMappings(items, [zero, silver])[0]).toMatchObject({ lineKey: '', confidence: 'none' });
+  });
+
+  it('leaves an ambiguous name blank instead of guessing', () => {
+    const other = { ...pint, key: 'other', productId: 'p2', sku: 'X' };
+    const items = groupSalesItems([{ name: 'Hells', variation: 'Pint', gross_sales: 10 }]);
+    expect(suggestSaleMappings(items, [pint, other])[0]).toMatchObject({ lineKey: '', confidence: 'ambiguous' });
+    expect(saleMappingStatus('', { lineKey: '', confidence: 'ambiguous' }).label).toBe('Pick one');
+  });
+
+  it('applies an explicit map and leaves the rest out', () => {
+    const rows = [
+      { name: 'Old Heineken', variation: 'Pint', gross_sales: 60 },
+      { name: 'Mystery', variation: 'Regular', gross_sales: 40 },
+    ];
+    const items = groupSalesItems(rows);
+    const mappings = { [items[0].key]: 'pint', [items[1].key]: '' };
+    const mix = mixFromSales(rows, [pint], { mappings });
+    expect(mix.lines.map((row) => row.key)).toEqual(['pint']);
+    expect(mix.lines[0].amount).toBe(60);
+    expect(mix.matchedAmount).toBe(60);
+    expect(mix.unmatched[0]).toMatchObject({ name: 'Mystery', reason: 'skipped' });
+    const shares = mixSharesOfMatched(mix.lines, matchedTakingsTarget(mix));
+    expect(servesForMix([pint], shares, 60).applied[0].serves).toBe(10);
+  });
+
+  it('adds two sales items that map onto the same line', () => {
+    const rows = [
+      { name: 'House Lager', variation: 'Pint', gross_sales: 30 },
+      { name: 'Guest Lager', variation: 'Pint', gross_sales: 70 },
+    ];
+    const items = groupSalesItems(rows);
+    const mappings = { [items[0].key]: 'pint', [items[1].key]: 'pint' };
+    const mix = mixFromSales(rows, [pint], { mappings });
+    expect(mix.lines).toHaveLength(1);
+    expect(mix.lines[0].amount).toBe(100);
+    expect(mix.lines[0].pct).toBe(100);
   });
 
   it('writes servings only for matched lines that have a price', () => {

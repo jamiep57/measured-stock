@@ -48,14 +48,14 @@ export function closeModal() {
 /**
  * Centered modal above sheets and dropdowns.
  */
-export function openModal({ title, bodyHtml, footHtml, onClose }) {
+export function openModal({ title, bodyHtml, footHtml, onClose, tall = false }) {
   closeModal();
 
   closeHandler = onClose || null;
   backdropEl = document.createElement('div');
   backdropEl.className = 'admin-modal-backdrop';
   modalEl = document.createElement('div');
-  modalEl.className = 'admin-modal';
+  modalEl.className = tall ? 'admin-modal admin-modal--tall' : 'admin-modal';
   modalEl.setAttribute('role', 'dialog');
   modalEl.setAttribute('aria-modal', 'true');
   modalEl.innerHTML = `
@@ -76,9 +76,12 @@ export function openModal({ title, bodyHtml, footHtml, onClose }) {
     const vv = window.visualViewport;
     if (!vv) return;
     // Keep the dialog in the visible area above the iOS keyboard.
-    const centerY = vv.offsetTop + Math.min(vv.height * 0.42, Math.max(180, vv.height * 0.5));
+    const centerY = tall
+      ? vv.offsetTop + vv.height / 2
+      : vv.offsetTop + Math.min(vv.height * 0.42, Math.max(180, vv.height * 0.5));
     modalEl.style.top = `${Math.round(centerY)}px`;
-    modalEl.style.maxHeight = `${Math.round(Math.min(vv.height - 24, 640))}px`;
+    const cap = tall ? 860 : 640;
+    modalEl.style.maxHeight = `${Math.round(Math.min(vv.height - 24, cap))}px`;
   }
 
   placeInViewport();

@@ -60,10 +60,12 @@ import {
 } from '../../lib/orders-data.js';
 import { formatWhat3Words } from '../../lib/delivery-details.js';
 import { readTillFile } from '../../lib/till-import.js';
+import { salesWizardBody, salesWizardFoot } from '../order-sales-wizard.js';
 import {
   buildForecastLines,
   forecastTotals,
   groupForecastLines,
+  groupSalesItems,
   keepMixServes,
   matchedTakingsTarget,
   mixFromSales,
@@ -73,6 +75,7 @@ import {
   sellingPrice,
   servesForMix,
   servesFromMix,
+  suggestSaleMappings,
 } from '../../lib/order-forecast.js';
 
 const SAVE_DEBOUNCE_MS = 450;
@@ -636,7 +639,7 @@ export function mountOrdersPanel(route) {
         <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordImportCsv" ${dis}>Import sales CSV</button>
         <input type="file" id="ordCsvFile" accept=".csv,.tsv,.xlsx,.xls,.txt" hidden>
       </div>
-      <p class="ord-forecast-note muted">Each line’s share of the target, divided by its menu price. A blank price uses the price needed to hit the target GP. Import a sales file to set the mix — with no target yet, the file’s matched takings become the target.</p>
+      <p class="ord-forecast-note muted">Each line’s share of the target, divided by its menu price. A blank price uses the price needed to hit the target GP. Import a sales file to set the mix — items from another event can be mapped onto this menu. With no target yet, the mapped takings become the target.</p>
       <div class="plan-kpis" id="ordForecastStats">${forecastStatsHtml()}</div>`;
   }
 
@@ -1626,49 +1629,6 @@ export function mountOrdersPanel(route) {
     }
   }
 
-  function mixPreviewHtml(mix, fileName) {
-    const lines = forecastLines();
-    const byKey = new Map(lines.map((line) => [line.key, line]));
-    const needsPrice = mix.lines.filter((row) => !sellingPrice(byKey.get(row.key) || {}).price);
-    const cats = mix.categories.length
-      ? `<ul class="ord-gen-list">${mix.categories.map((row) => `<li><strong>${escapeHtml(row.category)}</strong> — ${escapeHtml(pctInputValue(row.pct))}% · ${money(row.amount)}</li>`).join('')}</ul>`
-      : '';
-    const matched = mix.lines.length
-      ? `<table class="ord-lines"><thead><tr><th>Line</th><th>Category</th><th class="num">Sales</th><th class="num">Mix</th></tr></thead><tbody>
-        ${mix.lines.map((row) => `<tr><td>${escapeHtml(row.name)}${row.serveLabel ? ` · ${escapeHtml(row.serveLabel)}` : ''}</td><td>${escapeHtml(row.category)}</td><td class="num">${money(row.amount)}</td><td class="num">${escapeHtml(pctInputValue(row.pct))}%</td></tr>`).join('')}
-        </tbody></table>`
-      : '<p class="muted">Nothing in this file matched the menu.</p>';
-    const labelOf = (row) => `${row.name}${row.variation && row.variation.toLowerCase() !== 'regular' ? ` (${row.variation})` : ''}`;
-    const ambiguous = mix.unmatched.filter((row) => row.reason === 'ambiguous');
-    const unknown = mix.unmatched.filter((row) => row.reason !== 'ambiguous');
-    const listOf = (rows) => {
-      const shown = rows.slice(0, 8).map(labelOf).join(', ');
-      const more = rows.length > 8 ? ` and ${rows.length - 8} more` : '';
-      return `${shown}${more}`;
-    };
-    const unmatched = [
-      ambiguous.length ? `<p class="ord-mix-note">${escapeHtml(listOf(ambiguous))} ${ambiguous.length === 1 ? 'is' : 'are'} on the menu more than once, so the file could not choose a product.</p>` : '',
-      unknown.length ? `<p class="ord-mix-note muted">${escapeHtml(pctInputValue(unknown.reduce((sum, row) => sum + row.pct, 0)))}% of the file is not on this menu: ${escapeHtml(listOf(unknown))}.</p>` : '',
-    ].join('');
-    const priceNote = needsPrice.length
-      ? `<p class="ord-mix-note">${escapeHtml(needsPrice.map((row) => row.name).join(', '))} matched but ${needsPrice.length === 1 ? 'has' : 'have'} no price, so ${needsPrice.length === 1 ? 'it' : 'they'} will be skipped.</p>`
-      : '';
-    const fileTarget = matchedTakingsTarget(mix);
-    const hasTarget = Number(ctx.target) > 0;
-    const targetNote = hasTarget
-      ? `<p class="ord-mix-note">This mix will be scaled to the current target of ${money(ctx.target)}.</p>`
-      : (fileTarget
-        ? `<p class="ord-mix-note">No target yet. Applying sets the target to ${money(fileTarget)} — the takings in this file that match the menu.</p>`
-        : '<p class="ord-mix-note">Nothing in this file matched the menu, so there is no take to apply.</p>');
-    return `
-      <p class="ord-mix-note"><strong>${escapeHtml(fileName)}</strong> — ${escapeHtml(pctInputValue(mix.matchedPct))}% of ${money(mix.total)} matches the menu. Applying sets projected serves from that mix and clears planned-case overrides on those products.</p>
-      ${targetNote}
-      ${cats}
-      <div class="ord-mix-preview">${matched}</div>
-      ${unmatched}
-      ${priceNote}`;
-  }
-
   async function openCsvPreview(file) {
     let rows;
     try {
@@ -1677,42 +1637,109 @@ export function mountOrdersPanel(route) {
       toast(err.message || 'Could not read that file', true);
       return;
     }
-    const mix = mixFromSales(rows, forecastLines(), {
+    const lines = forecastLines();
+    const items = groupSalesItems(rows);
+    if (!items.length) {
+      toast('No item sales in that file', true);
+      return;
+    }
+    const matchOptions = {
       recipes: ctx.recipes,
       products: ctx.products,
       caseSizes: ctx.caseSizes,
-    });
-    const lines = forecastLines();
-    const fileTarget = matchedTakingsTarget(mix);
-    const hasTarget = Number(ctx.target) > 0;
-    const applyTarget = hasTarget ? Number(ctx.target) : fileTarget;
-    const mixLines = hasTarget ? mix.lines : mixSharesOfMatched(mix.lines, applyTarget);
-    const { applied } = applyTarget ? servesForMix(lines, mixLines, applyTarget) : { applied: [] };
-    const replacing = applied.filter((update) => {
-      const line = lines.find((row) => row.key === update.key);
-      return line && Number(line.projectedServes) > 0;
-    });
+    };
+    const suggestions = suggestSaleMappings(items, lines, matchOptions);
+    const state = {
+      step: suggestions.every((row) => row.confidence === 'auto') ? 'review' : 'map',
+      filter: suggestions.some((row) => !row.lineKey) ? 'todo' : 'all',
+      query: '',
+      mappings: Object.fromEntries(suggestions.map((row) => [row.saleKey, row.lineKey || ''])),
+    };
+
+    function mappedMix(menuLines) {
+      return mixFromSales(rows, menuLines, { ...matchOptions, mappings: state.mappings });
+    }
+
+    function applyPlan(menuLines = lines) {
+      const mix = mappedMix(menuLines);
+      const hasTarget = Number(ctx.target) > 0;
+      const fileTarget = matchedTakingsTarget(mix);
+      const applyTarget = hasTarget ? Number(ctx.target) : fileTarget;
+      const mixLines = hasTarget ? mix.lines : mixSharesOfMatched(mix.lines, applyTarget);
+      const { applied } = applyTarget ? servesForMix(menuLines, mixLines, applyTarget) : { applied: [] };
+      const replacing = applied.filter((update) => {
+        const line = menuLines.find((row) => row.key === update.key);
+        return line && Number(line.projectedServes) > 0;
+      });
+      return { mix, hasTarget, applied, replacing };
+    }
+
+    function viewModel() {
+      const plan = applyPlan();
+      return {
+        step: state.step,
+        fileName: file.name || 'Sales file',
+        items,
+        lines,
+        mappings: state.mappings,
+        suggestions,
+        query: state.query,
+        filter: state.filter,
+        mix: plan.mix,
+        target: Number(ctx.target) || 0,
+        hasTarget: plan.hasTarget,
+        canApply: plan.applied.length > 0,
+        applyLabel: plan.hasTarget
+          ? (plan.replacing.length ? 'Replace projected serves' : 'Apply mix')
+          : 'Use this take',
+      };
+    }
+
     const el = openModal({
-      title: 'Sales mix',
-      bodyHtml: mixPreviewHtml(mix, file.name || 'Sales file'),
-      footHtml: `
-        <div class="admin-modal-confirm-foot">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok ${applied.length ? '' : 'disabled'}>${Number(ctx.target) > 0 ? (replacing.length ? 'Replace projected serves' : 'Apply mix') : 'Use this take'}</button>
-        </div>`,
+      title: 'Import sales',
+      tall: true,
+      bodyHtml: '<div></div>',
+      footHtml: '<div></div>',
     });
-    el.querySelector('[data-cancel]').onclick = closeModal;
-    el.querySelector('[data-ok]').onclick = async () => {
+
+    function paint() {
+      const queryFocused = document.activeElement?.matches?.('[data-map-query]');
+      const caret = queryFocused ? document.activeElement.selectionStart : null;
+      const scroll = el.querySelector('[data-map-list]')?.scrollTop || 0;
+      const model = viewModel();
+      el.querySelector('.admin-modal-body').innerHTML = salesWizardBody(model);
+      el.querySelector('.admin-modal-foot').innerHTML = salesWizardFoot(model);
+      const list = el.querySelector('[data-map-list]');
+      if (list) list.scrollTop = scroll;
+      const input = el.querySelector('[data-map-query]');
+      if (queryFocused && input) {
+        input.focus();
+        const pos = caret ?? input.value.length;
+        input.setSelectionRange(pos, pos);
+      }
+      bindWizard();
+    }
+
+    function goTo(step) {
+      if (step === 'review' && !Object.values(state.mappings).some(Boolean)) return;
+      if (step === state.step) return;
+      state.step = step;
+      paint();
+    }
+
+    async function applyMappedMix() {
       const btn = el.querySelector('[data-ok]');
-      btn.disabled = true;
+      if (btn) btn.disabled = true;
       try {
         await flushSaves();
         const fromFile = !(Number(ctx.target) > 0);
+        const menuLines = forecastLines();
         let target = Number(ctx.target);
+        const mix = mappedMix(menuLines);
         let mixLines = mix.lines;
         if (fromFile) {
           target = matchedTakingsTarget(mix);
-          if (!(target > 0)) throw new Error('Nothing in this file matched the menu');
+          if (!(target > 0)) throw new Error('Nothing in this file is mapped to the menu');
           mixLines = mixSharesOfMatched(mix.lines, target);
           await updateEventPricing(ctx.eventId, { target_revenue: target });
           invalidateEventCache(ctx.eventId);
@@ -1723,7 +1750,7 @@ export function mountOrdersPanel(route) {
           if (input) input.value = String(target);
         }
         const fresh = servesForMix(forecastLines(), mixLines, target);
-        if (!fresh.applied.length) throw new Error('No matched lines have a price');
+        if (!fresh.applied.length) throw new Error('No mapped lines have a price');
         rememberServes(fresh.applied);
         ctx.anchorTarget = ctx.target;
         await persistServes(fresh.applied);
@@ -1732,11 +1759,43 @@ export function mountOrdersPanel(route) {
         const lead = fromFile ? `Target set to ${money(target)} · ` : '';
         toast(`${lead}Mix applied to ${fresh.applied.length} line${fresh.applied.length === 1 ? '' : 's'}${skipped}`);
       } catch (err) {
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
         reportError(err, { source: 'admin.orders.csv-mix', silent: true });
         toast(err.message || 'Could not apply the mix', true);
       }
-    };
+    }
+
+    function bindWizard() {
+      el.querySelector('[data-cancel]')?.addEventListener('click', closeModal);
+      el.querySelector('[data-next]')?.addEventListener('click', () => goTo('review'));
+      el.querySelector('[data-back]')?.addEventListener('click', () => goTo('map'));
+      el.querySelector('[data-ok]')?.addEventListener('click', () => { void applyMappedMix(); });
+      el.querySelectorAll('[data-map-goto]').forEach((btn) => {
+        btn.addEventListener('click', () => goTo(btn.dataset.mapGoto));
+      });
+      el.querySelectorAll('[data-map-filter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (state.filter === btn.dataset.mapFilter) return;
+          state.filter = btn.dataset.mapFilter;
+          paint();
+        });
+      });
+      const query = el.querySelector('[data-map-query]');
+      if (query) {
+        query.addEventListener('input', () => {
+          state.query = query.value;
+          paint();
+        });
+      }
+      el.querySelector('[data-map-list]')?.addEventListener('change', (e) => {
+        const select = e.target.closest('[data-map-sale]');
+        if (!select) return;
+        state.mappings[select.dataset.mapSale] = select.value;
+        paint();
+      });
+    }
+
+    paint();
   }
 
   function onToolbarAction(e) {
