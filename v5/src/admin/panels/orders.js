@@ -308,12 +308,7 @@ export function mountOrdersPanel(route) {
     return `<select class="ord-supplier-select" data-order-supplier="${escapeHtml(product?.id || '')}" aria-label="Supplier to order from" title="${escapeHtml(currentName || 'Suppliers linked to this product')}" ${dis}>${opts}</select>`;
   }
 
-  function rowSupplierKey(r) {
-    const p = ctx.productById.get(r.productId);
-    return preferredSupplierId(p) || '';
-  }
-
-  function rowHtml(r, supplierBreak = false) {
+  function rowHtml(r) {
     const p = ctx.productById.get(r.productId);
     const supplier = ctx.supplierById.get(preferredSupplierId(p));
     const pack = packLabel(p, supplier?.id);
@@ -333,7 +328,7 @@ export function mountOrdersPanel(route) {
       return po ? `<button type="button" class="ord-ref" data-open-po="${escapeHtml(po.id)}">${escapeHtml(ref)}</button>` : '';
     }).join('');
     const marker = statusChip(productOrderStatus(r.productId));
-    return `<tr class="dist-prod-row ord-row${supplierBreak ? ' ord-row--supplier-break' : ''}" data-pid="${escapeHtml(r.productId)}">
+    return `<tr class="dist-prod-row ord-row" data-pid="${escapeHtml(r.productId)}">
       <th class="dist-sticky plan-col-product" scope="row">
         <div class="dist-item">
           <span class="dist-item-name" title="${escapeHtml(p?.name || '')}">${escapeHtml(p?.name || 'Unknown product')}</span>
@@ -381,8 +376,8 @@ export function mountOrdersPanel(route) {
       ? `data-po-action="confirm" data-po-id="${escapeHtml(po.id)}"`
       : 'disabled';
     return `<div class="ord-row-actions">
-      <button type="button" class="ord-icon-btn" aria-label="Raise PO" title="${escapeHtml(raiseTitle)}" ${raiseAttrs}>${icon('shopping-cart', { size: 16 })}</button>
-      <button type="button" class="ord-icon-btn" aria-label="Confirm order" title="${escapeHtml(confirmTitle)}" ${confirmAttrs}>${icon('clipboard-check', { size: 16 })}</button>
+      <button type="button" class="topbar-tool" aria-label="Raise PO" title="${escapeHtml(raiseTitle)}" ${raiseAttrs}>${icon('shopping-cart', { size: 16 })}</button>
+      <button type="button" class="topbar-tool" aria-label="Confirm order" title="${escapeHtml(confirmTitle)}" ${confirmAttrs}>${icon('clipboard-check', { size: 16 })}</button>
     </div>`;
   }
 
@@ -401,15 +396,8 @@ export function mountOrdersPanel(route) {
       ].map(([l, t, extra]) => `<th class="dist-th plan-th${extra ? ` ${extra}` : ''}" title="${escapeHtml(t)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(l)}</span></div></th>`).join('')}
       <th class="dist-th plan-th ord-actions-th" aria-label="Actions"></th>
     </tr>`;
-    const grouped = (ctx.filter.sort || 'gap') === 'supplier';
-    let previousSupplier = null;
     const body = rows.length
-      ? rows.map((r, i) => {
-        const key = rowSupplierKey(r);
-        const supplierBreak = grouped && i > 0 && key !== previousSupplier;
-        previousSupplier = key;
-        return rowHtml(r, supplierBreak);
-      }).join('')
+      ? rows.map((r) => rowHtml(r)).join('')
       : `<tr><td colspan="9" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
     return `<thead id="ordHead">${head}</thead><tbody id="ordBody">${body}</tbody>`;
   }
