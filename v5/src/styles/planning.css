@@ -1150,7 +1150,7 @@
   gap: 3px;
   min-width: 0;
   padding: 14px 16px 13px;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 .ord-ledger-stat:last-child { border-right: none; }
 .ord-ledger-stat-value {
@@ -1186,7 +1186,7 @@
   margin: 0;
   padding: 4px 4px 10px;
   background: var(--admin-canvas, #fcfcfc);
-  box-shadow: 0 1px 0 var(--border);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 65%, transparent);
 }
 .ord-ledger-group-label {
   margin: 0;
@@ -1298,28 +1298,12 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
-.ord-rail-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 2px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
+.ord-rail-actions .topbar-tool {
   color: var(--muted-foreground);
-  cursor: pointer;
 }
-.ord-rail-icon:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #991b1b;
-}
-.ord-rail-icon:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.ord-rail-actions .topbar-tool:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 .ord-rail-cancelled {
   margin: 4px 0 0;
@@ -1390,6 +1374,16 @@
   padding: 2px 8px;
 }
 .ord-status-cell { white-space: nowrap; }
+/* Row hairlines only, so the action icons sit in the row.
+   Two classes so this beats the shared .dist-grid borders in admin.css. */
+.ord-grid.dist-grid th,
+.ord-grid.dist-grid td {
+  border-right: none;
+  border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+.ord-grid.dist-grid thead th {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
 .ord-grid .dist-item {
   display: flex;
   flex-direction: column;

@@ -470,7 +470,7 @@ export function mountOrdersPanel(route) {
       buttons.push(`<button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-po-action="confirm" data-po-id="${escapeHtml(po.id)}" ${needsLine}>Confirm</button>`);
     }
     if (po.status === 'draft') {
-      buttons.push(`<button type="button" class="ord-rail-icon" data-po-action="delete" data-po-id="${escapeHtml(po.id)}" aria-label="Delete order" title="Delete order">${icon('trash', { size: 14 })}</button>`);
+      buttons.push(`<button type="button" class="topbar-tool" data-po-action="delete" data-po-id="${escapeHtml(po.id)}" aria-label="Delete order" title="Delete order">${icon('trash', { size: 14 })}</button>`);
     }
     return buttons.join('');
   }
