@@ -470,7 +470,27 @@ export function mountOrdersPanel(route) {
   }
 
   function ordersRailHtml() {
-    const q = ctx.query.trim();
+    const q = ctx.query.trim().toLowerCase();
+    const { orders: groups, unassigned } = shortfallGroups();
+    const raiseRows = groups.filter((group) => !draftForSupplier(group.supplierId)).filter((group) => {
+      if (!q) return true;
+      const sup = ctx.supplierById.get(group.supplierId);
+      return (sup?.name || '').toLowerCase().includes(q);
+    }).map((group) => {
+      const sup = ctx.supplierById.get(group.supplierId);
+      const cases = group.lines.reduce((sum, line) => sum + line.qty_cases, 0);
+      return `<article class="ord-rail-row">
+        <div class="ord-rail-main">
+          <span class="ord-rail-top"><span class="ord-rail-ref">Not raised</span></span>
+          <span class="ord-rail-sup">${escapeHtml(sup?.name || 'Supplier')}</span>
+          <span class="ord-rail-meta muted">${group.lines.length} product${group.lines.length === 1 ? '' : 's'} · ${qty(cases)} cases still short</span>
+        </div>
+        <div class="ord-rail-status"></div>
+        <div class="ord-rail-actions">
+          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-po-action="raise" data-supplier-id="${escapeHtml(group.supplierId)}">Raise PO</button>
+        </div>
+      </article>`;
+    }).join('');
     const orderRows = ctx.orders.slice().reverse().filter(orderMatchesQuery).map((po) => {
       const meta = STATUS_META[po.status] || STATUS_META.draft;
       const sup = ctx.supplierById.get(po.supplier_id);
@@ -488,13 +508,16 @@ export function mountOrdersPanel(route) {
         ${actions ? `<div class="ord-rail-actions">${actions}</div>` : '<div class="ord-rail-actions"></div>'}
       </article>`;
     }).join('');
-    if (!orderRows) {
+    const missing = unassigned.length
+      ? `<p class="ord-rail-note muted">${unassigned.length} product${unassigned.length === 1 ? ' has' : 's have'} no supplier, so ${unassigned.length === 1 ? 'it can’t' : 'they can’t'} be raised from here.</p>`
+      : '';
+    if (!raiseRows && !orderRows) {
       const empty = q
         ? 'No purchase orders match this search.'
         : 'No purchase orders yet. Use <strong>Generate orders</strong> for every shortfall, or <strong>New order</strong>.';
-      return `<p class="ord-rail-empty muted">${empty}</p>`;
+      return `<p class="ord-rail-empty muted">${empty}</p>${q ? '' : missing}`;
     }
-    return orderRows;
+    return `${raiseRows}${orderRows}${missing}`;
   }
 
   function forecastLines() {
