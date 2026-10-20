@@ -1257,6 +1257,40 @@
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
 }
+.ord-grid th.ord-actions-th,
+.ord-grid td.ord-actions {
+  width: 68px;
+  min-width: 68px;
+  padding-right: 8px !important;
+  text-align: right;
+}
+.ord-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.ord-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ord-icon-btn:hover:not(:disabled) {
+  color: var(--foreground);
+  background: var(--secondary);
+}
+.ord-icon-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
 .ord-refs { white-space: nowrap; }
 .ord-ref {
   margin: 0 4px 0 0;

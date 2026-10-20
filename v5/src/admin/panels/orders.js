@@ -340,7 +340,43 @@ export function mountOrdersPanel(route) {
       <td class="plan-cell plan-cell--key plan-out">${badge(gapCls, `title="${escapeHtml(r.gap == null ? 'No plan' : `${signed(r.gap)} cases vs qty required`)}"`)} <span class="ord-gap">${r.gap ? signed(r.gap) : ''}</span></td>
       <td class="plan-cell ord-status-cell">${marker}</td>
       <td class="plan-cell ord-refs">${refs || '<span class="muted">—</span>'}</td>
+      <td class="plan-cell ord-actions">${rowActionHtml(r)}</td>
     </tr>`;
+  }
+
+  function openPoForProduct(productId) {
+    const matches = ctx.orders.filter((po) => (
+      (po.status === 'draft' || po.status === 'sent')
+      && (po.purchase_order_lines || []).some((line) => line.product_id === productId)
+    ));
+    const drafts = matches.filter((po) => po.status === 'draft');
+    const pool = drafts.length ? drafts : matches;
+    return pool[pool.length - 1] || null;
+  }
+
+  function rowActionHtml(r) {
+    const product = ctx.productById.get(r.productId);
+    const supplierId = preferredSupplierId(product);
+    const po = openPoForProduct(r.productId);
+    const canRaise = !locked() && r.shortfallAfterPending > 0 && !!supplierId;
+    const raiseTitle = locked()
+      ? 'Orders are locked for this event'
+      : (!supplierId
+        ? 'Choose a supplier before raising an order'
+        : (canRaise ? 'Raise PO for the cases still short' : 'Nothing left to order'));
+    const confirmTitle = locked()
+      ? 'Orders are locked for this event'
+      : (po ? `Confirm ${po.reference}` : 'No draft or sent order to confirm');
+    const raiseAttrs = canRaise
+      ? `data-po-action="raise" data-supplier-id="${escapeHtml(supplierId)}"`
+      : 'disabled';
+    const confirmAttrs = po && !locked()
+      ? `data-po-action="confirm" data-po-id="${escapeHtml(po.id)}"`
+      : 'disabled';
+    return `<div class="ord-row-actions">
+      <button type="button" class="ord-icon-btn" aria-label="Raise PO" title="${escapeHtml(raiseTitle)}" ${raiseAttrs}>${icon('shopping-cart', { size: 14 })}</button>
+      <button type="button" class="ord-icon-btn" aria-label="Confirm order" title="${escapeHtml(confirmTitle)}" ${confirmAttrs}>${icon('clipboard-check', { size: 14 })}</button>
+    </div>`;
   }
 
   function gridHtml() {
@@ -356,10 +392,11 @@ export function mountOrdersPanel(route) {
         ['Status', 'Current order status for this product'],
         ['Orders', 'Purchase orders including this product'],
       ].map(([l, t, extra]) => `<th class="dist-th plan-th${extra ? ` ${extra}` : ''}" title="${escapeHtml(t)}"><div class="dist-bar-head"><span class="dist-bar-name">${escapeHtml(l)}</span></div></th>`).join('')}
+      <th class="dist-th plan-th ord-actions-th" aria-label="Actions"></th>
     </tr>`;
     const body = rows.length
       ? rows.map(rowHtml).join('')
-      : `<tr><td colspan="8" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
+      : `<tr><td colspan="9" class="dist-empty">${ctx.rows.length ? 'No products match the current filter.' : 'Nothing planned or ordered yet — add products to the event menu with projected serves, then raise a purchase order.'}</td></tr>`;
     return `<thead id="ordHead">${head}</thead><tbody id="ordBody">${body}</tbody>`;
   }
 
