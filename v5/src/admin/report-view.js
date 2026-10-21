@@ -15,12 +15,17 @@ function formatChips(formats) {
   }).join('');
 }
 
+function readyDot(entry) {
+  if (!entry?.ready) return '';
+  return `<span class="reports-ready-dot" title="Ready for live" aria-label="Ready for live"></span>`;
+}
+
 function reportCard(entry) {
   return `
     <button type="button" class="reports-card" data-open-report="${escapeHtml(entry.id)}">
       <span class="reports-card-icon">${icon(entry.icon || 'file-text', { size: 18 })}</span>
       <span class="reports-card-body">
-        <span class="reports-card-title">${escapeHtml(entry.title)}</span>
+        <span class="reports-card-title">${escapeHtml(entry.title)}${readyDot(entry)}</span>
         <span class="reports-card-copy">${escapeHtml(entry.description)}</span>
         <span class="reports-card-formats">${formatChips(entry.formats)}</span>
       </span>
@@ -95,7 +100,7 @@ export function renderWorkspaceHead(entry) {
       <div class="reports-workspace-main">
         <span class="reports-card-icon">${icon(entry.icon || 'file-text', { size: 18 })}</span>
         <div class="reports-workspace-copy">
-          <h2 class="reports-workspace-title">${escapeHtml(entry.title)}</h2>
+          <h2 class="reports-workspace-title">${escapeHtml(entry.title)}${readyDot(entry)}</h2>
           <p class="projections-lead muted">${escapeHtml(entry.description)}</p>
         </div>
         <div class="reports-export-actions">${actions}</div>

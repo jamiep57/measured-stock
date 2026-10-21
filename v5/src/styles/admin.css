@@ -5813,11 +5813,24 @@ body.admin-drawer-open {
   flex-direction: column;
   gap: 3px;
 }
+.reports-card-title,
+.reports-workspace-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .reports-card-title {
   font-size: 14px;
   font-weight: 650;
   letter-spacing: -0.01em;
   line-height: 1.25;
+}
+.reports-ready-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  flex-shrink: 0;
 }
 .reports-card-copy {
   color: var(--muted-foreground);

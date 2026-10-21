@@ -122,6 +122,7 @@ export const REPORT_CATALOG = [
     icon: 'trash',
     title: 'Wastage',
     description: 'Write-offs logged on this event, priced at event stock cost.',
+    ready: true,
     formats: ['csv'],
     feature: 'stock.wastage',
     filters: true,
