@@ -55,7 +55,7 @@ import {
   transferEnds,
 } from '../../lib/report-registers.js';
 import { formatSpec, reportById, visibleReports } from '../report-catalog.js';
-import { renderDataTable, renderReportLibrary, renderTransferTable, renderWorkspaceHead } from '../report-view.js';
+import { renderClientPicker, renderDataTable, renderReportLibrary, renderTransferTable, renderWorkspaceHead } from '../report-view.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   reportsCellKeyFromInput,
@@ -890,9 +890,9 @@ export function mountReportsPanel(route) {
       return `
         ${renderClientStats(report)}
         ${emptyState({
-          iconHtml: icon('funnel', { size: 22 }),
+          iconHtml: icon('users', { size: 22 }),
           title: 'Choose a client',
-          copy: 'Open the filter menu and pick a client to see transfer detail and invoice pricing.',
+          copy: 'Pick a client in the header to see transfer detail and invoice pricing.',
           variant: 'admin',
         })}`;
     }
@@ -1064,9 +1064,15 @@ export function mountReportsPanel(route) {
       paintLibrary();
       return;
     }
-    root.innerHTML = `${renderWorkspaceHead(entry)}${renderActiveBody()}`;
+    const controls = entry.id === 'clients'
+      ? renderClientPicker(clientsWithTransfers(), ctx.recipientId)
+      : '';
+    root.innerHTML = `${renderWorkspaceHead(entry, { controls })}${renderActiveBody()}`;
     initIcons(root);
     root.querySelector('[data-reports-back]')?.addEventListener('click', () => selectReport(''));
+    root.querySelector('#rptRecipient')?.addEventListener('change', (e) => {
+      patchTableFilterState('reports', { recipientId: e.target.value || '' });
+    });
     root.querySelectorAll('[data-report-action]').forEach((btn) => {
       btn.onclick = () => {
         runExport(btn.dataset.reportAction, btn.dataset.reportRecord || '').catch((err) => {
@@ -1100,7 +1106,6 @@ export function mountReportsPanel(route) {
 
   function pushFilterContext() {
     setTableFilterContext('reports', {
-      recipients: clientsWithTransfers().map((r) => ({ id: r.id, name: r.name })),
       suppliers: (ctx.suppliers || []).map((s) => ({ value: s.id, label: s.name })),
       locations: insights.locations(),
       scenarios: (ctx.menuScenarios || []).map((s) => ({ id: s.id, name: s.name || 'Scenario' })),

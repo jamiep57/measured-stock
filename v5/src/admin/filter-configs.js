@@ -989,23 +989,8 @@ export const reportsConfig = simpleEventConfig({
       }];
     }
     const sections = [dates];
-    const recipients = context.recipients || [];
     const suppliers = context.suppliers || [];
-    if (id === 'clients') {
-      if (recipients.length) {
-        sections.push({
-          id: 'recipientId',
-          label: 'Client',
-          type: 'radio',
-          scroll: true,
-          options: [
-            { value: '', label: 'Select a client' },
-            ...recipients.map((r) => ({ value: r.id || r.value, label: r.name || r.label })),
-          ],
-        });
-      }
-      return sections;
-    }
+    if (id === 'clients') return sections;
     if ((id === 'suppliers' || id === 'deliveries' || id === 'orders') && suppliers.length) {
       sections.push({
         id: 'supplierId',

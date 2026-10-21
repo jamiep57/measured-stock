@@ -5946,6 +5946,28 @@ body.admin-drawer-open {
 .reports-back:hover {
   color: var(--foreground);
 }
+.reports-workspace-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.reports-client-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+.reports-client-picker .admin-label {
+  margin: 0;
+}
+.reports-client-picker .admin-select {
+  width: 220px;
+  height: 32px;
+  font-size: 13px;
+}
 .reports-export-actions,
 .reports-menu-options {
   display: flex;
@@ -5954,7 +5976,6 @@ body.admin-drawer-open {
   align-items: center;
 }
 .reports-export-actions {
-  margin-left: auto;
   flex-shrink: 0;
 }
 .reports-export-actions .topbar-tool {
@@ -5974,8 +5995,12 @@ body.admin-drawer-open {
     align-items: stretch;
   }
   .reports-search,
-  .reports-export-actions {
+  .reports-workspace-controls,
+  .reports-export-actions,
+  .reports-client-picker,
+  .reports-client-picker .admin-select {
     width: 100%;
+    max-width: none;
     margin-left: 0;
   }
 }

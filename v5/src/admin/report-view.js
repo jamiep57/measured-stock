@@ -82,7 +82,25 @@ export function renderReportLibrary(entries, query = '') {
     </div>`;
 }
 
-export function renderWorkspaceHead(entry) {
+export function renderClientPicker(clients, selectedId = '') {
+  const list = clients || [];
+  if (!list.length) return '';
+  const options = [
+    '<option value="">Choose a client</option>',
+    ...list.map((client) => {
+      const id = client.id || '';
+      const selected = String(id) === String(selectedId || '') ? ' selected' : '';
+      return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(client.name || 'Unnamed')}</option>`;
+    }),
+  ].join('');
+  return `
+    <label class="reports-client-picker">
+      <span class="admin-label">Client</span>
+      <select class="admin-select" id="rptRecipient">${options}</select>
+    </label>`;
+}
+
+export function renderWorkspaceHead(entry, { controls = '' } = {}) {
   const actions = (entry.formats || []).map((key) => {
     const spec = formatSpec(key);
     if (!spec) return '';
@@ -103,7 +121,10 @@ export function renderWorkspaceHead(entry) {
           <h2 class="reports-workspace-title">${escapeHtml(entry.title)}${readyDot(entry)}</h2>
           <p class="projections-lead muted">${escapeHtml(entry.description)}</p>
         </div>
-        <div class="reports-export-actions">${actions}</div>
+        <div class="reports-workspace-controls">
+          ${controls}
+          <div class="reports-export-actions">${actions}</div>
+        </div>
       </div>
     </div>`;
 }
