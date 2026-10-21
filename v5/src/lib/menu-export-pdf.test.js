@@ -34,6 +34,20 @@ describe('composeMenuEntry', () => {
     ]);
   });
 
+  it('keeps a 3rd party rate card to name, unit and marked-up rate', () => {
+    const model = buildMenuExport('ratecard', {
+      lines: [{ ...lines[0], costPerServe: 1.2 }],
+      marginPct: 10,
+    });
+    const hells = model.groups[0].rows.find((r) => r.menuName === 'Camden Hells');
+    expect(composeMenuEntry('ratecard', hells, model.columns)).toEqual({
+      name: 'Camden Hells',
+      price: '£1.32',
+      unit: 'Pint',
+      lines: [],
+    });
+  });
+
   it('keeps a schedule of rates to name, unit and rate', () => {
     const model = buildMenuExport('sor', { lines });
     const hells = model.groups[0].rows.find((r) => r.menuName === 'Camden Hells');

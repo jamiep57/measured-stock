@@ -76,6 +76,25 @@ export const EXPORT_TYPES = {
   },
 };
 
+/** Margins offered on the 3rd Party Rate card. 0 is cost with nothing added. */
+export const RATE_CARD_MARGINS = [0, 5, 10, 15, 20, 25, 30];
+
+/** A margin of 0–200, to one decimal. Anything else becomes 0. */
+export function rateCardMargin(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  const clamped = Math.min(200, Math.max(0, n));
+  return Math.round(clamped * 10) / 10;
+}
+
+/** Sentence used on the rate card preview and its PDF. */
+export function rateCardNote(marginPct) {
+  const margin = rateCardMargin(marginPct);
+  if (margin === 0) return 'Rates are the serve cost, ex VAT.';
+  const label = Number.isInteger(margin) ? String(margin) : margin.toFixed(1);
+  return `Rates are the serve cost plus ${label}%, ex VAT.`;
+}
+
 export const INTERNAL_FIELDS = ['costPerServe', 'gpPct'];
 
 /** Strip everything not whitelisted for `type`. */

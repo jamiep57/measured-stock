@@ -196,6 +196,16 @@ export const REPORT_CATALOG = [
     feature: 'planning.menu_gp',
     filters: true,
   },
+  {
+    id: 'menu-rate-card',
+    group: 'Menus',
+    icon: 'wallet',
+    title: '3rd Party Rate card',
+    description: 'Each serve at its cost, plus a margin you choose.',
+    formats: ['pdf', 'xlsx', 'csv'],
+    feature: 'planning.menu_gp',
+    filters: false,
+  },
 ];
 
 export function reportById(id) {

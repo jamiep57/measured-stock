@@ -5,7 +5,7 @@
  */
 
 import { BRAND, createBrandDoc, fitText, formatDocDate } from './brand-pdf.js';
-import { EXPORT_TYPES, cellValue, exportFileStem, formatCell } from './menu-exports.js';
+import { EXPORT_TYPES, cellValue, exportFileStem, formatCell, rateCardNote } from './menu-exports.js';
 
 const INK = BRAND.ink;
 const MUTED = [113, 113, 122];
@@ -37,10 +37,11 @@ function joinBits(bits) {
 
 /**
  * One menu line as a name, a price, and the quiet lines under it.
- * @param {'designer'|'client'|'sor'} type
+ * @param {'designer'|'client'|'sor'|'ratecard'} type
  */
 export function composeMenuEntry(type, row, columns = []) {
-  const priceKey = type === 'sor' ? 'rate' : 'price';
+  const rated = type === 'sor' || type === 'ratecard';
+  const priceKey = rated ? 'rate' : 'price';
   const priceCol = columns.find((c) => c.key === priceKey) || { money: true };
   const price = formatCell(row[priceKey], priceCol);
   const serve = String(row.serve || '').trim();
@@ -59,7 +60,7 @@ export function composeMenuEntry(type, row, columns = []) {
     return { name: row.menuName || '', price, unit: '', lines: lines.filter(Boolean) };
   }
 
-  if (type === 'sor') {
+  if (rated) {
     return { name: row.menuName || '', price, unit: serve, lines: [] };
   }
 
@@ -127,11 +128,12 @@ export async function generateMenuExportPDF({
 
   // Designer menu copy is the event name and the list. Venue, dates and
   // the VAT line stay on the client pack and the schedule of rates.
+  const rated = type === 'sor' || type === 'ratecard';
   const meta = type === 'designer' ? [model.barName || ''].filter(Boolean) : [
-    client?.name && type !== 'sor' ? `For ${client.name}` : '',
+    client?.name && !rated ? `For ${client.name}` : '',
     event?.venue || '',
     eventDates(event) || '',
-    type === 'sor' ? '' : `Prices include VAT at ${vatPct}%`,
+    rated ? '' : `Prices include VAT at ${vatPct}%`,
   ].filter(Boolean);
   if (type !== 'designer') {
     const who = preparedBy?.name ? `Prepared by ${preparedBy.name}` : 'Prepared by Measured';
@@ -193,11 +195,13 @@ export async function generateMenuExportPDF({
         ty += 4.4;
       });
     }
-    if (type === 'sor') {
+    if (rated) {
       ty += 1.5;
-      const intro = `Agreed products, units and rates${client?.name ? ` for ${client.name}` : ''}. `
-        + `Rates are in pounds sterling and include VAT at ${vatPct}%`
-        + `${rateNote ? `. ${rateNote}` : ''}.`;
+      const intro = type === 'ratecard'
+        ? `${rateCardNote(model.marginPct)} Amounts are in pounds sterling.`
+        : `Agreed products, units and rates${client?.name ? ` for ${client.name}` : ''}. `
+          + `Rates are in pounds sterling and include VAT at ${vatPct}%`
+          + `${rateNote ? `. ${rateNote}` : ''}.`;
       ctx.setFont('normal', 9.5, MUTED);
       const introLines = doc.splitTextToSize(intro, Math.min(ctx.contentW, 168));
       introLines.forEach((line) => {
@@ -265,7 +269,7 @@ export async function generateMenuExportPDF({
 
   function drawItem(entry, wrapped) {
     const x = colX();
-    const rate = type === 'sor';
+    const rate = rated;
     const priceSize = rate ? 11 : 11.5;
     const nameSize = rate ? 11.5 : 12.5;
     ctx.setFont('bold', nameSize, INK);
@@ -322,6 +326,8 @@ export async function generateMenuExportPDF({
       ? `Prices include VAT at ${vatPct}%. Set menu names exactly as shown.`
       : type === 'sor'
         ? `Rates apply to this event. Each rate includes VAT at ${vatPct}%.`
+        : type === 'ratecard'
+          ? rateCardNote(model.marginPct)
         : model.missingRates
           ? `${model.missingRates} item${model.missingRates === 1 ? ' has' : 's have'} no menu price yet.`
           : `Prices include VAT at ${vatPct}%.`;

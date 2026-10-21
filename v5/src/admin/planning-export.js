@@ -9,7 +9,7 @@ import { escapeHtml, toast } from '../lib/util.js';
 import { getDB } from '../db.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { isOrgAdmin } from '../lib/organisations.js';
-import { EXPORT_TYPES, buildMenuExport, exportFileStem, menuExportCsv } from '../lib/menu-exports.js';
+import { EXPORT_TYPES, buildMenuExport, exportFileStem, menuExportCsv, rateCardNote } from '../lib/menu-exports.js';
 
 /**
  * Write the audit log, then download a menu export. Internal cost/GP is
@@ -31,6 +31,7 @@ export async function commitMenuExport({
     items: model.count,
     scenarios: scenarioIds,
     rate_source: type === 'sor' ? rateSource : null,
+    margin_pct: type === 'ratecard' ? (model.marginPct ?? 0) : null,
     internal: model.includeInternal,
   };
   try {
@@ -54,10 +55,13 @@ export async function commitMenuExport({
   } else if (format === 'xlsx') {
     const { buildMenuExportXlsx } = await import('../lib/menu-export-xlsx.js');
     const vatPct = Math.round(vatRate * 1000) / 10;
+    const priceLine = type === 'ratecard'
+      ? rateCardNote(model.marginPct)
+      : `Prices in GBP inc VAT ${vatPct}%`;
     const bytes = buildMenuExportXlsx({
       model,
       title: `${spec.title} — ${event?.name || 'Event'}`,
-      meta: [model.barName || '', `Prices in GBP inc VAT ${vatPct}%`].filter(Boolean),
+      meta: [model.barName || '', priceLine].filter(Boolean),
       notes: model.includeInternal ? ['INTERNAL — contains costs and GP. Not for distribution.'] : [],
       sheetName: spec.label,
       orientation: type === 'designer' ? 'landscape' : 'portrait',
@@ -111,14 +115,17 @@ export function openMenuExportDialog(ctx) {
     bodyHtml: `
       <div class="admin-drawer-form plan-export">
         <div class="plan-export-types" role="radiogroup" aria-label="Export type">
-          ${Object.entries(EXPORT_TYPES).map(([key, spec], i) => `
+          ${['designer', 'client', 'sor'].map((key, i) => {
+            const spec = EXPORT_TYPES[key];
+            return `
             <label class="plan-export-type">
               <input type="radio" name="planExportType" value="${key}" ${i === 0 ? 'checked' : ''}>
               <span class="plan-export-type-title">${escapeHtml(spec.label)}</span>
               <span class="plan-export-type-copy">${key === 'designer'
                 ? 'Landscape menu copy with names, serve sizes, ABV and prices'
                 : key === 'client' ? 'Product mix, menu prices and chosen scenarios' : 'Agreed products, units and rates — client-facing'}</span>
-            </label>`).join('')}
+            </label>`;
+          }).join('')}
         </div>
         <label class="admin-field"><span class="admin-label">Format</span>
           <select class="admin-select" id="planExportFormat">

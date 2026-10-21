@@ -5974,6 +5974,32 @@ body.admin-drawer-open {
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+.reports-margin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.reports-margin .admin-label,
+.reports-margin-custom {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.reports-margin .reports-bar-switch {
+  margin-bottom: 0;
+}
+.reports-margin-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.reports-margin-custom .admin-input {
+  width: 72px;
+  height: 32px;
+  font-size: 13px;
+}
 .reports-bar-picker {
   display: flex;
   flex-direction: column;

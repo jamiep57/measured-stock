@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMenuExport, cellValue, menuExportCsv, sanitizeRow, serveSizeOf, INTERNAL_FIELDS } from './menu-exports.js';
+import { buildMenuExport, cellValue, menuExportCsv, rateCardMargin, rateCardNote, sanitizeRow, serveSizeOf, INTERNAL_FIELDS } from './menu-exports.js';
 
 const lines = [
   { productId: 'p1', name: 'Camden Hells 50L', menuName: 'Camden Hells', category: 'Draught', included: true, serveLabel: 'Pint', menuPrice: 6.5, projectedServes: 300, costPerServe: 1.2, gpPct: 77.8 },
@@ -18,7 +18,7 @@ function allRowKeys(model) {
 
 describe('field whitelisting', () => {
   it('never exposes cost or GP in designer or SOR exports, even when asked', () => {
-    for (const type of ['designer', 'sor']) {
+    for (const type of ['designer', 'sor', 'ratecard']) {
       const model = buildMenuExport(type, { lines, includeInternal: true });
       const keys = allRowKeys(model);
       INTERNAL_FIELDS.forEach((f) => expect(keys.has(f)).toBe(false));
@@ -179,6 +179,32 @@ describe('client pack', () => {
     expect(hells.mixPct).toBe(75);
     expect(m.columns.map((c) => c.label)).toEqual(['Product', 'Serve', 'Menu price', 'Mix %', '+5%']);
     expect(cellValue(hells, m.columns[4])).toBe(6.85);
+  });
+});
+
+describe('3rd party rate card', () => {
+  it('adds the margin to serve cost and skips lines with no cost', () => {
+    const priced = [
+      ...lines,
+      { productId: 'p5', name: 'No cost', menuName: 'No cost', category: 'Wine', included: true, serveLabel: '175ml', menuPrice: 8, costPerServe: null },
+    ];
+    const m = buildMenuExport('ratecard', { lines: priced, marginPct: 10 });
+    expect(m.count).toBe(3);
+    expect(m.missingRates).toBe(1);
+    expect(m.marginPct).toBe(10);
+    expect(m.columns.map((c) => c.label)).toEqual(['Item', 'Unit', 'Rate']);
+    const rates = Object.fromEntries(m.groups.flatMap((g) => g.rows.map((r) => [r.menuName, r.rate])));
+    expect(rates).toEqual({ 'Camden Hells': 1.32, 'Aspall Cider': 1.54, 'Red Wine': 2.2 });
+    expect(allRowKeys(m).has('costPerServe')).toBe(false);
+  });
+  it('uses the serve cost when the margin is zero, and accepts a custom percent', () => {
+    const m = buildMenuExport('ratecard', { lines, marginPct: '12.5' });
+    expect(m.groups[0].rows.find((r) => r.menuName === 'Camden Hells').rate).toBe(1.35);
+    expect(buildMenuExport('ratecard', { lines }).groups[0].rows.find((r) => r.menuName === 'Camden Hells').rate).toBe(1.2);
+    expect(rateCardMargin('nope')).toBe(0);
+    expect(rateCardMargin(250)).toBe(200);
+    expect(rateCardNote(10)).toBe('Rates are the serve cost plus 10%, ex VAT.');
+    expect(rateCardNote(0)).toBe('Rates are the serve cost, ex VAT.');
   });
 });
 
