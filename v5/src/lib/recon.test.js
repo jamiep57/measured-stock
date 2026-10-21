@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { buildReconRow, closingInvoiceQty, computePluByProductId, filterReconRows, reconBudgetCost, reconTotals, varianceClass } from './recon.js';
+import {
+  CLOSING_WAREHOUSE_NOTE,
+  buildReconRow,
+  closingInvoiceQty,
+  closingWarehouseTransferCases,
+  computePluByProductId,
+  filterReconRows,
+  reconBudgetCost,
+  reconTotals,
+  transferOutByProduct,
+  varianceClass,
+} from './recon.js';
 
 describe('buildReconRow', () => {
   const product = {
@@ -66,6 +77,58 @@ describe('buildReconRow', () => {
     expect(row.multiOfferWarn).toBe(false);
     expect(row.deliverySources).toEqual([]);
     expect(row.multiSupplierDelivery).toBe(false);
+  });
+
+  it('keeps a closing-sheet warehouse transfer inside the counted stock', () => {
+    const ep = {
+      product_id: 'p1',
+      product,
+      delivered_qty: 100,
+      qty_ordered: 100,
+      damaged_qty: 0,
+    };
+    const event = { id: 'e1', event_products: [ep] };
+    const transferMap = {
+      p1: { cases: 6, singles: 0, lines: [], closingCases: 6, closingSingles: 0 },
+    };
+    const row = buildReconRow({
+      ep,
+      closingRow: { closing_cases: 10, closing_singles: 0, close_count: 10 },
+      pluByPid: {},
+      suppliers: [],
+      caseSizes: [],
+      wastageMap: {},
+      transferMap,
+      supplierReturns: [],
+      event,
+    });
+    // 10 counted, of which 6 went to the warehouse. Consumption subtracts the
+    // count once: 100 − 10 = 90, not 100 − 10 − 6.
+    expect(row.transferred).toBe(6);
+    expect(closingWarehouseTransferCases(transferMap, 'p1', event, [])).toBe(6);
+    expect(row.consumption).toBe(90);
+  });
+
+  it('still subtracts warehouse transfers that were already removed from the close count', () => {
+    const ep = {
+      product_id: 'p1',
+      product,
+      delivered_qty: 100,
+      qty_ordered: 100,
+      damaged_qty: 0,
+    };
+    const row = buildReconRow({
+      ep,
+      closingRow: { closing_cases: 4, closing_singles: 0, close_count: 4 },
+      pluByPid: {},
+      suppliers: [],
+      caseSizes: [],
+      wastageMap: {},
+      transferMap: { p1: { cases: 6, singles: 0, lines: [] } },
+      supplierReturns: [],
+      event: { id: 'e1', event_products: [ep] },
+    });
+    expect(row.consumption).toBe(90);
   });
 
   it('prefers summed delivery lines over stale delivered_qty', () => {
@@ -661,5 +724,28 @@ describe('reconTotals', () => {
     expect(totals.totVariance).toBe(0);
     expect(totals.statusCounts.red).toBe(1);
     expect(totals.statusCounts.green).toBe(1);
+  });
+});
+
+describe('transferOutByProduct', () => {
+  it('separates closing-sheet warehouse qty from other outbound transfers', () => {
+    const map = transferOutByProduct([
+      {
+        from_event_id: 'e1',
+        to_warehouse_id: 'w1',
+        transfer_type: 'event_to_warehouse',
+        notes: CLOSING_WAREHOUSE_NOTE,
+        lines: [{ product_id: 'p1', qty: 6, singles: 0 }],
+      },
+      {
+        from_event_id: 'e1',
+        to_warehouse_id: 'w1',
+        transfer_type: 'event_to_warehouse',
+        notes: null,
+        lines: [{ product_id: 'p1', qty: 2, singles: 0 }],
+      },
+    ], 'e1');
+    expect(map.p1.cases).toBe(8);
+    expect(map.p1.closingCases).toBe(6);
   });
 });

@@ -14,6 +14,7 @@ import {
   supplierReturnCases,
   transferOutByProduct,
   transferOutCases,
+  closingWarehouseTransferCases,
   wastageByProduct,
 } from './recon.js';
 import {
@@ -365,6 +366,10 @@ function checkReconConsumption(ctx) {
     const preEvent = ep.already_in_stock != null ? Number(ep.already_in_stock) || 0 : 0;
     const damaged = Number(ep.damaged_qty || 0);
     const transferred = transferOutCases(ctx.transferMap, pid, ctx.event, ctx.caseSizes);
+    const closingWarehouse = closingWarehouseTransferCases(
+      ctx.transferMap, pid, ctx.event, ctx.caseSizes,
+    );
+    stockRem = roundN(Math.max(0, stockRem - closingWarehouse), 2);
     const wastage = ctx.wastageMap[pid] || 0;
     const delivered = epDeliveredQty(ep, ctx.countedIn);
     const rebuilt = roundN(

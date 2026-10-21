@@ -224,6 +224,14 @@ export function wastageByProduct(wastageBatches, event, caseSizes) {
   return map;
 }
 
+/** Marks a warehouse transfer created from the Closing sheet. */
+export const CLOSING_WAREHOUSE_NOTE = 'From closing stock';
+
+export function isClosingWarehouseTransfer(transfer) {
+  if (!transfer || transfer.notes !== CLOSING_WAREHOUSE_NOTE) return false;
+  return transfer.transfer_type === 'event_to_warehouse' || !!transfer.to_warehouse_id;
+}
+
 export function transferOutByProduct(transfers, eventId) {
   const map = {};
   if (!eventId) return map;
@@ -231,14 +239,26 @@ export function transferOutByProduct(transfers, eventId) {
     if (t.from_event_id !== eventId) return;
     const leaves = !!t.recipient_id || !!t.to_warehouse_id || (t.to_event_id && t.to_event_id !== eventId);
     if (!leaves) return;
+    const fromClosing = isClosingWarehouseTransfer(t);
     (t.lines || []).forEach((l) => {
       if (!l.product_id) return;
       const form = storedToForm(l);
-      const p = null; // resolved by caller via totalUnits with product from event
-      map[l.product_id] = map[l.product_id] || { cases: 0, singles: 0, lines: [] };
+      map[l.product_id] = map[l.product_id] || {
+        cases: 0,
+        singles: 0,
+        lines: [],
+        closingCases: 0,
+        closingSingles: 0,
+      };
       map[l.product_id].lines.push(l);
       map[l.product_id].cases += parseQty(form.cases);
       map[l.product_id].singles += parseQty(form.singles);
+      // Closing-sheet transfers stay inside the physical count. Track them
+      // separately so consumption can subtract that qty only once.
+      if (fromClosing) {
+        map[l.product_id].closingCases += parseQty(form.cases);
+        map[l.product_id].closingSingles += parseQty(form.singles);
+      }
     });
   });
   return map;
@@ -249,6 +269,17 @@ export function transferOutCases(transferMap, pid, event, caseSizes) {
   if (!entry) return 0;
   const p = event?.event_products?.find((ep) => ep.product_id === pid)?.product;
   return roundN(totalUnitsForProduct(entry.cases, entry.singles, p, caseSizes), 2);
+}
+
+/** Qty sent to a warehouse from the Closing sheet — still included in the close count. */
+export function closingWarehouseTransferCases(transferMap, pid, event, caseSizes) {
+  const entry = transferMap?.[pid];
+  if (!entry) return 0;
+  const cases = Number(entry.closingCases) || 0;
+  const singles = Number(entry.closingSingles) || 0;
+  if (!(cases > 0) && !(singles > 0)) return 0;
+  const p = event?.event_products?.find((ep) => ep.product_id === pid)?.product;
+  return roundN(totalUnitsForProduct(cases, singles, p, caseSizes), 2);
 }
 
 export function supplierReturnCases(supplierReturns, pid, event, caseSizes) {
@@ -516,7 +547,12 @@ export function buildReconRow(ctx) {
       || (cl.return_amount != null ? roundN(Number(cl.return_amount) || 0, 2) : 0));
 
   const closingTotal = reconClosingTotal(p, closingCases, closingSingles, caseSizes);
-  const stockRem = stockRemaining(cl, closingTotal);
+  // A Closing-sheet warehouse transfer is still in the physical count, and
+  // also in `transferred`. Drop it from stock remaining so it is subtracted once.
+  const stockRem = roundN(Math.max(
+    0,
+    stockRemaining(cl, closingTotal) - closingWarehouseTransferCases(transferMap, pid, event, caseSizes),
+  ), 2);
   const transferred = transferOutCases(transferMap, pid, event, caseSizes);
   const wastage = wastageMap[pid] || 0;
   const consumption = roundN(

@@ -30,7 +30,13 @@ import {
   groupClosingByCategory,
   returnAmountToForm,
 } from '../../lib/closing-stock.js';
-import { closingRowFor, preferredSupplierId, roundN } from '../../lib/recon.js';
+import {
+  CLOSING_WAREHOUSE_NOTE,
+  closingRowFor,
+  isClosingWarehouseTransfer,
+  preferredSupplierId,
+  roundN,
+} from '../../lib/recon.js';
 import { splitPalletQtys } from '../../lib/pallet-qty.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
@@ -80,14 +86,15 @@ function fmtMax(n) {
   return fmtQty(n);
 }
 
-function renderInput(pid, field, value, aria) {
+function renderInput(pid, field, value, aria, disabled = false) {
   // Keep "0" visible — only blank/null/undefined mean “not entered”.
   const shown = value != null && value !== '' ? String(value) : '';
   return `<input type="text" class="cl-pill-input num-math" id="cl-${field}-${escapeHtml(pid)}"
     data-cl-pid="${escapeHtml(pid)}" data-cl-field="${field}"
     value="${shown !== '' ? escapeHtml(shown) : ''}"
     autocomplete="off" inputmode="decimal" placeholder="-"
-    aria-label="${escapeHtml(aria)}">`;
+    aria-label="${escapeHtml(aria)}"
+    ${disabled ? 'disabled' : ''}>`;
 }
 
 function th(label, extraClass = '', left = false) {
@@ -111,13 +118,14 @@ function renderRow(r) {
       singles: Number(r.returnSingles) > 0 ? String(r.returnSingles) : '',
     }
     : { cases: '', singles: '' };
-  const canTransfer = (Number(r.carriedOver) || 0) > 0;
+  const locked = !!r.transferredToWarehouse;
+  const canTransfer = !locked && (Number(r.carriedOver) || 0) > 0;
   const canReturn = (Number(r.returnAmount) || 0) > 0;
   const canSticker = canReturn || canTransfer;
 
   const packLabel = r.packLabel || '';
   return `
-    <tr class="dist-prod-row cl-row" data-cl-pid="${escapeHtml(r.pid)}"
+    <tr class="dist-prod-row cl-row${locked ? ' cl-row--warehouse' : ''}" data-cl-pid="${escapeHtml(r.pid)}"
       data-product-name="${escapeHtml((r.p.name || '').toLowerCase())}"
       data-supplier-name="${escapeHtml((r.supplierName && r.supplierName !== '—' ? r.supplierName : '').toLowerCase())}">
       <th class="dist-sticky cl-col-item" data-col="product" scope="row">
@@ -126,17 +134,18 @@ function renderRow(r) {
             <span class="cl-item-name" title="${escapeHtml(r.p.name || 'Product')}">${escapeHtml(r.p.name || 'Product')}</span>
           </div>
           ${packLabel ? `<span class="cl-item-meta">${escapeHtml(packLabel)}</span>` : ''}
+          ${locked ? '<span class="cl-item-meta">Transferred to warehouse</span>' : ''}
         </div>
       </th>
       <td class="cl-prod-num muted" title="Supplier">${escapeHtml(r.supplierName)}</td>
       <td class="cl-prod-num cl-sor">${escapeHtml(fmtSor(r.sor))}</td>
       <td class="cl-prod-num cl-invoice" title="${escapeHtml(r.invoiceLabel)}">${escapeHtml(fmtQty(r.invoiceQty))}</td>
-      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'cases', countForm.cases, 'Closing cases')}</td>
-      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'singles', countForm.singles, 'Closing singles')}</td>
+      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'cases', countForm.cases, 'Closing cases', locked)}</td>
+      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'singles', countForm.singles, 'Closing singles', locked)}</td>
       <td class="cl-prod-num cl-max" id="cl-max-${escapeHtml(r.pid)}">${escapeHtml(fmtMax(r.maxReturnable))}</td>
-      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-cases', returnForm.cases, 'Return cases')}</td>
-      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-singles', returnForm.singles, 'Return singles')}</td>
-      <td class="cl-prod-num cl-carried" id="cl-carried-${escapeHtml(r.pid)}" title="${escapeHtml(r.carriedLabel)}">${escapeHtml(fmtQty(r.carriedOver))}</td>
+      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-cases', returnForm.cases, 'Return cases', locked)}</td>
+      <td class="cl-cell cl-cell--edit">${renderInput(r.pid, 'return-singles', returnForm.singles, 'Return singles', locked)}</td>
+      <td class="cl-prod-num cl-carried" id="cl-carried-${escapeHtml(r.pid)}" title="${escapeHtml(locked ? 'Transferred to warehouse' : r.carriedLabel)}">${escapeHtml(fmtQty(r.carriedOver))}</td>
       <td class="cl-return-cell">
         <button type="button" class="cl-return-btn" data-cl-action="return"
           data-cl-pid="${escapeHtml(r.pid)}"
@@ -150,8 +159,8 @@ function renderRow(r) {
         <div class="cl-row-actions">
           <button type="button" class="cl-row-btn" data-cl-action="transfer"
             data-cl-pid="${escapeHtml(r.pid)}"
-            title="Transfer carried over to warehouse"
-            aria-label="Transfer to warehouse"
+            title="${locked ? 'Transferred to warehouse' : 'Transfer carried over to warehouse'}"
+            aria-label="${locked ? 'Transferred to warehouse' : 'Transfer to warehouse'}"
             ${canTransfer ? '' : 'disabled'}>
             ${icon('warehouse', { size: 15 })}
           </button>
@@ -170,7 +179,9 @@ function renderRow(r) {
 function renderStats(rows) {
   const counted = rows.filter((r) => r.hasClosing).length;
   const returning = rows.filter((r) => r.returnAmount > 0).length;
-  const carried = rows.reduce((s, r) => s + (Number(r.carriedOver) || 0), 0);
+  const carried = rows.reduce((s, r) => (
+    s + (r.transferredToWarehouse ? 0 : (Number(r.carriedOver) || 0))
+  ), 0);
   return `
     <div class="wst-stat">
       <span class="wst-stat-label">Products</span>
@@ -246,6 +257,7 @@ export function mountClosingPanel(route) {
     event: null,
     closingRows: [],
     supplierReturns: [],
+    transfers: [],
     suppliers: [],
     caseSizes: [],
     drafts: {},
@@ -255,6 +267,7 @@ export function mountClosingPanel(route) {
     overMaxPrompt: new Set(),
     collab: null,
     recentLocalWrites: new Map(),
+    transferring: new Set(),
     focusPid: null,
     focusField: null,
     valueBroadcastTimer: null,
@@ -349,7 +362,20 @@ export function mountClosingPanel(route) {
     };
   }
 
+  function warehouseProductIds() {
+    const ids = new Set();
+    (ctx.transfers || []).forEach((t) => {
+      if (!isClosingWarehouseTransfer(t)) return;
+      if (t.from_event_id && t.from_event_id !== ctx.eventId) return;
+      (t.lines || []).forEach((line) => {
+        if (line.product_id) ids.add(line.product_id);
+      });
+    });
+    return ids;
+  }
+
   function allRows() {
+    const sent = warehouseProductIds();
     return computeClosingRows({
       event: ctx.event,
       closingRows: ctx.closingRows,
@@ -357,7 +383,9 @@ export function mountClosingPanel(route) {
       caseSizes: ctx.caseSizes,
       drafts: ctx.drafts,
       supplierReturns: ctx.supplierReturns,
-    });
+    }).map((r) => (
+      sent.has(r.pid) ? { ...r, transferredToWarehouse: true } : r
+    ));
   }
 
   function visibleRows() {
@@ -452,6 +480,10 @@ export function mountClosingPanel(route) {
 
   async function persist(pid, opts = {}) {
     if (!ctx.event) return;
+    if (warehouseProductIds().has(pid)) {
+      delete ctx.drafts[pid];
+      return;
+    }
     if (ctx.overMaxPrompt.has(pid)) return;
     const draft = ctx.drafts[pid] || readDraft(pid);
     const ep = ctx.event.event_products.find((x) => x.product_id === pid);
@@ -598,7 +630,7 @@ export function mountClosingPanel(route) {
 
   /** Debounced autosave — draft values also broadcast live while typing. */
   function scheduleSave(pid) {
-    if (!pid) return;
+    if (!pid || warehouseProductIds().has(pid)) return;
     clearTimeout(ctx.saveTimers[pid]);
     ctx.drafts[pid] = readDraft(pid);
     previewCarried(pid, ctx.drafts[pid]);
@@ -666,7 +698,7 @@ export function mountClosingPanel(route) {
 
   function onInput(e) {
     const input = e.target.closest('.cl-pill-input');
-    if (!input) return;
+    if (!input || input.disabled) return;
     scheduleSave(input.dataset.clPid);
   }
 
@@ -687,7 +719,8 @@ export function mountClosingPanel(route) {
   function syncRowActions(pid) {
     const row = rowByPid(pid);
     if (!row) return;
-    const canTransfer = (Number(row.carriedOver) || 0) > 0;
+    const locked = !!row.transferredToWarehouse;
+    const canTransfer = !locked && (Number(row.carriedOver) || 0) > 0;
     const canReturn = (Number(row.returnAmount) || 0) > 0;
     const canSticker = canReturn || canTransfer;
     const tr = panel.querySelector(`.cl-row[data-cl-pid="${CSS.escape(pid)}"]`);
@@ -696,7 +729,10 @@ export function mountClosingPanel(route) {
     const xferBtn = tr.querySelector('[data-cl-action="transfer"]');
     const stickerBtn = tr.querySelector('[data-cl-action="sticker"]');
     if (returnBtn) returnBtn.disabled = !canReturn;
-    if (xferBtn) xferBtn.disabled = !canTransfer;
+    if (xferBtn) {
+      xferBtn.disabled = !canTransfer;
+      xferBtn.title = locked ? 'Transferred to warehouse' : 'Transfer carried over to warehouse';
+    }
     if (stickerBtn) stickerBtn.disabled = !canSticker;
   }
 
@@ -871,6 +907,10 @@ export function mountClosingPanel(route) {
   async function openTransferToWarehouseSheet(pid) {
     await flushAllPending();
     const row = rowByPid(pid);
+    if (row?.transferredToWarehouse) {
+      toast('Already transferred to warehouse.', true);
+      return;
+    }
     if (!row || !(Number(row.carriedOver) || 0)) {
       toast('No carried-over stock on this product.', true);
       return;
@@ -946,12 +986,19 @@ export function mountClosingPanel(route) {
           }
           return;
         }
+        if (ctx.transferring.has(row.pid) || warehouseProductIds().has(row.pid)) {
+          if (errEl) errEl.textContent = 'Already transferred to warehouse.';
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Transfer';
+          }
+          return;
+        }
+        ctx.transferring.add(row.pid);
         const pack = productStockPack(row.p, ctx.caseSizes);
         const unit = pack?.stockUnit === 'bottle' ? 'bottles'
           : pack?.stockUnit === 'keg' ? 'kegs'
             : 'cases';
-        const returnAmt = roundN(Number(row.returnAmount) || 0, 4);
-        const newClose = roundN(Math.max(0, (Number(row.closeCount) || 0) - qty), 4);
         const created = await DB.transfers.create({
           transfer_type: 'event_to_warehouse',
           from_event_id: ctx.eventId,
@@ -963,6 +1010,7 @@ export function mountClosingPanel(route) {
           recipient_id: null,
           unit,
           transferred_at: transferredAt,
+          notes: CLOSING_WAREHOUSE_NOTE,
         });
         const lineRow = {
           transfer_id: created.id,
@@ -982,30 +1030,25 @@ export function mountClosingPanel(route) {
         }
         await adjustWarehouseStock(warehouseId, row.pid, qty);
 
-        // Clear carried-over so the transfer cannot be repeated and Recon
-        // doesn't treat the same stock as both remaining and transferred.
-        // Keep return_amount; reduce close count by the transferred qty.
-        const patch = {
-          closing_cases: newClose,
-          closing_singles: 0,
-          close_count: newClose,
-          return_amount: returnAmt,
-          carried_over: 0,
-        };
-        const saved = await DB.closing.setForEvent(ctx.eventId, row.pid, patch);
-        let cl = rowFor(ctx.closingRows, row.pid);
-        if (!cl) {
-          cl = { event_id: ctx.eventId, product_id: row.pid };
-          ctx.closingRows.push(cl);
-        }
-        Object.assign(cl, patch);
-        if (saved?.id) cl.id = saved.id;
+        // Keep the closing count. The row greys out from this transfer so
+        // the counted number stays visible. Recon subtracts this qty once.
+        ctx.transfers = ctx.transfers || [];
+        ctx.transfers.push({
+          id: created.id,
+          notes: CLOSING_WAREHOUSE_NOTE,
+          transfer_type: 'event_to_warehouse',
+          from_event_id: ctx.eventId,
+          to_warehouse_id: warehouseId,
+          lines: [{ product_id: row.pid, qty, singles: 0 }],
+        });
+        delete ctx.drafts[row.pid];
 
         const whName = warehouses.find((w) => w.id === warehouseId)?.name || 'warehouse';
         closeSheet();
         toast(`Transferred ${fmtQty(qty)} to ${whName}`);
         renderTable();
       } catch (err) {
+        ctx.transferring.delete(row.pid);
         if (errEl) errEl.textContent = err.message || 'Transfer failed';
         if (btn) {
           btn.disabled = false;
@@ -1315,12 +1358,13 @@ export function mountClosingPanel(route) {
   (async function initialLoad() {
     try {
       const DB = getDB();
-      const [event, caseSizes, suppliers, closing, supplierReturns] = await Promise.all([
+      const [event, caseSizes, suppliers, closing, supplierReturns, transfers] = await Promise.all([
         loadEventFull(ctx.eventId),
         loadCaseSizes(),
         loadSuppliers(),
         DB.closing.forEvent(ctx.eventId),
         DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
+        DB.transfers.forEvent(ctx.eventId).catch(() => []),
       ]);
       if (ctx.abort) return;
       ctx.event = event;
@@ -1328,6 +1372,7 @@ export function mountClosingPanel(route) {
       ctx.suppliers = suppliers || [];
       ctx.closingRows = closing || [];
       ctx.supplierReturns = supplierReturns || [];
+      ctx.transfers = transfers || [];
       setTableFilterContext('closing', {
         suppliers: (ctx.suppliers || [])
           .map((s) => ({ value: s.id, label: s.name || 'Supplier' }))

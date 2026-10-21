@@ -8802,6 +8802,36 @@ label.collab-cell--peer {
 .cl-panel .cl-row:hover .cl-cell--edit {
   background: color-mix(in srgb, var(--secondary) 55%, var(--card));
 }
+.cl-panel .cl-row--warehouse th,
+.cl-panel .cl-row--warehouse td {
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--muted-foreground) 8%, var(--card));
+}
+.cl-panel .cl-row--warehouse .cl-item-name,
+.cl-panel .cl-row--warehouse .cl-prod-num,
+.cl-panel .cl-row--warehouse .cl-carried,
+.cl-panel .cl-row--warehouse .cl-item-meta {
+  color: var(--muted-foreground);
+}
+.cl-panel .cl-row--warehouse .cl-cell--edit {
+  background: color-mix(in srgb, var(--muted-foreground) 8%, var(--card));
+}
+.cl-panel .cl-row--warehouse .cl-pill-input:disabled {
+  opacity: 1;
+  color: var(--muted-foreground);
+  -webkit-text-fill-color: var(--muted-foreground);
+  cursor: default;
+}
+.cl-panel .cl-row--warehouse:hover th,
+.cl-panel .cl-row--warehouse:hover td,
+.cl-panel .cl-row--warehouse:hover .cl-cell--edit {
+  background: color-mix(in srgb, var(--muted-foreground) 12%, var(--card));
+}
+.cl-panel .cl-row--warehouse .cl-row-btn[data-cl-action="transfer"]:disabled {
+  opacity: 1;
+  color: var(--muted-foreground);
+  cursor: default;
+}
 
 .cl-xfer-list {
   list-style: none;
