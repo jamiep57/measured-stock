@@ -1,9 +1,7 @@
 /**
- * Plan-an-event tour steps.
- * Targets are resolved when a step is shown. Nothing here writes menu lines or orders.
+ * Plan-an-event tour steps on a hidden practice event.
+ * Action steps wait until the user does the work. Nothing here writes data.
  */
-
-import { openEventNextAction } from '../walkthrough-model.js';
 
 function shown(el) {
   if (!el || !el.isConnected) return null;
@@ -11,31 +9,6 @@ function shown(el) {
   const rect = el.getBoundingClientRect();
   if (rect.width < 1 || rect.height < 1) return null;
   return el;
-}
-
-function eventSectionOpen() {
-  const section = document.querySelector('.sidebar-section[data-section="event-planning"]');
-  return !!section && !section.hidden;
-}
-
-function onHome() {
-  return !!document.querySelector('.home-page');
-}
-
-function homeHasEvents() {
-  return !!document.querySelector('.home-page .event-card');
-}
-
-function workspaceHasEvents() {
-  return !!document.querySelector('#sidebarWorkspaceMenu [data-workspace="event"]');
-}
-
-function eventName() {
-  return document.getElementById('sidebarWorkspaceName')?.textContent?.trim() || 'this event';
-}
-
-function planningLink() {
-  return shown(document.querySelector('#sidebarEventPlanning a[data-route="planning"]'));
 }
 
 function ordersLink() {
@@ -51,85 +24,57 @@ function selectOrdersTab(id) {
   if (tab && tab.getAttribute('aria-selected') !== 'true') tab.click();
 }
 
+function menuHasLine() {
+  return !!shown(document.querySelector('#planBody tr, #planGrid tbody tr'));
+}
+
+function menuPriceFilled() {
+  const input = document.querySelector('#planGrid [data-field="menu_price"]');
+  if (!shown(input)) return false;
+  const n = Number(String(input.value || '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n > 0;
+}
+
+function targetRevenueFilled() {
+  const input = document.getElementById('ordTarget');
+  if (!shown(input)) return false;
+  const n = Number(String(input.value || '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n > 0;
+}
+
+function orderExists() {
+  return !!shown(document.querySelector('[data-open-po], .ord-rail-row'));
+}
+
 export function planEventSteps() {
   return [
     {
-      id: 'open-event',
-      title: 'Open an event',
-      autoAdvance: true,
-      passthrough: true,
-      body() {
-        if (eventSectionOpen()) {
-          return `You're in ${eventName()}. Prices, orders, and stock for the job all live in this workspace. Switch events from here.`;
-        }
-        if (onHome() && !homeHasEvents()) {
-          return 'Create an event when you are ready. You can do that now, or continue and come back once one exists.';
-        }
-        if (homeHasEvents()) {
-          return 'Open an event from this switcher, or from the grid. Planning stays in the sidebar once an event is selected.';
-        }
-        return 'Choose an event from this switcher. Planning appears in the sidebar after you do.';
-      },
-      target() {
-        if (!eventSectionOpen() && onHome() && !homeHasEvents()) {
-          return shown(document.getElementById('homeNewEvent'));
-        }
-        return shown(document.getElementById('sidebarWorkspace'));
-      },
-      route: { needsEvent: true },
-      finishOnNext() {
-        return openEventNextAction({
-          eventOpen: eventSectionOpen(),
-          hasEvents: homeHasEvents() || workspaceHasEvents(),
-        });
-      },
-      arm() {
-        const open = eventSectionOpen();
-        return { autoAdvance: !open, passthrough: !open };
-      },
-    },
-    {
-      id: 'menu-nav',
-      feature: 'planning.menu_gp',
-      title: 'Menu & GP',
-      autoAdvance: true,
-      route: { view: 'event', panel: 'planning' },
-      destination: eventRoute('planning'),
-      body: 'Menu & GP is where this event’s prices and margins are set. Adding a product here also adds it to Opening stock, with nothing ordered yet.',
-      target: planningLink,
-    },
-    {
       id: 'add-menu',
       feature: 'planning.menu_gp',
-      title: 'Add to the menu',
+      title: 'Add a product',
       ensure: true,
       route: { view: 'event', panel: 'planning' },
       destination: eventRoute('planning'),
-      body: 'Add a product from the library, or use Recipe builder for a drink sold as one item and costed from its ingredients.',
+      body: 'This is a hidden practice event — it will not appear on your event list. Open Add and pick a product from the library, or type a name to create one. The tour continues once it is on the menu.',
       target() {
         return shown(document.querySelector('[data-toolbar-menu="plan-add"]'))
           || shown(document.querySelector('[data-add-product]'));
       },
+      complete: menuHasLine,
     },
     {
       id: 'price-gp',
       feature: 'planning.menu_gp',
-      title: 'Price and GP',
+      title: 'Set a menu price',
       ensure: true,
       route: { view: 'event', panel: 'planning' },
       destination: eventRoute('planning'),
-      body() {
-        const totals = shown(document.getElementById('planKpis'));
-        if (totals) {
-          return 'Menu price, the GP badge, and target serves roll up into these totals. Target GP % for the event is in the settings control beside Add.';
-        }
-        return 'Once a product is on the menu, its price, GP, and target serves show up here. Target GP % for the event is in the settings control beside Add.';
-      },
+      body: 'Type a selling price in Menu price. That figure, with cost and target serves, is what GP is calculated from.',
       target() {
-        return shown(document.getElementById('planKpis'))
-          || shown(document.querySelector('#planPanel .empty'))
-          || shown(document.querySelector('[data-add-product]'));
+        return shown(document.querySelector('#planGrid [data-field="menu_price"]'))
+          || shown(document.getElementById('planKpis'));
       },
+      complete: menuPriceFilled,
     },
     {
       id: 'orders-nav',
@@ -138,38 +83,41 @@ export function planEventSteps() {
       autoAdvance: true,
       route: { view: 'event', panel: 'orders' },
       destination: eventRoute('orders'),
-      body: 'Orders turns target serves into cases and purchase orders. An order records what you asked a supplier for. Only a delivery creates stock.',
+      body: 'Open Orders. Target serves become cases here. An order is what you asked a supplier for. Only a delivery creates stock.',
       target: ordersLink,
     },
     {
       id: 'projections',
       feature: 'planning.orders',
-      title: 'Projections',
+      title: 'Set a target revenue',
       ensure: true,
       route: { view: 'event', panel: 'orders' },
       destination: eventRoute('orders'),
-      body: 'Set a target revenue. Each line’s share of that target, divided by its menu price, becomes the serves you plan to sell.',
+      body: 'Type a target revenue, for example 10000. Each line’s share of that target, divided by its menu price, becomes the serves you plan to sell.',
       ready: () => !!shown(document.querySelector('[data-ord-tab="take"]')),
       prepare: () => selectOrdersTab('take'),
       target() {
         return shown(document.getElementById('ordTarget'))
           || shown(document.querySelector('[data-ord-tab="take"]'));
       },
+      complete: targetRevenueFilled,
     },
     {
-      id: 'shortfalls',
+      id: 'raise-order',
       feature: 'planning.orders',
-      title: 'What is still short',
+      title: 'Raise a purchase order',
       ensure: true,
       route: { view: 'event', panel: 'orders' },
       destination: eventRoute('orders'),
-      body: 'This grid compares the cases you need with what you have already ordered. Short rows still need a purchase order. New order in the top bar starts a blank one.',
+      body: 'Open Purchase orders. Click New order, or the cart on a short row, and save a draft. The tour continues once an order exists.',
       ready: () => !!shown(document.querySelector('[data-ord-tab="orders"]')),
       prepare: () => selectOrdersTab('orders'),
       target() {
-        return shown(document.getElementById('ordGrid'))
+        return shown(document.querySelector('[data-po-action="raise"]:not([disabled])'))
+          || shown(document.querySelector('[data-toolbar-action="orders-new"]'))
           || shown(document.querySelector('[data-ord-tab="orders"]'));
       },
+      complete: orderExists,
     },
     {
       id: 'ledger',
@@ -178,11 +126,12 @@ export function planEventSteps() {
       ensure: true,
       route: { view: 'event', panel: 'orders' },
       destination: eventRoute('orders'),
-      body: 'Raised orders are listed here. Open one to review it, then send or confirm it when you are ready.',
+      body: 'Raised orders are listed here. Open one to review it, then send or confirm it when you are ready. Practice stays on this hidden event.',
       ready: () => !!shown(document.querySelector('[data-ord-tab="ledger"]')),
       prepare: () => selectOrdersTab('ledger'),
       target() {
-        return shown(document.querySelector('[data-ord-tab="ledger"]'));
+        return shown(document.querySelector('.ord-rail-row, [data-open-po]'))
+          || shown(document.querySelector('[data-ord-tab="ledger"]'));
       },
     },
   ];

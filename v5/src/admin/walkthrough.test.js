@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { planEventSteps } from './walkthroughs/plan-event.js';
 import {
+  completeNextAction,
   openEventNextAction,
   readActiveStep,
   readTourStatus,
@@ -27,13 +28,11 @@ describe('plan-event tour', () => {
   it('keeps every lesson when the role can open planning and orders', () => {
     const steps = stepsForRole(planEventSteps(), () => true);
     expect(steps.map((step) => step.id)).toEqual([
-      'open-event',
-      'menu-nav',
       'add-menu',
       'price-gp',
       'orders-nav',
       'projections',
-      'shortfalls',
+      'raise-order',
       'ledger',
     ]);
   });
@@ -41,8 +40,6 @@ describe('plan-event tour', () => {
   it('replaces a hidden feature with one notice', () => {
     const steps = stepsForRole(planEventSteps(), (feature) => feature !== 'planning.orders');
     expect(steps.map((step) => step.id)).toEqual([
-      'open-event',
-      'menu-nav',
       'add-menu',
       'price-gp',
       'orders-unavailable',
@@ -53,7 +50,6 @@ describe('plan-event tour', () => {
   it('skips both features when the role has neither', () => {
     const steps = stepsForRole(planEventSteps(), () => false);
     expect(steps.map((step) => step.id)).toEqual([
-      'open-event',
       'planning-unavailable',
       'orders-unavailable',
     ]);
@@ -77,6 +73,11 @@ describe('plan-event tour', () => {
     expect(openEventNextAction({ eventOpen: true, hasEvents: true })).toBe('advance');
     expect(openEventNextAction({ eventOpen: false, hasEvents: false })).toBe('advance');
     expect(openEventNextAction({ eventOpen: false, hasEvents: true })).toBe('stay');
+  });
+
+  it('waits on a do-this step until the action is done', () => {
+    expect(completeNextAction(false)).toBe('stay');
+    expect(completeNextAction(true)).toBe('advance');
   });
 
   it('navigates a panel step only when that panel is not open yet', () => {

@@ -18,6 +18,8 @@ import { syncAppPresence } from '../lib/app-presence.js';
 import { ensureAppAuth, signOutApp, getCachedProfile } from '../lib/auth.js';
 import { can, fallbackRoute, loadPermissions, routeAllowed } from '../lib/permissions.js';
 import { configurePlanTour, maybeOfferPlanTour, startPlanTour } from './walkthrough.js';
+import { ensureSampleEvent } from '../lib/sample-event.js';
+import { isSampleEvent, visibleEvents } from '../lib/visible-events.js';
 import { openOwnProfileEditor } from './panels/users.js';
 import { initClientErrorReporting } from '../lib/client-errors.js';
 import { initSyncStatus } from '../components/sync-status.js';
@@ -409,6 +411,21 @@ async function boot() {
     go: goTour,
     eventId: () => resolveActiveEventId(parseRoute(), state),
     can,
+    isSample: (id) => isSampleEvent(state.events.find((event) => event.id === id)),
+    ensureSample: ensureSampleEvent,
+    rememberEvent: (event) => {
+      if (!event?.id) return;
+      if (!state.events.some((row) => row.id === event.id)) {
+        state.events = [...state.events, event];
+      }
+      setEventId(event.id);
+    },
+    forgetSample: () => {
+      const id = resolveActiveEventId(parseRoute(), state);
+      const leaving = isSampleEvent(state.events.find((event) => event.id === id));
+      state.events = visibleEvents(state.events);
+      if (leaving) setEventId('');
+    },
   });
   startRouter(render);
 }

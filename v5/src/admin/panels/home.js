@@ -8,6 +8,7 @@ import { openSheet, closeSheet } from '../../components/sheet.js';
 import { emptyState } from '../../components/empty-state.js';
 import { initIcons } from '../../lib/icons.js';
 import { navigate } from '../router.js';
+import { visibleEvents } from '../../lib/visible-events.js';
 
 export const ADMIN_EVENTS_CHANGED = 'v5-admin-events-changed';
 
@@ -20,7 +21,7 @@ const STATUS_OPTS = [
 ];
 
 export function renderHomeShell(events) {
-  const list = events || [];
+  const list = visibleEvents(events);
   const cards = list.length
     ? `<div class="event-grid">
         ${list.map((e) => `

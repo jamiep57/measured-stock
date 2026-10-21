@@ -8,6 +8,7 @@ import { navigate, hrefForRoute } from './router.js';
 import { resolveActiveEventId } from './event-workspace.js';
 import { getActiveOrganisation } from '../lib/organisations.js';
 import { can, canOpenDev, canOpenSettings, firstSettingsSection } from '../lib/permissions.js';
+import { visibleEvents } from '../lib/visible-events.js';
 
 const SECTION_STORAGE_KEY = 'v5-admin-sidebar-sections';
 const DEFAULT_WORKSPACE_MARK = '/assets/img/logomark.png';
@@ -48,7 +49,7 @@ function renderWorkspaceMenu(events, rememberedEventId) {
         <span class="sidebar-workspace-item-sub">${escapeHtml(orgName)}</span>
       </span>
     </button>`,
-    ...events.map((event) => {
+    ...visibleEvents(events).map((event) => {
       const active = rememberedEventId === event.id;
       return `<button type="button" class="sidebar-workspace-item${active ? ' is-active' : ''}" data-workspace="event" data-event-id="${escapeHtml(event.id)}">
         ${workspaceItemMark(event.image_url || null)}

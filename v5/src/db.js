@@ -276,18 +276,23 @@ export async function loadServeSizes() {
 
 export async function loadEventsList() {
   const DB = getDB();
-  const listQuery = '?select=id,name,legacy_id,status,image_url&order=created_at.desc';
+  const listQuery = '?select=id,name,legacy_id,status,image_url,is_sample&order=created_at.desc';
   const [events, blobs] = await Promise.all([
     DB.events.list(listQuery).catch(async (err) => {
-      if (/image_url|column/.test(String(err?.message || err))) {
-        return DB.events.list('?select=id,name,legacy_id,status&order=created_at.desc');
+      if (/is_sample|image_url|column/.test(String(err?.message || err))) {
+        return DB.events.list('?select=id,name,legacy_id,status,image_url&order=created_at.desc').catch(async (inner) => {
+          if (/image_url|column/.test(String(inner?.message || inner))) {
+            return DB.events.list('?select=id,name,legacy_id,status&order=created_at.desc');
+          }
+          throw inner;
+        });
       }
       throw err;
     }),
     DB.select('stock_events', '?select=id&order=name').catch(() => []),
   ]);
   const blobIds = new Set((blobs || []).map((b) => b.id));
-  return (events || []).filter((e) => !e.legacy_id || blobIds.has(e.legacy_id));
+  return (events || []).filter((e) => !e.is_sample && (!e.legacy_id || blobIds.has(e.legacy_id)));
 }
 
 async function fetchEvent(eventId, mode) {

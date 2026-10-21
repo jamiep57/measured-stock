@@ -85,6 +85,11 @@ export function routeNextAction({ satisfied, canNavigate }) {
   return 'stay';
 }
 
+/** Next on a do-this-yourself step: wait until the action is done. */
+export function completeNextAction(done) {
+  return done ? 'advance' : 'stay';
+}
+
 export function resumeIndex(steps, startId) {
   if (!startId) return 0;
   const index = steps.findIndex((step) => step.id === startId);

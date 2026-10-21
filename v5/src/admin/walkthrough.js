@@ -4,9 +4,11 @@
  */
 
 import '../styles/walkthrough.css';
+import { toast } from '../lib/util.js';
 import { parseRoute } from './router.js';
 import { planEventSteps } from './walkthroughs/plan-event.js';
 import {
+  completeNextAction,
   readActiveStep,
   readTourStatus,
   resumeIndex,
@@ -20,6 +22,7 @@ import {
 } from './walkthrough-model.js';
 
 export {
+  completeNextAction,
   openEventNextAction,
   readActiveStep,
   readTourStatus,
@@ -53,6 +56,7 @@ let inviteEl = null;
 /** @type {MutationObserver | null} */
 let observer = null;
 let layoutFrame = 0;
+let previousEventId = '';
 
 function storageLocal() {
   try {
@@ -84,11 +88,14 @@ function overlayBlocked() {
 
 function shouldAutoAdvance() {
   const step = steps[index];
-  if (suppressAdvance || !armed?.autoAdvance || armed.wasSatisfied || !step?.route) return false;
+  if (suppressAdvance || !step || overlayBlocked()) return false;
+  if (typeof step.complete === 'function') return !!step.complete();
+  if (!armed?.autoAdvance || armed.wasSatisfied || !step.route) return false;
   return routeSatisfies(step.route, parseRoute());
 }
 
 function nextAction(step) {
+  if (typeof step.complete === 'function') return completeNextAction(!!step.complete());
   if (typeof step.finishOnNext === 'function') return step.finishOnNext();
   if (step.route) {
     return routeNextAction({
@@ -134,6 +141,8 @@ function ensureDom() {
 
   document.addEventListener('keydown', onKeyDown, true);
   document.addEventListener('click', onCaptureClick, true);
+  document.addEventListener('input', onUserInput, true);
+  document.addEventListener('change', onUserInput, true);
   document.addEventListener('v5-admin-rendered', onRendered);
   window.addEventListener('resize', scheduleLayout);
   window.addEventListener('scroll', scheduleLayout, true);
@@ -155,6 +164,15 @@ function onKeyDown(e) {
   e.preventDefault();
   e.stopPropagation();
   finish('done');
+}
+
+function onUserInput() {
+  if (!running || suppressAdvance) return;
+  if (shouldAutoAdvance()) {
+    show(index + 1);
+    return;
+  }
+  scheduleLayout();
 }
 
 function onCaptureClick(e) {
@@ -215,7 +233,8 @@ function paintCard() {
   if (copy) copy.textContent = stepText(step.body);
   if (back) back.disabled = index === 0;
   if (next) {
-    next.textContent = index === steps.length - 1 ? 'Done' : 'Next';
+    const waiting = typeof step.complete === 'function' && nextAction(step) === 'stay';
+    next.textContent = waiting ? 'Waiting…' : (index === steps.length - 1 ? 'Done' : 'Next');
     next.disabled = nextAction(step) === 'stay';
   }
   const pass = armed?.passthrough ?? !!step.passthrough;
@@ -463,6 +482,16 @@ function finish(status) {
   const root = rootEl();
   if (root) root.hidden = true;
   paintLauncher();
+  const sampleId = api?.eventId?.() || '';
+  const leave = api?.isSample?.(sampleId);
+  api?.forgetSample?.();
+  const prev = previousEventId;
+  previousEventId = '';
+  if (leave) {
+    void api?.go(prev
+      ? { view: 'event', eventId: prev, panel: 'dashboard' }
+      : { view: 'home' });
+  }
 }
 
 function hideInvite() {
@@ -502,7 +531,7 @@ function paintLauncher() {
   el.innerHTML = offer
     ? `
       <p class="tour-invite-title">Plan an event</p>
-      <p class="tour-invite-copy">Open an event, price the menu, then place orders.</p>
+      <p class="tour-invite-copy">Practice on a hidden sample event: add a product, price it, then raise an order.</p>
       <div class="tour-invite-actions">
         <button type="button" class="tour-btn tour-btn--quiet" data-tour-invite="later">Later</button>
         <button type="button" class="tour-btn tour-btn--primary" data-tour-invite="start">Start</button>
@@ -518,6 +547,10 @@ export function configurePlanTour(nextApi) {
     go: nextApi.go,
     eventId: nextApi.eventId,
     can: nextApi.can || (() => true),
+    isSample: nextApi.isSample || (() => false),
+    ensureSample: nextApi.ensureSample,
+    rememberEvent: nextApi.rememberEvent,
+    forgetSample: nextApi.forgetSample,
   };
 }
 
@@ -536,10 +569,28 @@ export function maybeOfferPlanTour() {
 export function startPlanTour({ startId = null } = {}) {
   if (!api) return;
   hideInvite();
+  const current = api.eventId?.() || '';
+  if (current && !api.isSample?.(current)) previousEventId = current;
   steps = stepsForRole(planEventSteps(), api.can);
   running = true;
   paintLauncher();
   ensureDom();
   const start = resumeIndex(steps, startId);
+  void bootSample(startId, start);
+}
+
+async function bootSample(startId, start) {
+  const gen = generation;
+  try {
+    const sample = await api?.ensureSample?.({ reset: !startId });
+    if (gen !== generation && !running) return;
+    if (sample) api?.rememberEvent?.(sample);
+  } catch (err) {
+    running = false;
+    paintLauncher();
+    toast(err.message || 'Could not open the practice event', true);
+    return;
+  }
+  if (!running) return;
   show(start);
 }
