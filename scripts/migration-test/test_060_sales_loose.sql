@@ -40,29 +40,35 @@ BEGIN
   ASSERT (SELECT count(DISTINCT location) FROM public.till_sale_rows) = 2, 'locations stored';
 END $$;
 
--- Allowances: exactly one of product / category, one per scope, non-negative.
-INSERT INTO public.loose_stock_allowances (event_id, product_id, allowance_units) VALUES
+-- Allowances: exactly one of product / category, one per scope, a percent 0–100.
+INSERT INTO public.loose_stock_allowances (event_id, product_id, allowance_pct) VALUES
   ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1', 6);
-INSERT INTO public.loose_stock_allowances (event_id, category_id, allowance_units) VALUES
+INSERT INTO public.loose_stock_allowances (event_id, category_id, allowance_pct) VALUES
   ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000c1', 20);
 DO $$
 BEGIN
   ASSERT (SELECT org_id FROM public.loose_stock_allowances LIMIT 1) = public.default_org_id(), 'org derived from event';
+  ASSERT (SELECT allowance_pct FROM public.loose_stock_allowances WHERE product_id IS NOT NULL) = 6, 'percent stored';
   BEGIN
-    INSERT INTO public.loose_stock_allowances (event_id, product_id, allowance_units)
+    INSERT INTO public.loose_stock_allowances (event_id, product_id, allowance_pct)
     VALUES ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1', 2);
     RAISE EXCEPTION 'duplicate product allowance should fail';
   EXCEPTION WHEN unique_violation THEN NULL;
   END;
   BEGIN
-    INSERT INTO public.loose_stock_allowances (event_id, product_id, category_id, allowance_units)
+    INSERT INTO public.loose_stock_allowances (event_id, product_id, category_id, allowance_pct)
     VALUES ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000c1', 1);
     RAISE EXCEPTION 'product + category scope should fail';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
   BEGIN
-    UPDATE public.loose_stock_allowances SET allowance_units = -1 WHERE product_id IS NOT NULL;
+    UPDATE public.loose_stock_allowances SET allowance_pct = -1 WHERE product_id IS NOT NULL;
     RAISE EXCEPTION 'negative allowance should fail';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE public.loose_stock_allowances SET allowance_pct = 101 WHERE product_id IS NOT NULL;
+    RAISE EXCEPTION 'allowance over 100 should fail';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 END $$;

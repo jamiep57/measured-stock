@@ -62,7 +62,7 @@ function shareCell(share) {
   return `<span class="rpt-share"><span style="width:${Math.min(100, Math.max(0, share || 0))}%"></span></span>${fmtPct(share)}`;
 }
 
-const CHART_COLORS = ['#c2410c', '#1c1917', '#d97706', '#a8a29e', '#78716c', '#44403c'];
+const CHART_COLORS = ['#7c6af7', '#fb923c', '#34d399', '#f472b6', '#60a5fa', '#fbbf24'];
 
 function chartSlices(list, max = 6) {
   const ranked = (list || []).filter((g) => g.net > 0);
@@ -80,7 +80,7 @@ function chartSlices(list, max = 6) {
     const pct = total > 0 ? (g.net / total) * 100 : 0;
     const start = cursor;
     cursor += pct;
-    const color = g.label === 'Other' ? '#e7e5e4' : CHART_COLORS[i % CHART_COLORS.length];
+    const color = g.label === 'Other' ? '#ddd6fe' : CHART_COLORS[i % CHART_COLORS.length];
     return { ...g, pct, start, color };
   });
 }
@@ -121,7 +121,7 @@ function hbars(rows, { valueOf, format }) {
     const width = peak > 0 ? Math.max(value > 0 ? 2 : 0, (value / peak) * 100) : 0;
     return `<div class="rpt-hbar">
       <span class="rpt-hbar-name" title="${escapeHtml(g.label)} · ${fmtMoney(g.net)}">${escapeHtml(g.label)}</span>
-      <span class="rpt-hbar-track"><span class="rpt-hbar-fill${i === 0 ? ' is-lead' : ''}" style="width:${width.toFixed(1)}%"></span></span>
+      <span class="rpt-hbar-track"><span class="rpt-hbar-fill" style="width:${width.toFixed(1)}%"></span></span>
       <span class="rpt-hbar-val">${format(g)}</span>
     </div>`;
   }).join('');
@@ -141,7 +141,6 @@ function renderCategoryMix(categories) {
       <div class="rpt-donut" style="${donutStyle(slices)}" role="img" aria-label="${escapeHtml(lead.label)}, ${leadPct} of net sales">
         <div class="rpt-donut-hole">
           <span class="rpt-donut-pct">${leadPct}</span>
-          <span class="rpt-donut-name">${escapeHtml(lead.label)}</span>
         </div>
       </div>
       <div class="rpt-legend">
@@ -257,7 +256,7 @@ function renderShape(h, band) {
           <span class="rpt-glance-figure ${toneClass}">${escapeHtml(formatGpPct(gp))}</span>
           ${pts != null ? `<span class="rpt-glance-delta ${toneClass}">${fmtSigned(pts, (n) => `${n.toFixed(1)} pts`)}</span>` : ''}
         </div>
-        <div class="rpt-meter" aria-hidden="true">
+        <div class="rpt-meter ${toneClass}" aria-hidden="true">
           <span class="rpt-meter-fill ${toneClass}" style="width:${Math.max(0, Math.min(100, gp)).toFixed(1)}%"></span>
           ${tickAt != null ? `<span class="rpt-meter-tick${tickSide}" style="left:${tickAt.toFixed(1)}%"><span class="rpt-meter-tick-label">${tickLabel}</span></span>` : ''}
         </div>
@@ -665,8 +664,9 @@ export function createReportInsights({ getBase, onChange }) {
       const attrs = g.scope === 'category'
         ? `data-loose-category="${escapeHtml(g.key.slice(2))}"`
         : `data-loose-product="${escapeHtml(g.lines[0].productId)}"`;
-      return `<input class="admin-input plan-cell-input rpt-allow-input num-math" inputmode="decimal" ${attrs}
-        value="${g.scope === 'none' ? '' : escapeHtml(String(g.allowance))}" placeholder="none" aria-label="Allowance for ${escapeHtml(g.label)}">`;
+      const value = g.scope === 'none' ? '' : String(Math.round(Number(g.allowance) * 100) / 100);
+      return `<span class="plan-cell-affix"><span class="plan-cell-suffix plan-cell-suffix--balance" aria-hidden="true">%</span><input class="plan-cell-input rpt-allow-input num-math" inputmode="decimal" ${attrs}
+        value="${escapeHtml(value)}" placeholder="—" aria-label="Allowance percent for ${escapeHtml(g.label)}"><span class="plan-cell-suffix" aria-hidden="true">%</span></span>`;
     };
     const rows = groups.map((g) => {
       const over = g.excessUnits > 0;
@@ -690,11 +690,11 @@ export function createReportInsights({ getBase, onChange }) {
         <div class="wst-stat"><span class="wst-stat-label">Loose at close</span><span class="wst-stat-value">${fmtMoney(totals.looseValue)}</span><span class="wst-stat-label muted">${fmtNum(totals.looseUnits, 2)} singles</span></div>
         <div class="wst-stat"><span class="wst-stat-label">Above allowance</span><span class="wst-stat-value${totals.overAllowance ? ' dash-stat-value--warn' : ''}">${fmtMoney(totals.chargeable)}</span><span class="wst-stat-label muted">${totals.overAllowance} line${totals.overAllowance === 1 ? '' : 's'} over${totals.unpriced ? ` · ${totals.unpriced} unpriced` : ''}</span></div>
       </div>
-      <p class="muted rpt-note">Loose stock is the opened-case singles counted at close (Recon). Set agreed allowances per product, or pool them by category; anything above is chargeable at stock cost. Allowances never change stock.</p>
+      <p class="muted rpt-note">Loose stock is the opened-case singles counted at close (Recon). The allowance is a percentage of those singles, per product or pooled by category. Anything above that share is chargeable at stock cost. Allowances never change stock.</p>
       <section class="admin-surface projections-table-section">
         <div class="dash-table-wrap">
           <table class="catalog-table dash-table reports-table rpt-table">
-            <thead><tr><th>Product</th><th>Category</th><th class="num">Loose units</th><th class="num">Allowance</th>
+            <thead><tr><th>Product</th><th>Category</th><th class="num">Loose units</th><th class="num">Allowance %</th>
               <th class="num">Above allowance</th><th class="num">Loose value</th><th class="num">Chargeable</th></tr></thead>
             <tbody>${rows || '<tr><td colspan="7" class="dist-empty">No loose singles recorded at close.</td></tr>'}</tbody>
             <tfoot><tr class="reports-total-row"><td>Total</td><td></td><td class="num">${fmtNum(totals.looseUnits, 2)}</td><td></td>
@@ -705,15 +705,19 @@ export function createReportInsights({ getBase, onChange }) {
           <select class="admin-select" id="rptLooseCat" aria-label="Category">
             ${[...catOptions.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('')}
           </select>
-          <input class="admin-input num-math" id="rptLooseCatUnits" inputmode="decimal" placeholder="Units" aria-label="Allowance units">
+          <span class="plan-cell-affix"><span class="plan-cell-suffix plan-cell-suffix--balance" aria-hidden="true">%</span><input class="plan-cell-input num-math" id="rptLooseCatPct" inputmode="decimal" placeholder="—" aria-label="Allowance percent"><span class="plan-cell-suffix" aria-hidden="true">%</span></span>
           <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="rptLooseCatAdd">${icon('plus', { size: 14 })} Category allowance</button>
         </div>` : ''}
       </section>`;
   }
 
+  function parseAllowancePct(raw) {
+    return parsePlanningNumber(raw, { max: 100.0001 });
+  }
+
   async function onAllowanceChange(input) {
-    const parsed = parsePlanningNumber(input.value, { max: 1000000 });
-    if (!parsed.ok) { toast('Enter a number of units', true); input.focus(); return; }
+    const parsed = parseAllowancePct(input.value);
+    if (!parsed.ok) { toast('Enter a percentage from 0 to 100', true); input.focus(); return; }
     const { eventId } = getBase();
     const productId = input.dataset.looseProduct || null;
     const categoryId = input.dataset.looseCategory || null;
@@ -721,7 +725,7 @@ export function createReportInsights({ getBase, onChange }) {
     if (!existing && parsed.value == null) return;
     input.disabled = true;
     try {
-      const saved = await saveLooseAllowance({ eventId, productId, categoryId, existing, units: parsed.value });
+      const saved = await saveLooseAllowance({ eventId, productId, categoryId, existing, pct: parsed.value });
       state.allowances = state.allowances.filter((a) => a !== existing);
       if (saved) state.allowances.push(saved);
       onChange();
@@ -740,12 +744,12 @@ export function createReportInsights({ getBase, onChange }) {
     const catAdd = root.querySelector('#rptLooseCatAdd');
     if (catAdd) {
       catAdd.onclick = async () => {
-        const parsed = parsePlanningNumber(root.querySelector('#rptLooseCatUnits').value, { max: 1000000 });
-        if (!parsed.ok || parsed.value == null) { toast('Enter the allowance in units', true); return; }
+        const parsed = parseAllowancePct(root.querySelector('#rptLooseCatPct').value);
+        if (!parsed.ok || parsed.value == null) { toast('Enter a percentage from 0 to 100', true); return; }
         catAdd.disabled = true;
         try {
           const saved = await saveLooseAllowance({
-            eventId: getBase().eventId, categoryId: root.querySelector('#rptLooseCat').value, units: parsed.value,
+            eventId: getBase().eventId, categoryId: root.querySelector('#rptLooseCat').value, pct: parsed.value,
           });
           if (saved) state.allowances.push(saved);
           onChange();
@@ -789,8 +793,8 @@ export function createReportInsights({ getBase, onChange }) {
       if (!state.looseLoaded) { toast('Loose stock isn’t loaded', true); return; }
       const { groups } = looseModel();
       downloadBlob(`${fileStem('Loose stock')}.csv`, csv(
-        ['Product / pool', 'Category', 'Allowance scope', 'Loose units', 'Allowance', 'Above allowance', 'Loose value', 'Chargeable'],
-        groups.map((g) => [g.label, g.categoryName, g.scope, g.looseUnits, g.allowance, g.excessUnits, n2(g.looseValue), n2(g.excessValue)]),
+        ['Product / pool', 'Category', 'Allowance scope', 'Loose units', 'Allowance %', 'Above allowance', 'Loose value', 'Chargeable'],
+        groups.map((g) => [g.label, g.categoryName, g.scope, g.looseUnits, g.scope === 'none' ? '' : g.allowance, g.excessUnits, n2(g.looseValue), n2(g.excessValue)]),
       ), 'text/csv;charset=utf-8');
     }
   }
@@ -847,7 +851,7 @@ export function createReportInsights({ getBase, onChange }) {
     ctx.table(
       [{ label: 'Product', width: 40 }, { label: 'Loose', width: 13, align: 'right' }, { label: 'Allowance', width: 15, align: 'right' }, { label: 'Above', width: 13, align: 'right' }, { label: 'Charge', width: 19, align: 'right' }],
       charged.length
-        ? charged.map((g, i) => ({ cells: [g.label, fmtNum(g.looseUnits, 2), fmtNum(g.allowance, 2), fmtNum(g.excessUnits, 2), fmtMoney(g.excessValue)], band: i % 2 === 1 }))
+        ? charged.map((g, i) => ({ cells: [g.label, fmtNum(g.looseUnits, 2), g.scope === 'none' ? '—' : fmtPct(g.allowance), fmtNum(g.excessUnits, 2), fmtMoney(g.excessValue)], band: i % 2 === 1 }))
         : [['Nothing above allowance', '', '', '', '']],
     );
     ctx.totals([['Chargeable', fmtMoney(totals.chargeable), true]]);
@@ -865,8 +869,10 @@ export function createReportInsights({ getBase, onChange }) {
     headlines: 'Headline figures for this event from the Square sales import, with GP against target once Recon has costs.',
     sales: 'Sales from the Square import grouped by product, category, location or date — or compare every event.',
     revenue: 'Planned menu forecast (Planning → Menu & GP) against actual sales and recon consumption cost.',
-    loose: 'Loose singles left at close against agreed allowances.',
+    loose: 'Loose singles left at close. The allowance is a percentage of those singles; the rest is chargeable.',
   };
 
   return { ensure, render, bind, exportCsv, exportPdf, locations, lead: (k) => LEADS[k] || '' };
 }
+
+export { renderHeadlinesViz };

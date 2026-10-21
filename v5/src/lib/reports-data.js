@@ -30,24 +30,25 @@ export function listLooseAllowances(eventId) {
 }
 
 /**
- * Set (or clear with units = null) the allowance for one product or category.
- * @param {{ eventId: string, productId?: string, categoryId?: string, existing?: object|null, units: number|null }} p
+ * Set (or clear with pct = null) the allowance for one product or category.
+ * pct is a percentage of the loose singles, from 0 to 100.
+ * @param {{ eventId: string, productId?: string, categoryId?: string, existing?: object|null, pct: number|null }} p
  */
-export async function saveLooseAllowance({ eventId, productId = null, categoryId = null, existing = null, units }) {
+export async function saveLooseAllowance({ eventId, productId = null, categoryId = null, existing = null, pct }) {
   const DB = getDB();
-  if (units == null) {
+  if (pct == null) {
     if (existing?.id) await DB.remove('loose_stock_allowances', `id=eq.${enc(existing.id)}`);
     return null;
   }
   if (existing?.id) {
-    const rows = await DB.update('loose_stock_allowances', `id=eq.${enc(existing.id)}`, { allowance_units: units });
-    return rows?.[0] || { ...existing, allowance_units: units };
+    const rows = await DB.update('loose_stock_allowances', `id=eq.${enc(existing.id)}`, { allowance_pct: pct });
+    return rows?.[0] || { ...existing, allowance_pct: pct };
   }
   const rows = await DB.insert('loose_stock_allowances', {
     event_id: eventId,
     product_id: productId,
     category_id: categoryId,
-    allowance_units: units,
+    allowance_pct: pct,
   });
   return rows?.[0] || null;
 }

@@ -2,11 +2,24 @@
  * Loose stock: opened-case singles left at close, charged to the event
  * above any agreed allowance.
  *
- * Allowances (units) are per product or per category. A product allowance
- * covers that product only; a category allowance is pooled across the
- * category's products that have no product allowance of their own.
- * Excess is valued at the recon cost per single (row price ÷ units per case).
+ * An allowance is a percentage of the loose singles, per product or per
+ * category. A product allowance covers that product only; a category
+ * allowance is pooled across the category's products that have no product
+ * allowance of their own. Anything above that share is chargeable, valued
+ * at the recon cost per single (row price ÷ units per case).
  */
+
+function allowancePctOf(row) {
+  const n = Number(row?.allowance_pct);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(100, n);
+}
+
+/** Singles above the allowed share of the loose count. */
+function excessUnitsFor(looseUnits, pct) {
+  const allowed = qty(looseUnits * pct / 100);
+  return qty(Math.max(0, looseUnits - allowed));
+}
 
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const qty = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -47,8 +60,8 @@ export function computeLooseStock({ reconRows = [], allowances = [] }) {
   lines.forEach((l) => {
     const pa = byProduct.get(l.productId);
     if (pa) {
-      const allowance = Number(pa.allowance_units) || 0;
-      const excessUnits = qty(Math.max(0, l.looseUnits - allowance));
+      const allowance = allowancePctOf(pa);
+      const excessUnits = excessUnitsFor(l.looseUnits, allowance);
       groups.push({
         scope: 'product',
         allowanceId: pa.id,
@@ -91,7 +104,7 @@ export function computeLooseStock({ reconRows = [], allowances = [] }) {
         key,
         label: `${l.categoryName} (pooled)`,
         categoryName: l.categoryName,
-        allowance: Number(ca.allowance_units) || 0,
+        allowance: allowancePctOf(ca),
         lines: [],
       });
     }
@@ -100,7 +113,7 @@ export function computeLooseStock({ reconRows = [], allowances = [] }) {
 
   pooled.forEach((g) => {
     const looseUnits = qty(g.lines.reduce((s, l) => s + l.looseUnits, 0));
-    const excessUnits = qty(Math.max(0, looseUnits - g.allowance));
+    const excessUnits = excessUnitsFor(looseUnits, g.allowance);
     const priced = g.lines.filter((l) => l.unitValue != null);
     const pricedUnits = priced.reduce((s, l) => s + l.looseUnits, 0);
     const pricedValue = priced.reduce((s, l) => s + l.looseValue, 0);

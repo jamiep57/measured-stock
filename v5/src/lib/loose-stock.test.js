@@ -26,26 +26,36 @@ describe('computeLooseStock', () => {
     const { groups } = computeLooseStock({
       reconRows,
       allowances: [
-        { id: 'a1', product_id: 'vodka', allowance_units: 5 },
-        { id: 'a2', category_id: 'c-sp', allowance_units: 10 },
+        { id: 'a1', product_id: 'vodka', allowance_pct: 25 },
+        { id: 'a2', category_id: 'c-sp', allowance_pct: 50 },
       ],
     });
     const vodka = groups.find((g) => g.key === 'p:vodka');
-    expect(vodka).toMatchObject({ allowance: 5, excessUnits: 3, excessValue: 30 });
-    // Gin alone is in the spirits pool: 4 loose, 10 allowed → nothing chargeable.
+    // 25% of 8 singles allowed → 6 chargeable at £10.
+    expect(vodka).toMatchObject({ allowance: 25, excessUnits: 6, excessValue: 60 });
+    // Gin alone is in the spirits pool: 4 loose, 50% allowed → 2 chargeable at £15.
     const pool = groups.find((g) => g.key === 'c:c-sp');
-    expect(pool).toMatchObject({ looseUnits: 4, excessUnits: 0, excessValue: 0 });
+    expect(pool).toMatchObject({ looseUnits: 4, allowance: 50, excessUnits: 2, excessValue: 30 });
     expect(pool.lines.map((l) => l.productId)).toEqual(['gin']);
   });
 
   it('pools a category allowance across products and values excess at the pool average', () => {
     const { groups } = computeLooseStock({
       reconRows,
-      allowances: [{ id: 'a2', category_id: 'c-sp', allowance_units: 6 }],
+      allowances: [{ id: 'a2', category_id: 'c-sp', allowance_pct: 50 }],
     });
     const pool = groups.find((g) => g.key === 'c:c-sp');
-    // 12 loose (8 vodka @ £10 + 4 gin @ £15 = £140, avg £11.667), 6 allowed → 6 × 11.667.
-    expect(pool).toMatchObject({ looseUnits: 12, excessUnits: 6, looseValue: 140, excessValue: 70 });
+    // 12 loose (8 vodka @ £10 + 4 gin @ £15 = £140, avg £11.667), 50% allowed → 6 × 11.667.
+    expect(pool).toMatchObject({ looseUnits: 12, allowance: 50, excessUnits: 6, looseValue: 140, excessValue: 70 });
+  });
+
+  it('charges nothing when the allowance is 100%', () => {
+    const { groups, totals } = computeLooseStock({
+      reconRows: [reconRows[0]],
+      allowances: [{ id: 'a', product_id: 'vodka', allowance_pct: 100 }],
+    });
+    expect(groups[0]).toMatchObject({ allowance: 100, excessUnits: 0, excessValue: 0 });
+    expect(totals.chargeable).toBe(0);
   });
 
   it('skips products with no loose stock and flags unpriced excess', () => {
@@ -57,7 +67,7 @@ describe('computeLooseStock', () => {
   });
 
   it('keeps product allowance rows visible even with nothing loose', () => {
-    const { groups } = computeLooseStock({ reconRows, allowances: [{ id: 'x', product_id: 'cider', allowance_units: 2 }] });
-    expect(groups.find((g) => g.key === 'p:cider')).toMatchObject({ looseUnits: 0, excessUnits: 0 });
+    const { groups } = computeLooseStock({ reconRows, allowances: [{ id: 'x', product_id: 'cider', allowance_pct: 10 }] });
+    expect(groups.find((g) => g.key === 'p:cider')).toMatchObject({ looseUnits: 0, allowance: 10, excessUnits: 0 });
   });
 });
