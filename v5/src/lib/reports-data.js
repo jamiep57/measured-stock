@@ -1,6 +1,6 @@
 /**
- * Reports data access: cross-event sales, loose stock allowances and
- * payments (migration 072). Allowances and payments are admin-only (RLS).
+ * Reports data access: cross-event sales and loose stock allowances
+ * (migration 072). Allowances are admin-only (RLS).
  */
 
 import { getDB } from '../db.js';
@@ -50,17 +50,4 @@ export async function saveLooseAllowance({ eventId, productId = null, categoryId
     allowance_units: units,
   });
   return rows?.[0] || null;
-}
-
-export function listLoosePayments(eventId) {
-  return getDB().select('loose_stock_payments', `?event_id=eq.${enc(eventId)}&select=*&order=paid_on.asc,created_at.asc`);
-}
-
-export async function createLoosePayment(eventId, value) {
-  const rows = await getDB().insert('loose_stock_payments', { event_id: eventId, ...value });
-  return rows?.[0] || null;
-}
-
-export function deleteLoosePayment(id) {
-  return getDB().remove('loose_stock_payments', `id=eq.${enc(id)}`);
 }

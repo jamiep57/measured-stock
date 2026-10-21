@@ -1,6 +1,6 @@
 /**
  * Loose stock: opened-case singles left at close, charged to the event
- * above any agreed allowance, reconciled against payments received.
+ * above any agreed allowance.
  *
  * Allowances (units) are per product or per category. A product allowance
  * covers that product only; a category allowance is pooled across the
@@ -12,12 +12,11 @@ const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const qty = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 /**
- * @param {{ reconRows: object[], allowances: object[], payments?: object[] }} input
+ * @param {{ reconRows: object[], allowances: object[] }} input
  *   reconRows: from computeReconRows (uses pid, p, ups, closingSingles, rowPrice)
  *   allowances: loose_stock_allowances rows
- *   payments: loose_stock_payments rows
  */
-export function computeLooseStock({ reconRows = [], allowances = [], payments = [] }) {
+export function computeLooseStock({ reconRows = [], allowances = [] }) {
   const byProduct = new Map();
   const byCategory = new Map();
   allowances.forEach((a) => {
@@ -119,45 +118,15 @@ export function computeLooseStock({ reconRows = [], allowances = [], payments = 
 
   groups.sort((a, b) => (b.excessValue || 0) - (a.excessValue || 0) || a.label.localeCompare(b.label));
 
-  const chargeable = money(groups.reduce((s, g) => s + (g.excessValue || 0), 0));
-  const paid = money(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0));
   return {
     groups,
     totals: {
       looseUnits: qty(groups.reduce((s, g) => s + g.looseUnits, 0)),
       looseValue: money(groups.reduce((s, g) => s + (g.looseValue || 0), 0)),
       excessUnits: qty(groups.reduce((s, g) => s + g.excessUnits, 0)),
-      chargeable,
-      paid,
-      outstanding: money(chargeable - paid),
+      chargeable: money(groups.reduce((s, g) => s + (g.excessValue || 0), 0)),
       overAllowance: groups.filter((g) => g.excessUnits > 0).length,
       unpriced: groups.reduce((s, g) => s + g.unpriced, 0),
     },
-  };
-}
-
-/** Validate a payment form → { ok, errors, value }. */
-export function validateLoosePayment(form) {
-  const errors = {};
-  const raw = String(form?.amount ?? '').replace(/[£,\s]/g, '');
-  const amount = Number(raw);
-  if (!raw || !Number.isFinite(amount) || amount === 0) errors.amount = 'Enter an amount (negative for a refund)';
-  else if (Math.abs(amount) > 10000000) errors.amount = 'Amount is too large';
-  const paidOn = String(form?.paid_on || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn)) errors.paid_on = 'Choose the payment date';
-  const reference = String(form?.reference || '').trim();
-  if (reference.length > 120) errors.reference = 'Reference is too long';
-  const notes = String(form?.notes || '').trim();
-  if (notes.length > 500) errors.notes = 'Notes are too long';
-  const ok = !Object.keys(errors).length;
-  return {
-    ok,
-    errors,
-    value: ok ? {
-      amount: Math.round(amount * 100) / 100,
-      paid_on: paidOn,
-      reference: reference || null,
-      notes: notes || null,
-    } : null,
   };
 }

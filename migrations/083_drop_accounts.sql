@@ -23,9 +23,16 @@ CREATE TRIGGER aa_tenant_row_guard BEFORE INSERT OR UPDATE ON public.recipients
 
 ALTER TABLE public.events DROP COLUMN IF EXISTS client_account_id;
 ALTER TABLE public.recipients DROP COLUMN IF EXISTS account_id;
-ALTER TABLE public.loose_stock_payments DROP COLUMN IF EXISTS account_id;
 
-SELECT public.tenant_enable('loose_stock_payments', '''derive:event_id:events''', true);
+-- Payments were removed in 096. Re-applying this file after that drop must
+-- leave the missing table alone.
+DO $$
+BEGIN
+  IF to_regclass('public.loose_stock_payments') IS NOT NULL THEN
+    ALTER TABLE public.loose_stock_payments DROP COLUMN IF EXISTS account_id;
+    PERFORM public.tenant_enable('loose_stock_payments', '''derive:event_id:events''', true);
+  END IF;
+END $$;
 
 DROP TABLE IF EXISTS public.rider_price_lines;
 DROP TABLE IF EXISTS public.rider_price_agreements;

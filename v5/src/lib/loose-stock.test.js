@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeLooseStock, validateLoosePayment } from './loose-stock.js';
+import { computeLooseStock } from './loose-stock.js';
 
 const spirits = { id: 'c-sp', name: 'Spirits' };
 const beer = { id: 'c-beer', name: 'Beer' };
@@ -56,35 +56,8 @@ describe('computeLooseStock', () => {
     expect(totals.unpriced).toBe(1);
   });
 
-  it('reconciles chargeable against payments and refunds', () => {
-    const { totals } = computeLooseStock({
-      reconRows: [reconRows[0], reconRows[2]],
-      payments: [{ amount: 50 }, { amount: 30 }, { amount: -10 }],
-    });
-    // Vodka 8 × £10 = 80, lager 30 × £2 = 60 → 140 chargeable, 70 paid.
-    expect(totals).toMatchObject({ chargeable: 140, paid: 70, outstanding: 70, overAllowance: 2 });
-  });
-
-  it('shows overpayment as negative outstanding', () => {
-    const { totals } = computeLooseStock({ reconRows: [reconRows[0]], payments: [{ amount: 100 }] });
-    expect(totals.outstanding).toBe(-20);
-  });
-
   it('keeps product allowance rows visible even with nothing loose', () => {
     const { groups } = computeLooseStock({ reconRows, allowances: [{ id: 'x', product_id: 'cider', allowance_units: 2 }] });
     expect(groups.find((g) => g.key === 'p:cider')).toMatchObject({ looseUnits: 0, excessUnits: 0 });
-  });
-});
-
-describe('validateLoosePayment', () => {
-  it('accepts payments and refunds', () => {
-    expect(validateLoosePayment({ amount: '£1,250.50', paid_on: '2026-07-10', reference: ' BACS ' }).value)
-      .toEqual({ amount: 1250.5, paid_on: '2026-07-10', reference: 'BACS', notes: null });
-    expect(validateLoosePayment({ amount: '-20', paid_on: '2026-07-10' }).ok).toBe(true);
-  });
-  it('rejects zero, junk and missing dates', () => {
-    expect(validateLoosePayment({ amount: '0', paid_on: '2026-07-10' }).errors.amount).toBeTruthy();
-    expect(validateLoosePayment({ amount: 'abc', paid_on: '2026-07-10' }).ok).toBe(false);
-    expect(validateLoosePayment({ amount: '5' }).errors.paid_on).toBeTruthy();
   });
 });
