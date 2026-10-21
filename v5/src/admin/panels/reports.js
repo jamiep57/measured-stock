@@ -785,7 +785,13 @@ export function mountReportsPanel(route) {
       supplierId: ctx.supplierId,
     };
     if (ctx.reportId === 'deliveries') return buildDeliveryRegister({ ...shared, deliveries: ctx.deliveries });
-    if (ctx.reportId === 'wastage') return buildWastageRegister({ ...shared, batches: ctx.wastageBatches });
+    if (ctx.reportId === 'wastage') {
+      return buildWastageRegister({
+        ...shared,
+        batches: ctx.wastageBatches,
+        caseSizes: ctx.caseSizes,
+      });
+    }
     if (ctx.reportId === 'counts') {
       return buildCountRegister({
         ...shared,

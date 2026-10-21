@@ -110,7 +110,7 @@ export const REPORT_CATALOG = [
     id: 'wastage',
     group: 'Stock',
     title: 'Wastage',
-    description: 'Write-offs logged on this event.',
+    description: 'Write-offs logged on this event, priced at event stock cost.',
     formats: ['csv'],
     feature: 'stock.wastage',
     filters: true,

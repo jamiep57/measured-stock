@@ -69,20 +69,114 @@ describe('report registers', () => {
     expect(report.csv).toContain('INV-1');
   });
 
-  it('lists wastage by reason', () => {
+  it('lists wastage by reason and prices it at event stock cost', () => {
+    const priced = {
+      ...event,
+      event_products: [
+        {
+          ...event.event_products[0],
+          order_price_override: 40,
+          product: { ...event.event_products[0].product, case_price: 10 },
+        },
+        {
+          ...event.event_products[1],
+          prices_captured_at: '2026-06-01T00:00:00.000Z',
+          case_price_snapshot: 30,
+          product: {
+            ...event.event_products[1].product,
+            case_price: 12,
+            units_per_case: 24,
+            stock_unit: 'case',
+          },
+        },
+      ],
+    };
     const report = buildWastageRegister({
-      event,
+      event: priced,
       batches: [{
         id: 'w1',
         reason: 'Broken',
         recorded_at: '2026-06-04T10:00:00.000Z',
         notes: 'Dropped',
-        lines: [{ product_id: 'p2', qty: 1 }],
+        lines: [
+          { product_id: 'p2', qty: 1, singles: 6 },
+          { product_id: 'p1', qty: 2 },
+          { product_id: 'missing', qty: 1 },
+        ],
       }],
     });
     expect(report.rows[0].cells.reason).toBe('Broken');
-    expect(report.rows[0].cells.lines).toBe('Cola');
+    expect(report.rows[0].cells.lines).toBe('Cola, Lager, Product');
+    // Snapshot £30 plus 6/24 of a case, and the override £40 × 2. The unknown product stays out.
+    expect(report.rows[0].cells.cost).toBe('£117.50');
+    expect(report.footer.cost).toBe('£117.50');
+    expect(report.footer.reason).toBe('1 without a price');
+    expect(report.csv).toContain('Cost');
+    expect(report.csv).toContain('£117.50');
     expect(report.csv).toContain('Broken');
+  });
+
+  it('prices bottles at the unit snapshot and kegs at the order override', () => {
+    const gin = {
+      id: 'gin',
+      name: 'Gin',
+      stock_unit: 'bottle',
+      units_per_case: 1,
+      case_price: 84,
+      unit_price: 14,
+    };
+    const keg = {
+      id: 'keg',
+      name: 'Ale',
+      stock_unit: 'keg',
+      units_per_case: 1,
+      case_price: null,
+      unit_price: 57.67,
+    };
+    const report = buildWastageRegister({
+      event: {
+        event_products: [
+          {
+            product_id: 'gin',
+            prices_captured_at: '2026-06-01T00:00:00.000Z',
+            case_price_snapshot: 84,
+            unit_price_snapshot: 14,
+            product: gin,
+          },
+          {
+            product_id: 'keg',
+            order_price_override: 72,
+            prices_captured_at: '2026-06-01T00:00:00.000Z',
+            case_price_snapshot: null,
+            unit_price_snapshot: 57.67,
+            product: keg,
+          },
+        ],
+      },
+      batches: [
+        { id: 'g', recorded_at: '2026-06-02T10:00:00.000Z', lines: [{ product_id: 'gin', qty: 0.6 }] },
+        { id: 'k', recorded_at: '2026-06-01T10:00:00.000Z', lines: [{ product_id: 'keg', qty: 1 }] },
+      ],
+    });
+    expect(report.rows.find((row) => row.id === 'g').cells.cost).toBe('£8.40');
+    expect(report.rows.find((row) => row.id === 'k').cells.cost).toBe('£72.00');
+    expect(report.footer.cost).toBe('£80.40');
+    expect(report.footer.reason).toBe('');
+  });
+
+  it('leaves a wastage row blank when the product has no price', () => {
+    const report = buildWastageRegister({
+      event,
+      batches: [{
+        id: 'w1',
+        reason: 'Spoilage',
+        recorded_at: '2026-06-04T10:00:00.000Z',
+        lines: [{ product_id: 'p2', qty: 1 }],
+      }],
+    });
+    expect(report.rows[0].cells.cost).toBe('');
+    expect(report.footer.cost).toBe('£0.00');
+    expect(report.footer.reason).toBe('1 without a price');
   });
 
   it('lists counted lines and keeps an empty session', () => {

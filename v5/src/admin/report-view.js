@@ -94,6 +94,7 @@ export function renderDataTable(model, empty) {
     });
   }
   const columns = model.columns || [];
+  const hasAction = rows.some((row) => row.action);
   return `
     <section class="admin-surface projections-table-section">
       <div class="dash-table-wrap">
@@ -101,23 +102,36 @@ export function renderDataTable(model, empty) {
           <thead>
             <tr>
               ${columns.map((col) => `<th${col.num ? ' class="num"' : ''}>${escapeHtml(col.label)}</th>`).join('')}
-              ${rows.some((row) => row.action) ? '<th></th>' : ''}
+              ${hasAction ? '<th></th>' : ''}
             </tr>
           </thead>
           <tbody>
             ${rows.map((row) => `
               <tr>
-                ${columns.map((col) => {
-                  const value = row.cells?.[col.key];
-                  const text = value == null || value === '' ? '—' : String(value);
-                  return `<td${col.num ? ' class="num"' : ''}>${text === '—' ? '<span class="muted">—</span>' : escapeHtml(text)}</td>`;
-                }).join('')}
-                ${row.action ? `<td class="reports-row-action"><button type="button" class="topbar-tool topbar-tool--label" data-report-action="${escapeHtml(row.action)}" data-report-record="${escapeHtml(row.id || '')}">${escapeHtml(actionLabel(row.action))}</button></td>` : (rows.some((r) => r.action) ? '<td></td>' : '')}
+                ${columns.map((col) => tableCell(col, row.cells?.[col.key])).join('')}
+                ${row.action ? `<td class="reports-row-action"><button type="button" class="topbar-tool topbar-tool--label" data-report-action="${escapeHtml(row.action)}" data-report-record="${escapeHtml(row.id || '')}">${escapeHtml(actionLabel(row.action))}</button></td>` : (hasAction ? '<td></td>' : '')}
               </tr>`).join('')}
           </tbody>
+          ${model.footer ? `
+            <tfoot>
+              <tr class="reports-total-row">
+                ${columns.map((col) => tableCell(col, model.footer[col.key], true)).join('')}
+                ${hasAction ? '<td></td>' : ''}
+              </tr>
+            </tfoot>` : ''}
         </table>
       </div>
     </section>`;
+}
+
+function tableCell(col, value, footer = false) {
+  const empty = value == null || value === '';
+  const cls = [col.num ? 'num' : '', col.money ? 'reports-cost' : ''].filter(Boolean).join(' ');
+  const attr = cls ? ` class="${cls}"` : '';
+  if (empty) {
+    return footer ? `<td${attr}></td>` : `<td${attr}><span class="muted">—</span></td>`;
+  }
+  return `<td${attr}>${escapeHtml(String(value))}</td>`;
 }
 
 function actionLabel(action) {

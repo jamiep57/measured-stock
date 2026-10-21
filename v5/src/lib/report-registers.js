@@ -4,8 +4,10 @@
  * in the panel and are named here so the table can render a button.
  */
 
-import { storedToForm } from '../stock-entry.js';
+import { findOfferForSupplier } from '../pack-metrics.js';
+import { storedToForm, totalUnitsForProduct } from '../stock-entry.js';
 import { orderPayable } from './order-compare.js';
+import { preferredSupplierId, reconRowPrice, reconUsesBottlePrice } from './recon.js';
 
 const ORDER_STATUS = {
   draft: 'Draft',
@@ -72,8 +74,42 @@ function qtyLabel(lines) {
   return parts.join(', ');
 }
 
-function finish(columns, rows) {
-  return { columns, rows, csv: tableCsv(columns, rows) };
+function finish(columns, rows, footer = null) {
+  const showFooter = !!(footer && rows.length);
+  let csv = tableCsv(columns, rows);
+  if (showFooter) {
+    csv += `\r\n${columns.map((c) => csvEscape(footer[c.key] ?? '')).join(',')}`;
+  }
+  return { columns, rows, csv, footer: showFooter ? footer : null };
+}
+
+function formatReportMoney(n) {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  return `£${v.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** True when recon has a price source for this event product (including an explicit zero). */
+function wastagePriceKnown(ep, caseSizes) {
+  if (!ep?.product) return false;
+  if (ep.order_price_override != null || ep.order_unit_price_override != null) return true;
+  if (ep.prices_captured_at != null) return true;
+  const product = ep.product;
+  const offer = findOfferForSupplier(product, preferredSupplierId(product));
+  if (reconUsesBottlePrice(product, caseSizes)) {
+    return offer?.unit_price != null || offer?.case_price != null
+      || product.unit_price != null || product.case_price != null;
+  }
+  return offer?.case_price != null || product.case_price != null;
+}
+
+function wastageLineCost(line, event, caseSizes) {
+  const ep = (event?.event_products || []).find((row) => row.product_id === line?.product_id) || null;
+  if (!wastagePriceKnown(ep, caseSizes)) return { cost: 0, missing: true };
+  const form = storedToForm(line);
+  const qty = totalUnitsForProduct(form.cases, form.singles, ep.product, caseSizes);
+  const price = Number(reconRowPrice(ep, null, caseSizes)) || 0;
+  const safeQty = Number.isFinite(qty) ? qty : 0;
+  return { cost: Math.round(safeQty * price * 100) / 100, missing: false };
 }
 
 function productName(event, productId, names) {
@@ -116,33 +152,60 @@ export function buildDeliveryRegister({
 }
 
 /**
- * @param {{ batches: object[], event: object, dateFrom?: string, dateTo?: string, names?: Map }} input
+ * @param {{ batches: object[], event: object, caseSizes?: object[], dateFrom?: string, dateTo?: string, names?: Map }} input
  */
 export function buildWastageRegister({
-  batches = [], event, dateFrom = '', dateTo = '', names,
+  batches = [], event, caseSizes = [], dateFrom = '', dateTo = '', names,
 } = {}) {
   const columns = [
     { key: 'when', label: 'Date' },
     { key: 'reason', label: 'Reason' },
     { key: 'lines', label: 'Products' },
     { key: 'qty', label: 'Quantity' },
+    { key: 'cost', label: 'Cost', num: true, money: true },
     { key: 'notes', label: 'Notes' },
   ];
+  let total = 0;
+  let missing = 0;
   const rows = (batches || [])
     .filter((b) => inReportDateRange(b.recorded_at || b.created_at, dateFrom, dateTo))
     .slice()
     .sort((a, b) => new Date(b.recorded_at || b.created_at || 0) - new Date(a.recorded_at || a.created_at || 0))
-    .map((b) => ({
-      id: b.id,
-      cells: {
-        when: formatReportWhen(b.recorded_at || b.created_at),
-        reason: b.reason || 'Wastage',
-        lines: (b.lines || []).map((l) => productName(event, l.product_id, names)).join(', '),
-        qty: qtyLabel(b.lines),
-        notes: b.notes || '',
-      },
-    }));
-  return finish(columns, rows);
+    .map((b) => {
+      const lines = b.lines || [];
+      let cost = 0;
+      let rowMissing = 0;
+      lines.forEach((line) => {
+        const priced = wastageLineCost(line, event, caseSizes);
+        if (priced.missing) rowMissing += 1;
+        else cost += priced.cost;
+      });
+      cost = Math.round(cost * 100) / 100;
+      total += cost;
+      missing += rowMissing;
+      const pricedCount = lines.length - rowMissing;
+      return {
+        id: b.id,
+        cells: {
+          when: formatReportWhen(b.recorded_at || b.created_at),
+          reason: b.reason || 'Wastage',
+          lines: lines.map((l) => productName(event, l.product_id, names)).join(', '),
+          qty: qtyLabel(lines),
+          cost: pricedCount ? formatReportMoney(cost) : '',
+          notes: b.notes || '',
+        },
+      };
+    });
+  total = Math.round(total * 100) / 100;
+  const footer = {
+    when: 'Total',
+    reason: missing ? `${missing} without a price` : '',
+    lines: '',
+    qty: '',
+    cost: formatReportMoney(total),
+    notes: '',
+  };
+  return finish(columns, rows, footer);
 }
 
 /**
