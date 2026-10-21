@@ -874,5 +874,3 @@ export function createReportInsights({ getBase, onChange }) {
 
   return { ensure, render, bind, exportCsv, exportPdf, locations, lead: (k) => LEADS[k] || '' };
 }
-
-export { renderHeadlinesViz };
