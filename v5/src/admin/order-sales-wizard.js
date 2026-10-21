@@ -324,7 +324,11 @@ export function openMapLineMenu({ anchor, lines = [], selected = '', onPick }) {
     closeMapLineMenu();
   }
   function onScroll() {
-    closeMapLineMenu();
+    if (!anchor.isConnected) {
+      closeMapLineMenu();
+      return;
+    }
+    placeMapMenu(anchor);
   }
   const listScroller = anchor.closest('.ord-map-list');
   const modalBody = anchor.closest('.admin-modal-body');
