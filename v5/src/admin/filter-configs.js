@@ -936,7 +936,6 @@ export const reportsConfig = simpleEventConfig({
     supplierView: 'suppliers',
     salesGroup: 'item',
     location: '',
-    printScope: 'all',
     rateSource: 'menu',
   }),
   buildFilterSections(state, context) {
@@ -944,7 +943,7 @@ export const reportsConfig = simpleEventConfig({
     if (!id) return [];
     const dates = { id: 'dates', label: 'Date', type: 'date-range' };
     if (id === 'revenue' || id === 'loose' || id === 'volume' || id === 'recon'
-      || id === 'products' || id === 'closing' || id === 'audit'
+      || id === 'products' || id === 'closing'
       || id === 'menu-designer' || id === 'menu-client') {
       return [];
     }
@@ -975,20 +974,6 @@ export const reportsConfig = simpleEventConfig({
         });
       }
       return sections;
-    }
-    if (id === 'count-sheets' || id === 'closing-sheets') {
-      const bars = context.bars || [];
-      return [{
-        id: 'printScope',
-        label: id === 'closing-sheets' ? 'Closing sheets' : 'Count sheets',
-        type: 'radio',
-        scroll: true,
-        options: [
-          { value: 'all', label: 'All locations' },
-          { value: 'event', label: 'Whole event' },
-          ...bars.map((b) => ({ value: `bar:${b.id}`, label: b.name || 'Bar' })),
-        ],
-      }];
     }
     if (id === 'menu-sor') {
       const scenarios = context.scenarios || [];

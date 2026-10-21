@@ -9,11 +9,9 @@ export const REPORT_FORMATS = {
   pdf: { action: 'export-pdf', label: 'PDF', menu: 'Export PDF', icon: 'file-text' },
   xlsx: { action: 'export-xlsx', label: 'Excel', menu: 'Export Excel', icon: 'download' },
   invoice: { action: 'export-invoice', label: 'Invoice', menu: 'Export invoice', icon: 'file-text' },
-  json: { action: 'export-json', label: 'JSON', menu: 'Export JSON', icon: 'download' },
-  print: { action: 'export-print', label: 'Print', menu: 'Print', icon: 'printer' },
 };
 
-export const REPORT_GROUPS = ['Sales', 'Clients', 'Purchasing', 'Stock', 'Menus', 'Documents'];
+export const REPORT_GROUPS = ['Sales', 'Clients', 'Purchasing', 'Stock', 'Menus'];
 
 export const REPORT_CATALOG = [
   {
@@ -196,36 +194,6 @@ export const REPORT_CATALOG = [
     formats: ['pdf', 'xlsx', 'csv'],
     feature: 'planning.menu_gp',
     filters: true,
-  },
-  {
-    id: 'count-sheets',
-    group: 'Documents',
-    icon: 'printer',
-    title: 'Count sheets',
-    description: 'Blank paper count sheets for all locations, the whole event, or one bar.',
-    formats: ['print'],
-    feature: 'stock.counts',
-    filters: true,
-  },
-  {
-    id: 'closing-sheets',
-    group: 'Documents',
-    icon: 'clipboard-list',
-    title: 'Closing sheets',
-    description: 'Blank closing count sheets for all locations, the whole event, or one bar.',
-    formats: ['print'],
-    feature: 'stock.closing',
-    filters: true,
-  },
-  {
-    id: 'audit',
-    group: 'Documents',
-    icon: 'bug',
-    title: 'Forensic audit',
-    description: 'Software integrity findings for this event, as a JSON download.',
-    formats: ['json'],
-    feature: 'dev.audit',
-    filters: false,
   },
 ];
 

@@ -3,7 +3,7 @@
  * shows its preview, its own filters, and only the downloads it can produce.
  */
 
-import { $, escapeHtml, toast, formatMoney, fmtDateTime, isBoneYard } from '../../lib/util.js';
+import { $, escapeHtml, toast, formatMoney, fmtDateTime } from '../../lib/util.js';
 import { getDB, loadEventFull, loadCaseSizes, loadSuppliers, loadRecipesFull, loadLibraryProducts, productsFromEvent } from '../../db.js';
 import {
   isCocktailSchemaMissing,
@@ -34,8 +34,6 @@ import { reconCsv } from '../../lib/recon-csv.js';
 import { buildVolumeReportXlsx, volumeReportGroups } from '../../lib/volume-report-xlsx.js';
 import { can } from '../../lib/permissions.js';
 import { isOrgAdmin } from '../../lib/organisations.js';
-import { getQueueStats } from '../../sync-queue.js';
-import { auditExportDocument, auditExportFilename, runEventAudit, CHECK_META } from '../../lib/forensics.js';
 import { resolveMenuLine } from '../../lib/planning-menu.js';
 import { baseMenuItem, groupMenuItems } from '../../lib/menu-serves.js';
 import { resolveCocktailLine } from '../../lib/menu-cocktails.js';
@@ -45,7 +43,6 @@ import { listPurchaseOrders } from '../../lib/orders-data.js';
 import { generatePurchaseOrderPDF } from '../../lib/purchase-order-pdf.js';
 import { generateDeliveryNotePDF } from '../../lib/delivery-note-pdf.js';
 import { generatePalletStickerPDF } from '../../lib/pallet-sticker-pdf.js';
-import { printClosingCountSheet, printCountSheets } from '../../lib/count-sheets-print.js';
 import { findOfferForSupplier } from '../../pack-metrics.js';
 import {
   buildClosingRegister,
@@ -139,7 +136,6 @@ export function mountReportsPanel(route) {
     dateTo: '',
     qtyMode: 'received',
     supplierView: 'suppliers',
-    printScope: 'all',
     rateSource: 'menu',
     includeInternal: false,
     menuScenarioIds: [],
@@ -165,7 +161,6 @@ export function mountReportsPanel(route) {
     countSessions: [],
     countLines: new Map(),
     warehouses: [],
-    barProducts: [],
     libraryProducts: [],
     menuLines: [],
     menuScenarios: [],
@@ -173,10 +168,6 @@ export function mountReportsPanel(route) {
     menuLoaded: false,
     menuLoading: false,
     libraryLoaded: false,
-    auditReport: null,
-    auditLoaded: false,
-    auditLoading: false,
-    auditError: null,
   };
 
   const insightFilters = () => ({
@@ -196,7 +187,6 @@ export function mountReportsPanel(route) {
     ctx.dateTo = seeded.dates?.to || '';
     ctx.qtyMode = seeded.qtyMode || 'received';
     ctx.supplierView = seeded.supplierView || 'suppliers';
-    ctx.printScope = seeded.printScope || 'all';
     ctx.rateSource = seeded.rateSource || 'menu';
   }
   if (ctx.reportId && !visibleReports(can).some((entry) => entry.id === ctx.reportId)) {
@@ -859,16 +849,15 @@ export function mountReportsPanel(route) {
         title: spec.menu,
       } : null;
     }).filter(Boolean);
-    const printOnly = entry.formats.length === 1 && entry.formats[0] === 'print';
     setTopbarToolbarStrips(items.length ? [{
       id: 'data',
-      label: printOnly ? 'Print' : 'Export',
+      label: 'Export',
       items: [{
         id: 'report-export',
         kind: 'menu',
-        icon: printOnly ? 'printer' : 'download',
-        label: printOnly ? 'Print' : 'Export',
-        title: printOnly ? 'Print' : 'Export',
+        icon: 'download',
+        label: 'Export',
+        title: 'Export',
         items,
       }],
     }] : null);
@@ -1014,50 +1003,6 @@ export function mountReportsPanel(route) {
     })}`;
   }
 
-  function renderPrintBody() {
-    const scope = ctx.printScope || 'all';
-    const label = scope === 'event'
-      ? 'the whole event catalogue'
-      : scope.startsWith('bar:')
-        ? 'one location'
-        : 'one sheet per location';
-    const which = ctx.reportId === 'closing-sheets' ? 'closing count sheets' : 'count sheets';
-    return `<p class="projections-lead muted">Prints blank ${which} for ${escapeHtml(label)}. Choose the scope in the filter menu.</p>`;
-  }
-
-  function renderAuditBody() {
-    if (ctx.auditError) {
-      return emptyState({
-        iconHtml: icon('circle-alert', { size: 22 }),
-        title: 'Audit failed',
-        copy: ctx.auditError,
-        variant: 'admin',
-      });
-    }
-    if (!ctx.auditLoaded) return loadingWidget('Running forensic audit…');
-    const report = ctx.auditReport;
-    const summary = report?.summary || { errors: 0, warns: 0, infos: 0 };
-    const rows = (report?.findings || []).map((f) => ({
-      cells: {
-        severity: f.severity || '',
-        check: CHECK_META[f.checkId]?.label || f.checkId || '',
-        product: f.productName || '',
-        message: f.message || '',
-      },
-    }));
-    return `
-      <p class="muted">${summary.errors} errors · ${summary.warns} warnings · ${summary.infos} info</p>
-      ${renderDataTable({
-        columns: [
-          { key: 'severity', label: 'Severity' },
-          { key: 'check', label: 'Check' },
-          { key: 'product', label: 'Product' },
-          { key: 'message', label: 'Message' },
-        ],
-        rows,
-      }, { title: 'No findings', copy: 'This audit run did not report any issues.' })}`;
-  }
-
   function renderRegisterBody() {
     if (!ctx.detailLoaded) return loadingWidget('Loading event data…');
     const register = currentRegister();
@@ -1080,8 +1025,6 @@ export function mountReportsPanel(route) {
     if (ctx.reportId === 'volume') return renderVolumeBody();
     if (ctx.reportId === 'recon') return renderReconBody();
     if (ctx.reportId.startsWith('menu-')) return renderMenuBody();
-    if (ctx.reportId === 'count-sheets' || ctx.reportId === 'closing-sheets') return renderPrintBody();
-    if (ctx.reportId === 'audit') return renderAuditBody();
     return renderRegisterBody();
   }
 
@@ -1158,9 +1101,6 @@ export function mountReportsPanel(route) {
       recipients: clientsWithTransfers().map((r) => ({ id: r.id, name: r.name })),
       suppliers: (ctx.suppliers || []).map((s) => ({ value: s.id, label: s.name })),
       locations: insights.locations(),
-      bars: (ctx.event?.bars || [])
-        .filter((bar) => !isBoneYard(bar))
-        .map((bar) => ({ id: bar.id, name: bar.name || 'Bar' })),
       scenarios: (ctx.menuScenarios || []).map((s) => ({ id: s.id, name: s.name || 'Scenario' })),
     });
   }
@@ -1182,7 +1122,7 @@ export function mountReportsPanel(route) {
     compute();
     paint();
 
-    const [deliveries, transfers, sales, recipes, wastage, closingRows, supplierReturns, mapping, orders, sessions, warehouses, barProducts] = await Promise.all([
+    const [deliveries, transfers, sales, recipes, wastage, closingRows, supplierReturns, mapping, orders, sessions, warehouses] = await Promise.all([
       DB.deliveries.forEvent(ctx.eventId),
       DB.transfers.forEvent(ctx.eventId),
       loadSalesBundle(DB, ctx.event),
@@ -1194,7 +1134,6 @@ export function mountReportsPanel(route) {
       listPurchaseOrders(ctx.eventId).catch(() => []),
       DB.stockCounts.forEvent(ctx.eventId).catch(() => []),
       DB.warehouses.list().catch(() => []),
-      DB.barProducts.forEvent(ctx.eventId).catch(() => []),
     ]);
     if (ctx.abort) return;
     const linePairs = await Promise.all((sessions || []).map(async (session) => {
@@ -1217,7 +1156,6 @@ export function mountReportsPanel(route) {
     ctx.countSessions = sessions || [];
     ctx.countLines = new Map(linePairs);
     ctx.warehouses = warehouses || [];
-    ctx.barProducts = barProducts || [];
     ctx.detailLoaded = true;
     pushFilterContext();
     compute();
@@ -1268,79 +1206,12 @@ export function mountReportsPanel(route) {
     }
   }
 
-  async function loadAudit() {
-    if (ctx.auditLoaded || ctx.auditLoading) return;
-    ctx.auditLoading = true;
-    ctx.auditError = null;
-    const DB = getDB();
-    try {
-      const [
-        event, caseSizes, products, suppliers, closing, sales,
-        recipes, wastage, transfers, supplierReturns, deliveries, distRows, syncQueueStats,
-        mapping,
-      ] = await Promise.all([
-        loadEventFull(ctx.eventId),
-        loadCaseSizes(),
-        loadLibraryProducts(),
-        loadSuppliers(),
-        DB.closing.forEvent(ctx.eventId),
-        loadSalesBundle(DB, ctx.event),
-        loadRecipesFull().catch(() => []),
-        DB.wastage.forEvent(ctx.eventId).catch(() => []),
-        DB.transfers.forEvent(ctx.eventId).catch(() => []),
-        DB.supplierReturns.forEvent(ctx.eventId).catch(() => []),
-        DB.deliveries.forEvent(ctx.eventId).catch(() => []),
-        DB.distribution.forEvent(ctx.eventId).catch(() => []),
-        getQueueStats().catch(() => ({ pending: 0, failed: 0, total: 0 })),
-        loadEventCocktailMapping(ctx.eventId).catch(() => ({ cocktails: [], menuItems: [] })),
-      ]);
-      if (ctx.abort) return;
-      const report = runEventAudit({
-        event,
-        eventId: ctx.eventId,
-        caseSizes,
-        products,
-        suppliers,
-        closingRows: closing || [],
-        tillRows: sales.active.tillRows,
-        modifierRows: sales.active.modifierRows,
-        recipes: recipes || [],
-        wastageBatches: wastage || [],
-        transfers: transfers || [],
-        supplierReturns: supplierReturns || [],
-        deliveries: deliveries || [],
-        distRows: distRows || [],
-        bars: event?.bars || [],
-        isBoneYard,
-        syncQueueStats,
-        cocktails: mapping.cocktails,
-        menuItems: mapping.menuItems,
-      });
-      ctx.auditReport = {
-        eventId: report.eventId,
-        ranAt: report.ranAt,
-        summary: report.summary,
-        findings: report.findings,
-      };
-      ctx.auditLoaded = true;
-    } catch (err) {
-      ctx.auditError = err.message || 'Audit failed';
-      ctx.auditLoaded = true;
-    } finally {
-      ctx.auditLoading = false;
-    }
-  }
-
   async function ensureExtras() {
     const id = ctx.reportId;
     if (!id || ctx.abort) return;
     let changed = false;
     if (id.startsWith('menu-') && !ctx.menuLoaded && !ctx.menuLoading) {
       await loadMenuExport();
-      changed = true;
-    }
-    if (id === 'audit' && !ctx.auditLoaded && !ctx.auditLoading) {
-      await loadAudit();
       changed = true;
     }
     if (id === 'orders' && !ctx.libraryLoaded) {
@@ -1353,12 +1224,6 @@ export function mountReportsPanel(route) {
     if (ctx.abort || ctx.reportId !== id || !changed) return;
     pushFilterContext();
     paint();
-  }
-
-  function printTarget() {
-    const raw = ctx.printScope || 'all';
-    if (raw.startsWith('bar:')) return { scope: 'bar', barId: raw.slice(4) };
-    return { scope: raw === 'event' ? 'event' : 'all', barId: '' };
   }
 
   async function runMenuExport(format) {
@@ -1445,27 +1310,6 @@ export function mountReportsPanel(route) {
     toast('Pallet sticker downloaded');
   }
 
-  function runPrintSheets() {
-    if (!ctx.event) {
-      toast('Event is still loading', true);
-      return;
-    }
-    const { scope, barId } = printTarget();
-    const run = ctx.reportId === 'closing-sheets' ? printClosingCountSheet : printCountSheets;
-    const result = run({
-      event: ctx.event,
-      barProducts: ctx.barProducts,
-      caseSizes: ctx.caseSizes,
-      scope,
-      barId,
-    });
-    if (result?.error) {
-      toast(result.error, true);
-      return;
-    }
-    toast('Print window opened');
-  }
-
   async function runExport(action, recordId = '') {
     if (action === 'export-csv' || action === 'export-reports') {
       if (ctx.reportId === 'recon') {
@@ -1504,23 +1348,6 @@ export function mountReportsPanel(route) {
       await exportInvoice(recordId || currentRecipientFilter());
       return;
     }
-    if (action === 'export-json') {
-      if (!ctx.auditReport) {
-        toast('Audit is still running', true);
-        return;
-      }
-      downloadBlob(
-        auditExportFilename(ctx.auditReport, ctx.eventId),
-        JSON.stringify(auditExportDocument(ctx.auditReport), null, 2),
-        'application/json',
-      );
-      toast('JSON downloaded');
-      return;
-    }
-    if (action === 'export-print') {
-      runPrintSheets();
-      return;
-    }
     if (action === 'po-pdf') {
       await runPurchaseOrderPdf(recordId);
       return;
@@ -1535,7 +1362,7 @@ export function mountReportsPanel(route) {
   function onToolbar(e) {
     const action = e.detail?.action;
     const known = new Set([
-      'export-csv', 'export-pdf', 'export-xlsx', 'export-invoice', 'export-json', 'export-print',
+      'export-csv', 'export-pdf', 'export-xlsx', 'export-invoice',
       'export-reports', 'export-report-pdf', 'export-volume',
     ]);
     if (!known.has(action)) return;
@@ -1557,7 +1384,6 @@ export function mountReportsPanel(route) {
     ctx.supplierView = values.supplierView || 'suppliers';
     ctx.salesGroup = values.salesGroup || 'item';
     ctx.location = values.location || '';
-    ctx.printScope = values.printScope || 'all';
     ctx.rateSource = values.rateSource || 'menu';
     compute();
     paint();

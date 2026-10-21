@@ -634,7 +634,7 @@ export function filterFindings(findings, {
   });
 }
 
-/** JSON document downloaded from Forensic audit and from Reports. */
+/** JSON document downloaded from Forensic audit. */
 export function auditExportDocument(report) {
   return {
     eventId: report?.eventId,
