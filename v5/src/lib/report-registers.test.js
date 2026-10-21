@@ -191,14 +191,14 @@ describe('report registers', () => {
         ['c2', []],
       ]),
     });
+    expect(report.layout).toBe('counts');
     expect(report.rows).toHaveLength(2);
-    expect(report.rows.find((row) => row.cells.session === 'Open').cells).toMatchObject({
-      location: 'Main bar',
-      product: 'Lager',
-      cases: '2',
-      singles: '1',
-    });
-    expect(report.rows.find((row) => row.cells.session === 'Empty').cells.product).toBe('');
+    const open = report.rows.find((row) => row.session === 'Open');
+    expect(open.location).toBe('Main bar');
+    expect(open.lines).toEqual([{ product: 'Lager', location: 'Main bar', cases: '2', singles: '1' }]);
+    expect(report.rows.find((row) => row.session === 'Empty').lines).toEqual([]);
+    expect(report.csv).toContain('Lager');
+    expect(report.csv).toContain('Empty');
   });
 
   it('lists event products with opening quantity', () => {

@@ -141,7 +141,7 @@ export const REPORT_CATALOG = [
     group: 'Stock',
     icon: 'clipboard-list',
     title: 'Stock counts',
-    description: 'Counted cases and singles from each count session.',
+    description: 'Each count session. Open one to see the products, cases and singles.',
     formats: ['csv'],
     feature: 'stock.counts',
     filters: true,

@@ -6263,6 +6263,68 @@ body.admin-drawer-open {
 .reports-xfer-table tr.reports-xfer-more td:first-child {
   border-left: 1px solid var(--border);
 }
+.reports-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.reports-count-card {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--shell-radius) - 2px);
+  background: var(--card);
+  overflow: hidden;
+}
+.reports-count-session {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.reports-count-session:hover,
+.reports-count-card.is-open .reports-count-session {
+  background: color-mix(in srgb, var(--secondary) 55%, var(--card));
+}
+.reports-count-chevron {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.reports-count-name {
+  font-weight: 650;
+}
+.reports-count-when,
+.reports-count-where {
+  color: var(--muted-foreground);
+}
+.reports-count-meta {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.reports-count-lines {
+  margin: 0 12px 12px;
+}
+.reports-count-lines.catalog-table th,
+.reports-count-lines.catalog-table td {
+  text-align: left;
+}
+.reports-count-lines.dash-table th.num,
+.reports-count-lines.dash-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.reports-count-empty {
+  margin: 0 14px 14px;
+}
 .reports-miss {
   color: #b45309;
   font-weight: 600;

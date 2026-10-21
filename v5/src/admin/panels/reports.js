@@ -55,7 +55,7 @@ import {
   transferEnds,
 } from '../../lib/report-registers.js';
 import { formatSpec, reportById, visibleReports } from '../report-catalog.js';
-import { renderClientPicker, renderDataTable, renderReportLibrary, renderTransferTable, renderWorkspaceHead } from '../report-view.js';
+import { renderClientPicker, renderCountTable, renderDataTable, renderReportLibrary, renderTransferTable, renderWorkspaceHead } from '../report-view.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   reportsCellKeyFromInput,
@@ -160,6 +160,7 @@ export function mountReportsPanel(route) {
     orders: [],
     countSessions: [],
     countLines: new Map(),
+    openCounts: new Set(),
     warehouses: [],
     libraryProducts: [],
     menuLines: [],
@@ -1061,6 +1062,7 @@ export function mountReportsPanel(route) {
       copy: 'Nothing on this event matches the current filters.',
     };
     if (register.layout === 'transfers') return renderTransferTable(register, empty);
+    if (register.layout === 'counts') return renderCountTable(register, empty, ctx.openCounts);
     return renderDataTable(register, empty);
   }
 
@@ -1121,6 +1123,15 @@ export function mountReportsPanel(route) {
     root.querySelector('[data-reports-back]')?.addEventListener('click', () => selectReport(''));
     root.querySelector('#rptRecipient')?.addEventListener('change', (e) => {
       patchTableFilterState('reports', { recipientId: e.target.value || '' });
+    });
+    root.querySelectorAll('[data-count-toggle]').forEach((btn) => {
+      btn.onclick = () => {
+        const id = btn.dataset.countToggle || '';
+        if (!id) return;
+        if (ctx.openCounts.has(id)) ctx.openCounts.delete(id);
+        else ctx.openCounts.add(id);
+        paint();
+      };
     });
     root.querySelectorAll('[data-report-action]').forEach((btn) => {
       btn.onclick = () => {

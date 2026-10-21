@@ -254,6 +254,66 @@ function transferGroup(row, index) {
   }).join('');
 }
 
+export function renderCountTable(model, empty, openIds) {
+  const rows = model?.rows || [];
+  if (!rows.length) {
+    return emptyState({
+      iconHtml: icon('search', { size: 22 }),
+      title: empty?.title || 'Nothing to show',
+      copy: empty?.copy || 'Nothing matches these filters.',
+      variant: 'admin',
+    });
+  }
+  const open = openIds instanceof Set ? openIds : new Set(openIds || []);
+  return `
+    <section class="admin-surface projections-table-section reports-counts">
+      ${rows.map((row) => countSession(row, open.has(row.id))).join('')}
+    </section>`;
+}
+
+function countSession(row, isOpen) {
+  const lines = row.lines || [];
+  const n = lines.length;
+  const summary = n === 0 ? 'Nothing counted' : n === 1 ? '1 product' : `${n} products`;
+  const places = [...new Set(lines.map((line) => line.location).filter(Boolean))];
+  const showLocation = places.length > 1;
+  const body = !isOpen
+    ? ''
+    : lines.length
+      ? `
+        <table class="catalog-table dash-table reports-table reports-count-lines">
+          <thead>
+            <tr>
+              <th>Product</th>
+              ${showLocation ? '<th>Location</th>' : ''}
+              <th class="num">Cases</th>
+              <th class="num">Singles</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lines.map((line) => `
+              <tr>
+                <td>${escapeHtml(line.product)}</td>
+                ${showLocation ? `<td>${escapeHtml(line.location)}</td>` : ''}
+                <td class="num">${line.cases ? escapeHtml(line.cases) : '<span class="muted">—</span>'}</td>
+                <td class="num">${line.singles ? escapeHtml(line.singles) : '<span class="muted">—</span>'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`
+      : '<p class="reports-count-empty muted">Nothing was counted in this session.</p>';
+  return `
+    <article class="reports-count-card${isOpen ? ' is-open' : ''}">
+      <button type="button" class="reports-count-session" data-count-toggle="${escapeHtml(row.id || '')}" aria-expanded="${isOpen ? 'true' : 'false'}">
+        <span class="reports-count-chevron" aria-hidden="true">${icon(isOpen ? 'chevron-down' : 'chevron-right', { size: 16 })}</span>
+        <span class="reports-count-when">${escapeHtml(row.when || '')}</span>
+        <span class="reports-count-name">${escapeHtml(row.session || 'Count')}</span>
+        <span class="reports-count-where">${escapeHtml(row.location || '')}</span>
+        <span class="reports-count-meta muted">${escapeHtml(summary)}</span>
+      </button>
+      ${body}
+    </article>`;
+}
+
 function actionLabel(action) {
   if (action === 'po-pdf') return 'PDF';
   if (action === 'delivery-note') return 'Delivery note';

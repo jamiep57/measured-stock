@@ -209,7 +209,7 @@ export function buildWastageRegister({
 }
 
 /**
- * One row per counted line. Sessions with no lines still appear once.
+ * One group per count session. The spreadsheet stays one row per counted line.
  * @param {{ sessions: object[], linesBySession: Map|Record<string, object[]>, event: object, dateFrom?: string, dateTo?: string, names?: Map }} input
  */
 export function buildCountRegister({
@@ -224,32 +224,65 @@ export function buildCountRegister({
     { key: 'singles', label: 'Singles', num: true },
   ];
   const barName = (id) => (event?.bars || []).find((b) => b.id === id)?.name || (id ? 'Location' : 'All locations');
-  const rows = [];
-  (sessions || [])
+  const csvRows = [];
+  const rows = (sessions || [])
     .filter((s) => inReportDateRange(s.counted_at, dateFrom, dateTo))
     .slice()
     .sort((a, b) => new Date(b.counted_at || 0) - new Date(a.counted_at || 0))
-    .forEach((session) => {
-      const lines = (linesBySession instanceof Map
+    .map((session) => {
+      const stored = (linesBySession instanceof Map
         ? linesBySession.get(session.id)
         : linesBySession?.[session.id]) || [];
-      const counted = lines.filter((l) => (Number(l.cases) || 0) !== 0 || (Number(l.singles) || 0) !== 0);
-      const source = counted.length ? counted : [null];
-      source.forEach((line) => {
-        rows.push({
-          id: line?.id || session.id,
-          cells: {
-            when: formatReportWhen(session.counted_at),
-            session: session.name || 'Count',
-            location: barName(line?.bar_id || session.bar_id),
-            product: line ? productName(event, line.product_id, names) : '',
-            cases: line ? trimNum(line.cases) : '',
-            singles: line ? trimNum(line.singles) : '',
-          },
+      const when = formatReportWhen(session.counted_at);
+      const name = session.name || 'Count';
+      const lines = stored
+        .filter((line) => (Number(line.cases) || 0) !== 0 || (Number(line.singles) || 0) !== 0)
+        .map((line) => ({
+          product: productName(event, line.product_id, names),
+          location: barName(line.bar_id || session.bar_id),
+          cases: trimNum(line.cases),
+          singles: trimNum(line.singles),
+        }))
+        .sort((a, b) => a.product.localeCompare(b.product) || a.location.localeCompare(b.location));
+      const places = [...new Set(lines.map((line) => line.location).filter(Boolean))];
+      const location = places.length === 1
+        ? places[0]
+        : places.length > 1
+          ? `${places.length} locations`
+          : barName(session.bar_id);
+      if (lines.length) {
+        lines.forEach((line) => {
+          csvRows.push({
+            cells: {
+              when,
+              session: name,
+              location: line.location,
+              product: line.product,
+              cases: line.cases,
+              singles: line.singles,
+            },
+          });
         });
-      });
+      } else {
+        csvRows.push({
+          cells: { when, session: name, location, product: '', cases: '', singles: '' },
+        });
+      }
+      return {
+        id: session.id,
+        when,
+        session: name,
+        location,
+        lines,
+      };
     });
-  return finish(columns, rows);
+  return {
+    columns,
+    rows,
+    csv: tableCsv(columns, csvRows),
+    layout: 'counts',
+    footer: null,
+  };
 }
 
 /**
