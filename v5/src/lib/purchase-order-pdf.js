@@ -169,7 +169,7 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
     }
   }
 
-  const ctx = await createBrandDoc({ title: 'Purchase order' });
+  const ctx = await createBrandDoc({ title: 'Purchase order', typeface: 'outfit' });
   ctx.continuationNote = po.reference;
   ctx.footerLeft = COMPANY_FOOTER;
 
