@@ -824,7 +824,7 @@ export function mountReportsPanel(route) {
         ...shared,
         sessions: ctx.countSessions,
         linesBySession: ctx.countLines,
-        barId: ctx.countBarId,
+        barId: activeCountBarId(),
       });
     }
     if (ctx.reportId === 'products') return buildProductRegister({ event: ctx.event });
@@ -1031,6 +1031,54 @@ export function mountReportsPanel(route) {
     return `<div class="reports-menu-options">${checks || '<span class="muted">No pricing scenarios on this event.</span>'}${internal}</div>`;
   }
 
+  function countLocationOptions() {
+    const bars = servingMenuBars(ctx.event?.bars);
+    const ids = new Set();
+    (ctx.countSessions || []).forEach((session) => {
+      const lines = ctx.countLines.get(session.id) || [];
+      lines.forEach((line) => {
+        if ((Number(line.cases) || 0) === 0 && (Number(line.singles) || 0) === 0) return;
+        const id = line.bar_id || session.bar_id;
+        if (id) ids.add(id);
+      });
+      if (session.bar_id) ids.add(session.bar_id);
+    });
+    const known = bars.filter((bar) => ids.has(bar.id));
+    const extra = [...ids]
+      .filter((id) => !known.some((bar) => bar.id === id))
+      .map((id) => ({ id, name: 'Location' }));
+    return [...known, ...extra];
+  }
+
+  function activeCountBarId() {
+    const places = countLocationOptions();
+    return places.some((place) => place.id === ctx.countBarId) ? ctx.countBarId : '';
+  }
+
+  function renderCountLocationSwitch() {
+    const places = countLocationOptions();
+    if (places.length < 2) return '';
+    const current = activeCountBarId();
+    if (places.length > 6) {
+      const options = [
+        `<option value="">All locations</option>`,
+        ...places.map((place) => `<option value="${escapeHtml(place.id)}"${place.id === current ? ' selected' : ''}>${escapeHtml(place.name || 'Location')}</option>`),
+      ].join('');
+      return `<label class="reports-bar-picker">
+        <span class="admin-label">Location</span>
+        <select class="admin-select" id="reportsCountBar">${options}</select>
+      </label>`;
+    }
+    const button = (id, label) => {
+      const on = current === id;
+      return `<button type="button" data-count-bar="${escapeHtml(id)}" aria-pressed="${on ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
+    };
+    return `<div class="sq-seg reports-bar-switch" role="group" aria-label="Location">
+      ${button('', 'All locations')}
+      ${places.map((place) => button(place.id, place.name || 'Location')).join('')}
+    </div>`;
+  }
+
   function renderBarSwitch() {
     if (menuExportType() !== 'designer') return '';
     const bars = menuBars();
@@ -1056,6 +1104,27 @@ export function mountReportsPanel(route) {
     </div>`;
   }
 
+  function renderMarginSwitch() {
+    if (menuExportType() !== 'ratecard') return '';
+    const current = rateCardMargin(ctx.marginPct);
+    const button = (pct) => {
+      const on = current === pct;
+      const label = pct === 0 ? 'Cost' : `+${pct}%`;
+      return `<button type="button" data-rate-margin="${pct}" aria-pressed="${on ? 'true' : 'false'}">${label}</button>`;
+    };
+    return `<div class="reports-margin">
+      <span class="admin-label">Margin</span>
+      <div class="sq-seg reports-bar-switch" role="group" aria-label="Margin">
+        ${RATE_CARD_MARGINS.map(button).join('')}
+      </div>
+      <label class="reports-margin-custom">
+        <span>Custom</span>
+        <input type="number" class="admin-input" id="reportsMarginCustom" min="0" max="200" step="0.5" value="${current}" aria-label="Custom margin percent">
+        <span>%</span>
+      </label>
+    </div>`;
+  }
+
   function renderMenuBody() {
     if (!ctx.menuLoaded) return loadingWidget('Loading menu…');
     const model = menuModel();
@@ -1075,9 +1144,18 @@ export function mountReportsPanel(route) {
         })),
       },
     })));
-    const note = model.missingRates
-      ? `<p class="muted">${model.missingRates} item${model.missingRates === 1 ? '' : 's'} ${menuExportType() === 'sor' ? 'left off — no rate' : 'without a menu price'}.</p>`
-      : '';
+    const type = menuExportType();
+    const missingLabel = type === 'sor'
+      ? 'left off — no rate'
+      : type === 'ratecard'
+        ? 'left off — no cost'
+        : 'without a menu price';
+    const note = [
+      type === 'ratecard' ? `<p class="muted">${escapeHtml(rateCardNote(model.marginPct))}</p>` : '',
+      model.missingRates
+        ? `<p class="muted">${model.missingRates} item${model.missingRates === 1 ? '' : 's'} ${missingLabel}.</p>`
+        : '',
+    ].join('');
     const barName = model.barName;
     const empty = barName && menuBars().length > 1
       ? {
@@ -1088,7 +1166,7 @@ export function mountReportsPanel(route) {
         title: 'Nothing on the menu',
         copy: 'Add products on Menu & GP before exporting.',
       };
-    return `${renderBarSwitch()}${renderMenuOptions()}${note}${renderDataTable({ columns, rows }, empty)}`;
+    return `${renderBarSwitch()}${renderMarginSwitch()}${renderMenuOptions()}${note}${renderDataTable({ columns, rows }, empty)}`;
   }
 
   function renderRegisterBody() {
@@ -1188,6 +1266,30 @@ export function mountReportsPanel(route) {
         });
       };
     });
+    const setCountBar = (id) => {
+      const places = countLocationOptions();
+      const next = places.some((place) => place.id === id) ? id : '';
+      if (next === (ctx.countBarId || '')) return;
+      patchTableFilterState('reports', { countBarId: next });
+    };
+    root.querySelectorAll('[data-count-bar]').forEach((btn) => {
+      btn.onclick = () => setCountBar(btn.dataset.countBar || '');
+    });
+    const countBarSelect = root.querySelector('#reportsCountBar');
+    if (countBarSelect) {
+      countBarSelect.onchange = () => setCountBar(countBarSelect.value || '');
+    }
+    root.querySelectorAll('[data-rate-margin]').forEach((btn) => {
+      btn.onclick = () => {
+        patchTableFilterState('reports', { marginPct: btn.dataset.rateMargin || '0' });
+      };
+    });
+    const marginInput = root.querySelector('#reportsMarginCustom');
+    if (marginInput) {
+      marginInput.onchange = () => {
+        patchTableFilterState('reports', { marginPct: String(rateCardMargin(marginInput.value)) });
+      };
+    }
     root.querySelectorAll('[data-menu-bar]').forEach((btn) => {
       btn.onclick = () => {
         ctx.menuBarId = btn.dataset.menuBar || '';
@@ -1295,15 +1397,23 @@ export function mountReportsPanel(route) {
     if (ctx.menuLoaded || ctx.menuLoading) return;
     ctx.menuLoading = true;
     try {
-      const [event, items, products, cocktails, scenarios] = await Promise.all([
+      const [event, items, products, cocktails, scenarios, eventProducts] = await Promise.all([
         loadEventPricing(ctx.eventId),
         listEventMenu(ctx.eventId),
         loadLibraryProducts(),
         listEventCocktails(ctx.eventId).catch((err) => (isCocktailSchemaMissing(err) ? [] : Promise.reject(err))),
         listScenarios(ctx.eventId).catch(() => []),
+        listEventProductPrices(ctx.eventId).catch((err) => {
+          if (/case_price_snapshot|unit_price_snapshot/i.test(String(err?.message || err))) return [];
+          throw err;
+        }),
       ]);
       if (ctx.abort) return;
       const productById = new Map((products || []).map((p) => [p.id, p]));
+      const eventPrices = new Map((eventProducts || []).filter((row) => row.product_id).map((row) => [row.product_id, {
+        casePrice: row.case_price_snapshot,
+        unitPrice: row.unit_price_snapshot,
+      }]));
       const grouped = groupMenuItems(items || []);
       const baseMap = new Map();
       grouped.forEach((list, pid) => {
@@ -1311,11 +1421,14 @@ export function mountReportsPanel(route) {
         if (base) baseMap.set(pid, { ...base, portion: 1 });
       });
       const lines = (items || []).map((item) => resolveMenuLine(item, {
-        product: productById.get(item.product_id), event, caseSizes: ctx.caseSizes,
+        product: productById.get(item.product_id),
+        event,
+        caseSizes: ctx.caseSizes,
+        eventPrice: eventPrices.get(item.product_id) || null,
       }));
       (cocktails || []).forEach((cocktail) => {
         lines.push(resolveCocktailLine(cocktail, cocktail.ingredients, {
-          productById, items: baseMap, caseSizes: ctx.caseSizes, event,
+          productById, items: baseMap, caseSizes: ctx.caseSizes, event, eventPrices,
         }));
       });
       ctx.menuLines = lines;
@@ -1515,6 +1628,7 @@ export function mountReportsPanel(route) {
     ctx.location = values.location || '';
     ctx.countBarId = values.countBarId || '';
     ctx.rateSource = values.rateSource || 'menu';
+    ctx.marginPct = rateCardMargin(values.marginPct);
     compute();
     paint();
   }

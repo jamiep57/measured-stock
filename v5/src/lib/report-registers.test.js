@@ -201,6 +201,37 @@ describe('report registers', () => {
     expect(report.csv).toContain('Empty');
   });
 
+  it('keeps one location when a count covers several', () => {
+    const report = buildCountRegister({
+      event: {
+        ...event,
+        bars: [
+          { id: 'bar-1', name: 'Main bar' },
+          { id: 'bar-2', name: 'Lawn' },
+        ],
+      },
+      barId: 'bar-2',
+      sessions: [
+        { id: 'c1', name: 'Saturday', counted_at: '2026-06-13T10:00:00.000Z' },
+        { id: 'c2', name: 'Lawn only', counted_at: '2026-06-14T10:00:00.000Z', bar_id: 'bar-2' },
+      ],
+      linesBySession: new Map([
+        ['c1', [
+          { product_id: 'p1', bar_id: 'bar-1', cases: 2, singles: 0 },
+          { product_id: 'p1', bar_id: 'bar-2', cases: 7, singles: 0 },
+        ]],
+        ['c2', []],
+      ]),
+    });
+    expect(report.rows).toHaveLength(2);
+    expect(report.rows[0].session).toBe('Lawn only');
+    expect(report.rows[0].lines).toEqual([]);
+    expect(report.rows[1].location).toBe('Lawn');
+    expect(report.rows[1].lines).toEqual([{ product: 'Lager', location: 'Lawn', cases: '7', singles: '' }]);
+    expect(report.csv).toContain('Lawn');
+    expect(report.csv).not.toContain('Main bar');
+  });
+
   it('lists event products with opening quantity', () => {
     const report = buildProductRegister({ event });
     expect(report.rows.map((row) => row.cells.product)).toEqual(['Cola', 'Lager']);

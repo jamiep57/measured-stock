@@ -936,7 +936,9 @@ export const reportsConfig = simpleEventConfig({
     supplierView: 'suppliers',
     salesGroup: 'item',
     location: '',
+    countBarId: '',
     rateSource: 'menu',
+    marginPct: '0',
   }),
   buildFilterSections(state, context) {
     const id = state?.reportId || '';
@@ -944,7 +946,7 @@ export const reportsConfig = simpleEventConfig({
     const dates = { id: 'dates', label: 'Date', type: 'date-range' };
     if (id === 'revenue' || id === 'loose' || id === 'volume' || id === 'recon'
       || id === 'products' || id === 'closing'
-      || id === 'menu-designer' || id === 'menu-client') {
+      || id === 'menu-designer' || id === 'menu-client' || id === 'menu-rate-card') {
       return [];
     }
     if (id === 'sales' || id === 'headlines') {
@@ -971,6 +973,23 @@ export const reportsConfig = simpleEventConfig({
           type: 'radio',
           scroll: true,
           options: [{ value: '', label: 'All locations' }, ...locations.map((l) => ({ value: l, label: l }))],
+        });
+      }
+      return sections;
+    }
+    if (id === 'counts') {
+      const sections = [dates];
+      const bars = context.countBars || [];
+      if (bars.length > 1) {
+        sections.push({
+          id: 'countBarId',
+          label: 'Location',
+          type: 'radio',
+          scroll: true,
+          options: [
+            { value: '', label: 'All locations' },
+            ...bars.map((bar) => ({ value: bar.id, label: bar.name || 'Location' })),
+          ],
         });
       }
       return sections;

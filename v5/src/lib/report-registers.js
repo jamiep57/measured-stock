@@ -210,10 +210,10 @@ export function buildWastageRegister({
 
 /**
  * One group per count session. The spreadsheet stays one row per counted line.
- * @param {{ sessions: object[], linesBySession: Map|Record<string, object[]>, event: object, dateFrom?: string, dateTo?: string, names?: Map }} input
+ * @param {{ sessions: object[], linesBySession: Map|Record<string, object[]>, event: object, dateFrom?: string, dateTo?: string, names?: Map, barId?: string }} input
  */
 export function buildCountRegister({
-  sessions = [], linesBySession = new Map(), event, dateFrom = '', dateTo = '', names,
+  sessions = [], linesBySession = new Map(), event, dateFrom = '', dateTo = '', names, barId = '',
 } = {}) {
   const columns = [
     { key: 'when', label: 'Date' },
@@ -237,6 +237,7 @@ export function buildCountRegister({
       const name = session.name || 'Count';
       const lines = stored
         .filter((line) => (Number(line.cases) || 0) !== 0 || (Number(line.singles) || 0) !== 0)
+        .filter((line) => !barId || (line.bar_id || session.bar_id || '') === barId)
         .map((line) => ({
           product: productName(event, line.product_id, names),
           location: barName(line.bar_id || session.bar_id),
@@ -244,6 +245,7 @@ export function buildCountRegister({
           singles: trimNum(line.singles),
         }))
         .sort((a, b) => a.product.localeCompare(b.product) || a.location.localeCompare(b.location));
+      if (!lines.length && barId && session.bar_id !== barId) return null;
       const places = [...new Set(lines.map((line) => line.location).filter(Boolean))];
       const location = places.length === 1
         ? places[0]
@@ -275,7 +277,8 @@ export function buildCountRegister({
         location,
         lines,
       };
-    });
+    })
+    .filter(Boolean);
   return {
     columns,
     rows,
