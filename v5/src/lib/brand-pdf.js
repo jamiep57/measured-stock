@@ -146,7 +146,7 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     if (logo) {
       const { w, h } = logoSize(logo, 34, 11);
       doc.addImage(logo.dataUrl, logo.format || 'JPEG', pageW - mr - w, ry, w, h, 'brand-logo');
-      ry += h + 5;
+      ry += h + 10;
     }
     ctx.setFont('normal', 8.5, BRAND.grey);
     letterheadLines(from).forEach((line) => {

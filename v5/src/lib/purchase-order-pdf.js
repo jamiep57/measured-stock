@@ -173,9 +173,7 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
   ctx.footerLeft = companyFooter(ctx.from);
 
   const status = STATUS_LABEL[po.status] || po.status;
-  const time = deliveryTimeLabel(po.delivery_time);
   const collection = collectionDate(event);
-  const collectSlot = deliveryTimeLabel(po.collection_time);
   ctx.header({
     meta: [
       { value: po.reference, size: 12 },
@@ -253,25 +251,21 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
     }
   }
 
-  const confirmWhen = collection
-    ? (time || collectSlot ? 'the delivery and collection dates and times' : 'the delivery and collection dates')
-    : (time ? `the ${time} delivery` : 'the delivery date');
-  const confirmText = `Please confirm the quantities, prices and ${confirmWhen} by reply, quoting ${po.reference}.`;
   const factNote = (fact?.kind === 'pdf' || fact?.kind === 'image')
     ? 'A delivery fact sheet for the driver follows this order.'
     : (factMissing && event?.delivery_fact_sheet_url ? `Delivery fact sheet: ${event.delivery_fact_sheet_url}` : '');
 
   ctx.setFont('normal', 8.5);
-  const confirmH = 8 + 6 + ctx.doc.splitTextToSize(confirmText, ctx.contentW).length * 4.25 + 2;
-  const factH = factNote ? ctx.doc.splitTextToSize(factNote, ctx.contentW).length * 4.25 + 2 : 0;
-  ctx.anchorBottom(ctx.measureTotals(pairs) + confirmH + factH);
+  const factH = factNote ? 8 + 6 + ctx.doc.splitTextToSize(factNote, ctx.contentW).length * 4.25 + 2 : 0;
+  ctx.anchorBottom(ctx.measureTotals(pairs) + factH);
   ctx.totals(pairs, { anchored: true });
 
-  ctx.y += 8;
-  ctx.hairline(ctx.y, 0.25);
-  ctx.y += 6;
-  ctx.paragraph(confirmText, { size: 8.5 });
-  if (factNote) ctx.paragraph(factNote, { size: 8.5 });
+  if (factNote) {
+    ctx.y += 8;
+    ctx.hairline(ctx.y, 0.25);
+    ctx.y += 6;
+    ctx.paragraph(factNote, { size: 8.5 });
+  }
   if (fact?.kind === 'image') await embedFactSheetImage(ctx, fact.blob);
 
   const filename = `${safeFilePart(po.reference)}_${safeFilePart(supplier?.name)}.pdf`;
