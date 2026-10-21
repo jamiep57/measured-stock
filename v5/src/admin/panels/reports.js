@@ -997,6 +997,16 @@ export function mountReportsPanel(route) {
     const bars = menuBars();
     if (bars.length < 2) return '';
     const current = bars.some((bar) => bar.id === ctx.menuBarId) ? ctx.menuBarId : '';
+    if (bars.length > 6) {
+      const options = [
+        `<option value="">All bars</option>`,
+        ...bars.map((bar) => `<option value="${escapeHtml(bar.id)}"${bar.id === current ? ' selected' : ''}>${escapeHtml(bar.name || 'Bar')}</option>`),
+      ].join('');
+      return `<label class="reports-bar-picker">
+        <span class="admin-label">Bar</span>
+        <select class="admin-select" id="reportsMenuBar">${options}</select>
+      </label>`;
+    }
     const button = (id, label) => {
       const on = current === id;
       return `<button type="button" data-menu-bar="${escapeHtml(id)}" aria-pressed="${on ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
@@ -1017,7 +1027,13 @@ export function mountReportsPanel(route) {
     const rows = model.groups.flatMap((group) => group.rows.map((row) => ({
       cells: {
         category: group.category,
-        ...Object.fromEntries(model.columns.map((col) => [col.key, formatCell(cellValue(row, col), col)])),
+        ...Object.fromEntries(model.columns.map((col) => {
+          const text = formatCell(cellValue(row, col), col);
+          if (col.key === 'bars' && row.barsDetail && row.barsDetail !== text) {
+            return [col.key, { text, title: row.barsDetail }];
+          }
+          return [col.key, text];
+        })),
       },
     })));
     const note = model.missingRates
@@ -1119,6 +1135,13 @@ export function mountReportsPanel(route) {
         paint();
       };
     });
+    const barSelect = root.querySelector('#reportsMenuBar');
+    if (barSelect) {
+      barSelect.onchange = () => {
+        ctx.menuBarId = barSelect.value || '';
+        paint();
+      };
+    }
     root.querySelectorAll('[data-menu-scenario]').forEach((box) => {
       box.onchange = () => {
         const id = box.dataset.menuScenario;

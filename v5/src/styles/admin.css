@@ -5993,6 +5993,21 @@ body.admin-drawer-open {
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+.reports-bar-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(280px, 100%);
+  margin-bottom: 12px;
+}
+.reports-bar-picker .admin-label {
+  margin: 0;
+}
+.reports-bar-picker .admin-select {
+  width: 100%;
+  height: 32px;
+  font-size: 13px;
+}
 @media (max-width: 720px) {
   .reports-library-head,
   .reports-workspace-main {

@@ -49,11 +49,12 @@ export function composeMenuEntry(type, row, columns = []) {
   if (type === 'designer') {
     const product = String(row.productName || '').trim();
     const showBars = columns.some((col) => col.key === 'bars');
+    const barsNote = String(row.bars || '').trim();
     lines.push(joinBits([
       product && product !== row.menuName ? product : '',
       serve,
       row.abv && row.abv !== '—' ? `${row.abv} ABV` : '',
-      showBars ? String(row.bars || '').trim() : '',
+      showBars && barsNote && barsNote !== 'All bars' ? barsNote : '',
     ]));
     return { name: row.menuName || '', price, unit: '', lines: lines.filter(Boolean) };
   }

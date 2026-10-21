@@ -75,9 +75,9 @@ describe('designer distribution', () => {
     expect(m.barName).toBe('');
     const byName = Object.fromEntries(m.groups.flatMap((g) => g.rows.map((r) => [r.menuName, r])));
     expect(byName['Camden Hells'].bars).toBe('Bar 1');
-    expect(byName['Aspall Cider'].bars).toBe('Bar 1, Bar 2');
+    expect(byName['Aspall Cider'].bars).toBe('All bars');
     expect(byName['Red Wine'].bars).toBe('Not on a bar');
-    expect(byName.Paloma.bars).toBe('Bar 1, Bar 2');
+    expect(byName.Paloma.bars).toBe('All bars');
     expect(m.groups.flatMap((g) => g.rows).some((r) => String(r.bars).includes('Bone'))).toBe(false);
   });
 
@@ -101,7 +101,7 @@ describe('designer distribution', () => {
       barProducts: [{ bar_id: 'b1', product_id: 'p1' }],
     });
     const byName = Object.fromEntries(m.groups.flatMap((g) => g.rows.map((r) => [r.menuName, r])));
-    expect(byName['Camden Hells'].bars).toBe('Bar 1, Bar 2');
+    expect(byName['Camden Hells'].bars).toBe('All bars');
     expect(byName['Aspall Cider'].bars).toBe('Bar 2');
   });
 
@@ -116,6 +116,38 @@ describe('designer distribution', () => {
     expect(names).toContain('Camden Hells');
     expect(names).not.toContain('Aspall Cider');
     expect(names).toContain('Paloma');
+  });
+
+  it('shortens the bars column once a site has many bars', () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ id: `b${i + 1}`, name: `Bar ${i + 1}` }));
+    const barProducts = many.flatMap((bar, i) => {
+      const rows = [{ bar_id: bar.id, product_id: 'p-all' }];
+      if (i < 8) rows.push({ bar_id: bar.id, product_id: 'p-some' });
+      if (i >= 18) rows.push({ bar_id: bar.id, product_id: 'p-few' });
+      if (i !== 0) rows.push({ bar_id: bar.id, product_id: 'p-most' });
+      return rows;
+    });
+    const drink = (productId, menuName) => ({
+      productId, name: menuName, menuName, category: 'Beer', included: true, menuPrice: 5,
+    });
+    const m = buildMenuExport('designer', {
+      lines: [
+        drink('p-all', 'Everywhere'),
+        drink('p-some', 'Eight bars'),
+        drink('p-few', 'Two bars'),
+        drink('p-most', 'Missing one'),
+        drink('p-none', 'Nowhere'),
+      ],
+      bars: many,
+      barProducts,
+    });
+    const byName = Object.fromEntries(m.groups.flatMap((g) => g.rows.map((r) => [r.menuName, r])));
+    expect(byName.Everywhere.bars).toBe('All bars');
+    expect(byName['Eight bars'].bars).toBe('8 of 20');
+    expect(byName['Eight bars'].barsDetail).toBe('Bar 1, Bar 2, Bar 3, Bar 4, Bar 5, Bar 6, Bar 7, Bar 8');
+    expect(byName['Two bars'].bars).toBe('Bar 19, Bar 20');
+    expect(byName['Missing one'].bars).toBe('All except Bar 1');
+    expect(byName.Nowhere.bars).toBe('Not on a bar');
   });
 });
 

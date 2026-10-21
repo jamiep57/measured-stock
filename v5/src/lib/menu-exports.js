@@ -31,6 +31,30 @@ export function barsForMenuLine(line, bars, barProducts) {
   return serving.filter((bar) => barServesProduct(barProducts, bar.id, line.productId));
 }
 
+const BAR_LIST_LIMIT = 3;
+
+/**
+ * Short bars cell. A long site stays readable: everywhere is "All bars",
+ * a few names are listed, a few gaps are "All except …", and a mixed
+ * list is a count. `detail` is the full list for a hover.
+ */
+export function barsMenuLabel(onBars, serving) {
+  const names = (onBars || []).map((bar) => bar.name || 'Bar').filter(Boolean);
+  const all = (serving || []).map((bar) => bar.name || 'Bar').filter(Boolean);
+  const detail = names.join(', ');
+  if (!names.length) return { label: 'Not on a bar', detail: '' };
+  if (all.length && names.length === all.length) return { label: 'All bars', detail };
+  const on = new Set(names);
+  const missing = all.filter((name) => !on.has(name));
+  if (names.length <= BAR_LIST_LIMIT && names.length <= missing.length) {
+    return { label: detail, detail };
+  }
+  if (missing.length && missing.length <= BAR_LIST_LIMIT) {
+    return { label: `All except ${missing.join(', ')}`, detail };
+  }
+  return { label: `${names.length} of ${all.length || names.length}`, detail };
+}
+
 export const EXPORT_TYPES = {
   designer: {
     label: 'Designer',
@@ -179,11 +203,13 @@ export function buildMenuExport(type, input) {
       costPerServe: round2(l.costPerServe),
       gpPct: l.gpPct == null ? null : Math.round(l.gpPct * 10) / 10,
     };
+    const clean = sanitizeRow(type, row, { includeInternal });
     if (showBars) {
-      const names = (onBars || []).map((bar) => bar.name || 'Bar').filter(Boolean);
-      row.bars = names.join(', ') || 'Not on a bar';
+      const summary = barsMenuLabel(onBars || [], serving);
+      clean.bars = summary.label;
+      clean.barsDetail = summary.detail;
     }
-    rows.push(sanitizeRow(type, row, { includeInternal }));
+    rows.push(clean);
   });
 
   const columns = [];

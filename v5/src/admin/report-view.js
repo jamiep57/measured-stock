@@ -171,13 +171,16 @@ export function renderDataTable(model, empty) {
 }
 
 function tableCell(col, value, blankEmpty = false) {
-  const empty = value == null || value === '';
+  const packed = value && typeof value === 'object' ? value : null;
+  const text = packed ? packed.text : value;
+  const empty = text == null || text === '';
   const cls = [col.num ? 'num' : '', col.money ? 'reports-cost' : ''].filter(Boolean).join(' ');
-  const attr = cls ? ` class="${cls}"` : '';
+  const title = packed?.title && packed.title !== text ? ` title="${escapeHtml(packed.title)}"` : '';
+  const attr = `${cls ? ` class="${cls}"` : ''}${title}`;
   if (empty) {
     return blankEmpty ? `<td${attr}></td>` : `<td${attr}><span class="muted">—</span></td>`;
   }
-  return `<td${attr}>${escapeHtml(String(value))}</td>`;
+  return `<td${attr}>${escapeHtml(String(text))}</td>`;
 }
 
 export function renderTransferTable(model, empty) {
