@@ -35,6 +35,7 @@ function placeholderForRoute(route) {
     return 'Search product or supplier…';
   }
   if (route.view === 'event' && route.panel === 'orders') return 'Filter menu lines…';
+  if (route.view === 'event' && route.panel === 'reports') return 'Search reports…';
   if (route.view === 'event') return 'Filter event products…';
   if (route.view === 'library') return 'Search library…';
   if (route.view === 'kit-library') return 'Search kit / barcode…';
@@ -75,6 +76,7 @@ export function initGlobalSearch() {
     mountProductSearch(container, {
       products,
       placeholder: placeholderForRoute(route),
+      filterOnly: route.view === 'event' && route.panel === 'reports',
       onFilter: (q) => {
         query = q;
         emitProductFilter({ query: q, productId: null, source: 'filter' });

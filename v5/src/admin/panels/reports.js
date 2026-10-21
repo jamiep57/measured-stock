@@ -9,6 +9,7 @@ import {
   isCocktailSchemaMissing,
   listEventCocktails,
   listEventMenu,
+  listEventProductPrices,
   listScenarios,
   loadEventCocktailMapping,
   loadEventPricing,
@@ -28,6 +29,7 @@ import { generateRecipientInvoicePDF } from '../../lib/recipient-invoice-pdf.js'
 import { icon, initIcons } from '../../lib/icons.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { ADMIN_TOOLBAR_ACTION, setTopbarFilterSuppressed, setTopbarToolbarStrips } from '../topbar-toolbar.js';
+import { ADMIN_PRODUCT_FILTER, getLastProductFilter } from '../global-search.js';
 import { parseQty } from '../../stock-entry.js';
 import { computeReconRows } from '../../lib/recon.js';
 import { reconCsv } from '../../lib/recon-csv.js';
@@ -37,7 +39,7 @@ import { isOrgAdmin } from '../../lib/organisations.js';
 import { resolveMenuLine } from '../../lib/planning-menu.js';
 import { baseMenuItem, groupMenuItems } from '../../lib/menu-serves.js';
 import { resolveCocktailLine } from '../../lib/menu-cocktails.js';
-import { cellValue, formatCell, buildMenuExport, servingMenuBars } from '../../lib/menu-exports.js';
+import { cellValue, formatCell, buildMenuExport, rateCardMargin, rateCardNote, RATE_CARD_MARGINS, servingMenuBars } from '../../lib/menu-exports.js';
 import { commitMenuExport } from '../planning-export.js';
 import { listPurchaseOrders } from '../../lib/orders-data.js';
 import { generatePurchaseOrderPDF } from '../../lib/purchase-order-pdf.js';
@@ -138,7 +140,7 @@ export function mountReportsPanel(route) {
     caseSizes: [],
     suppliers: [],
     reportId: '',
-    search: '',
+    search: getLastProductFilter().query || '',
     supplierId: '',
     recipientId: '',
     dateFrom: '',
@@ -146,6 +148,7 @@ export function mountReportsPanel(route) {
     qtyMode: 'received',
     supplierView: 'suppliers',
     rateSource: 'menu',
+    marginPct: 0,
     includeInternal: false,
     menuScenarioIds: [],
     menuScenarioInit: false,
@@ -164,6 +167,7 @@ export function mountReportsPanel(route) {
     supplierReturns: [],
     salesGroup: 'item',
     location: '',
+    countBarId: '',
     cocktails: [],
     menuItems: [],
     orders: [],
@@ -192,6 +196,7 @@ export function mountReportsPanel(route) {
     ctx.reportId = seeded.reportId || '';
     ctx.salesGroup = seeded.salesGroup || 'item';
     ctx.location = seeded.location || '';
+    ctx.countBarId = seeded.countBarId || '';
     ctx.supplierId = seeded.supplierId || '';
     ctx.recipientId = seeded.recipientId || '';
     ctx.dateFrom = seeded.dates?.from || '';
@@ -199,6 +204,7 @@ export function mountReportsPanel(route) {
     ctx.qtyMode = seeded.qtyMode || 'received';
     ctx.supplierView = seeded.supplierView || 'suppliers';
     ctx.rateSource = seeded.rateSource || 'menu';
+    ctx.marginPct = rateCardMargin(seeded.marginPct);
   }
   if (ctx.reportId && !visibleReports(can).some((entry) => entry.id === ctx.reportId)) {
     ctx.reportId = '';
@@ -818,6 +824,7 @@ export function mountReportsPanel(route) {
         ...shared,
         sessions: ctx.countSessions,
         linesBySession: ctx.countLines,
+        barId: ctx.countBarId,
       });
     }
     if (ctx.reportId === 'products') return buildProductRegister({ event: ctx.event });
@@ -844,6 +851,7 @@ export function mountReportsPanel(route) {
   function menuExportType() {
     if (ctx.reportId === 'menu-client') return 'client';
     if (ctx.reportId === 'menu-sor') return 'sor';
+    if (ctx.reportId === 'menu-rate-card') return 'ratecard';
     return 'designer';
   }
 
@@ -860,6 +868,7 @@ export function mountReportsPanel(route) {
       scenarios: ctx.menuScenarios,
       scenarioIds: ctx.menuScenarioIds,
       rateSource: ctx.rateSource || 'menu',
+      marginPct: ctx.marginPct,
       includeInternal: !!ctx.includeInternal && isOrgAdmin() && menuExportType() === 'client',
       bars,
       barProducts: designer ? (ctx.event?.bar_products || []) : [],
@@ -1091,7 +1100,9 @@ export function mountReportsPanel(route) {
       copy: 'Nothing on this event matches the current filters.',
     };
     if (register.layout === 'transfers') return renderTransferTable(register, empty);
-    if (register.layout === 'counts') return renderCountTable(register, empty, ctx.openCounts);
+    if (register.layout === 'counts') {
+      return `${renderCountLocationSwitch()}${renderCountTable(register, empty, ctx.openCounts)}`;
+    }
     return renderDataTable(register, empty);
   }
 
@@ -1110,24 +1121,32 @@ export function mountReportsPanel(route) {
     return renderRegisterBody();
   }
 
-  function paintLibrary() {
-    const entries = visibleReports(can);
-    root.innerHTML = renderReportLibrary(entries, ctx.search);
-    initIcons(root);
-    const input = root.querySelector('#reportsSearch');
-    if (input) {
-      input.oninput = () => {
-        ctx.search = input.value;
-        const body = root.querySelector('#reportsLibraryBody');
-        const shell = document.createElement('div');
-        shell.innerHTML = renderReportLibrary(entries, ctx.search);
-        const next = shell.querySelector('#reportsLibraryBody');
-        if (body && next) body.innerHTML = next.innerHTML;
-        initIcons(body || root);
-        bindReportCards();
-      };
-    }
+  function refreshLibraryBody() {
+    const body = root.querySelector('#reportsLibraryBody');
+    if (!body) return false;
+    const shell = document.createElement('div');
+    shell.innerHTML = renderReportLibrary(visibleReports(can), ctx.search);
+    const next = shell.querySelector('#reportsLibraryBody');
+    if (!next) return false;
+    body.innerHTML = next.innerHTML;
+    initIcons(body);
     bindReportCards();
+    return true;
+  }
+
+  function paintLibrary() {
+    ctx.search = getLastProductFilter().query || '';
+    root.innerHTML = renderReportLibrary(visibleReports(can), ctx.search);
+    initIcons(root);
+    bindReportCards();
+  }
+
+  function onProductFilter(e) {
+    const query = e.detail?.query || '';
+    if (e.detail) e.detail.handled = true;
+    if (query === ctx.search) return;
+    ctx.search = query;
+    if (!allowedEntry()) refreshLibraryBody();
   }
 
   function bindReportCards() {
@@ -1210,6 +1229,7 @@ export function mountReportsPanel(route) {
     setTableFilterContext('reports', {
       suppliers: (ctx.suppliers || []).map((s) => ({ value: s.id, label: s.name })),
       locations: insights.locations(),
+      countBars: countLocationOptions(),
       scenarios: (ctx.menuScenarios || []).map((s) => ({ id: s.id, name: s.name || 'Scenario' })),
     });
   }
@@ -1493,6 +1513,7 @@ export function mountReportsPanel(route) {
     ctx.supplierView = values.supplierView || 'suppliers';
     ctx.salesGroup = values.salesGroup || 'item';
     ctx.location = values.location || '';
+    ctx.countBarId = values.countBarId || '';
     ctx.rateSource = values.rateSource || 'menu';
     compute();
     paint();
@@ -1500,6 +1521,7 @@ export function mountReportsPanel(route) {
 
   document.addEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
   document.addEventListener(ADMIN_TABLE_FILTER, onTableFilter);
+  document.addEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
 
   syncChrome();
   reload().catch((err) => {
@@ -1520,5 +1542,6 @@ export function mountReportsPanel(route) {
     setTopbarFilterSuppressed(false);
     document.removeEventListener(ADMIN_TOOLBAR_ACTION, onToolbar);
     document.removeEventListener(ADMIN_TABLE_FILTER, onTableFilter);
+    document.removeEventListener(ADMIN_PRODUCT_FILTER, onProductFilter);
   };
 }

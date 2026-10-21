@@ -73,10 +73,6 @@ export function renderReportLibrary(entries, query = '') {
           <h2 class="reports-library-title">Reports</h2>
           <p class="projections-lead muted">Preview a report, adjust its filters, then download it.</p>
         </div>
-        <label class="reports-search">
-          <span class="reports-search-icon">${icon('search', { size: 15 })}</span>
-          <input type="search" class="admin-input" id="reportsSearch" value="${escapeHtml(query)}" placeholder="Search reports" autocomplete="off" aria-label="Search reports" spellcheck="false">
-        </label>
       </div>
       <div id="reportsLibraryBody" class="reports-library-body">${body}</div>
     </div>`;

@@ -77,6 +77,7 @@ export function mountProductSearch(container, options = {}) {
     value = '',
     poolValue = '',
     placeholder = 'Search products…',
+    filterOnly = false,
     allowCreate = false,
     createContextLabel = 'this event',
     query = '',
@@ -412,7 +413,7 @@ export function mountProductSearch(container, options = {}) {
 
   input.addEventListener('focus', () => {
     syncPackDisplay({ editing: true });
-    renderList(input.value);
+    if (!filterOnly) renderList(input.value);
   });
   input.addEventListener('input', () => {
     if (!input.value.trim()) {
@@ -420,7 +421,7 @@ export function mountProductSearch(container, options = {}) {
       selectedPool = '';
     }
     syncPackDisplay({ editing: true });
-    renderList(input.value);
+    if (!filterOnly) renderList(input.value);
     onFilter?.(input.value);
   });
   input.addEventListener('blur', () => {

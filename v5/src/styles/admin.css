@@ -5887,25 +5887,6 @@ body.admin-drawer-open {
   color: var(--foreground);
   transform: translateX(2px);
 }
-.reports-search {
-  position: relative;
-  display: block;
-  width: min(260px, 100%);
-  flex: 0 0 auto;
-}
-.reports-search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  z-index: 1;
-  display: flex;
-  color: var(--muted-foreground);
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-.reports-search .admin-input {
-  padding-left: 32px;
-}
 .reports-workspace-head {
   display: flex;
   flex-direction: column;
@@ -6013,7 +5994,6 @@ body.admin-drawer-open {
   .reports-workspace-main {
     align-items: stretch;
   }
-  .reports-search,
   .reports-workspace-controls,
   .reports-export-actions,
   .reports-client-picker,
