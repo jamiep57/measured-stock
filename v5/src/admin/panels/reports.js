@@ -1127,7 +1127,16 @@ export function mountReportsPanel(route) {
 
   function renderMenuBody() {
     if (!ctx.menuLoaded) return loadingWidget('Loading menu…');
-    const model = menuModel();
+    let model;
+    try {
+      model = menuModel();
+    } catch (err) {
+      return errorState({
+        title: 'Couldn’t build this report',
+        copy: err.message || 'Failed to build the report',
+        variant: 'admin',
+      });
+    }
     const columns = [
       { key: 'category', label: 'Category' },
       ...model.columns.map((col) => ({ key: col.key, label: col.label, num: !!(col.money || col.pct) })),

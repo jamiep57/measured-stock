@@ -74,6 +74,12 @@ export const EXPORT_TYPES = {
     fields: ['category', 'menuName', 'serve', 'rate'],
     allowInternal: false,
   },
+  ratecard: {
+    label: '3rd Party Rate card',
+    title: '3rd Party rate card',
+    fields: ['category', 'menuName', 'serve', 'rate'],
+    allowInternal: false,
+  },
 };
 
 /** Margins offered on the 3rd Party Rate card. 0 is cost with nothing added. */
@@ -153,6 +159,7 @@ export function serveSizeOf(line) {
  *   scenarioIds?: string[],                client pack: which scenarios to show
  *   rateSource?: 'menu'|'rider'|string,    SOR: menu price, rider agreement, or a scenario id
  *   riderPrices?: Map<string, { price }>,  SOR rider rates for the client account
+ *   marginPct?: number,                    rate card: percent added to serve cost
  *   includeInternal?: boolean,
  *   bars?: object[],                       designer: event bars (boneyard ignored)
  *   barProducts?: object[],                designer: distribution menu rows
@@ -181,6 +188,7 @@ export function buildMenuExport(type, input) {
 
   const lines = (input.lines || []).filter((l) => l.included);
   const totalServes = lines.reduce((s, l) => s + (Number(l.projectedServes) || 0), 0);
+  const marginPct = type === 'ratecard' ? rateCardMargin(input.marginPct) : null;
   let missingRates = 0;
 
   const rows = [];
@@ -194,9 +202,13 @@ export function buildMenuExport(type, input) {
       productName: l.name,
       serve: l.serveLabel || '',
     };
-    if (type === 'sor') {
-      let rate = round2(l.menuPrice);
-      if (input.rateSource === 'rider') {
+    if (type === 'sor' || type === 'ratecard') {
+      let rate = type === 'ratecard' ? null : round2(l.menuPrice);
+      if (type === 'ratecard') {
+        const cost = l.costPerServe == null || l.costPerServe === '' ? null : Number(l.costPerServe);
+        if (cost == null || !Number.isFinite(cost)) { missingRates += 1; return; }
+        rate = round2(cost * (1 + marginPct / 100));
+      } else if (input.rateSource === 'rider') {
         const r = input.riderPrices?.get(l.productId);
         if (r) {
           rate = round2(r.price);
@@ -264,7 +276,7 @@ export function buildMenuExport(type, input) {
     }));
 
   const barName = scoped?.name || (serving.length === 1 ? (serving[0].name || '') : '');
-  return { columns, groups, count: rows.length, missingRates, includeInternal, barName };
+  return { columns, groups, count: rows.length, missingRates, includeInternal, barName, marginPct };
 }
 
 /** Cell value for a column (scenario columns read the nested map). */
