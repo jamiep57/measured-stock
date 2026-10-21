@@ -9,7 +9,7 @@ import { emptyState } from '../../components/empty-state.js';
 import { initIcons } from '../../lib/icons.js';
 import { navigate } from '../router.js';
 import { visibleEvents } from '../../lib/visible-events.js';
-import { isPlanTourRunning, rememberTourEvent } from '../walkthrough.js';
+import { isPlanTourRunning, markTourEventCreated, rememberTourEvent } from '../walkthrough.js';
 import { ensureSampleEvent } from '../../lib/sample-event.js';
 
 export const ADMIN_EVENTS_CHANGED = 'v5-admin-events-changed';
@@ -135,6 +135,7 @@ function openCreateEventSheet() {
         await getDB().events.update(sample.id, fields);
         created = { ...sample, ...fields, is_sample: true };
         rememberTourEvent(created);
+        markTourEventCreated();
       } else {
         created = await getDB().events.create(fields);
       }

@@ -46,12 +46,6 @@ function orderExists() {
   return !!shown(document.querySelector('[data-open-po], .ord-rail-row'));
 }
 
-function eventWorkspaceOpen() {
-  if (typeof document === 'undefined') return false;
-  const section = document.querySelector('.sidebar-section[data-section="event-planning"]');
-  return !!section && !section.hidden;
-}
-
 export function planEventSteps() {
   return [
     {
@@ -65,7 +59,7 @@ export function planEventSteps() {
         return shown(document.getElementById('homeNewEvent'))
           || shown(document.getElementById('homeEmptyCreate'));
       },
-      complete: eventWorkspaceOpen,
+      complete: () => false,
     },
     {
       id: 'add-menu',

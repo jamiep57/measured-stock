@@ -56,6 +56,8 @@ let inviteEl = null;
 let observer = null;
 let layoutFrame = 0;
 let previousEventId = '';
+let sampleEventId = '';
+let createdThisRun = false;
 
 function storageLocal() {
   try {
@@ -85,21 +87,38 @@ function overlayBlocked() {
   return !!(modal && !modal.hidden);
 }
 
+function destEventId() {
+  return sampleEventId || api?.eventId?.() || '';
+}
+
+function practiceOpen() {
+  const route = parseRoute();
+  return route.view === 'event' && !!sampleEventId && route.eventId === sampleEventId;
+}
+
+function stepComplete(step) {
+  if (typeof step.complete !== 'function') return false;
+  if (step.id === 'create-event') return createdThisRun && practiceOpen();
+  return practiceOpen() && !!step.complete();
+}
+
 function shouldAutoAdvance() {
   const step = steps[index];
   if (suppressAdvance || !step || overlayBlocked()) return false;
-  if (typeof step.complete === 'function') return !!step.complete();
+  if (typeof step.complete === 'function') return stepComplete(step);
   if (!armed?.autoAdvance || armed.wasSatisfied || !step.route) return false;
+  if (step.route.view === 'event' && !practiceOpen()) return false;
   return routeSatisfies(step.route, parseRoute());
 }
 
 function nextAction(step) {
-  if (typeof step.complete === 'function') return completeNextAction(!!step.complete());
+  if (typeof step.complete === 'function') return completeNextAction(stepComplete(step));
   if (typeof step.finishOnNext === 'function') return step.finishOnNext();
   if (step.route) {
+    const onEvent = step.route.view === 'event';
     return routeNextAction({
-      satisfied: routeSatisfies(step.route, parseRoute()),
-      canNavigate: !!step.destination?.(api?.eventId() || ''),
+      satisfied: routeSatisfies(step.route, parseRoute()) && (!onEvent || practiceOpen()),
+      canNavigate: !!step.destination?.(destEventId()),
     });
   }
   return 'advance';
@@ -409,7 +428,7 @@ async function show(nextIndex) {
   paintCard();
 
   if (step.ensure && step.route && !routeSatisfies(step.route, parseRoute())) {
-    const dest = step.destination?.(api?.eventId() || '');
+    const dest = step.destination?.(destEventId());
     if (dest) {
       suppressAdvance = true;
       try {
@@ -455,7 +474,7 @@ async function onNext() {
   const action = nextAction(step);
   if (action === 'stay') return;
   if (action === 'navigate') {
-    const dest = step.destination?.(api?.eventId() || '');
+    const dest = step.destination?.(destEventId());
     if (!dest) return;
     suppressAdvance = true;
     try {
@@ -476,13 +495,15 @@ function finish(status) {
   running = false;
   armed = null;
   index = 0;
+  createdThisRun = false;
   writeActiveStep(storageSession(), null);
   if (status) writeTourStatus(storageLocal(), status);
   const root = rootEl();
   if (root) root.hidden = true;
   paintLauncher();
-  const sampleId = api?.eventId?.() || '';
-  const leave = api?.isSample?.(sampleId);
+  const route = parseRoute();
+  const leave = !!sampleEventId && route.view === 'event' && route.eventId === sampleEventId;
+  sampleEventId = '';
   api?.forgetSample?.();
   const prev = previousEventId;
   previousEventId = '';
@@ -553,14 +574,9 @@ export function configurePlanTour(nextApi) {
   };
 }
 
-/** First successful paint: resume an in-progress tour, or show the launcher. */
+/** First successful paint: show the launcher. Start always begins at creating an event. */
 export function maybeOfferPlanTour() {
   if (!api) return;
-  const active = readActiveStep(storageSession());
-  if (active) {
-    startPlanTour({ startId: active });
-    return;
-  }
   paintLauncher();
 }
 
@@ -569,39 +585,38 @@ export function isPlanTourRunning() {
 }
 
 export function rememberTourEvent(event) {
+  if (event?.id) sampleEventId = event.id;
   api?.rememberEvent?.(event);
 }
 
-/** @param {{ startId?: string | null }} [opts] */
-export function startPlanTour({ startId = null } = {}) {
+export function markTourEventCreated() {
+  createdThisRun = true;
+}
+
+export function startPlanTour() {
   if (!api) return;
   hideInvite();
   const current = api.eventId?.() || '';
   if (current && !api.isSample?.(current)) previousEventId = current;
   steps = stepsForRole(planEventSteps(), api.can);
   running = true;
+  createdThisRun = false;
+  sampleEventId = '';
+  writeActiveStep(storageSession(), null);
   paintLauncher();
   ensureDom();
-  const start = resumeIndex(steps, startId);
-  void bootTour(startId, start);
+  void bootTour();
 }
 
-async function bootTour(startId, start) {
-  const needsSample = startId && startId !== 'create-event';
+async function bootTour() {
   suppressAdvance = true;
   try {
-    if (needsSample) {
-      const sample = await api?.ensureSample?.({ reset: false });
-      if (!running) return;
-      if (sample) api?.rememberEvent?.(sample);
-    } else {
-      await api?.go?.({ view: 'home' });
-    }
+    await api?.go?.({ view: 'home' });
   } catch (err) {
     console.warn('tour boot', err);
   } finally {
     suppressAdvance = false;
   }
   if (!running) return;
-  show(start);
+  show(0);
 }
