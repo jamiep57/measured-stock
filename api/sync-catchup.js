@@ -11,10 +11,9 @@
 //   curl -X POST https://your-app.vercel.app/api/sync-catchup
 //
 // Auth:
-//   - Vercel cron requests include `Authorization: Bearer ${CRON_SECRET}`
-//     if you set the CRON_SECRET env var. We accept those.
-//   - Non-cron requests are otherwise gated by the PIN-middleware
-//     (the catch-up endpoint is matched by the middleware's catch-all).
+//   - Vercel cron sends `Authorization: Bearer ${CRON_SECRET}`.
+//   - The route is excluded from the login middleware, so a missing or
+//     wrong secret is rejected here. There is no other gate.
 // =====================================================================
 
 import { syncEvent, syncRecipes } from '../lib/sync-engine.js';
@@ -37,10 +36,10 @@ function enc(v) { return encodeURIComponent(String(v)); }
 function ts(v) { return v ? new Date(v).getTime() : 0; }
 
 function isCronRequest(req) {
-  const auth = req.headers.authorization || req.headers.Authorization;
-  if (!auth) return false;
+  const auth = req.headers.authorization || req.headers.Authorization || '';
   const expected = process.env.CRON_SECRET;
-  return expected ? auth === `Bearer ${expected}` : true;
+  if (!expected) return false;
+  return auth === `Bearer ${expected}`;
 }
 
 export default async function handler(req, res) {
@@ -59,8 +58,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  // If a CRON_SECRET is set, prefer it. Otherwise rely on PIN middleware.
-  if (process.env.CRON_SECRET && !isCronRequest(req)) {
+  // This route is outside the login middleware so the cron can run.
+  // Without CRON_SECRET it must stay closed — a missing secret is not public access.
+  if (!isCronRequest(req)) {
     res.status(401).json({ ok: false, error: 'Unauthorized' });
     return;
   }
