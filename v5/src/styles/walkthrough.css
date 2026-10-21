@@ -1,0 +1,174 @@
+/* Admin spotlight tour — above the sidebar (z 30), under sheets (z 200+). */
+
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  pointer-events: none;
+}
+
+.tour-root[hidden] {
+  display: none !important;
+}
+
+.tour-shade {
+  position: fixed;
+  background: rgb(9 9 11 / 0.48);
+  pointer-events: auto;
+}
+
+.tour-root--pass .tour-shade {
+  pointer-events: none;
+}
+
+.tour-ring {
+  position: fixed;
+  z-index: 1;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px var(--accent, #b45309);
+  pointer-events: none;
+}
+
+.tour-ring[hidden] {
+  display: none !important;
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 2;
+  width: min(320px, calc(100vw - 24px));
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: var(--shell-radius, 12px);
+  background: var(--card, #fff);
+  color: var(--foreground, #09090b);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 12px 32px rgb(0 0 0 / 0.14);
+  pointer-events: auto;
+}
+
+.tour-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground, #71717a);
+}
+
+.tour-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.tour-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--foreground, #09090b);
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.tour-actions-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tour-btn {
+  border: 1px solid var(--border, #e4e4e7);
+  border-radius: 8px;
+  background: var(--card, #fff);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--foreground, #09090b);
+}
+
+.tour-btn:hover:not(:disabled) {
+  background: var(--secondary, #f4f4f5);
+}
+
+.tour-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tour-btn--primary {
+  background: var(--primary, #18181b);
+  border-color: var(--primary, #18181b);
+  color: #fff;
+}
+
+.tour-btn--primary:hover:not(:disabled) {
+  background: #27272a;
+}
+
+.tour-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted-foreground, #71717a);
+}
+
+.tour-btn--quiet:hover:not(:disabled) {
+  background: var(--secondary, #f4f4f5);
+  color: var(--foreground, #09090b);
+}
+
+.tour-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #b45309) 35%, var(--border, #e4e4e7));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent, #b45309) 10%, var(--card, #fff));
+}
+
+.tour-invite[hidden] {
+  display: none !important;
+}
+
+.tour-invite-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.tour-invite-copy {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted-foreground, #71717a);
+}
+
+.tour-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.tour-invite--compact {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.tour-replay-btn {
+  width: 100%;
+}

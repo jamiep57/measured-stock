@@ -16,7 +16,8 @@ import { initSpreadsheetCells } from '../lib/spreadsheet-cells.js';
 import { installGridContextMenu } from './grid-context-menu.js';
 import { syncAppPresence } from '../lib/app-presence.js';
 import { ensureAppAuth, signOutApp, getCachedProfile } from '../lib/auth.js';
-import { fallbackRoute, loadPermissions, routeAllowed } from '../lib/permissions.js';
+import { can, fallbackRoute, loadPermissions, routeAllowed } from '../lib/permissions.js';
+import { configurePlanTour, maybeOfferPlanTour, startPlanTour } from './walkthrough.js';
 import { openOwnProfileEditor } from './panels/users.js';
 import { initClientErrorReporting } from '../lib/client-errors.js';
 import { initSyncStatus } from '../components/sync-status.js';
@@ -34,6 +35,7 @@ function setEventId(id) {
 }
 
 let cleanupPanel = null;
+let tourOffered = false;
 let globalSearch = null;
 let genericFilterOff = null;
 /** Bumps on every navigate so a slow mount can't overwrite a newer panel. */
@@ -143,6 +145,11 @@ async function render(route) {
       return;
     }
     cleanupPanel = cleanup || null;
+    document.dispatchEvent(new CustomEvent('v5-admin-rendered'));
+    if (!tourOffered) {
+      tourOffered = true;
+      maybeOfferPlanTour();
+    }
   } catch (err) {
     if (gen !== renderGen) return;
     // Stale Vite chunk after deploy → dynamic import() rejects with Failed to fetch.
@@ -168,6 +175,11 @@ function unfinishedAdminRoute(route) {
 
 function navLinkUnfinished(el) {
   return !!el?.classList?.contains('nav-link--soon') || el?.getAttribute?.('aria-disabled') === 'true';
+}
+
+function goTour(route) {
+  navigate(route);
+  return render(parseRoute());
 }
 
 function goEventPanel(panel) {
@@ -293,6 +305,13 @@ function wireProfileMenu() {
       openOwnProfileEditor();
       return;
     }
+    if (action === 'tour') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeProfileMenu();
+      startPlanTour();
+      return;
+    }
     if (action === 'logout') {
       e.preventDefault();
       closeProfileMenu();
@@ -386,6 +405,11 @@ async function boot() {
     render(parseRoute());
   });
 
+  configurePlanTour({
+    go: goTour,
+    eventId: () => resolveActiveEventId(parseRoute(), state),
+    can,
+  });
   startRouter(render);
 }
 
