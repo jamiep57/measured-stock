@@ -7,36 +7,53 @@ import { icon } from '../lib/icons.js';
 import { emptyState } from '../components/empty-state.js';
 import { REPORT_GROUPS, formatSpec } from './report-catalog.js';
 
-function formatLabels(formats) {
-  return (formats || [])
-    .map((key) => formatSpec(key)?.label)
-    .filter(Boolean)
-    .join(' · ');
+function formatChips(formats) {
+  return (formats || []).map((key) => {
+    const spec = formatSpec(key);
+    if (!spec) return '';
+    return `<span class="reports-format reports-format--${escapeHtml(key)}">${escapeHtml(spec.label)}</span>`;
+  }).join('');
+}
+
+function reportCard(entry) {
+  return `
+    <button type="button" class="reports-card" data-open-report="${escapeHtml(entry.id)}">
+      <span class="reports-card-icon">${icon(entry.icon || 'file-text', { size: 18 })}</span>
+      <span class="reports-card-body">
+        <span class="reports-card-title">${escapeHtml(entry.title)}</span>
+        <span class="reports-card-copy">${escapeHtml(entry.description)}</span>
+        <span class="reports-card-formats">${formatChips(entry.formats)}</span>
+      </span>
+      <span class="reports-card-go" aria-hidden="true">${icon('chevron-right', { size: 16 })}</span>
+    </button>`;
 }
 
 export function renderReportLibrary(entries, query = '') {
   const q = String(query || '').trim().toLowerCase();
   const matched = (entries || []).filter((entry) => {
     if (!q) return true;
-    return `${entry.title} ${entry.description} ${entry.group}`.toLowerCase().includes(q);
+    const formats = (entry.formats || []).map((key) => formatSpec(key)?.label || key).join(' ');
+    return `${entry.title} ${entry.description} ${entry.group} ${formats}`.toLowerCase().includes(q);
   });
   const groups = REPORT_GROUPS
     .map((group) => ({ group, entries: matched.filter((entry) => entry.group === group) }))
     .filter((group) => group.entries.length);
 
+  const meta = q && matched.length
+    ? `<p class="reports-search-meta muted">${matched.length} report${matched.length === 1 ? '' : 's'}</p>`
+    : '';
   const body = groups.length
-    ? groups.map((group) => `
+    ? `${meta}${groups.map((group) => `
         <section class="reports-group">
-          <h2 class="reports-group-title">${escapeHtml(group.group)}</h2>
+          <header class="reports-group-head">
+            <h2 class="reports-group-title">${escapeHtml(group.group)}</h2>
+            <span class="reports-group-count">${group.entries.length}</span>
+            <span class="reports-group-rule" aria-hidden="true"></span>
+          </header>
           <div class="reports-card-grid">
-            ${group.entries.map((entry) => `
-              <button type="button" class="reports-card" data-open-report="${escapeHtml(entry.id)}">
-                <span class="reports-card-title">${escapeHtml(entry.title)}</span>
-                <span class="reports-card-copy">${escapeHtml(entry.description)}</span>
-                <span class="reports-card-formats">${escapeHtml(formatLabels(entry.formats))}</span>
-              </button>`).join('')}
+            ${group.entries.map(reportCard).join('')}
           </div>
-        </section>`).join('')
+        </section>`).join('')}`
     : emptyState({
       iconHtml: icon('search', { size: 22 }),
       title: q ? 'No matching reports' : 'No reports available',
@@ -47,16 +64,16 @@ export function renderReportLibrary(entries, query = '') {
   return `
     <div class="reports-library">
       <div class="reports-library-head">
-        <div>
+        <div class="reports-library-intro">
           <h2 class="reports-library-title">Reports</h2>
-          <p class="projections-lead muted">Pick a report, set its filters, then download it. The export buttons on other pages are unchanged.</p>
+          <p class="projections-lead muted">Preview a report, adjust its filters, then download it.</p>
         </div>
         <label class="reports-search">
-          <span class="admin-label">Search</span>
-          <input type="search" class="admin-input" id="reportsSearch" value="${escapeHtml(query)}" placeholder="Search reports" autocomplete="off">
+          <span class="reports-search-icon">${icon('search', { size: 15 })}</span>
+          <input type="search" class="admin-input" id="reportsSearch" value="${escapeHtml(query)}" placeholder="Search reports" autocomplete="off" aria-label="Search reports" spellcheck="false">
         </label>
       </div>
-      <div id="reportsLibraryBody">${body}</div>
+      <div id="reportsLibraryBody" class="reports-library-body">${body}</div>
     </div>`;
 }
 
@@ -70,16 +87,19 @@ export function renderWorkspaceHead(entry) {
     </button>`;
   }).join('');
   return `
-    <div class="reports-workspace-head">
+    <div class="reports-workspace-head admin-surface">
       <button type="button" class="reports-back" data-reports-back>
-        ${icon('arrow-left', { size: 16 })}
+        ${icon('arrow-left', { size: 15 })}
         <span>All reports</span>
       </button>
-      <div class="reports-workspace-copy">
-        <h2 class="reports-workspace-title">${escapeHtml(entry.title)}</h2>
-        <p class="projections-lead muted">${escapeHtml(entry.description)}</p>
+      <div class="reports-workspace-main">
+        <span class="reports-card-icon">${icon(entry.icon || 'file-text', { size: 18 })}</span>
+        <div class="reports-workspace-copy">
+          <h2 class="reports-workspace-title">${escapeHtml(entry.title)}</h2>
+          <p class="projections-lead muted">${escapeHtml(entry.description)}</p>
+        </div>
+        <div class="reports-export-actions">${actions}</div>
       </div>
-      <div class="reports-export-actions">${actions}</div>
     </div>`;
 }
 
