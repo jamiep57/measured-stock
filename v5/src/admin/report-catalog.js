@@ -20,6 +20,7 @@ export const REPORT_CATALOG = [
     icon: 'trending-up',
     title: 'Headlines',
     description: 'Gross, net, items and the best of the event, from till sales.',
+    ready: true,
     formats: ['csv', 'pdf'],
     feature: null,
     filters: true,
