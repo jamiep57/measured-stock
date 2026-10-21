@@ -1374,11 +1374,11 @@
   padding: 2px 8px;
 }
 .ord-status-cell { white-space: nowrap; }
-/* Row hairlines only, so the action icons sit in the row.
+/* Light row lines, with the same column rules as the other grids.
    Two classes so this beats the shared .dist-grid borders in admin.css. */
 .ord-grid.dist-grid th,
 .ord-grid.dist-grid td {
-  border-right: none;
+  border-right: 1px solid var(--border);
   border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent);
 }
 .ord-grid.dist-grid thead th {
