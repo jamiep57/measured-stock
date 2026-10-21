@@ -1626,12 +1626,15 @@
 }
 .ord-doc-parties {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 28px 40px;
   margin-top: 16px;
   padding: 12px 0 14px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+}
+@media (max-width: 720px) {
+  .ord-doc-parties { grid-template-columns: 1fr; }
 }
 .ord-doc-parties h3,
 .ord-doc-notes-block h3 {

@@ -139,6 +139,13 @@ function renderShell() {
               </div>
               <input class="admin-input" type="tel" id="setupDeliveryPhone" data-field="delivery_contact_phone" maxlength="40" placeholder="Phone number" autocomplete="tel">
             </div>
+            <div class="setup-field">
+              <div class="setup-field-row">
+                <label class="admin-label" for="setupDeliveryEmail">Email</label>
+                <span class="setup-field-saved" id="setupSaved-delivery_contact_email"></span>
+              </div>
+              <input class="admin-input" type="email" id="setupDeliveryEmail" data-field="delivery_contact_email" maxlength="160" placeholder="Email address" autocomplete="email">
+            </div>
             <div class="setup-field setup-field--full">
               <div class="setup-field-row">
                 <label class="admin-label" for="setupFactFile">Delivery fact sheet</label>
@@ -265,6 +272,7 @@ function paintEventFields(event) {
   $('setupWhat3Words').value = event.what3words || '';
   $('setupDeliveryName').value = event.delivery_contact_name || '';
   $('setupDeliveryPhone').value = event.delivery_contact_phone || '';
+  $('setupDeliveryEmail').value = event.delivery_contact_email || '';
   paintEventImage(event.image_url || null);
   paintFactSheet(event);
 }

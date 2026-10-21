@@ -1181,13 +1181,12 @@ export function mountOrdersPanel(route) {
 
     const ev = ctx.event || {};
     const collection = ev.end_date || ev.start_date || '';
-    const contactBits = [ev.delivery_contact_name, ev.delivery_contact_phone].filter(Boolean);
     const deliverLines = [
       ev.venue,
       ev.venue_postcode,
       formatWhat3Words(ev.what3words),
-      contactBits.length ? `On site  ${contactBits.join(' · ')}` : '',
     ].filter(Boolean);
+    const siteBits = [ev.delivery_contact_name, ev.delivery_contact_phone, ev.delivery_contact_email].filter(Boolean);
     const factLink = ev.delivery_fact_sheet_url
       ? `<a class="ord-doc-fact" href="${escapeHtml(ev.delivery_fact_sheet_url)}" target="_blank" rel="noopener noreferrer">${icon('file-text', { size: 14 })} ${escapeHtml(ev.delivery_fact_sheet_name || 'Delivery fact sheet')}</a>`
       : '';
@@ -1253,6 +1252,11 @@ export function mountOrdersPanel(route) {
               <h3>Deliver to</h3>
               <p class="ord-doc-party-name">${escapeHtml(ev.name || 'This event')}</p>
               <div class="ord-doc-party-lines">${deliverLines.map((l) => `<span>${escapeHtml(l)}</span>`).join('')}${factLink}</div>
+            </section>
+            <section>
+              <h3>On site contact</h3>
+              <p class="ord-doc-party-name">${escapeHtml(siteBits[0] || '—')}</p>
+              <div class="ord-doc-party-lines">${siteBits.slice(1).map((l) => `<span>${escapeHtml(l)}</span>`).join('')}</div>
             </section>
           </div>
           <table class="ord-lines ord-doc-lines">

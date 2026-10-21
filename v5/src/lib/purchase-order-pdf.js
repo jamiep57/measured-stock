@@ -23,14 +23,20 @@ function addressLines(value) {
 }
 
 function deliverToLines(event) {
-  const words = formatWhat3Words(event?.what3words);
-  const contact = [event?.delivery_contact_name, event?.delivery_contact_phone].filter(Boolean);
   return [
     ...addressLines(event?.venue),
     event?.venue_postcode,
-    words || null,
-    contact.length ? `On site  ${contact.join(' · ')}` : null,
+    formatWhat3Words(event?.what3words) || null,
   ];
+}
+
+function onSiteLines(event) {
+  const lines = [
+    event?.delivery_contact_name,
+    event?.delivery_contact_phone,
+    event?.delivery_contact_email,
+  ].filter(Boolean);
+  return lines.length ? lines : ['—'];
 }
 
 /** Collection is the end of the event, or the start when it is a single day. */
@@ -150,12 +156,11 @@ function downloadPdf(bytes, filename) {
  * @param {{
  *   po: { reference: string, status: string, order_date?: string, delivery_date?: string, delivery_time?: string, collection_time?: string, delivery_cost?: number|null, supplier_ref?: string, notes?: string },
  *   supplier: { name: string, contact_name?: string, email?: string, phone?: string, address?: string }|null,
- *   event: { name: string, venue?: string, venue_postcode?: string, start_date?: string, end_date?: string, what3words?: string, delivery_contact_name?: string, delivery_contact_phone?: string, delivery_fact_sheet_url?: string, delivery_fact_sheet_name?: string }|null,
+ *   event: { name: string, venue?: string, venue_postcode?: string, start_date?: string, end_date?: string, what3words?: string, delivery_contact_name?: string, delivery_contact_phone?: string, delivery_contact_email?: string, delivery_fact_sheet_url?: string, delivery_fact_sheet_name?: string }|null,
  *   lines: Array<{ name: string, pack?: string, qty_cases: number, case_price: number|null }>,
- *   contact?: { name?: string, email?: string, phone?: string }|null,
  * }} input
  */
-export async function generatePurchaseOrderPDF({ po, supplier, event, lines = [], contact = null }) {
+export async function generatePurchaseOrderPDF({ po, supplier, event, lines = [] }) {
   if (!lines.length) throw new Error('This order has no lines to print.');
 
   let fact = null;
@@ -201,9 +206,9 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
         lines: [event?.name || '—', ...deliverToLines(event)],
       },
       {
-        label: 'Order contact',
+        label: 'On site contact',
         width: 1,
-        lines: contact ? [contact.name, contact.email, contact.phone] : [ctx.from.name, ctx.from.email],
+        lines: onSiteLines(event),
       },
     ],
   });
