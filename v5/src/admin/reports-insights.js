@@ -488,7 +488,7 @@ export function createReportInsights({ getBase, onChange }) {
         ${kpi('vs forecast', vsForecast, 'net sales')}
         ${kpi('Items sold', fmtNum(t.items), t.avgGrossPerItem != null ? `${fmtMoney(t.avgGrossPerItem)} avg` : '')}
         ${kpi('GP', gpCell, gpSub)}
-        ${kpi('Best day', h.bestDay ? escapeHtml(fmtDate(h.bestDay.key)) : '—', h.bestDay ? `${fmtMoney(h.bestDay.net)} net` : 'no dates imported')}
+        ${h.bestDay ? kpi('Best day', escapeHtml(fmtDate(h.bestDay.key)), `${fmtMoney(h.bestDay.net)} net`) : ''}
         ${kpi('Top category', h.topCategory ? escapeHtml(h.topCategory.label) : '—', h.topCategory ? `${fmtPct(h.topCategory.share)} of net` : '')}
       </div>
       ${undated ? `<p class="muted rpt-note">${undated} sales line${undated === 1 ? '' : 's'} without a date are left out of this date range.</p>` : ''}

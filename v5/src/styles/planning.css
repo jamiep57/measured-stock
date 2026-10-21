@@ -2175,7 +2175,7 @@ select.ord-doc-field {
 
 /* Reports: headlines, sales, revenue & GP, loose stock */
 .rpt-kpis { margin-bottom: 12px; }
-.rpt-kpis--head { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.rpt-kpis--head { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
 .rpt-note { margin: 6px 0 10px; font-size: 12px; }
 
 .rpt-viz {
