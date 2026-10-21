@@ -2002,12 +2002,106 @@ select.ord-doc-field {
 .ord-map-table thead th.num { text-align: right; }
 .ord-map-item { display: flex; flex-direction: column; gap: 2px; min-width: 140px; }
 .ord-map-meta { font-size: 12px; color: var(--muted-foreground); }
-.ord-map-table .admin-select {
+.ord-map-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-  min-width: 200px;
+  min-width: 220px;
   height: 32px;
+  padding: 0 26px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  font: inherit;
   font-size: 13px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
 }
+.ord-map-pick:hover { border-color: color-mix(in srgb, var(--border) 70%, var(--foreground)); }
+.ord-map-pick[aria-expanded="true"] {
+  border-color: var(--muted-foreground);
+  box-shadow: 0 0 0 2px rgb(24 24 27 / 0.06);
+}
+.ord-map-pick::after {
+  content: '';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--muted-foreground);
+  border-bottom: 1.5px solid var(--muted-foreground);
+  transform: translateY(-70%) rotate(45deg);
+}
+.ord-map-pick-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ord-map-pick.is-empty .ord-map-pick-label { color: var(--muted-foreground); }
+.ord-map-pick-size {
+  flex: 0 1 auto;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.ord-map-menu {
+  position: fixed;
+  z-index: 280;
+  display: flex;
+  flex-direction: column;
+  max-height: min(360px, 52vh);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shell-shadow);
+  overflow: hidden;
+}
+.ord-map-menu-search { padding: 8px; border-bottom: 1px solid var(--border); }
+.ord-map-menu-search .admin-input { height: 32px; font-size: 13px; }
+.ord-map-menu-list { overflow: auto; max-height: min(300px, 44vh); padding: 4px; }
+.ord-map-menu-group {
+  padding: 8px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.ord-map-menu-option {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+.ord-map-menu-option:hover,
+.ord-map-menu-option.is-active { background: var(--secondary); }
+.ord-map-menu-option.is-current .ord-map-menu-name { font-weight: 600; }
+.ord-map-menu-name { flex: 1; min-width: 0; }
+.ord-map-menu-size {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.ord-map-menu-empty { margin: 0; padding: 12px 10px; font-size: 13px; color: var(--muted-foreground); }
 .ord-map-status { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .ord-map-status--auto { color: var(--success); }
 .ord-map-status--suggest,

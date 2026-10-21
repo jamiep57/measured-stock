@@ -49,27 +49,21 @@ function stepsHtml(model) {
   </ol>`;
 }
 
-function menuOptionsHtml(lines, selected) {
-  const groups = new Map();
-  (lines || []).forEach((line) => {
-    const category = line.category || 'Uncategorised';
-    const list = groups.get(category) || [];
-    list.push(line);
-    groups.set(category, list);
-  });
-  const groupsHtml = [...groups.keys()].sort((a, b) => a.localeCompare(b)).map((category) => {
-    const options = groups.get(category)
-      .slice()
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '')
-        || String(a.serveLabel || '').localeCompare(String(b.serveLabel || '')))
-      .map((line) => {
-        const label = line.serveLabel ? `${line.name} · ${line.serveLabel}` : line.name;
-        const sel = line.key === selected ? ' selected' : '';
-        return `<option value="${escapeHtml(line.key)}"${sel}>${escapeHtml(label)}</option>`;
-      }).join('');
-    return `<optgroup label="${escapeHtml(category)}">${options}</optgroup>`;
-  }).join('');
-  return `<option value=""${selected ? '' : ' selected'}>Leave out</option>${groupsHtml}`;
+function choiceLabel(line) {
+  const serve = String(line?.serveLabel || '').trim();
+  const size = String(line?.caseSize || '').trim();
+  if (serve && serve.toLowerCase() !== size.toLowerCase()) return `${line.name} · ${serve}`;
+  return line?.name || 'Product';
+}
+
+function pickButtonHtml(item, lines, selected) {
+  const chosen = selected ? (lines || []).find((line) => line.key === selected) : null;
+  const label = chosen ? choiceLabel(chosen) : 'Leave out';
+  const size = chosen?.caseSize ? String(chosen.caseSize).trim() : '';
+  return `<button type="button" class="ord-map-pick${chosen ? '' : ' is-empty'}" data-map-sale="${escapeHtml(item.key)}" data-map-line="${escapeHtml(selected || '')}" aria-haspopup="listbox" aria-expanded="false" aria-label="${escapeHtml(`Menu line for ${item.name}`)}">
+    <span class="ord-map-pick-label">${escapeHtml(label)}</span>
+    ${size ? `<span class="ord-map-pick-size">${escapeHtml(size)}</span>` : ''}
+  </button>`;
 }
 
 function mapRowHtml(item, model) {
@@ -90,9 +84,7 @@ function mapRowHtml(item, model) {
     </td>
     <td class="num">${money(item.amount)}</td>
     <td>
-      <select class="admin-select" data-map-sale="${escapeHtml(item.key)}" aria-label="${escapeHtml(`Menu line for ${item.name}`)}">
-        ${menuOptionsHtml(model.lines, selected)}
-      </select>
+      ${pickButtonHtml(item, model.lines, selected)}
     </td>
     <td><span class="ord-map-status ord-map-status--${status.kind}">${escapeHtml(status.label)}</span></td>
   </tr>`;
@@ -205,6 +197,214 @@ function reviewHtml(model) {
 
 export function salesWizardBody(model) {
   return model.step === 'review' ? reviewHtml(model) : mapHtml(model);
+}
+
+let menuEl = null;
+let menuCleanup = null;
+
+export function closeMapLineMenu() {
+  menuCleanup?.();
+  menuCleanup = null;
+  menuEl?.remove();
+  menuEl = null;
+  document.querySelectorAll('.ord-map-pick[aria-expanded="true"]').forEach((btn) => {
+    btn.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function placeMapMenu(anchor) {
+  if (!menuEl) return;
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.max(rect.width, 340);
+  menuEl.style.width = `${width}px`;
+  const height = menuEl.offsetHeight;
+  const below = window.innerHeight - rect.bottom;
+  const top = below < height + 8 && rect.top > height + 8
+    ? rect.top - height - 4
+    : rect.bottom + 4;
+  const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+  menuEl.style.top = `${Math.max(8, top)}px`;
+  menuEl.style.left = `${left}px`;
+}
+
+function choiceHay(line) {
+  return [line.name, line.serveLabel, line.caseSize, line.category, line.sku].filter(Boolean).join(' ').toLowerCase();
+}
+
+/**
+ * Custom menu so each product can show its case size. A native select only has one line of text.
+ */
+export function openMapLineMenu({ anchor, lines = [], selected = '', onPick }) {
+  closeMapLineMenu();
+  const choices = [...lines].sort((a, b) => (a.category || 'Uncategorised').localeCompare(b.category || 'Uncategorised')
+    || (a.name || '').localeCompare(b.name || '')
+    || String(a.serveLabel || '').localeCompare(String(b.serveLabel || '')));
+  let query = '';
+  let active = 0;
+
+  menuEl = document.createElement('div');
+  menuEl.className = 'ord-map-menu';
+  menuEl.innerHTML = `
+    <div class="ord-map-menu-search">
+      <input class="admin-input" type="text" placeholder="Find a product" aria-label="Find a product" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="ord-map-menu-list" role="listbox"></div>`;
+  document.body.appendChild(menuEl);
+  anchor.setAttribute('aria-expanded', 'true');
+
+  const search = menuEl.querySelector('input');
+  const list = menuEl.querySelector('.ord-map-menu-list');
+
+  function shown() {
+    const q = query.trim().toLowerCase();
+    const rows = [];
+    if (!q || 'leave out'.startsWith(q)) {
+      rows.push({ key: '', label: 'Leave out', size: '', category: '' });
+    }
+    choices.forEach((line) => {
+      if (q && !choiceHay(line).includes(q)) return;
+      rows.push({
+        key: line.key,
+        label: choiceLabel(line),
+        size: String(line.caseSize || '').trim(),
+        category: line.category || 'Uncategorised',
+      });
+    });
+    return rows;
+  }
+
+  function renderList() {
+    const rows = shown();
+    if (active > rows.length - 1) active = Math.max(0, rows.length - 1);
+    let lastGroup = null;
+    const html = [];
+    if (!rows.length) {
+      list.innerHTML = '<p class="ord-map-menu-empty">No products match</p>';
+    } else {
+      rows.forEach((row, index) => {
+        if (row.category && row.category !== lastGroup) {
+          lastGroup = row.category;
+          html.push(`<div class="ord-map-menu-group">${escapeHtml(row.category)}</div>`);
+        }
+        const current = (row.key || '') === (selected || '') ? ' is-current' : '';
+        const on = index === active ? ' is-active' : '';
+        html.push(`<button type="button" class="ord-map-menu-option${current}${on}" role="option" data-line="${escapeHtml(row.key)}" id="ord-map-opt-${index}">
+          <span class="ord-map-menu-name">${escapeHtml(row.label)}</span>
+          ${row.size ? `<span class="ord-map-menu-size">${escapeHtml(row.size)}</span>` : ''}
+        </button>`);
+      });
+      list.innerHTML = html.join('');
+    }
+    const currentBtn = list.querySelector('.is-active');
+    if (currentBtn) {
+      search.setAttribute('aria-activedescendant', currentBtn.id);
+      const listRect = list.getBoundingClientRect();
+      const btnRect = currentBtn.getBoundingClientRect();
+      if (btnRect.top < listRect.top) list.scrollTop -= listRect.top - btnRect.top;
+      else if (btnRect.bottom > listRect.bottom) list.scrollTop += btnRect.bottom - listRect.bottom;
+    } else {
+      search.removeAttribute('aria-activedescendant');
+    }
+    placeMapMenu(anchor);
+  }
+
+  function pick(lineKey) {
+    closeMapLineMenu();
+    onPick(anchor.dataset.mapSale || '', lineKey || '');
+  }
+
+  function onPointerDown(e) {
+    if (menuEl?.contains(e.target) || anchor.contains(e.target)) return;
+    closeMapLineMenu();
+  }
+  function onKey(e) {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeMapLineMenu();
+  }
+  function onScroll() {
+    closeMapLineMenu();
+  }
+  const listScroller = anchor.closest('.ord-map-list');
+  const modalBody = anchor.closest('.admin-modal-body');
+  document.addEventListener('pointerdown', onPointerDown, true);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('resize', onScroll);
+  listScroller?.addEventListener('scroll', onScroll, { passive: true });
+  if (modalBody && modalBody !== listScroller) {
+    modalBody.addEventListener('scroll', onScroll, { passive: true });
+  }
+  menuCleanup = () => {
+    document.removeEventListener('pointerdown', onPointerDown, true);
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', onScroll);
+    listScroller?.removeEventListener('scroll', onScroll);
+    modalBody?.removeEventListener('scroll', onScroll);
+  };
+
+  list.addEventListener('mousemove', (e) => {
+    const choice = e.target.closest('[data-line]');
+    if (!choice || !menuEl) return;
+    const index = [...list.querySelectorAll('.ord-map-menu-option')].indexOf(choice);
+    if (index < 0 || index === active) return;
+    active = index;
+    list.querySelectorAll('.ord-map-menu-option').forEach((btn, i) => {
+      btn.classList.toggle('is-active', i === active);
+    });
+  });
+  list.addEventListener('click', (e) => {
+    const choice = e.target.closest('[data-line]');
+    if (!choice) return;
+    pick(choice.dataset.line || '');
+  });
+  search.addEventListener('input', () => {
+    query = search.value;
+    active = 0;
+    renderList();
+  });
+  search.addEventListener('keydown', (e) => {
+    const rows = shown();
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!rows.length) return;
+      active = Math.min(rows.length - 1, active + 1);
+      renderList();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!rows.length) return;
+      active = Math.max(0, active - 1);
+      renderList();
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (rows.length) pick(rows[active]?.key || '');
+  });
+
+  const currentIndex = choices.findIndex((line) => line.key === selected);
+  active = currentIndex >= 0 ? currentIndex + 1 : 0;
+  renderList();
+  search.focus();
+}
+
+export function bindMapLinePicks(root, { lines, onPick }) {
+  root.querySelectorAll('[data-map-sale]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.getAttribute('aria-expanded') === 'true') {
+        closeMapLineMenu();
+        return;
+      }
+      openMapLineMenu({
+        anchor: btn,
+        lines,
+        selected: btn.dataset.mapLine || '',
+        onPick,
+      });
+    });
+  });
 }
 
 export function salesWizardFoot(model) {

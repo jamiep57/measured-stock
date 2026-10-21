@@ -60,7 +60,7 @@ import {
 } from '../../lib/orders-data.js';
 import { formatWhat3Words } from '../../lib/delivery-details.js';
 import { readTillFile } from '../../lib/till-import.js';
-import { salesWizardBody, salesWizardFoot } from '../order-sales-wizard.js';
+import { bindMapLinePicks, closeMapLineMenu, salesWizardBody, salesWizardFoot } from '../order-sales-wizard.js';
 import {
   buildForecastLines,
   forecastTotals,
@@ -1700,9 +1700,11 @@ export function mountOrdersPanel(route) {
       tall: true,
       bodyHtml: '<div></div>',
       footHtml: '<div></div>',
+      onClose: () => closeMapLineMenu(),
     });
 
     function paint() {
+      closeMapLineMenu();
       const queryFocused = document.activeElement?.matches?.('[data-map-query]');
       const caret = queryFocused ? document.activeElement.selectionStart : null;
       const scroll = el.querySelector('[data-map-list]')?.scrollTop || 0;
@@ -1787,11 +1789,12 @@ export function mountOrdersPanel(route) {
           paint();
         });
       }
-      el.querySelector('[data-map-list]')?.addEventListener('change', (e) => {
-        const select = e.target.closest('[data-map-sale]');
-        if (!select) return;
-        state.mappings[select.dataset.mapSale] = select.value;
-        paint();
+      bindMapLinePicks(el, {
+        lines,
+        onPick: (saleKey, lineKey) => {
+          state.mappings[saleKey] = lineKey;
+          paint();
+        },
       });
     }
 

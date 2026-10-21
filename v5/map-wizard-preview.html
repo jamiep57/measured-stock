@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Map wizard preview</title>
+  <link rel="stylesheet" href="/src/styles/admin.css">
+  <style>
+    body { margin: 0; min-height: 100vh; background: #e7e5e4; }
+    .preview-modal {
+      position: relative;
+      left: auto;
+      top: 24px;
+      transform: none;
+      opacity: 1;
+      margin: 24px auto;
+      width: min(880px, calc(100vw - 32px));
+      max-height: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-modal admin-modal--tall admin-modal--visible preview-modal" role="dialog">
+    <div class="admin-modal-head"><div class="admin-modal-title">Import sales</div></div>
+    <div class="admin-modal-body"></div>
+    <div class="admin-modal-foot"></div>
+  </div>
+  <script type="module">
+    import { bindMapLinePicks, salesWizardBody, salesWizardFoot } from './src/admin/order-sales-wizard.js';
+    import { groupSalesItems, suggestSaleMappings } from './src/lib/order-forecast.js';
+
+    const lines = [
+      { key: 'camden', kind: 'menu', name: 'Camden Pale Ale', productName: 'Camden Pale Ale', menuName: 'Camden Pale Ale', serveLabel: null, caseSize: '24×330ml', category: 'Beer', portion: 1, included: true, productId: 'p1', menuPrice: 6 },
+      { key: 'heineken', kind: 'menu', name: 'Heineken 0.0 Lager', productName: 'Heineken 0.0 Lager', menuName: 'Heineken 0.0 Lager', serveLabel: null, caseSize: '24×330ml', category: 'Beer', portion: 1, included: true, productId: 'p2', menuPrice: 5.5 },
+      { key: 'nrb', kind: 'menu', name: 'Heineken', productName: 'Heineken', menuName: 'Heineken', serveLabel: null, caseSize: '24×330ml NRB', category: 'Beer', portion: 1, included: true, productId: 'p3', menuPrice: 5 },
+      { key: 'utopian-pint', kind: 'menu', name: 'Utopian Lager', productName: 'Utopian Lager', menuName: 'Utopian Lager', serveLabel: 'Pint', caseSize: '50L Keg', category: 'Beer', portion: 1, included: true, productId: 'p4', menuPrice: 6 },
+      { key: 'utopian-25', kind: 'menu', name: 'Utopian Lager', productName: 'Utopian Lager', menuName: 'Utopian Lager', serveLabel: '25ml', caseSize: '50L Keg', category: 'Beer', portion: 0.1, included: true, productId: 'p4', menuPrice: 2 },
+      { key: 'pale', kind: 'menu', name: 'Utopian Pale Ale', productName: 'Utopian Pale Ale', menuName: 'Utopian Pale Ale', serveLabel: null, caseSize: '30L Keg', category: 'Beer', portion: 1, included: true, productId: 'p5', menuPrice: 6.5 },
+      { key: 'ginger', kind: 'menu', name: 'Better Sundays Hard Kombucha: Ginger & Yuzu', productName: 'Better Sundays Hard Kombucha: Ginger & Yuzu', menuName: 'Better Sundays Hard Kombucha: Ginger & Yuzu', serveLabel: null, caseSize: '12×330ml', category: 'Canned cocktails', portion: 1, included: true, productId: 'p6', menuPrice: 6.95 },
+      { key: 'pom', kind: 'menu', name: 'Better Sundays Hard Kombucha: Pomegranate & Hibiscus', serveLabel: null, caseSize: '12×330ml', category: 'Canned cocktails', portion: 1, included: true, productId: 'p7', menuPrice: 6.95 },
+      { key: 'cider', kind: 'menu', name: 'Brothers Apple Cider', serveLabel: null, caseSize: '24×330ml', category: 'Cider', portion: 1, included: true, productId: 'p8', menuPrice: 5.5 },
+      { key: 'marg', kind: 'cocktail', name: 'Pimento Frozen Margarita', serveLabel: null, caseSize: '', category: 'Cocktails', portion: 1, included: true, productId: null, menuPrice: 12 },
+    ];
+    const rows = [
+      { name: 'Lager can - Prime Time', variation: 'Regular', category: 'Packaged Beer', gross_sales: 91565.4, items_sold: 11771 },
+      { name: 'Smirnoff Vodka & Cola', variation: 'Regular', category: 'RTD', gross_sales: 60446.2, items_sold: 6792 },
+    ];
+    const items = groupSalesItems(rows);
+    const suggestions = suggestSaleMappings(items, lines);
+    const state = {
+      step: 'map',
+      filter: 'todo',
+      query: '',
+      mappings: Object.fromEntries(suggestions.map((row) => [row.saleKey, row.lineKey || ''])),
+    };
+    const body = document.querySelector('.admin-modal-body');
+    const foot = document.querySelector('.admin-modal-foot');
+    function model() {
+      return {
+        step: state.step, fileName: 'item-sales.csv', items, lines,
+        mappings: state.mappings, suggestions, query: state.query, filter: state.filter,
+        mix: { lines: [], unmatched: [], categories: [], total: 0, matchedPct: 0 },
+        target: 350000, hasTarget: true, canApply: true, applyLabel: 'Apply mix',
+      };
+    }
+    function paint() {
+      body.innerHTML = salesWizardBody(model());
+      foot.innerHTML = salesWizardFoot(model());
+      bindMapLinePicks(document.body, {
+        lines,
+        onPick: (saleKey, lineKey) => {
+          state.mappings[saleKey] = lineKey;
+          paint();
+        },
+      });
+    }
+    paint();
+  </script>
+</body>
+</html>
