@@ -7,6 +7,7 @@ import { getDB } from '../../db.js';
 import { loadingWidget } from '../../components/loading-widget.js';
 import { errorState, bindEmptyRetry } from '../../components/empty-state.js';
 import { getActiveOrganisation, isOrgAdmin } from '../../lib/organisations.js';
+import { parseDocumentFields, setLetterheadCache } from '../../lib/document-from.js';
 import { roleLabel } from '../../lib/permissions.js';
 import { describeAuditRow, AUDIT_TABLE_LABELS } from '../../lib/audit-log.js';
 import { authFetch } from '../../lib/auth.js';
@@ -53,6 +54,20 @@ export function renderOrganisationSection() {
             value="${escapeHtml(org?.name || '')}" ${disabled} />
         </label>
         <p class="muted settings-org-role">Your role: <strong>${escapeHtml(roleLabel(org?.role))}</strong></p>
+        <div class="settings-org-divider" role="presentation"></div>
+        <label class="admin-field">
+          <span class="admin-label">Address on documents</span>
+          <textarea class="admin-textarea" id="settingsDocAddress" rows="3" maxlength="500" ${disabled}></textarea>
+          <p class="admin-hint muted">Shown under the logo on purchase orders and invoices. One line per row.</p>
+        </label>
+        <label class="admin-field">
+          <span class="admin-label">Email</span>
+          <input type="email" class="admin-input" id="settingsDocEmail" maxlength="120" ${disabled} />
+        </label>
+        <label class="admin-field">
+          <span class="admin-label">Website</span>
+          <input type="text" class="admin-input" id="settingsDocWebsite" maxlength="120" ${disabled} />
+        </label>
         <div class="settings-org-divider" role="presentation"></div>
         <label class="admin-field">
           <span class="admin-label">Purchase order numbers start from</span>
@@ -188,13 +203,22 @@ export function mountOrganisationSection() {
   const btn = $('settingsOrgSave');
   const input = /** @type {HTMLInputElement|null} */ ($('settingsOrgName'));
   const poInput = /** @type {HTMLInputElement|null} */ ($('settingsPoStart'));
+  const addressInput = /** @type {HTMLTextAreaElement|null} */ ($('settingsDocAddress'));
+  const emailInput = /** @type {HTMLInputElement|null} */ ($('settingsDocEmail'));
+  const websiteInput = /** @type {HTMLInputElement|null} */ ($('settingsDocWebsite'));
   const hint = $('settingsPoStartHint');
   const org = getActiveOrganisation();
-  if (!input || !poInput || !org) return () => {};
+  if (!input || !poInput || !addressInput || !emailInput || !websiteInput || !org) return () => {};
 
   let disposed = false;
+  let letterheadReady = false;
   const admin = isOrgAdmin();
-  if (admin) poInput.setAttribute('disabled', '');
+  if (admin) {
+    poInput.setAttribute('disabled', '');
+    addressInput.setAttribute('disabled', '');
+    emailInput.setAttribute('disabled', '');
+    websiteInput.setAttribute('disabled', '');
+  }
 
   const paintHint = () => {
     if (hint) hint.textContent = poStartHint(parsePoStartNumber(poInput.value));
@@ -212,14 +236,27 @@ export function mountOrganisationSection() {
       toast('Purchase order numbers must start from a whole number between 1 and 9,999,999', true);
       return;
     }
+    const letterhead = letterheadReady
+      ? parseDocumentFields({
+        address: addressInput.value,
+        email: emailInput.value,
+        website: websiteInput.value,
+      })
+      : null;
+    if (letterhead?.error) {
+      toast(letterhead.error, true);
+      return;
+    }
     btn.setAttribute('disabled', '');
     try {
       await getDB().update('organisations', `id=eq.${encodeURIComponent(org.id)}`, {
         name,
         po_start_number: start,
+        ...(letterhead?.fields || {}),
         updated_at: new Date().toISOString(),
       });
       org.name = name;
+      if (letterhead?.fields) setLetterheadCache(letterhead.fields);
       toast('Organisation saved');
       document.getElementById('sidebarWorkspaceSub')?.replaceChildren(document.createTextNode(name));
     } catch (err) {
@@ -231,13 +268,30 @@ export function mountOrganisationSection() {
 
   async function loadStart() {
     try {
-      const rows = await getDB().select(
-        'organisations',
-        `?id=eq.${encodeURIComponent(org.id)}&select=po_start_number`,
-      );
+      let rows;
+      try {
+        rows = await getDB().select(
+          'organisations',
+          `?id=eq.${encodeURIComponent(org.id)}&select=po_start_number,document_address,document_email,document_website`,
+        );
+      } catch (err) {
+        if (!/document_address/i.test(String(err?.message || err))) throw err;
+        rows = await getDB().select(
+          'organisations',
+          `?id=eq.${encodeURIComponent(org.id)}&select=po_start_number`,
+        );
+      }
       if (disposed) return;
-      const start = Number(rows?.[0]?.po_start_number) || 1;
+      const row = rows?.[0] || {};
+      const start = Number(row.po_start_number) || 1;
       poInput.value = String(start);
+      if ('document_address' in row) {
+        addressInput.value = row.document_address || '';
+        emailInput.value = row.document_email || '';
+        websiteInput.value = row.document_website || '';
+        letterheadReady = true;
+        setLetterheadCache(row);
+      }
       paintHint();
     } catch (err) {
       if (disposed) return;
@@ -246,6 +300,11 @@ export function mountOrganisationSection() {
     } finally {
       if (!disposed && admin) {
         poInput.removeAttribute('disabled');
+        if (letterheadReady) {
+          addressInput.removeAttribute('disabled');
+          emailInput.removeAttribute('disabled');
+          websiteInput.removeAttribute('disabled');
+        }
         btn?.removeAttribute('disabled');
       }
     }

@@ -4,6 +4,7 @@
  */
 
 import { createBrandDoc, expandLines, formatDocDate, formatMoney, safeFilePart } from './brand-pdf.js';
+import { companyFooter } from './document-from.js';
 import { deliveryTimeLabel, factSheetKind, formatWhat3Words } from './delivery-details.js';
 import { orderLinesTotal, orderPayable, orderVatFigures } from './order-compare.js';
 
@@ -42,8 +43,6 @@ function dateWithSlot(date, time) {
   const slot = deliveryTimeLabel(time);
   return slot ? `${when} ${slot}` : when;
 }
-
-const COMPANY_FOOTER = 'VV Events LTD T/A Measured | Registered in England and Wales | Company No. 14660281 | Registered Office: 124 City Road, London, City Road, London, England, EC1V 2NX';
 
 function loadPdfLib() {
   if (typeof window !== 'undefined' && window.PDFLib?.PDFDocument) return Promise.resolve(window.PDFLib);
@@ -171,7 +170,7 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
 
   const ctx = await createBrandDoc({ title: 'Purchase order', typeface: 'outfit' });
   ctx.continuationNote = po.reference;
-  ctx.footerLeft = COMPANY_FOOTER;
+  ctx.footerLeft = companyFooter(ctx.from);
 
   const status = STATUS_LABEL[po.status] || po.status;
   const time = deliveryTimeLabel(po.delivery_time);
@@ -206,7 +205,7 @@ export async function generatePurchaseOrderPDF({ po, supplier, event, lines = []
       {
         label: 'Order contact',
         width: 1,
-        lines: contact ? [contact.name, contact.email, contact.phone] : ['Measured', 'live@measured.events'],
+        lines: contact ? [contact.name, contact.email, contact.phone] : [ctx.from.name, ctx.from.email],
       },
     ],
   });

@@ -4,16 +4,9 @@
  */
 
 import { loadJsPdf, loadLogoForPdf } from './delivery-note-pdf.js';
+import { letterheadLines, loadLetterhead } from './document-from.js';
 
-export const INVOICE_FROM = {
-  name: 'Measured',
-  addressLines: [
-    '124 City Road',
-    'London, EC1V 2NX',
-  ],
-  email: 'live@measured.events',
-  website: 'measured.events',
-};
+export { INVOICE_FROM } from './document-from.js';
 
 /** UK standard VAT rate applied to invoice totals. */
 export const INVOICE_VAT_RATE = 0.2;
@@ -106,9 +99,10 @@ export async function generateRecipientInvoicePDF({
     throw new Error('Nothing to invoice — no client transfers match these filters.');
   }
 
-  const [jspdf, logo] = await Promise.all([
+  const [jspdf, logo, from] = await Promise.all([
     loadJsPdf(),
     loadLogoForPdf(),
+    loadLetterhead(),
   ]);
   const { jsPDF } = jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
@@ -190,14 +184,10 @@ export async function generateRecipientInvoicePDF({
     }
 
     setFont('normal', 9, grey);
-    for (const line of INVOICE_FROM.addressLines) {
+    for (const line of letterheadLines(from)) {
       doc.text(line, pageW - mr, rightY, { align: 'right' });
       rightY += 4.2;
     }
-    doc.text(INVOICE_FROM.email, pageW - mr, rightY, { align: 'right' });
-    rightY += 4.2;
-    doc.text(INVOICE_FROM.website, pageW - mr, rightY, { align: 'right' });
-    rightY += 4.2;
 
     const yRule = Math.max(50, rightY + 2);
     hairline(yRule);

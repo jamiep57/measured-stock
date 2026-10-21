@@ -20,6 +20,10 @@ describe('purchase order start number', () => {
     const html = renderOrganisationSection();
     expect(html).toContain('Purchase order numbers start from');
     expect(html).toContain('id="settingsPoStart"');
+    expect(html).toContain('Address on documents');
+    expect(html).toContain('id="settingsDocAddress"');
+    expect(html).toContain('id="settingsDocEmail"');
+    expect(html).toContain('id="settingsDocWebsite"');
   });
 
   it('previews the reference the database will assign', () => {

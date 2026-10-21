@@ -6,7 +6,8 @@
  */
 
 import { loadJsPdf, loadLogoForPdf } from './delivery-note-pdf.js';
-import { INVOICE_FROM, formatInvoiceDate, formatInvoiceMoney } from './recipient-invoice-pdf.js';
+import { formatInvoiceDate, formatInvoiceMoney } from './recipient-invoice-pdf.js';
+import { letterheadLines, loadLetterhead } from './document-from.js';
 
 export const BRAND = {
   ink: [24, 24, 27],
@@ -66,7 +67,7 @@ export function fitText(doc, text, maxW) {
  * @param {{ orientation?: 'portrait'|'landscape', title: string, typeface?: 'helvetica'|'outfit' }} opts
  */
 export async function createBrandDoc({ orientation = 'portrait', title = '', typeface = 'helvetica' } = {}) {
-  const [jspdf, logo] = await Promise.all([loadJsPdf(), loadLogoForPdf()]);
+  const [jspdf, logo, from] = await Promise.all([loadJsPdf(), loadLogoForPdf(), loadLetterhead()]);
   const doc = new jspdf.jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
   let family = 'helvetica';
   if (typeface === 'outfit') {
@@ -84,7 +85,7 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
   const bottom = 20;
   const contentW = pageW - ml - mr;
   const ctx = {
-    doc, pageW, pageH, ml, mr, contentW, y: 18, title, logo, family,
+    doc, pageW, pageH, ml, mr, contentW, y: 18, title, logo, family, from,
     footerNote: '', footerLeft: '', continuationNote: '', pageLabel: null,
   };
 
@@ -148,7 +149,7 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
       ry += h + 5;
     }
     ctx.setFont('normal', 8.5, BRAND.grey);
-    [...INVOICE_FROM.addressLines, INVOICE_FROM.email, INVOICE_FROM.website].forEach((line) => {
+    letterheadLines(from).forEach((line) => {
       doc.text(line, pageW - mr, ry, { align: 'right' });
       ry += 4;
     });
@@ -402,7 +403,7 @@ export async function createBrandDoc({ orientation = 'portrait', title = '', typ
     for (let p = 1; p <= pages; p++) {
       doc.setPage(p);
       ctx.setFont('normal', 7.5, BRAND.muted);
-      const left = ctx.footerLeft || `${INVOICE_FROM.name} · ${INVOICE_FROM.website}`;
+      const left = ctx.footerLeft || [from.name, from.website].filter(Boolean).join(' · ');
       const pageText = ctx.pageLabel ? ctx.pageLabel(p, pages) : `${p} / ${pages}`;
       const pageGap = doc.getTextWidth(pageText) + 6;
       const lines = doc.splitTextToSize(String(left), Math.max(40, contentW - pageGap));

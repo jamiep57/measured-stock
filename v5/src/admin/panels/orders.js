@@ -45,6 +45,7 @@ import {
   plannedProductCases,
   preferredSupplierId,
 } from '../../lib/order-compare.js';
+import { letterheadLines, loadLetterhead } from '../../lib/document-from.js';
 import {
   confirmPurchaseOrder,
   createPurchaseOrder,
@@ -1121,6 +1122,7 @@ export function mountOrdersPanel(route) {
       po?.cancelled_at ? `Cancelled ${fmtDate(po.cancelled_at)}` : '',
     ].filter(Boolean);
     const dateDis = status === 'cancelled' || locked() ? 'disabled' : '';
+    const fromLines = letterheadLines(await loadLetterhead());
 
     openSheet({
       title: isNew ? 'New purchase order' : `${po.reference}`,
@@ -1163,10 +1165,7 @@ export function mountOrdersPanel(route) {
             </div>
             <address class="ord-doc-from">
               <img class="ord-doc-logo" src="/assets/img/logo.png" alt="Measured">
-              <span>124 City Road</span>
-              <span>London, EC1V 2NX</span>
-              <span>live@measured.events</span>
-              <span>measured.events</span>
+              ${fromLines.map((line) => `<span>${escapeHtml(line)}</span>`).join('')}
             </address>
           </header>
           <div class="ord-doc-parties">

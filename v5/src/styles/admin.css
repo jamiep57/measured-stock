@@ -1439,7 +1439,8 @@ body.admin-drawer-open {
   box-shadow: 0 0 0 2px rgb(24 24 27 / 0.06);
 }
 .admin-input:disabled,
-.admin-select:disabled {
+.admin-select:disabled,
+.admin-textarea:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
