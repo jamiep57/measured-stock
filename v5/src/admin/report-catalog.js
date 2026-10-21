@@ -131,6 +131,7 @@ export const REPORT_CATALOG = [
     icon: 'arrow-left-right',
     title: 'Transfers',
     description: 'Every transfer as its own group, with each product and its quantity.',
+    ready: true,
     formats: ['csv'],
     feature: 'stock.transfers',
     filters: true,
