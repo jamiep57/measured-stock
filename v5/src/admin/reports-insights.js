@@ -62,7 +62,7 @@ function shareCell(share) {
   return `<span class="rpt-share"><span style="width:${Math.min(100, Math.max(0, share || 0))}%"></span></span>${fmtPct(share)}`;
 }
 
-const CHART_COLORS = ['#b45309', '#18181b', '#a16207', '#57534e', '#d97706', '#78716c', '#44403c', '#ca8a04'];
+const CHART_COLORS = ['#c2410c', '#1c1917', '#d97706', '#a8a29e', '#78716c', '#44403c'];
 
 function chartSlices(list, max = 6) {
   const ranked = (list || []).filter((g) => g.net > 0);
@@ -80,13 +80,14 @@ function chartSlices(list, max = 6) {
     const pct = total > 0 ? (g.net / total) * 100 : 0;
     const start = cursor;
     cursor += pct;
-    return { ...g, pct, start, color: CHART_COLORS[i % CHART_COLORS.length] };
+    const color = g.label === 'Other' ? '#e7e5e4' : CHART_COLORS[i % CHART_COLORS.length];
+    return { ...g, pct, start, color };
   });
 }
 
 function donutStyle(slices) {
   if (slices.length <= 1) return `background:${slices[0]?.color || '#e4e4e7'}`;
-  const gap = 0.45;
+  const gap = 0.8;
   const stops = [];
   slices.forEach((s) => {
     const end = s.start + s.pct;
@@ -144,7 +145,7 @@ function renderCategoryMix(categories) {
         </div>
       </div>
       <div class="rpt-legend">
-        ${slices.map((s) => `<div class="rpt-legend-row">
+        ${slices.map((s, i) => `<div class="rpt-legend-row${i === 0 ? ' is-lead' : ''}">
           <span class="rpt-swatch" style="background:${s.color}"></span>
           <span class="rpt-legend-name" title="${escapeHtml(s.label)}">${escapeHtml(s.label)}</span>
           <span class="rpt-legend-money">${fmtMoney(s.net)}</span>
@@ -211,19 +212,19 @@ function renderForecastBars(h) {
   const actual = Number(h.totals.net) || 0;
   const forecast = Number(h.forecastNet) || 0;
   const peak = Math.max(actual, forecast, 1);
-  const bar = (label, value, lead) => {
-    const width = Math.max(value > 0 ? 2 : 0, (value / peak) * 100);
-    return `<div class="rpt-hbar">
-      <span class="rpt-hbar-name">${label}</span>
-      <span class="rpt-hbar-track"><span class="rpt-hbar-fill${lead ? ' is-lead' : ''}" style="width:${width.toFixed(1)}%"></span></span>
-      <span class="rpt-hbar-val">${fmtMoney(value)}</span>
+  const row = (label, value, lead) => {
+    const width = Math.max(value > 0 ? 3 : 0, (value / peak) * 100);
+    return `<div class="rpt-vs-row">
+      <span class="rpt-vs-label">${label}</span>
+      <span class="rpt-vs-track"><span class="rpt-vs-fill${lead ? ' is-lead' : ''}" style="width:${width.toFixed(1)}%"></span></span>
+      <span class="rpt-vs-money">${fmtMoney(value)}</span>
     </div>`;
   };
   const vs = h.revenueVsForecastPct;
-  const vsHtml = vs == null ? '' : `<span class="${varianceClass(vs)}">${fmtSigned(vs, (n) => `${n.toFixed(1)}%`)}</span>`;
+  const vsHtml = vs == null ? '' : `<span class="rpt-vs-delta ${varianceClass(vs)}">${fmtSigned(vs, (n) => `${n.toFixed(1)}%`)}</span>`;
   return `<div class="rpt-forecast">
     <div class="rpt-viz-head"><h4 class="rpt-card-title">Forecast vs actual</h4>${vsHtml}</div>
-    <div class="rpt-hbars">${bar('Forecast', forecast, false)}${bar('Actual', actual, true)}</div>
+    <div class="rpt-vs">${row('Forecast', forecast, false)}${row('Actual', actual, true)}</div>
   </div>`;
 }
 
@@ -236,11 +237,15 @@ function renderShape(h, band) {
   const target = h.targetGpPct;
   const tone = gp != null ? gpStatus(gp, target, band ?? 5) : null;
   const toneClass = tone === 'green' ? 'is-ok' : tone === 'amber' ? 'is-warn' : tone === 'red' ? 'is-bad' : '';
+  const pts = gp != null && target != null ? gp - target : null;
   const topShare = (h.top || []).reduce((sum, g) => sum + (Number(g.share) || 0), 0);
   const forecast = renderForecastBars(h);
   if (gp == null && !showVat && !(h.top || []).length && !forecast) return '';
   const title = gp != null ? 'Gross profit' : (forecast ? 'Against forecast' : 'Sales split');
   const netPct = showVat ? (net / gross) * 100 : 0;
+  const tickAt = target == null ? null : Math.max(0, Math.min(100, target));
+  const tickSide = tickAt == null ? '' : tickAt > 82 ? ' is-end' : tickAt < 18 ? ' is-start' : '';
+  const tickLabel = target == null ? '' : (Math.abs(target - Math.round(target)) < 0.05 ? `${Math.round(target)}%` : fmtPct(target));
   return `<section class="admin-surface rpt-viz-card">
     <div class="rpt-viz-head">
       <h3 class="rpt-card-title">${title}</h3>
@@ -248,24 +253,26 @@ function renderShape(h, band) {
     </div>
     <div class="rpt-glance">
       ${gp != null ? `<div class="rpt-glance-gp">
-        <span class="rpt-glance-figure ${toneClass}">${escapeHtml(formatGpPct(gp))}</span>
+        <div class="rpt-glance-hero">
+          <span class="rpt-glance-figure ${toneClass}">${escapeHtml(formatGpPct(gp))}</span>
+          ${pts != null ? `<span class="rpt-glance-delta ${toneClass}">${fmtSigned(pts, (n) => `${n.toFixed(1)} pts`)}</span>` : ''}
+        </div>
         <div class="rpt-meter" aria-hidden="true">
           <span class="rpt-meter-fill ${toneClass}" style="width:${Math.max(0, Math.min(100, gp)).toFixed(1)}%"></span>
-          ${target != null ? `<span class="rpt-meter-tick" style="left:${Math.max(0, Math.min(100, target)).toFixed(1)}%"></span>` : ''}
+          ${tickAt != null ? `<span class="rpt-meter-tick${tickSide}" style="left:${tickAt.toFixed(1)}%"><span class="rpt-meter-tick-label">${tickLabel}</span></span>` : ''}
         </div>
-        <span class="rpt-viz-sub">${target != null ? `Target ${fmtPct(target)}` : 'No GP target set'}</span>
       </div>` : ''}
       ${showVat ? `<div class="rpt-split">
+        <div class="rpt-split-figs">
+          <span><strong>${fmtMoney(net)}</strong> net</span>
+          <span><strong>${fmtMoney(vat)}</strong> VAT</span>
+        </div>
         <div class="rpt-split-bar" role="img" aria-label="Net ${fmtPct(netPct)} of gross, VAT ${fmtPct(100 - netPct)}">
           <span class="rpt-split-net" style="width:${netPct.toFixed(2)}%"></span>
           <span class="rpt-split-vat" style="width:${(100 - netPct).toFixed(2)}%"></span>
         </div>
-        <div class="rpt-split-key">
-          <span><i class="rpt-swatch rpt-swatch--net"></i>Net ${fmtMoney(net)}</span>
-          <span><i class="rpt-swatch rpt-swatch--vat"></i>VAT ${fmtMoney(vat)}</span>
-        </div>
       </div>` : ''}
-      ${(h.top || []).length ? `<p class="rpt-glance-note">Top ${h.top.length} products are <strong>${fmtPct(topShare)}</strong> of net sales.</p>` : ''}
+      ${(h.top || []).length ? `<p class="rpt-glance-note"><span>Top ${h.top.length}</span><span><strong>${fmtPct(topShare)}</strong> of net</span></p>` : ''}
       ${forecast}
     </div>
   </section>`;
