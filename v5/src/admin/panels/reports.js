@@ -55,7 +55,7 @@ import {
   transferEnds,
 } from '../../lib/report-registers.js';
 import { formatSpec, reportById, visibleReports } from '../report-catalog.js';
-import { renderDataTable, renderReportLibrary, renderWorkspaceHead } from '../report-view.js';
+import { renderDataTable, renderReportLibrary, renderTransferTable, renderWorkspaceHead } from '../report-view.js';
 import { createGridCollabSession } from '../../lib/collab-presence.js';
 import {
   reportsCellKeyFromInput,
@@ -1007,10 +1007,12 @@ export function mountReportsPanel(route) {
     if (!ctx.detailLoaded) return loadingWidget('Loading event data…');
     const register = currentRegister();
     if (!register) return '';
-    return renderDataTable(register, {
+    const empty = {
       title: 'Nothing to show',
       copy: 'Nothing on this event matches the current filters.',
-    });
+    };
+    if (register.layout === 'transfers') return renderTransferTable(register, empty);
+    return renderDataTable(register, empty);
   }
 
   function renderActiveBody() {

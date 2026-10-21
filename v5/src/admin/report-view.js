@@ -135,12 +135,7 @@ export function renderDataTable(model, empty) {
               <tr>
                 ${columns.map((col) => tableCell(col, row.cells?.[col.key])).join('')}
                 ${row.action ? `<td class="reports-row-action"><button type="button" class="topbar-tool topbar-tool--label" data-report-action="${escapeHtml(row.action)}" data-report-record="${escapeHtml(row.id || '')}">${escapeHtml(actionLabel(row.action))}</button></td>` : (hasAction ? '<td></td>' : '')}
-              </tr>
-              ${(row.details || []).map((detail) => `
-                <tr class="reports-line-row">
-                  ${columns.map((col) => tableCell(col, detail.cells?.[col.key], true, col.key === 'lines')).join('')}
-                  ${hasAction ? '<td></td>' : ''}
-                </tr>`).join('')}`).join('')}
+              </tr>`).join('')}
           </tbody>
           ${model.footer ? `
             <tfoot>
@@ -154,18 +149,85 @@ export function renderDataTable(model, empty) {
     </section>`;
 }
 
-function tableCell(col, value, blankEmpty = false, indent = false) {
+function tableCell(col, value, blankEmpty = false) {
   const empty = value == null || value === '';
-  const cls = [
-    col.num ? 'num' : '',
-    col.money ? 'reports-cost' : '',
-    indent ? 'reports-line-name' : '',
-  ].filter(Boolean).join(' ');
+  const cls = [col.num ? 'num' : '', col.money ? 'reports-cost' : ''].filter(Boolean).join(' ');
   const attr = cls ? ` class="${cls}"` : '';
   if (empty) {
     return blankEmpty ? `<td${attr}></td>` : `<td${attr}><span class="muted">—</span></td>`;
   }
   return `<td${attr}>${escapeHtml(String(value))}</td>`;
+}
+
+export function renderTransferTable(model, empty) {
+  const rows = model?.rows || [];
+  if (!rows.length) {
+    return emptyState({
+      iconHtml: icon('search', { size: 22 }),
+      title: empty?.title || 'Nothing to show',
+      copy: empty?.copy || 'Nothing matches these filters.',
+      variant: 'admin',
+    });
+  }
+  return `
+    <section class="admin-surface projections-table-section">
+      <div class="dash-table-wrap">
+        <table class="catalog-table dash-table reports-table reports-xfer-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Route</th>
+              <th>Product</th>
+              <th class="num">Quantity</th>
+              <th class="reports-xfer-action"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, index) => transferGroup(row, index)).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+function transferGroup(row, index) {
+  const lines = row.lines?.length ? row.lines : [{ name: '', qty: '' }];
+  const span = lines.length;
+  const alt = index % 2 === 1 ? ' reports-xfer-alt' : '';
+  const count = span > 1
+    ? `<div class="reports-xfer-count muted">${span} products${row.totalQty ? ` · ${escapeHtml(row.totalQty)}` : ''}</div>`
+    : '';
+  const action = row.action
+    ? `<button type="button" class="topbar-tool topbar-tool--label" data-report-action="${escapeHtml(row.action)}" data-report-record="${escapeHtml(row.id || '')}">${escapeHtml(actionLabel(row.action))}</button>`
+    : '';
+  return lines.map((line, i) => {
+    const edge = i === lines.length - 1 ? ' reports-xfer-end' : '';
+    const kind = i === 0 ? 'reports-xfer-start' : 'reports-xfer-more';
+    const product = line.name
+      ? escapeHtml(line.name)
+      : '<span class="muted">—</span>';
+    const qty = line.qty
+      ? escapeHtml(line.qty)
+      : '<span class="muted">—</span>';
+    return `
+      <tr class="${kind}${edge}${alt}">
+        ${i === 0 ? `
+          <td class="reports-xfer-when-cell" rowspan="${span}">
+            <div class="reports-xfer-when">${escapeHtml(row.when || '')}</div>
+          </td>
+          <td class="reports-xfer-route-cell" rowspan="${span}">
+            <div class="reports-xfer-route">
+              <span class="reports-xfer-from">${escapeHtml(row.from || '')}</span>
+              <span class="reports-xfer-arrow" aria-hidden="true">→</span>
+              <span class="reports-xfer-to">${escapeHtml(row.to || '')}</span>
+            </div>
+            ${count}
+          </td>` : ''}
+        <td class="reports-xfer-product">${product}</td>
+        <td class="reports-xfer-qty num">${qty}</td>
+        ${i === 0 ? `<td class="reports-row-action" rowspan="${span}">${action}</td>` : ''}
+      </tr>`;
+  }).join('');
 }
 
 function actionLabel(action) {

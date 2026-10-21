@@ -6153,6 +6153,72 @@ body.admin-drawer-open {
   color: var(--foreground);
   font-size: 13px;
 }
+.reports-xfer-table.catalog-table th,
+.reports-xfer-table.catalog-table td {
+  text-align: left;
+  vertical-align: top;
+}
+.reports-xfer-table.dash-table th.num,
+.reports-xfer-table.dash-table td.reports-xfer-qty {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.reports-xfer-table.dash-table th.reports-xfer-action,
+.reports-xfer-table.dash-table td.reports-row-action {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+.reports-xfer-table .reports-xfer-when-cell {
+  width: 1%;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+.reports-xfer-table .reports-xfer-route-cell {
+  width: 28%;
+  min-width: 14rem;
+}
+.reports-xfer-table .reports-xfer-route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  line-height: 1.35;
+}
+.reports-xfer-table .reports-xfer-arrow {
+  color: var(--muted-foreground);
+}
+.reports-xfer-table .reports-xfer-to {
+  font-weight: 650;
+}
+.reports-xfer-table .reports-xfer-count {
+  margin-top: 3px;
+  font-size: 12px;
+}
+.reports-xfer-table .reports-xfer-product {
+  font-weight: 550;
+}
+.reports-xfer-table tbody tr.reports-xfer-start td {
+  padding-top: 14px;
+  border-top: 2px solid color-mix(in srgb, var(--foreground) 16%, var(--border));
+}
+.reports-xfer-table tbody tr.reports-xfer-end td {
+  padding-bottom: 14px;
+}
+.reports-xfer-table tbody tr.reports-xfer-more td {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.reports-xfer-table tbody tr:first-child.reports-xfer-start td {
+  border-top: none;
+}
+.reports-xfer-table tr.reports-xfer-alt td {
+  background: color-mix(in srgb, var(--secondary) 55%, var(--card));
+}
+.reports-xfer-table tr.reports-xfer-more td:first-child {
+  border-left: 1px solid var(--border);
+}
 .reports-miss {
   color: #b45309;
   font-weight: 600;

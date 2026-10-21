@@ -364,18 +364,9 @@ export function transferEnds(transfer, event, warehouses) {
 }
 
 /**
+ * One visual group per transfer. The spreadsheet stays one row per product.
  * @param {{ transfers: object[], event: object, warehouses?: object[], dateFrom?: string, dateTo?: string, names?: Map }} input
  */
-function transferLineCells(line, event, names) {
-  return {
-    when: '',
-    from: '',
-    to: '',
-    lines: productName(event, line?.product_id, names),
-    qty: qtyLabel(line ? [line] : []),
-  };
-}
-
 export function buildTransferRegister({
   transfers = [], event, warehouses = [], dateFrom = '', dateTo = '', names,
 } = {}) {
@@ -383,7 +374,7 @@ export function buildTransferRegister({
     { key: 'when', label: 'Date' },
     { key: 'from', label: 'From' },
     { key: 'to', label: 'To' },
-    { key: 'lines', label: 'Products' },
+    { key: 'lines', label: 'Product' },
     { key: 'qty', label: 'Quantity' },
   ];
   const csvRows = [];
@@ -393,10 +384,13 @@ export function buildTransferRegister({
     .sort((a, b) => new Date(b.transferred_at || 0) - new Date(a.transferred_at || 0))
     .map((t) => {
       const ends = transferEnds(t, event, warehouses);
-      const lines = t.lines || [];
+      const source = t.lines || [];
       const when = formatReportWhen(t.transferred_at);
-      const many = lines.length > 1;
-      const listed = lines.length ? lines : [null];
+      const lines = source.map((line) => ({
+        name: productName(event, line.product_id, names),
+        qty: qtyLabel([line]),
+      }));
+      const listed = source.length ? source : [null];
       listed.forEach((line) => {
         csvRows.push({
           cells: {
@@ -410,20 +404,16 @@ export function buildTransferRegister({
       });
       return {
         id: t.id,
-        action: lines.length ? 'delivery-note' : '',
-        cells: {
-          when,
-          from: ends.from,
-          to: ends.to,
-          lines: many
-            ? `${lines.length} products`
-            : (lines[0] ? productName(event, lines[0].product_id, names) : ''),
-          qty: qtyLabel(lines),
-        },
-        details: many ? lines.map((line) => ({ cells: transferLineCells(line, event, names) })) : [],
+        action: source.length ? 'delivery-note' : '',
+        when,
+        from: ends.from,
+        to: ends.to,
+        totalQty: qtyLabel(source),
+        lines,
       };
     });
   const model = finish(columns, rows);
+  model.layout = 'transfers';
   model.csv = tableCsv(columns, csvRows);
   return model;
 }

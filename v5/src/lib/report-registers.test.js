@@ -253,10 +253,10 @@ describe('report registers', () => {
       }],
     });
     expect(report.rows[0].action).toBe('delivery-note');
-    expect(report.rows[0].cells.from).toBe('Main bar');
-    expect(report.rows[0].cells.to).toBe('Artist Liaison');
-    expect(report.rows[0].cells.lines).toBe('Lager');
-    expect(report.rows[0].details).toEqual([]);
+    expect(report.rows[0].from).toBe('Main bar');
+    expect(report.rows[0].to).toBe('Artist Liaison');
+    expect(report.rows[0].lines).toEqual([{ name: 'Lager', qty: '2 cases' }]);
+    expect(report.layout).toBe('transfers');
   });
 
   it('lists each product on a multi-line transfer separately', () => {
@@ -274,11 +274,10 @@ describe('report registers', () => {
       }],
     });
     expect(report.rows).toHaveLength(1);
-    expect(report.rows[0].cells.lines).toBe('2 products');
-    expect(report.rows[0].cells.qty).toBe('3 cases, 4 singles');
-    expect(report.rows[0].details.map((detail) => detail.cells)).toEqual([
-      { when: '', from: '', to: '', lines: 'Lager', qty: '2 cases' },
-      { when: '', from: '', to: '', lines: 'Cola', qty: '1 cases, 4 singles' },
+    expect(report.rows[0].totalQty).toBe('3 cases, 4 singles');
+    expect(report.rows[0].lines).toEqual([
+      { name: 'Lager', qty: '2 cases' },
+      { name: 'Cola', qty: '1 cases, 4 singles' },
     ]);
     expect(report.csv).toContain('Lager');
     expect(report.csv).toContain('Cola');
