@@ -6276,9 +6276,10 @@ body.admin-drawer-open {
   overflow: hidden;
 }
 .reports-count-session {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 2px 12px;
   width: 100%;
   min-width: 0;
   padding: 12px 14px;
@@ -6298,32 +6299,77 @@ body.admin-drawer-open {
   flex-shrink: 0;
   color: var(--muted-foreground);
 }
+.reports-count-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .reports-count-name {
   font-weight: 650;
+  overflow-wrap: anywhere;
 }
-.reports-count-when,
-.reports-count-where {
+.reports-count-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-width: 0;
   color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.35;
 }
 .reports-count-meta {
-  margin-left: auto;
-  flex-shrink: 0;
+  justify-self: end;
   font-size: 12px;
+  white-space: nowrap;
+}
+.reports-count-lines-wrap {
+  overflow-x: auto;
+  margin: 0 12px 12px;
 }
 .reports-count-lines {
-  margin: 0 12px 12px;
+  width: 100%;
+  min-width: 28rem;
+  margin: 0;
 }
 .reports-count-lines.catalog-table th,
 .reports-count-lines.catalog-table td {
   text-align: left;
 }
+.reports-count-lines.catalog-table td:first-child {
+  overflow-wrap: anywhere;
+}
 .reports-count-lines.dash-table th.num,
-.reports-count-lines.dash-table td.num {
+.reports-count-lines.dash-table td.num,
+.reports-count-lines.dash-table th:last-child,
+.reports-count-lines.dash-table td:last-child {
+  width: 1%;
   text-align: right;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .reports-count-empty {
   margin: 0 14px 14px;
+}
+@media (max-width: 640px) {
+  .reports-counts {
+    padding: 8px;
+  }
+  .reports-count-session {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    padding: 10px 12px;
+  }
+  .reports-count-chevron {
+    margin-top: 2px;
+  }
+  .reports-count-meta {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .reports-count-lines-wrap {
+    margin: 0 8px 8px;
+  }
 }
 .reports-miss {
   color: #b45309;
