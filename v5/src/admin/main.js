@@ -54,7 +54,11 @@ function wireGenericProductFilter() {
 }
 
 async function loadEvents() {
-  state.events = await loadEventsList();
+  const listed = await loadEventsList();
+  const extras = state.events.filter((event) => (
+    event?.is_sample && !listed.some((row) => row.id === event.id)
+  ));
+  state.events = extras.length ? [...listed, ...extras] : listed;
 }
 
 async function render(route) {
@@ -415,7 +419,10 @@ async function boot() {
     ensureSample: ensureSampleEvent,
     rememberEvent: (event) => {
       if (!event?.id) return;
-      if (!state.events.some((row) => row.id === event.id)) {
+      const index = state.events.findIndex((row) => row.id === event.id);
+      if (index >= 0) {
+        state.events = state.events.map((row, i) => (i === index ? { ...row, ...event } : row));
+      } else {
         state.events = [...state.events, event];
       }
       setEventId(event.id);

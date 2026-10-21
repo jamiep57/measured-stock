@@ -4,7 +4,6 @@
  */
 
 import '../styles/walkthrough.css';
-import { toast } from '../lib/util.js';
 import { parseRoute } from './router.js';
 import { planEventSteps } from './walkthroughs/plan-event.js';
 import {
@@ -531,7 +530,7 @@ function paintLauncher() {
   el.innerHTML = offer
     ? `
       <p class="tour-invite-title">Plan an event</p>
-      <p class="tour-invite-copy">Practice on a hidden sample event: add a product, price it, then raise an order.</p>
+      <p class="tour-invite-copy">Create a practice event, price the menu, then raise an order.</p>
       <div class="tour-invite-actions">
         <button type="button" class="tour-btn tour-btn--quiet" data-tour-invite="later">Later</button>
         <button type="button" class="tour-btn tour-btn--primary" data-tour-invite="start">Start</button>
@@ -565,6 +564,14 @@ export function maybeOfferPlanTour() {
   paintLauncher();
 }
 
+export function isPlanTourRunning() {
+  return running;
+}
+
+export function rememberTourEvent(event) {
+  api?.rememberEvent?.(event);
+}
+
 /** @param {{ startId?: string | null }} [opts] */
 export function startPlanTour({ startId = null } = {}) {
   if (!api) return;
@@ -576,20 +583,24 @@ export function startPlanTour({ startId = null } = {}) {
   paintLauncher();
   ensureDom();
   const start = resumeIndex(steps, startId);
-  void bootSample(startId, start);
+  void bootTour(startId, start);
 }
 
-async function bootSample(startId, start) {
-  const gen = generation;
+async function bootTour(startId, start) {
+  const needsSample = startId && startId !== 'create-event';
+  suppressAdvance = true;
   try {
-    const sample = await api?.ensureSample?.({ reset: !startId });
-    if (gen !== generation && !running) return;
-    if (sample) api?.rememberEvent?.(sample);
+    if (needsSample) {
+      const sample = await api?.ensureSample?.({ reset: false });
+      if (!running) return;
+      if (sample) api?.rememberEvent?.(sample);
+    } else {
+      await api?.go?.({ view: 'home' });
+    }
   } catch (err) {
-    running = false;
-    paintLauncher();
-    toast(err.message || 'Could not open the practice event', true);
-    return;
+    console.warn('tour boot', err);
+  } finally {
+    suppressAdvance = false;
   }
   if (!running) return;
   show(start);

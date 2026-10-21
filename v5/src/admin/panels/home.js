@@ -9,6 +9,8 @@ import { emptyState } from '../../components/empty-state.js';
 import { initIcons } from '../../lib/icons.js';
 import { navigate } from '../router.js';
 import { visibleEvents } from '../../lib/visible-events.js';
+import { isPlanTourRunning, rememberTourEvent } from '../walkthrough.js';
+import { ensureSampleEvent } from '../../lib/sample-event.js';
 
 export const ADMIN_EVENTS_CHANGED = 'v5-admin-events-changed';
 
@@ -119,20 +121,30 @@ function openCreateEventSheet() {
       btn.textContent = 'Creating…';
     }
     try {
-      const created = await getDB().events.create({
+      const fields = {
         name,
         status: $('homeEventStatus')?.value || 'active',
         start_date: $('homeEventStart')?.value || null,
         end_date: $('homeEventEnd')?.value || null,
         venue: ($('homeEventVenue')?.value || '').trim() || null,
         venue_postcode: ($('homeEventPostcode')?.value || '').trim() || null,
-      });
+      };
+      let created;
+      if (isPlanTourRunning()) {
+        const sample = await ensureSampleEvent({ reset: true });
+        await getDB().events.update(sample.id, fields);
+        created = { ...sample, ...fields, is_sample: true };
+        rememberTourEvent(created);
+      } else {
+        created = await getDB().events.create(fields);
+      }
       closeSheet();
-      toast('Event created');
+      toast(isPlanTourRunning() ? 'Practice event created' : 'Event created');
+      const panel = isPlanTourRunning() ? 'planning' : 'setup';
       document.dispatchEvent(new CustomEvent(ADMIN_EVENTS_CHANGED, {
-        detail: { eventId: created.id, panel: 'setup' },
+        detail: { eventId: created.id, panel },
       }));
-      navigate({ view: 'event', eventId: created.id, panel: 'setup' });
+      navigate({ view: 'event', eventId: created.id, panel });
     } catch (err) {
       showErr(err.message || 'Could not create event');
       if (btn) {

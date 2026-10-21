@@ -46,8 +46,27 @@ function orderExists() {
   return !!shown(document.querySelector('[data-open-po], .ord-rail-row'));
 }
 
+function eventWorkspaceOpen() {
+  if (typeof document === 'undefined') return false;
+  const section = document.querySelector('.sidebar-section[data-section="event-planning"]');
+  return !!section && !section.hidden;
+}
+
 export function planEventSteps() {
   return [
+    {
+      id: 'create-event',
+      title: 'Create an event',
+      ensure: true,
+      route: { view: 'home' },
+      destination: () => ({ view: 'home' }),
+      body: 'Every job starts with an event. Click New event, give it a name, and create it. This one is practice — it stays off your event list.',
+      target() {
+        return shown(document.getElementById('homeNewEvent'))
+          || shown(document.getElementById('homeEmptyCreate'));
+      },
+      complete: eventWorkspaceOpen,
+    },
     {
       id: 'add-menu',
       feature: 'planning.menu_gp',
@@ -55,7 +74,7 @@ export function planEventSteps() {
       ensure: true,
       route: { view: 'event', panel: 'planning' },
       destination: eventRoute('planning'),
-      body: 'This is a hidden practice event — it will not appear on your event list. Open Add and pick a product from the library, or type a name to create one. The tour continues once it is on the menu.',
+      body: 'Open Add and pick a product from the library, or type a name to create one. Adding it here also puts it on Opening stock. The tour continues once it is on the menu.',
       target() {
         return shown(document.querySelector('[data-toolbar-menu="plan-add"]'))
           || shown(document.querySelector('[data-add-product]'));

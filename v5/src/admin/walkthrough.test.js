@@ -25,9 +25,18 @@ function memoryStorage(initial = {}) {
 }
 
 describe('plan-event tour', () => {
+  it('starts on home with creating an event', () => {
+    const [first] = planEventSteps();
+    expect(first.id).toBe('create-event');
+    expect(first.route).toEqual({ view: 'home' });
+    expect(first.destination()).toEqual({ view: 'home' });
+    expect(first.complete()).toBe(false);
+  });
+
   it('keeps every lesson when the role can open planning and orders', () => {
     const steps = stepsForRole(planEventSteps(), () => true);
     expect(steps.map((step) => step.id)).toEqual([
+      'create-event',
       'add-menu',
       'price-gp',
       'orders-nav',
@@ -40,6 +49,7 @@ describe('plan-event tour', () => {
   it('replaces a hidden feature with one notice', () => {
     const steps = stepsForRole(planEventSteps(), (feature) => feature !== 'planning.orders');
     expect(steps.map((step) => step.id)).toEqual([
+      'create-event',
       'add-menu',
       'price-gp',
       'orders-unavailable',
@@ -50,6 +60,7 @@ describe('plan-event tour', () => {
   it('skips both features when the role has neither', () => {
     const steps = stepsForRole(planEventSteps(), () => false);
     expect(steps.map((step) => step.id)).toEqual([
+      'create-event',
       'planning-unavailable',
       'orders-unavailable',
     ]);
