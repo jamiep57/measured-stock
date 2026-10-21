@@ -9,7 +9,6 @@
 import { escapeHtml, toast } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { emptyState } from '../components/empty-state.js';
-import { confirmDialog } from '../components/modal.js';
 import { loadLibraryProducts } from '../db.js';
 import { isOrgAdmin } from '../lib/organisations.js';
 import { computeReconRows } from '../lib/recon.js';
@@ -21,10 +20,9 @@ import { isCocktailSchemaMissing, listEventCocktails, listEventMenu, loadEventPr
 import {
   eventHeadlines, filterSales, groupSales, revenueComparison, rowsWithEvents, salesCsv, salesTotals,
 } from '../lib/sales-report.js';
-import { computeLooseStock, validateLoosePayment } from '../lib/loose-stock.js';
+import { computeLooseStock } from '../lib/loose-stock.js';
 import {
-  createLoosePayment, deleteLoosePayment, isLooseSchemaMissing, listLooseAllowances, listLoosePayments,
-  listSalesAllEvents, saveLooseAllowance,
+  isLooseSchemaMissing, listLooseAllowances, listSalesAllEvents, saveLooseAllowance,
 } from '../lib/reports-data.js';
 import { downloadBlob } from './planning-export.js';
 
@@ -64,6 +62,227 @@ function shareCell(share) {
   return `<span class="rpt-share"><span style="width:${Math.min(100, Math.max(0, share || 0))}%"></span></span>${fmtPct(share)}`;
 }
 
+const CHART_COLORS = ['#b45309', '#18181b', '#a16207', '#57534e', '#d97706', '#78716c', '#44403c', '#ca8a04'];
+
+function chartSlices(list, max = 6) {
+  const ranked = (list || []).filter((g) => g.net > 0);
+  const head = ranked.slice(0, max);
+  const rest = ranked.slice(max);
+  const rows = rest.length
+    ? [...head, {
+      label: 'Other',
+      net: Math.round(rest.reduce((sum, g) => sum + g.net, 0) * 100) / 100,
+    }]
+    : head;
+  const total = rows.reduce((sum, g) => sum + g.net, 0);
+  let cursor = 0;
+  return rows.map((g, i) => {
+    const pct = total > 0 ? (g.net / total) * 100 : 0;
+    const start = cursor;
+    cursor += pct;
+    return { ...g, pct, start, color: CHART_COLORS[i % CHART_COLORS.length] };
+  });
+}
+
+function donutStyle(slices) {
+  if (slices.length <= 1) return `background:${slices[0]?.color || '#e4e4e7'}`;
+  const gap = 0.45;
+  const stops = [];
+  slices.forEach((s) => {
+    const end = s.start + s.pct;
+    const cut = s.pct > gap * 3 ? gap : 0;
+    stops.push(`${s.color} ${s.start.toFixed(2)}% ${(end - cut).toFixed(2)}%`);
+    if (cut) stops.push(`var(--card) ${(end - cut).toFixed(2)}% ${end.toFixed(2)}%`);
+  });
+  return `background:conic-gradient(${stops.join(',')})`;
+}
+
+function fmtCompact(n) {
+  const v = Number(n) || 0;
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '−' : '';
+  if (abs >= 1000000) return `${sign}£${(abs / 1000000).toFixed(abs >= 10000000 ? 0 : 1)}m`;
+  if (abs >= 10000) return `${sign}£${Math.round(abs / 1000)}k`;
+  if (abs >= 1000) return `${sign}£${(abs / 1000).toFixed(1)}k`;
+  return fmtMoney(v);
+}
+
+function fmtAxis(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso || '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function hbars(rows, { valueOf, format }) {
+  const peak = Math.max(...rows.map((g) => valueOf(g)), 0);
+  return rows.map((g, i) => {
+    const value = valueOf(g);
+    const width = peak > 0 ? Math.max(value > 0 ? 2 : 0, (value / peak) * 100) : 0;
+    return `<div class="rpt-hbar">
+      <span class="rpt-hbar-name" title="${escapeHtml(g.label)} · ${fmtMoney(g.net)}">${escapeHtml(g.label)}</span>
+      <span class="rpt-hbar-track"><span class="rpt-hbar-fill${i === 0 ? ' is-lead' : ''}" style="width:${width.toFixed(1)}%"></span></span>
+      <span class="rpt-hbar-val">${format(g)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderCategoryMix(categories) {
+  const slices = chartSlices(categories, 6);
+  if (!slices.length) return '';
+  const lead = slices[0];
+  const leadPct = fmtPct(lead.share ?? lead.pct);
+  return `<section class="admin-surface rpt-viz-card">
+    <div class="rpt-viz-head">
+      <h3 class="rpt-card-title">Category mix</h3>
+      <span class="rpt-viz-sub">Share of net</span>
+    </div>
+    <div class="rpt-mix">
+      <div class="rpt-donut" style="${donutStyle(slices)}" role="img" aria-label="${escapeHtml(lead.label)}, ${leadPct} of net sales">
+        <div class="rpt-donut-hole">
+          <span class="rpt-donut-pct">${leadPct}</span>
+          <span class="rpt-donut-name">${escapeHtml(lead.label)}</span>
+        </div>
+      </div>
+      <div class="rpt-legend">
+        ${slices.map((s) => `<div class="rpt-legend-row">
+          <span class="rpt-swatch" style="background:${s.color}"></span>
+          <span class="rpt-legend-name" title="${escapeHtml(s.label)}">${escapeHtml(s.label)}</span>
+          <span class="rpt-legend-money">${fmtMoney(s.net)}</span>
+          <span class="rpt-legend-pct">${fmtPct(s.share ?? s.pct)}</span>
+        </div>`).join('')}
+      </div>
+    </div>
+  </section>`;
+}
+
+function renderProductBars(top) {
+  const rows = (top || []).filter((g) => g.net > 0).slice(0, 8);
+  if (!rows.length) return '';
+  return `<section class="admin-surface rpt-viz-card">
+    <div class="rpt-viz-head">
+      <h3 class="rpt-card-title">Top products</h3>
+      <span class="rpt-viz-sub">Share of net</span>
+    </div>
+    <div class="rpt-hbars">${hbars(rows, { valueOf: (g) => Number(g.share) || 0, format: (g) => fmtPct(g.share) })}</div>
+  </section>`;
+}
+
+function renderDayChart(h) {
+  const days = (h.byDay || []).filter((g) => g.key && g.net > 0);
+  if (days.length < 2) return '';
+  const peak = Math.max(...days.map((g) => g.net));
+  const best = days.reduce((a, b) => (b.net > a.net ? b : a));
+  const showEvery = days.length <= 12;
+  const step = showEvery ? 1 : Math.ceil(days.length / 8);
+  const cols = days.map((g, i) => {
+    const height = peak > 0 ? Math.max(4, (g.net / peak) * 100) : 0;
+    const isBest = g.key === best.key;
+    const showLabel = showEvery || i % step === 0 || i === days.length - 1 || isBest;
+    const showVal = showEvery || isBest;
+    return `<div class="rpt-col${isBest ? ' is-best' : ''}" title="${escapeHtml(fmtDate(g.key))} · ${fmtMoney(g.net)} net">
+      <span class="rpt-col-val">${showVal ? fmtCompact(g.net) : ''}</span>
+      <div class="rpt-col-plot"><span class="rpt-col-bar" style="height:${height.toFixed(1)}%"></span></div>
+      <span class="rpt-col-label">${showLabel ? escapeHtml(fmtAxis(g.key)) : ''}</span>
+    </div>`;
+  }).join('');
+  return `<section class="admin-surface rpt-viz-card rpt-viz-card--wide">
+    <div class="rpt-viz-head">
+      <h3 class="rpt-card-title">Sales by day</h3>
+      <span class="rpt-viz-sub">Best ${escapeHtml(fmtDate(best.key))} · ${fmtMoney(best.net)} net</span>
+    </div>
+    <div class="rpt-cols-scroll"><div class="rpt-cols" style="--rpt-cols:${days.length}">${cols}</div></div>
+  </section>`;
+}
+
+function renderLocationBars(h) {
+  const rows = (h.byLocation || []).filter((g) => g.key && g.net > 0).slice(0, 8);
+  if (rows.length < 2) return '';
+  return `<section class="admin-surface rpt-viz-card">
+    <div class="rpt-viz-head">
+      <h3 class="rpt-card-title">By location</h3>
+      <span class="rpt-viz-sub">Share of net</span>
+    </div>
+    <div class="rpt-hbars">${hbars(rows, { valueOf: (g) => g.net, format: (g) => fmtPct(g.share) })}</div>
+  </section>`;
+}
+
+function renderForecastBars(h) {
+  if (h.forecastNet == null) return '';
+  const actual = Number(h.totals.net) || 0;
+  const forecast = Number(h.forecastNet) || 0;
+  const peak = Math.max(actual, forecast, 1);
+  const bar = (label, value, lead) => {
+    const width = Math.max(value > 0 ? 2 : 0, (value / peak) * 100);
+    return `<div class="rpt-hbar">
+      <span class="rpt-hbar-name">${label}</span>
+      <span class="rpt-hbar-track"><span class="rpt-hbar-fill${lead ? ' is-lead' : ''}" style="width:${width.toFixed(1)}%"></span></span>
+      <span class="rpt-hbar-val">${fmtMoney(value)}</span>
+    </div>`;
+  };
+  const vs = h.revenueVsForecastPct;
+  const vsHtml = vs == null ? '' : `<span class="${varianceClass(vs)}">${fmtSigned(vs, (n) => `${n.toFixed(1)}%`)}</span>`;
+  return `<div class="rpt-forecast">
+    <div class="rpt-viz-head"><h4 class="rpt-card-title">Forecast vs actual</h4>${vsHtml}</div>
+    <div class="rpt-hbars">${bar('Forecast', forecast, false)}${bar('Actual', actual, true)}</div>
+  </div>`;
+}
+
+function renderShape(h, band) {
+  const gross = Number(h.totals.gross) || 0;
+  const net = Number(h.totals.net) || 0;
+  const vat = Math.round((gross - net) * 100) / 100;
+  const showVat = gross > 0 && vat > 0.5;
+  const gp = h.gpPct;
+  const target = h.targetGpPct;
+  const tone = gp != null ? gpStatus(gp, target, band ?? 5) : null;
+  const toneClass = tone === 'green' ? 'is-ok' : tone === 'amber' ? 'is-warn' : tone === 'red' ? 'is-bad' : '';
+  const topShare = (h.top || []).reduce((sum, g) => sum + (Number(g.share) || 0), 0);
+  const forecast = renderForecastBars(h);
+  if (gp == null && !showVat && !(h.top || []).length && !forecast) return '';
+  const title = gp != null ? 'Gross profit' : (forecast ? 'Against forecast' : 'Sales split');
+  const netPct = showVat ? (net / gross) * 100 : 0;
+  return `<section class="admin-surface rpt-viz-card">
+    <div class="rpt-viz-head">
+      <h3 class="rpt-card-title">${title}</h3>
+      <span class="rpt-viz-sub">${gp != null ? 'Of net sales' : 'Inc VAT'}</span>
+    </div>
+    <div class="rpt-glance">
+      ${gp != null ? `<div class="rpt-glance-gp">
+        <span class="rpt-glance-figure ${toneClass}">${escapeHtml(formatGpPct(gp))}</span>
+        <div class="rpt-meter" aria-hidden="true">
+          <span class="rpt-meter-fill ${toneClass}" style="width:${Math.max(0, Math.min(100, gp)).toFixed(1)}%"></span>
+          ${target != null ? `<span class="rpt-meter-tick" style="left:${Math.max(0, Math.min(100, target)).toFixed(1)}%"></span>` : ''}
+        </div>
+        <span class="rpt-viz-sub">${target != null ? `Target ${fmtPct(target)}` : 'No GP target set'}</span>
+      </div>` : ''}
+      ${showVat ? `<div class="rpt-split">
+        <div class="rpt-split-bar" role="img" aria-label="Net ${fmtPct(netPct)} of gross, VAT ${fmtPct(100 - netPct)}">
+          <span class="rpt-split-net" style="width:${netPct.toFixed(2)}%"></span>
+          <span class="rpt-split-vat" style="width:${(100 - netPct).toFixed(2)}%"></span>
+        </div>
+        <div class="rpt-split-key">
+          <span><i class="rpt-swatch rpt-swatch--net"></i>Net ${fmtMoney(net)}</span>
+          <span><i class="rpt-swatch rpt-swatch--vat"></i>VAT ${fmtMoney(vat)}</span>
+        </div>
+      </div>` : ''}
+      ${(h.top || []).length ? `<p class="rpt-glance-note">Top ${h.top.length} products are <strong>${fmtPct(topShare)}</strong> of net sales.</p>` : ''}
+      ${forecast}
+    </div>
+  </section>`;
+}
+
+function renderHeadlinesViz(h, band) {
+  const mix = renderCategoryMix(h.categories);
+  const products = renderProductBars(h.top);
+  const days = renderDayChart(h);
+  const locations = renderLocationBars(h);
+  const shape = locations ? '' : renderShape(h, band);
+  const top = [mix, products, locations, shape].filter(Boolean);
+  if (!top.length && !days) return '';
+  const cols = Math.min(top.length, 3);
+  return `<div class="rpt-viz rpt-viz--${cols}${days ? ' rpt-viz--days' : ''}">${top.join('')}${days}</div>`;
+}
+
 /**
  * @param {{ getBase: () => object, onChange: () => void }} opts
  *   getBase returns the Reports panel ctx (eventId, event, tillRows, recon inputs…)
@@ -74,7 +293,6 @@ export function createReportInsights({ getBase, onChange }) {
     menuError: null,
     menuLoading: false,
     allowances: [],
-    payments: [],
     looseLoaded: false,
     looseError: null,
     looseLoading: false,
@@ -156,9 +374,7 @@ export function createReportInsights({ getBase, onChange }) {
     state.looseLoading = true;
     const { eventId } = getBase();
     try {
-      const [allowances, payments] = await Promise.all([listLooseAllowances(eventId), listLoosePayments(eventId)]);
-      state.allowances = allowances || [];
-      state.payments = payments || [];
+      state.allowances = (await listLooseAllowances(eventId)) || [];
       state.looseLoaded = true;
     } catch (err) {
       state.looseError = err;
@@ -250,15 +466,16 @@ export function createReportInsights({ getBase, onChange }) {
     const t = h.totals;
     const gpCell = h.gpPct != null ? gpBadge(h.gpPct, h.targetGpPct, state.menu?.amberBand) : '—';
     let gpSub = 'needs recon costs';
-    if (scoped) gpSub = 'whole event only';
-    else if (h.targetGpPct != null) gpSub = `target ${fmtPct(h.targetGpPct)}`;
+    if (h.gpPct != null && h.targetGpPct != null) gpSub = `target ${fmtPct(h.targetGpPct)}`;
+    else if (h.gpPct != null) gpSub = 'of net sales';
+    else if (scoped) gpSub = 'whole event only';
     let forecastSub = scoped ? 'whole event only' : 'no menu forecast';
     if (h.forecastNet != null) forecastSub = `forecast ${fmtMoney(h.forecastNet)} net`;
     const vsForecast = h.revenueVsForecastPct != null
       ? `<span class="${varianceClass(h.revenueVsForecastPct)}">${fmtSigned(h.revenueVsForecastPct, (n) => `${n.toFixed(1)}%`)}</span>`
       : '—';
     return `
-      <div class="plan-kpis rpt-kpis">
+      <div class="plan-kpis rpt-kpis rpt-kpis--head">
         ${kpi('Gross sales', fmtMoney(t.gross), 'inc VAT')}
         ${kpi('Net sales', fmtMoney(t.net), forecastSub)}
         ${kpi('vs forecast', vsForecast, 'net sales')}
@@ -268,6 +485,7 @@ export function createReportInsights({ getBase, onChange }) {
         ${kpi('Top category', h.topCategory ? escapeHtml(h.topCategory.label) : '—', h.topCategory ? `${fmtPct(h.topCategory.share)} of net` : '')}
       </div>
       ${undated ? `<p class="muted rpt-note">${undated} sales line${undated === 1 ? '' : 's'} without a date are left out of this date range.</p>` : ''}
+      ${renderHeadlinesViz(h, state.menu?.amberBand)}
       <div class="rpt-grid">
         ${groupTable('Top products', h.top, 'Product', { rank: true })}
         <div class="rpt-stack">
@@ -408,7 +626,7 @@ export function createReportInsights({ getBase, onChange }) {
   // ---------- loose stock -------------------------------------------
 
   function looseModel() {
-    return computeLooseStock({ reconRows: reconRows(), allowances: state.allowances, payments: state.payments });
+    return computeLooseStock({ reconRows: reconRows(), allowances: state.allowances });
   }
 
   function renderLoose() {
@@ -416,7 +634,7 @@ export function createReportInsights({ getBase, onChange }) {
       return emptyState({
         iconHtml: icon('lock', { size: 22 }),
         title: 'Admins only',
-        copy: 'Loose stock charges and payments are visible to organisation admins.',
+        copy: 'Loose stock charges are visible to organisation admins.',
         variant: 'admin',
       });
     }
@@ -460,16 +678,10 @@ export function createReportInsights({ getBase, onChange }) {
         <td class="num">${fmtMoney(l.looseValue)}</td><td></td></tr>`).join('') : '';
       return main + subs;
     }).join('');
-    const today = new Date().toISOString().slice(0, 10);
-    let outstandingSub = 'settled';
-    if (totals.outstanding > 0.005) outstandingSub = 'still to collect';
-    else if (totals.outstanding < -0.005) outstandingSub = 'overpaid';
     return `
       <div class="wst-stats reports-stats">
         <div class="wst-stat"><span class="wst-stat-label">Loose at close</span><span class="wst-stat-value">${fmtMoney(totals.looseValue)}</span><span class="wst-stat-label muted">${fmtNum(totals.looseUnits, 2)} singles</span></div>
         <div class="wst-stat"><span class="wst-stat-label">Above allowance</span><span class="wst-stat-value${totals.overAllowance ? ' dash-stat-value--warn' : ''}">${fmtMoney(totals.chargeable)}</span><span class="wst-stat-label muted">${totals.overAllowance} line${totals.overAllowance === 1 ? '' : 's'} over${totals.unpriced ? ` · ${totals.unpriced} unpriced` : ''}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Paid</span><span class="wst-stat-value">${fmtMoney(totals.paid)}</span><span class="wst-stat-label muted">${state.payments.length} payment${state.payments.length === 1 ? '' : 's'}</span></div>
-        <div class="wst-stat"><span class="wst-stat-label">Outstanding</span><span class="wst-stat-value${totals.outstanding > 0.005 ? ' dash-stat-value--warn' : ''}">${fmtMoney(totals.outstanding)}</span><span class="wst-stat-label muted">${outstandingSub}</span></div>
       </div>
       <p class="muted rpt-note">Loose stock is the opened-case singles counted at close (Recon). Set agreed allowances per product, or pool them by category; anything above is chargeable at stock cost. Allowances never change stock.</p>
       <section class="admin-surface projections-table-section">
@@ -489,27 +701,6 @@ export function createReportInsights({ getBase, onChange }) {
           <input class="admin-input num-math" id="rptLooseCatUnits" inputmode="decimal" placeholder="Units" aria-label="Allowance units">
           <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="rptLooseCatAdd">${icon('plus', { size: 14 })} Category allowance</button>
         </div>` : ''}
-      </section>
-      <section class="admin-surface rpt-card">
-        <h3 class="rpt-card-title">Payments received</h3>
-        <table class="catalog-table dash-table reports-table rpt-table">
-          <thead><tr><th>Date</th><th>Reference</th><th>Notes</th><th class="num">Amount</th><th></th></tr></thead>
-          <tbody>${state.payments.map((p) => `<tr>
-            <td>${escapeHtml(fmtDate(p.paid_on))}</td><td>${escapeHtml(p.reference || '—')}</td><td class="muted">${escapeHtml(p.notes || '')}</td>
-            <td class="num">${fmtMoney(p.amount)}${Number(p.amount) < 0 ? ' <span class="catalog-tag">refund</span>' : ''}</td>
-            <td class="num">${p.id ? `<button type="button" class="acct-icon-btn" data-loose-del="${escapeHtml(p.id)}" aria-label="Delete payment">${icon('trash', { size: 14 })}</button>` : ''}</td></tr>`).join('')
-            || '<tr><td colspan="5" class="dist-empty">No payments recorded.</td></tr>'}
-          </tbody>
-          <tfoot><tr class="reports-total-row"><td colspan="3">Paid</td><td class="num">${fmtMoney(totals.paid)}</td><td></td></tr></tfoot>
-        </table>
-        <div class="rpt-inline-form">
-          <input class="admin-input" type="date" id="rptPayDate" value="${today}" aria-label="Payment date">
-          <input class="admin-input num-math" id="rptPayAmount" inputmode="decimal" placeholder="Amount £" aria-label="Amount">
-          <input class="admin-input" id="rptPayRef" maxlength="120" placeholder="Reference" aria-label="Reference">
-          <input class="admin-input rpt-grow" id="rptPayNotes" maxlength="500" placeholder="Notes" aria-label="Notes">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" id="rptPayAdd">Record payment</button>
-        </div>
-        <p class="plan-form-err" id="rptPayErr" hidden></p>
       </section>`;
   }
 
@@ -557,55 +748,6 @@ export function createReportInsights({ getBase, onChange }) {
         }
       };
     }
-    const payAdd = root.querySelector('#rptPayAdd');
-    if (payAdd) {
-      payAdd.onclick = async () => {
-        const err = root.querySelector('#rptPayErr');
-        const v = validateLoosePayment({
-          amount: root.querySelector('#rptPayAmount').value,
-          paid_on: root.querySelector('#rptPayDate').value,
-          reference: root.querySelector('#rptPayRef').value,
-          notes: root.querySelector('#rptPayNotes').value,
-        });
-        if (!v.ok) {
-          err.textContent = Object.values(v.errors)[0];
-          err.hidden = false;
-          return;
-        }
-        payAdd.disabled = true;
-        try {
-          const saved = await createLoosePayment(getBase().eventId, v.value);
-          state.payments.push(saved || v.value);
-          state.payments.sort((a, b) => String(a.paid_on).localeCompare(String(b.paid_on)));
-          onChange();
-          toast(v.value.amount < 0 ? 'Refund recorded' : 'Payment recorded');
-        } catch (e2) {
-          payAdd.disabled = false;
-          err.textContent = e2.message || 'Could not record payment';
-          err.hidden = false;
-        }
-      };
-    }
-    root.querySelectorAll('[data-loose-del]').forEach((btn) => {
-      btn.onclick = async () => {
-        const p = state.payments.find((x) => x.id === btn.dataset.looseDel);
-        if (!p) return;
-        const ok = await confirmDialog({
-          title: 'Delete payment',
-          message: `Delete the ${fmtMoney(p.amount)} payment${p.reference ? ` (${p.reference})` : ''}? The deletion is kept in the audit log.`,
-          confirmLabel: 'Delete',
-          danger: true,
-        });
-        if (!ok) return;
-        try {
-          await deleteLoosePayment(p.id);
-          state.payments = state.payments.filter((x) => x !== p);
-          onChange();
-        } catch (err) {
-          toast(err.message || 'Delete failed', true);
-        }
-      };
-    });
   }
 
   // ---------- exports -----------------------------------------------
@@ -690,9 +832,8 @@ export function createReportInsights({ getBase, onChange }) {
     ctx.continuationNote = b.event?.name || '';
     ctx.header({ meta: [b.event?.name, `Issued  ${formatDocDate(new Date())}`] });
     ctx.kpis([
+      { label: 'Loose at close', value: fmtMoney(totals.looseValue) },
       { label: 'Above allowance', value: fmtMoney(totals.chargeable) },
-      { label: 'Paid', value: fmtMoney(totals.paid) },
-      { label: 'Outstanding', value: fmtMoney(totals.outstanding) },
     ]);
     ctx.sectionTitle('Loose stock above allowance');
     const charged = groups.filter((g) => g.excessUnits > 0);
@@ -702,14 +843,7 @@ export function createReportInsights({ getBase, onChange }) {
         ? charged.map((g, i) => ({ cells: [g.label, fmtNum(g.looseUnits, 2), fmtNum(g.allowance, 2), fmtNum(g.excessUnits, 2), fmtMoney(g.excessValue)], band: i % 2 === 1 }))
         : [['Nothing above allowance', '', '', '', '']],
     );
-    if (state.payments.length) {
-      ctx.sectionTitle('Payments received');
-      ctx.table(
-        [{ label: 'Date', width: 22 }, { label: 'Reference', width: 56 }, { label: 'Amount', width: 22, align: 'right' }],
-        state.payments.map((p, i) => ({ cells: [formatDocDate(p.paid_on), p.reference || '—', fmtMoney(p.amount)], band: i % 2 === 1 })),
-      );
-    }
-    ctx.totals([['Chargeable', fmtMoney(totals.chargeable)], ['Paid', fmtMoney(totals.paid)], ['Outstanding', fmtMoney(totals.outstanding), true]]);
+    ctx.totals([['Chargeable', fmtMoney(totals.chargeable), true]]);
     ctx.finish(`${fileStem('Loose stock statement')}.pdf`);
   }
 
@@ -724,7 +858,7 @@ export function createReportInsights({ getBase, onChange }) {
     headlines: 'Headline figures for this event from the Square sales import, with GP against target once Recon has costs.',
     sales: 'Sales from the Square import grouped by product, category, location or date — or compare every event.',
     revenue: 'Planned menu forecast (Planning → Menu & GP) against actual sales and recon consumption cost.',
-    loose: 'Loose singles left at close against agreed allowances, and payments received for them.',
+    loose: 'Loose singles left at close against agreed allowances.',
   };
 
   return { ensure, render, bind, exportCsv, exportPdf, locations, lead: (k) => LEADS[k] || '' };

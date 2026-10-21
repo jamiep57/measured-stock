@@ -231,16 +231,18 @@ export function revenueComparison({ lines = [], items = new Map(), products = ne
 export function eventHeadlines({ tillRows = [], comparison = null, topN = 10 }) {
   const totals = salesTotals(tillRows);
   const top = groupSales(tillRows, 'item').slice(0, topN);
+  const categories = groupSales(tillRows, 'category');
   const byLocation = totals.locations.length ? groupSales(tillRows, 'location') : [];
   const byDay = totals.days.length ? groupSales(tillRows, 'date') : [];
   const bestDay = byDay.length ? byDay.reduce((a, b) => (b.net > a.net ? b : a)) : null;
   return {
     totals,
     top,
+    categories,
     byLocation,
     byDay,
     bestDay,
-    topCategory: groupSales(tillRows, 'category')[0] || null,
+    topCategory: categories[0] || null,
     gpPct: comparison?.actual.gpPct ?? null,
     forecastGpPct: comparison?.forecast.gpPct ?? null,
     targetGpPct: comparison?.targetGpPct ?? null,

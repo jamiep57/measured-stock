@@ -102,6 +102,7 @@ describe('revenue & GP', () => {
     expect(h.top.map((t) => t.label)).toEqual(['Hells · Pint', 'Water']);
     expect(h.bestDay.label).toBe('2027-06-05');
     expect(h.topCategory.label).toBe('Draught');
+    expect(h.categories.map((c) => c.label)).toEqual(['Draught', 'Soft']);
     expect(h.targetGpPct).toBe(70);
     expect(h.revenueVsForecastPct).toBeCloseTo(-20, 5);
   });
