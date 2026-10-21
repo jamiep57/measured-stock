@@ -7,13 +7,35 @@
  * SOR exports never carry internal fields.
  */
 
+import { barServesProduct } from '../bar-products.js';
+import { isBoneYard } from './util.js';
 import { drinkKindMeta } from './menu-cocktails.js';
+
+/** Serving bars for a menu, in the same order as distribution. */
+export function servingMenuBars(bars) {
+  return (bars || [])
+    .filter((bar) => bar?.id && !isBoneYard(bar))
+    .slice()
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
+}
+
+/**
+ * Bars that serve a menu line. A bar with no distribution rows serves the
+ * whole catalogue. Recipe drinks have no product, so they stay on every bar.
+ * @returns {object[]|null} null when the event has no serving bars
+ */
+export function barsForMenuLine(line, bars, barProducts) {
+  const serving = servingMenuBars(bars);
+  if (!serving.length) return null;
+  if (!line?.productId) return serving;
+  return serving.filter((bar) => barServesProduct(barProducts, bar.id, line.productId));
+}
 
 export const EXPORT_TYPES = {
   designer: {
     label: 'Designer',
     title: 'Menu copy',
-    fields: ['category', 'menuName', 'productName', 'serve', 'abv', 'price'],
+    fields: ['category', 'menuName', 'productName', 'serve', 'abv', 'bars', 'price'],
     allowInternal: false,
   },
   client: {
@@ -89,13 +111,19 @@ export function serveSizeOf(line) {
  *   rateSource?: 'menu'|'rider'|string,    SOR: menu price, rider agreement, or a scenario id
  *   riderPrices?: Map<string, { price }>,  SOR rider rates for the client account
  *   includeInternal?: boolean,
+ *   bars?: object[],                       designer: event bars (boneyard ignored)
+ *   barProducts?: object[],                designer: distribution menu rows
+ *   barId?: string,                        designer: limit the menu to one bar
  * }} input
- * @returns {{ columns: {key,label,align?,money?}[], groups: {category, rows}[], count, missingRates }}
+ * @returns {{ columns: {key,label,align?,money?}[], groups: {category, rows}[], count, missingRates, barName }}
  */
 export function buildMenuExport(type, input) {
   const spec = EXPORT_TYPES[type];
   if (!spec) throw new Error(`Unknown export type: ${type}`);
   const includeInternal = !!input.includeInternal && spec.allowInternal;
+  const serving = type === 'designer' ? servingMenuBars(input.bars) : [];
+  const scoped = serving.find((bar) => bar.id === input.barId) || null;
+  const showBars = serving.length > 1 && !scoped;
   const scenarios = (input.scenarios || []).filter((s) => (input.scenarioIds || []).includes(s.id));
   const scenarioPrice = (s, line) => {
     const rows = s.scenario_prices || [];
@@ -114,6 +142,9 @@ export function buildMenuExport(type, input) {
 
   const rows = [];
   lines.forEach((l) => {
+    const onBars = serving.length ? barsForMenuLine(l, serving, input.barProducts) : null;
+    if (onBars && scoped && !onBars.some((bar) => bar.id === scoped.id)) return;
+    if (onBars && serving.length === 1 && !onBars.length) return;
     const base = {
       category: l.category || 'Uncategorised',
       menuName: l.menuName || l.name,
@@ -148,14 +179,19 @@ export function buildMenuExport(type, input) {
       costPerServe: round2(l.costPerServe),
       gpPct: l.gpPct == null ? null : Math.round(l.gpPct * 10) / 10,
     };
+    if (showBars) {
+      const names = (onBars || []).map((bar) => bar.name || 'Bar').filter(Boolean);
+      row.bars = names.join(', ') || 'Not on a bar';
+    }
     rows.push(sanitizeRow(type, row, { includeInternal }));
   });
 
   const columns = [];
   if (type === 'designer') {
     columns.push({ key: 'menuName', label: 'Menu name' }, { key: 'productName', label: 'Product' },
-      { key: 'serve', label: 'Serve size' }, { key: 'abv', label: 'ABV' },
-      { key: 'price', label: 'Price', align: 'right', money: true });
+      { key: 'serve', label: 'Serve size' }, { key: 'abv', label: 'ABV' });
+    if (showBars) columns.push({ key: 'bars', label: 'Bars' });
+    columns.push({ key: 'price', label: 'Price', align: 'right', money: true });
   } else if (type === 'client') {
     columns.push({ key: 'menuName', label: 'Product' }, { key: 'serve', label: 'Serve' },
       { key: 'price', label: 'Menu price', align: 'right', money: true });
@@ -182,7 +218,8 @@ export function buildMenuExport(type, input) {
       rows: list.sort((a, b) => String(a.menuName).localeCompare(String(b.menuName))),
     }));
 
-  return { columns, groups, count: rows.length, missingRates, includeInternal };
+  const barName = scoped?.name || (serving.length === 1 ? (serving[0].name || '') : '');
+  return { columns, groups, count: rows.length, missingRates, includeInternal, barName };
 }
 
 /** Cell value for a column (scenario columns read the nested map). */

@@ -51,6 +51,74 @@ describe('serve size', () => {
   });
 });
 
+describe('designer distribution', () => {
+  const bars = [
+    { id: 'b2', name: 'Bar 2' },
+    { id: 'b1', name: 'Bar 1' },
+    { id: 'bone', name: 'Bone yard' },
+  ];
+  const stocked = [
+    { ...lines[0], productId: 'p1' },
+    { ...lines[1], productId: 'p2' },
+    { ...lines[2], productId: 'p3' },
+    { productId: null, kind: 'cocktail', name: 'Paloma', menuName: 'Paloma', category: 'Cocktails', included: true, menuPrice: 10 },
+  ];
+  const barProducts = [
+    { bar_id: 'b1', product_id: 'p1' },
+    { bar_id: 'b1', product_id: 'p2' },
+    { bar_id: 'b2', product_id: 'p2' },
+  ];
+
+  it('shows which bars serve each drink, and leaves a drink off a bar that does not stock it', () => {
+    const m = buildMenuExport('designer', { lines: stocked, bars, barProducts });
+    expect(m.columns.map((c) => c.label)).toEqual(['Menu name', 'Product', 'Serve size', 'ABV', 'Bars', 'Price']);
+    expect(m.barName).toBe('');
+    const byName = Object.fromEntries(m.groups.flatMap((g) => g.rows.map((r) => [r.menuName, r])));
+    expect(byName['Camden Hells'].bars).toBe('Bar 1');
+    expect(byName['Aspall Cider'].bars).toBe('Bar 1, Bar 2');
+    expect(byName['Red Wine'].bars).toBe('Not on a bar');
+    expect(byName.Paloma.bars).toBe('Bar 1, Bar 2');
+    expect(m.groups.flatMap((g) => g.rows).some((r) => String(r.bars).includes('Bone'))).toBe(false);
+  });
+
+  it('scopes the menu to one bar', () => {
+    const m = buildMenuExport('designer', { lines: stocked, bars, barProducts, barId: 'b2' });
+    expect(m.barName).toBe('Bar 2');
+    expect(m.columns.some((c) => c.key === 'bars')).toBe(false);
+    const names = m.groups.flatMap((g) => g.rows.map((r) => r.menuName));
+    expect(names).toEqual(['Paloma', 'Aspall Cider']);
+    expect(m.missingRates).toBe(0);
+  });
+
+  it('treats a bar with no distribution rows as serving every drink', () => {
+    const open = [
+      { id: 'b1', name: 'Bar 1' },
+      { id: 'b2', name: 'Bar 2' },
+    ];
+    const m = buildMenuExport('designer', {
+      lines: stocked,
+      bars: open,
+      barProducts: [{ bar_id: 'b1', product_id: 'p1' }],
+    });
+    const byName = Object.fromEntries(m.groups.flatMap((g) => g.rows.map((r) => [r.menuName, r])));
+    expect(byName['Camden Hells'].bars).toBe('Bar 1, Bar 2');
+    expect(byName['Aspall Cider'].bars).toBe('Bar 2');
+  });
+
+  it('drops a drink the only bar does not serve', () => {
+    const m = buildMenuExport('designer', {
+      lines: stocked,
+      bars: [{ id: 'b1', name: 'Bar 1' }],
+      barProducts: [{ bar_id: 'b1', product_id: 'p1' }],
+    });
+    expect(m.barName).toBe('Bar 1');
+    const names = m.groups.flatMap((g) => g.rows.map((r) => r.menuName));
+    expect(names).toContain('Camden Hells');
+    expect(names).not.toContain('Aspall Cider');
+    expect(names).toContain('Paloma');
+  });
+});
+
 describe('designer export', () => {
   it('lists on-menu items by category with menu names, serve sizes, ABV and prices', () => {
     const withPack = [

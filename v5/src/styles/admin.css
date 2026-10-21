@@ -5989,6 +5989,10 @@ body.admin-drawer-open {
 .reports-menu-options {
   margin-bottom: 4px;
 }
+.reports-bar-switch {
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
 @media (max-width: 720px) {
   .reports-library-head,
   .reports-workspace-main {

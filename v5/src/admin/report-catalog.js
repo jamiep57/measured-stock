@@ -170,7 +170,7 @@ export const REPORT_CATALOG = [
     group: 'Menus',
     icon: 'book-open',
     title: 'Designer menu',
-    description: 'Menu copy with names, serve sizes, ABV and prices.',
+    description: 'Menu copy with names, serve sizes, ABV and prices, and which bars serve each drink.',
     formats: ['pdf', 'xlsx', 'csv'],
     feature: 'planning.menu_gp',
     filters: false,

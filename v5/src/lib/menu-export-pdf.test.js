@@ -22,6 +22,18 @@ describe('composeMenuEntry', () => {
     expect(composeMenuEntry('designer', rows['House Red'], model.columns).lines).toEqual(['175ml']);
   });
 
+  it('adds the bars a drink is served on', () => {
+    const model = buildMenuExport('designer', {
+      lines,
+      bars: [{ id: 'b1', name: 'Bar 1' }, { id: 'b2', name: 'Bar 2' }],
+      barProducts: [{ bar_id: 'b1', product_id: 'p1' }, { bar_id: 'b2', product_id: 'p2' }],
+    });
+    const hells = model.groups.flatMap((g) => g.rows).find((r) => r.menuName === 'Camden Hells');
+    expect(composeMenuEntry('designer', hells, model.columns).lines).toEqual([
+      'Camden Hells 50L   ·   Pint   ·   4.6% ABV   ·   Bar 1',
+    ]);
+  });
+
   it('keeps a schedule of rates to name, unit and rate', () => {
     const model = buildMenuExport('sor', { lines });
     const hells = model.groups[0].rows.find((r) => r.menuName === 'Camden Hells');

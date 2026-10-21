@@ -48,7 +48,7 @@ export async function commitMenuExport({
   }
 
   const spec = EXPORT_TYPES[type];
-  const stem = exportFileStem(type, event?.name);
+  const stem = exportFileStem(type, [event?.name, model.barName].filter(Boolean).join(' '));
   if (format === 'csv') {
     downloadBlob(`${stem}.csv`, menuExportCsv(model), 'text/csv;charset=utf-8');
   } else if (format === 'xlsx') {
@@ -57,7 +57,7 @@ export async function commitMenuExport({
     const bytes = buildMenuExportXlsx({
       model,
       title: `${spec.title} — ${event?.name || 'Event'}`,
-      meta: [`Prices in GBP inc VAT ${vatPct}%`],
+      meta: [model.barName || '', `Prices in GBP inc VAT ${vatPct}%`].filter(Boolean),
       notes: model.includeInternal ? ['INTERNAL — contains costs and GP. Not for distribution.'] : [],
       sheetName: spec.label,
       orientation: type === 'designer' ? 'landscape' : 'portrait',

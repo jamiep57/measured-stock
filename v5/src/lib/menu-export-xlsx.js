@@ -114,9 +114,13 @@ export function buildMenuExportXlsx({ model, title, meta = [], notes = [], sheet
     r += 1;
   });
 
-  const widths = cols.map((c) => (
-    c.key === 'menuName' || c.key === 'productName' ? 36 : c.key === 'serve' ? 16 : c.key === 'abv' ? 12 : 14
-  ));
+  const widths = cols.map((c) => {
+    if (c.key === 'menuName' || c.key === 'productName') return 36;
+    if (c.key === 'bars') return 28;
+    if (c.key === 'serve') return 16;
+    if (c.key === 'abv') return 12;
+    return 14;
+  });
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${headRow}" topLeftCell="A${headRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>

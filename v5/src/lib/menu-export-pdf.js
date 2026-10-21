@@ -48,10 +48,12 @@ export function composeMenuEntry(type, row, columns = []) {
 
   if (type === 'designer') {
     const product = String(row.productName || '').trim();
+    const showBars = columns.some((col) => col.key === 'bars');
     lines.push(joinBits([
       product && product !== row.menuName ? product : '',
       serve,
       row.abv && row.abv !== '—' ? `${row.abv} ABV` : '',
+      showBars ? String(row.bars || '').trim() : '',
     ]));
     return { name: row.menuName || '', price, unit: '', lines: lines.filter(Boolean) };
   }
@@ -124,7 +126,7 @@ export async function generateMenuExportPDF({
 
   // Designer menu copy is the event name and the list. Venue, dates and
   // the VAT line stay on the client pack and the schedule of rates.
-  const meta = type === 'designer' ? [] : [
+  const meta = type === 'designer' ? [model.barName || ''].filter(Boolean) : [
     client?.name && type !== 'sor' ? `For ${client.name}` : '',
     event?.venue || '',
     eventDates(event) || '',

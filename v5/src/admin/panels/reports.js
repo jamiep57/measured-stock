@@ -37,7 +37,7 @@ import { isOrgAdmin } from '../../lib/organisations.js';
 import { resolveMenuLine } from '../../lib/planning-menu.js';
 import { baseMenuItem, groupMenuItems } from '../../lib/menu-serves.js';
 import { resolveCocktailLine } from '../../lib/menu-cocktails.js';
-import { cellValue, formatCell, buildMenuExport } from '../../lib/menu-exports.js';
+import { cellValue, formatCell, buildMenuExport, servingMenuBars } from '../../lib/menu-exports.js';
 import { commitMenuExport } from '../planning-export.js';
 import { listPurchaseOrders } from '../../lib/orders-data.js';
 import { generatePurchaseOrderPDF } from '../../lib/purchase-order-pdf.js';
@@ -167,6 +167,7 @@ export function mountReportsPanel(route) {
     menuVatRate: 0.2,
     menuLoaded: false,
     menuLoading: false,
+    menuBarId: '',
     libraryLoaded: false,
   };
 
@@ -816,13 +817,23 @@ export function mountReportsPanel(route) {
     return 'designer';
   }
 
+  function menuBars() {
+    return servingMenuBars(ctx.event?.bars);
+  }
+
   function menuModel() {
+    const designer = menuExportType() === 'designer';
+    const bars = designer ? menuBars() : [];
+    const barId = bars.some((bar) => bar.id === ctx.menuBarId) ? ctx.menuBarId : '';
     return buildMenuExport(menuExportType(), {
       lines: ctx.menuLines,
       scenarios: ctx.menuScenarios,
       scenarioIds: ctx.menuScenarioIds,
       rateSource: ctx.rateSource || 'menu',
       includeInternal: !!ctx.includeInternal && isOrgAdmin() && menuExportType() === 'client',
+      bars,
+      barProducts: designer ? (ctx.event?.bar_products || []) : [],
+      barId,
     });
   }
 
@@ -981,6 +992,21 @@ export function mountReportsPanel(route) {
     return `<div class="reports-menu-options">${checks || '<span class="muted">No pricing scenarios on this event.</span>'}${internal}</div>`;
   }
 
+  function renderBarSwitch() {
+    if (menuExportType() !== 'designer') return '';
+    const bars = menuBars();
+    if (bars.length < 2) return '';
+    const current = bars.some((bar) => bar.id === ctx.menuBarId) ? ctx.menuBarId : '';
+    const button = (id, label) => {
+      const on = current === id;
+      return `<button type="button" data-menu-bar="${escapeHtml(id)}" aria-pressed="${on ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
+    };
+    return `<div class="sq-seg reports-bar-switch" role="group" aria-label="Bar">
+      ${button('', 'All bars')}
+      ${bars.map((bar) => button(bar.id, bar.name || 'Bar')).join('')}
+    </div>`;
+  }
+
   function renderMenuBody() {
     if (!ctx.menuLoaded) return loadingWidget('Loading menu…');
     const model = menuModel();
@@ -997,10 +1023,17 @@ export function mountReportsPanel(route) {
     const note = model.missingRates
       ? `<p class="muted">${model.missingRates} item${model.missingRates === 1 ? '' : 's'} ${menuExportType() === 'sor' ? 'left off — no rate' : 'without a menu price'}.</p>`
       : '';
-    return `${renderMenuOptions()}${note}${renderDataTable({ columns, rows }, {
-      title: 'Nothing on the menu',
-      copy: 'Add products on Menu & GP before exporting.',
-    })}`;
+    const barName = model.barName;
+    const empty = barName && menuBars().length > 1
+      ? {
+        title: `Nothing on ${barName}`,
+        copy: `${barName} has no drinks on its distribution menu.`,
+      }
+      : {
+        title: 'Nothing on the menu',
+        copy: 'Add products on Menu & GP before exporting.',
+      };
+    return `${renderBarSwitch()}${renderMenuOptions()}${note}${renderDataTable({ columns, rows }, empty)}`;
   }
 
   function renderRegisterBody() {
@@ -1078,6 +1111,12 @@ export function mountReportsPanel(route) {
         runExport(btn.dataset.reportAction, btn.dataset.reportRecord || '').catch((err) => {
           toast(err.message || 'Export failed', true);
         });
+      };
+    });
+    root.querySelectorAll('[data-menu-bar]').forEach((btn) => {
+      btn.onclick = () => {
+        ctx.menuBarId = btn.dataset.menuBar || '';
+        paint();
       };
     });
     root.querySelectorAll('[data-menu-scenario]').forEach((box) => {
