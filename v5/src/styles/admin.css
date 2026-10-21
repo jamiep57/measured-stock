@@ -6149,6 +6149,10 @@ body.admin-drawer-open {
 .reports-line-name {
   padding-left: 1.25rem;
 }
+.reports-table .reports-line-row td.reports-line-name {
+  color: var(--foreground);
+  font-size: 13px;
+}
 .reports-miss {
   color: #b45309;
   font-weight: 600;

@@ -366,6 +366,16 @@ export function transferEnds(transfer, event, warehouses) {
 /**
  * @param {{ transfers: object[], event: object, warehouses?: object[], dateFrom?: string, dateTo?: string, names?: Map }} input
  */
+function transferLineCells(line, event, names) {
+  return {
+    when: '',
+    from: '',
+    to: '',
+    lines: productName(event, line?.product_id, names),
+    qty: qtyLabel(line ? [line] : []),
+  };
+}
+
 export function buildTransferRegister({
   transfers = [], event, warehouses = [], dateFrom = '', dateTo = '', names,
 } = {}) {
@@ -376,25 +386,46 @@ export function buildTransferRegister({
     { key: 'lines', label: 'Products' },
     { key: 'qty', label: 'Quantity' },
   ];
+  const csvRows = [];
   const rows = (transfers || [])
     .filter((t) => inReportDateRange(t.transferred_at, dateFrom, dateTo))
     .slice()
     .sort((a, b) => new Date(b.transferred_at || 0) - new Date(a.transferred_at || 0))
     .map((t) => {
       const ends = transferEnds(t, event, warehouses);
+      const lines = t.lines || [];
+      const when = formatReportWhen(t.transferred_at);
+      const many = lines.length > 1;
+      const listed = lines.length ? lines : [null];
+      listed.forEach((line) => {
+        csvRows.push({
+          cells: {
+            when,
+            from: ends.from,
+            to: ends.to,
+            lines: line ? productName(event, line.product_id, names) : '',
+            qty: line ? qtyLabel([line]) : '',
+          },
+        });
+      });
       return {
         id: t.id,
-        action: (t.lines || []).length ? 'delivery-note' : '',
+        action: lines.length ? 'delivery-note' : '',
         cells: {
-          when: formatReportWhen(t.transferred_at),
+          when,
           from: ends.from,
           to: ends.to,
-          lines: (t.lines || []).map((l) => productName(event, l.product_id, names)).join(', '),
-          qty: qtyLabel(t.lines),
+          lines: many
+            ? `${lines.length} products`
+            : (lines[0] ? productName(event, lines[0].product_id, names) : ''),
+          qty: qtyLabel(lines),
         },
+        details: many ? lines.map((line) => ({ cells: transferLineCells(line, event, names) })) : [],
       };
     });
-  return finish(columns, rows);
+  const model = finish(columns, rows);
+  model.csv = tableCsv(columns, csvRows);
+  return model;
 }
 
 /**

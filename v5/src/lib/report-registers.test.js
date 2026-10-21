@@ -256,6 +256,33 @@ describe('report registers', () => {
     expect(report.rows[0].cells.from).toBe('Main bar');
     expect(report.rows[0].cells.to).toBe('Artist Liaison');
     expect(report.rows[0].cells.lines).toBe('Lager');
+    expect(report.rows[0].details).toEqual([]);
+  });
+
+  it('lists each product on a multi-line transfer separately', () => {
+    const report = buildTransferRegister({
+      event,
+      transfers: [{
+        id: 't1',
+        transferred_at: '2026-06-07T15:00:00.000Z',
+        from_bar_id: 'bar-1',
+        recipient_id: 'rec-1',
+        lines: [
+          { product_id: 'p1', qty: 2 },
+          { product_id: 'p2', qty: 1, singles: 4 },
+        ],
+      }],
+    });
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0].cells.lines).toBe('2 products');
+    expect(report.rows[0].cells.qty).toBe('3 cases, 4 singles');
+    expect(report.rows[0].details.map((detail) => detail.cells)).toEqual([
+      { when: '', from: '', to: '', lines: 'Lager', qty: '2 cases' },
+      { when: '', from: '', to: '', lines: 'Cola', qty: '1 cases, 4 singles' },
+    ]);
+    expect(report.csv).toContain('Lager');
+    expect(report.csv).toContain('Cola');
+    expect(report.csv).not.toContain('Lager, Cola');
   });
 
   it('lists closing counts and offers a sticker when cases were counted', () => {

@@ -135,7 +135,12 @@ export function renderDataTable(model, empty) {
               <tr>
                 ${columns.map((col) => tableCell(col, row.cells?.[col.key])).join('')}
                 ${row.action ? `<td class="reports-row-action"><button type="button" class="topbar-tool topbar-tool--label" data-report-action="${escapeHtml(row.action)}" data-report-record="${escapeHtml(row.id || '')}">${escapeHtml(actionLabel(row.action))}</button></td>` : (hasAction ? '<td></td>' : '')}
-              </tr>`).join('')}
+              </tr>
+              ${(row.details || []).map((detail) => `
+                <tr class="reports-line-row">
+                  ${columns.map((col) => tableCell(col, detail.cells?.[col.key], true, col.key === 'lines')).join('')}
+                  ${hasAction ? '<td></td>' : ''}
+                </tr>`).join('')}`).join('')}
           </tbody>
           ${model.footer ? `
             <tfoot>
@@ -149,12 +154,16 @@ export function renderDataTable(model, empty) {
     </section>`;
 }
 
-function tableCell(col, value, footer = false) {
+function tableCell(col, value, blankEmpty = false, indent = false) {
   const empty = value == null || value === '';
-  const cls = [col.num ? 'num' : '', col.money ? 'reports-cost' : ''].filter(Boolean).join(' ');
+  const cls = [
+    col.num ? 'num' : '',
+    col.money ? 'reports-cost' : '',
+    indent ? 'reports-line-name' : '',
+  ].filter(Boolean).join(' ');
   const attr = cls ? ` class="${cls}"` : '';
   if (empty) {
-    return footer ? `<td${attr}></td>` : `<td${attr}><span class="muted">—</span></td>`;
+    return blankEmpty ? `<td${attr}></td>` : `<td${attr}><span class="muted">—</span></td>`;
   }
   return `<td${attr}>${escapeHtml(String(value))}</td>`;
 }
