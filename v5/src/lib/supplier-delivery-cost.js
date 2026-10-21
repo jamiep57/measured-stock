@@ -1,6 +1,6 @@
 /**
- * Supplier delivery cost report — price each delivery line from the delivery's
- * supplier offer (or event override), then roll up totals.
+ * Cost price by supplier — price each delivery line from the delivery's
+ * supplier offer (or event override), then roll up totals and case prices.
  */
 
 import { findOfferForSupplier, productStockPack } from '../pack-metrics.js';
@@ -119,6 +119,27 @@ function supplierLabel(delivery, suppliers) {
   return hit?.name || 'Unknown supplier';
 }
 
+function addSupplierProduct(agg, line) {
+  const priceKey = line.missingPrice ? 'missing' : `${line.priceBasis}:${line.unitPrice}`;
+  const key = `${line.productId || line.productName}|${priceKey}`;
+  if (!agg.products.has(key)) {
+    agg.products.set(key, {
+      productId: line.productId,
+      productName: line.productName,
+      qty: 0,
+      cost: 0,
+      unitPrice: line.missingPrice ? null : line.unitPrice,
+      missingPrice: !!line.missingPrice,
+      priceBasis: line.priceBasis,
+      lineCount: 0,
+    });
+  }
+  const product = agg.products.get(key);
+  product.qty += line.qty;
+  product.cost += line.cost;
+  product.lineCount += 1;
+}
+
 function inDateRange(iso, dateFrom, dateTo) {
   if (!dateFrom && !dateTo) return true;
   if (!iso) return false;
@@ -214,6 +235,7 @@ export function buildSupplierDeliveryCostReport({
         qty: 0,
         cost: 0,
         missingPriceCount: 0,
+        products: new Map(),
       });
     }
     const agg = bySupplier.get(key);
@@ -222,6 +244,12 @@ export function buildSupplierDeliveryCostReport({
     agg.qty += qty;
     agg.cost += cost;
     agg.missingPriceCount += missing;
+    for (const line of lineCosts) addSupplierProduct(agg, line);
+  }
+
+  for (const agg of bySupplier.values()) {
+    agg.products = [...agg.products.values()].sort((a, b) => a.productName.localeCompare(b.productName)
+      || b.cost - a.cost);
   }
 
   const supplierRows = [...bySupplier.values()].sort((a, b) => b.cost - a.cost
@@ -252,7 +280,7 @@ export function supplierDeliveryCostCsv(report, eventName = 'event') {
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const headers = [
-    'Date', 'Supplier', 'Reference', 'Product', 'Qty', 'Unit price', 'Cost', 'Price basis', 'Missing price',
+    'Date', 'Supplier', 'Reference', 'Product', 'Qty', 'Case price', 'Cost', 'Price basis', 'Missing price',
   ];
   const lines = [headers.map(esc).join(',')];
   for (const d of report.deliveryRows || []) {
@@ -279,7 +307,7 @@ export function supplierDeliveryCostCsv(report, eventName = 'event') {
 
   const safeName = String(eventName || 'event').replace(/[^\w\s.-]/g, '').trim() || 'event';
   return {
-    filename: `${safeName} Supplier delivery cost.csv`,
+    filename: `${safeName} Cost price by supplier.csv`,
     content: lines.join('\r\n'),
   };
 }

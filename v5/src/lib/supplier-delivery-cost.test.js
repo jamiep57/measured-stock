@@ -121,6 +121,16 @@ describe('buildSupplierDeliveryCostReport', () => {
     expect(report.totalCost).toBe(5 * 24 + 2 * 22);
     expect(report.supplierRows[0].supplierName).toBe('Acme');
     expect(report.supplierRows[0].cost).toBe(120);
+    expect(report.supplierRows[0].products).toEqual([
+      expect.objectContaining({
+        productName: 'Test Lager',
+        qty: 5,
+        unitPrice: 24,
+        cost: 120,
+        priceBasis: 'case',
+        missingPrice: false,
+      }),
+    ]);
   });
 
   it('filters by supplier and date', () => {
@@ -154,7 +164,8 @@ describe('supplierDeliveryCostCsv', () => {
         }],
       }],
     }, 'Gullies Fest');
-    expect(filename).toContain('Supplier delivery cost');
+    expect(filename).toContain('Cost price by supplier');
+    expect(content).toContain('Case price');
     expect(content).toContain('TOTAL');
     expect(content).toContain('100.00');
   });

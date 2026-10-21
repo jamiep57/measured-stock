@@ -82,6 +82,15 @@ function fmtCost(n) {
   return `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function casePriceCell(line) {
+  if (!line || line.missingPrice || line.unitPrice == null || !Number.isFinite(line.unitPrice)) {
+    return '<span class="reports-miss">No price</span>';
+  }
+  const money = escapeHtml(fmtCost(line.unitPrice));
+  if (line.priceBasis === 'unit') return `${money} <span class="muted">/ unit</span>`;
+  return money;
+}
+
 const PRICING_STORAGE_PREFIX = 'v5ClientReportPricing:';
 
 function emptyPricing() {
@@ -484,6 +493,7 @@ export function mountReportsPanel(route) {
               <th class="num">Deliveries</th>
               <th class="num">Lines</th>
               <th class="num">Qty</th>
+              <th class="num">Case price</th>
               <th class="num">Cost</th>
             </tr>
           </thead>
@@ -494,8 +504,22 @@ export function mountReportsPanel(route) {
                 <td class="num">${r.deliveryCount}</td>
                 <td class="num">${r.lineCount}</td>
                 <td class="num">${escapeHtml(fmtQty(r.qty))}</td>
+                <td class="num muted">—</td>
                 <td class="num reports-cost">${escapeHtml(fmtCost(r.cost))}</td>
-              </tr>`).join('')}
+              </tr>
+              ${(r.products || []).map((p) => `
+                <tr class="reports-line-row">
+                  <td class="reports-line-name">${escapeHtml(p.productName)}</td>
+                  <td class="num"></td>
+                  <td class="num">${p.lineCount}</td>
+                  <td class="num">${escapeHtml(fmtQty(p.qty))}</td>
+                  <td class="num">${casePriceCell(p)}</td>
+                  <td class="num">${
+                    p.missingPrice
+                      ? '<span class="muted">—</span>'
+                      : escapeHtml(fmtCost(p.cost))
+                  }</td>
+                </tr>`).join('')}`).join('')}
           </tbody>
           <tfoot>
             <tr class="reports-total-row">
@@ -503,6 +527,7 @@ export function mountReportsPanel(route) {
               <td class="num">${report.deliveryCount}</td>
               <td class="num">${report.lineCount}</td>
               <td class="num">${escapeHtml(fmtQty(report.totalQty))}</td>
+              <td class="num"></td>
               <td class="num reports-cost">${escapeHtml(fmtCost(report.totalCost))}</td>
             </tr>
           </tfoot>
@@ -529,6 +554,7 @@ export function mountReportsPanel(route) {
               <th>Reference</th>
               <th class="num">Lines</th>
               <th class="num">Qty</th>
+              <th class="num">Case price</th>
               <th class="num">Cost</th>
             </tr>
           </thead>
@@ -540,6 +566,7 @@ export function mountReportsPanel(route) {
                 <td>${d.reference ? escapeHtml(d.reference) : '<span class="muted">—</span>'}</td>
                 <td class="num">${d.lineCount}</td>
                 <td class="num">${escapeHtml(fmtQty(d.qty))}</td>
+                <td class="num muted">—</td>
                 <td class="num reports-cost">${escapeHtml(fmtCost(d.cost))}${
                   d.missingPriceCount
                     ? ` <span class="reports-miss muted" title="Lines missing price">(${d.missingPriceCount})</span>`
@@ -550,11 +577,12 @@ export function mountReportsPanel(route) {
                 <tr class="reports-line-row">
                   <td></td>
                   <td colspan="2" class="reports-line-name">${escapeHtml(l.productName)}</td>
-                  <td class="num muted">${escapeHtml(l.priceBasis)}</td>
+                  <td class="num"></td>
                   <td class="num">${escapeHtml(fmtQty(l.qty))}</td>
+                  <td class="num">${casePriceCell(l)}</td>
                   <td class="num">${
                     l.missingPrice
-                      ? '<span class="reports-miss">No price</span>'
+                      ? '<span class="muted">—</span>'
                       : escapeHtml(fmtCost(l.cost))
                   }</td>
                 </tr>`).join('')}
@@ -565,6 +593,7 @@ export function mountReportsPanel(route) {
               <td colspan="3">Total</td>
               <td class="num">${report.lineCount}</td>
               <td class="num">${escapeHtml(fmtQty(report.totalQty))}</td>
+              <td class="num"></td>
               <td class="num reports-cost">${escapeHtml(fmtCost(report.totalCost))}</td>
             </tr>
           </tfoot>

@@ -220,12 +220,12 @@ export async function renderPanel(route, state) {
       ],
       reports: [
         'Transfers by client with cost summary.',
-        'Supplier delivery cost totals.',
+        'Cost price by supplier, with the case price on each product.',
         'Filter by client/supplier and date.',
       ],
       summary: [
         'Transfers by client with cost summary.',
-        'Supplier delivery cost totals.',
+        'Cost price by supplier, with the case price on each product.',
         'Filter by client/supplier and date.',
       ],
     };

@@ -384,7 +384,7 @@ export function varianceClass(consumption, plu, variance) {
 /**
  * Aggregate this event's delivery lines (and supplier returns) for a product
  * by supplier. Prices come from each delivery's supplier offer (or event
- * override), same as the supplier delivery cost report.
+ * override), same as the cost price by supplier report.
  *
  * When returns exist only as closing_stock.return_amount (no
  * supplier_return_lines), fallbackReturned is attributed to the product's
