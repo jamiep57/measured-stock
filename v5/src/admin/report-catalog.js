@@ -70,6 +70,7 @@ export const REPORT_CATALOG = [
     icon: 'users',
     title: 'Transfers by client',
     description: 'What went to each client, with invoice prices and a hidden markup.',
+    ready: true,
     formats: ['csv', 'invoice'],
     feature: null,
     filters: true,
