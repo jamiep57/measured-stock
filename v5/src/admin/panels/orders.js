@@ -544,7 +544,7 @@ export function mountOrdersPanel(route) {
       const title = q ? 'No matching orders' : 'No purchase orders yet';
       const copy = q
         ? 'Nothing in this list matches that search.'
-        : 'Generate orders for every shortfall, or start a new order.';
+        : 'Start a new order, or raise one from a short row on Purchase orders.';
       return `<div class="ord-ledger-empty">
         <p class="ord-ledger-empty-title">${title}</p>
         <p class="ord-ledger-empty-copy">${copy}</p>
@@ -1636,62 +1636,6 @@ export function mountOrdersPanel(route) {
 
   // ---------- toolbar ------------------------------------------------
 
-  async function generateOrders() {
-    if (locked()) { toast('Orders are locked for this event', true); return; }
-    await flushSaves();
-    const { orders, unassigned } = draftOrdersFromShortfalls(ctx.rows, ctx.productById);
-    if (!orders.length && !unassigned.length) {
-      toast('Nothing to order — confirmed and pending orders cover the plan');
-      return;
-    }
-    const summary = orders.map((o) => {
-      const sup = ctx.supplierById.get(o.supplierId);
-      const cases = o.lines.reduce((s, l) => s + l.qty_cases, 0);
-      return `<li><strong>${escapeHtml(sup?.name || 'Supplier')}</strong> — ${o.lines.length} product${o.lines.length === 1 ? '' : 's'}, ${cases} cases</li>`;
-    }).join('');
-    const missing = unassigned.length
-      ? `<p class="muted">${unassigned.length} product${unassigned.length === 1 ? ' has' : 's have'} no supplier and will be skipped: ${escapeHtml(unassigned.slice(0, 6).map((u) => ctx.productById.get(u.productId)?.name || '?').join(', '))}${unassigned.length > 6 ? '…' : ''}</p>`
-      : '';
-    const el = openModal({
-      title: 'Generate draft orders',
-      bodyHtml: `
-        <p class="admin-modal-confirm-msg">Creates one draft purchase order per preferred supplier for the cases still needed after confirmed and pending orders. Review and send each draft — nothing is ordered or added to stock yet.</p>
-        ${orders.length ? `<ul class="ord-gen-list">${summary}</ul>` : ''}
-        ${missing}`,
-      footHtml: `
-        <div class="admin-modal-confirm-foot">
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
-          <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok ${orders.length ? '' : 'disabled'}>Create ${orders.length} draft${orders.length === 1 ? '' : 's'}</button>
-        </div>`,
-    });
-    el.querySelector('[data-cancel]').onclick = closeModal;
-    el.querySelector('[data-ok]').onclick = async () => {
-      el.querySelector('[data-ok]').disabled = true;
-      let made = 0;
-      try {
-        for (const o of orders) {
-          const po = await createPurchaseOrder({
-            event_id: ctx.eventId,
-            supplier_id: o.supplierId,
-            status: 'draft',
-            order_date: today(),
-            delivery_date: ctx.event?.start_date || null,
-          });
-          await savePurchaseOrderLines(po.id, o.lines, []);
-          made += 1;
-        }
-        closeModal();
-        await reloadOrders();
-        setTab('ledger');
-        toast(`${made} draft order${made === 1 ? '' : 's'} created`);
-      } catch (e2) {
-        closeModal();
-        await reloadOrders();
-        toast(`${made} created — ${e2.message || 'generation failed'}`, true);
-      }
-    };
-  }
-
   async function keepThisMix() {
     if (locked() || !showKeepMix()) return;
     const updates = keepMixServes(forecastLines(), ctx.anchorTarget, ctx.target);
@@ -1944,7 +1888,6 @@ export function mountOrdersPanel(route) {
   function onToolbarAction(e) {
     const action = e.detail?.action;
     const handlers = {
-      'orders-generate': generateOrders,
       'orders-new': () => {
         if (locked()) { toast('Orders are locked for this event', true); return; }
         void openOrder(null);

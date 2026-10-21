@@ -131,17 +131,11 @@ export const PANEL_TOOLBAR = {
       label: 'Orders',
       items: [
         {
-          id: 'orders-generate',
-          icon: 'sparkles',
-          label: 'Generate orders',
-          title: 'Draft one purchase order per supplier for the cases still needed',
-          primary: true,
-        },
-        {
           id: 'orders-new',
           icon: 'plus',
           label: 'New order',
           title: 'Create a purchase order',
+          primary: true,
         },
       ],
     },

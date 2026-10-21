@@ -163,24 +163,12 @@ export function planEventSteps() {
       ensure: true,
       route: { view: 'event', panel: 'orders' },
       destination: eventRoute('orders'),
-      body: 'This grid compares the cases you need with what you have already ordered. Short rows still need a purchase order.',
+      body: 'This grid compares the cases you need with what you have already ordered. Short rows still need a purchase order. New order in the top bar starts a blank one.',
       ready: () => !!shown(document.querySelector('[data-ord-tab="orders"]')),
       prepare: () => selectOrdersTab('orders'),
       target() {
         return shown(document.getElementById('ordGrid'))
           || shown(document.querySelector('[data-ord-tab="orders"]'));
-      },
-    },
-    {
-      id: 'generate',
-      feature: 'planning.orders',
-      title: 'Draft the purchase orders',
-      ensure: true,
-      route: { view: 'event', panel: 'orders' },
-      destination: eventRoute('orders'),
-      body: 'Generate orders drafts one purchase order per supplier for the cases still short. New order starts a blank one. Nothing is created until you click it yourself.',
-      target() {
-        return shown(document.querySelector('[data-toolbar-action="orders-generate"]'));
       },
     },
     {

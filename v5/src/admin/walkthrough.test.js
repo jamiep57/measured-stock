@@ -34,7 +34,6 @@ describe('plan-event tour', () => {
       'orders-nav',
       'projections',
       'shortfalls',
-      'generate',
       'ledger',
     ]);
   });
