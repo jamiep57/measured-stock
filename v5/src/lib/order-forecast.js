@@ -351,9 +351,76 @@ export function groupSalesItems(tillRows) {
     .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name) || a.variation.localeCompare(b.variation));
 }
 
+const GENERIC_SALE_TOKENS = new Set([
+  'lager', 'beer', 'ale', 'ipa', 'pale', 'cider', 'wine', 'gin', 'vodka', 'rum',
+  'whisky', 'whiskey', 'cola', 'soda', 'water', 'juice', 'mixer', 'spirit',
+  'cocktail', 'shot', 'sour', 'tonic', 'lemonade', 'stout', 'pilsner', 'pils',
+]);
+
+const SERVE_SALE_TOKENS = new Set([
+  'pint', 'half', 'single', 'double', 'regular', 'can', 'cans', 'bottle', 'bottles',
+  'nrb', 'ml', 'cl', 'shot', 'keg', 'case',
+]);
+
+function saleTokens(value) {
+  return normName(value)
+    .replace(/×/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((word) => word.length > 1 && !/^\d+$/.test(word) && !SERVE_SALE_TOKENS.has(word));
+}
+
+function lineGroupId(line) {
+  return line.kind === 'cocktail' ? `cocktail:${line.key}` : (line.productId || line.key);
+}
+
+/**
+ * Best menu product for a sales name that is not an exact or prefix match.
+ * A generic word such as lager only wins when one product on the menu has it.
+ * Two close scores stay blank.
+ */
+function guessSaleLine(item, lines) {
+  const variation = normName(item?.variation) && normName(item?.variation) !== 'regular' ? item.variation : '';
+  const want = [...new Set(saleTokens(`${item?.name || ''} ${variation}`))];
+  if (!want.length) return null;
+  const groups = new Map();
+  (lines || []).filter((line) => line.included !== false).forEach((line) => {
+    const id = lineGroupId(line);
+    const group = groups.get(id) || { lines: [] };
+    group.lines.push(line);
+    if (!group.have) {
+      group.have = new Set(saleTokens(`${line.productName || ''} ${line.menuName || ''} ${line.name || ''}`));
+    }
+    groups.set(id, group);
+  });
+  const ranked = [];
+  groups.forEach((group) => {
+    const overlap = want.filter((token) => group.have.has(token));
+    if (!overlap.length) return;
+    const distinctive = overlap.filter((token) => !GENERIC_SALE_TOKENS.has(token));
+    ranked.push({
+      lines: group.lines,
+      score: (overlap.length / want.length) + (distinctive.length ? 0.2 : 0),
+      distinctive: distinctive.length,
+    });
+  });
+  ranked.sort((a, b) => b.score - a.score || b.distinctive - a.distinctive);
+  const best = ranked[0];
+  if (!best) return null;
+  const second = ranked[1];
+  if (!best.distinctive) {
+    if (second || best.score < 0.3) return null;
+  } else if (best.score < 0.45 || (second?.distinctive && best.score - second.score < 0.2)) {
+    return null;
+  }
+  if (best.lines[0]?.kind === 'cocktail') return best.lines[0];
+  return pickSize(best.lines, item?.variation);
+}
+
 /**
  * Starting map for the import wizard.
  * `auto` is an exact menu line. `suggest` is a unique longer or shorter name.
+ * `guess` is a likely name and stays blank until Auto map.
  * Ambiguous names are left blank so the user picks the product.
  */
 export function suggestSaleMappings(items, lines, options = {}) {
@@ -363,6 +430,8 @@ export function suggestSaleMappings(items, lines, options = {}) {
     if (saleIsAmbiguous(item, lines)) return { saleKey: item.key, lineKey: '', confidence: 'ambiguous' };
     const loose = looseNameHit(item, lines);
     if (loose) return { saleKey: item.key, lineKey: loose.key, confidence: 'suggest' };
+    const guess = guessSaleLine(item, lines);
+    if (guess) return { saleKey: item.key, lineKey: guess.key, confidence: 'guess' };
     return { saleKey: item.key, lineKey: '', confidence: 'none' };
   });
 }
@@ -375,6 +444,7 @@ export function saleMappingStatus(mapping, suggestion) {
   if (lineKey) {
     if (lineKey === suggested && confidence === 'auto') return { kind: 'auto', label: 'Matched' };
     if (lineKey === suggested && confidence === 'suggest') return { kind: 'suggest', label: 'Similar name' };
+    if (lineKey === suggested && confidence === 'guess') return { kind: 'guess', label: 'Suggested' };
     return { kind: 'mapped', label: 'Mapped' };
   }
   if (confidence === 'ambiguous') return { kind: 'need', label: 'Pick one' };
@@ -475,6 +545,76 @@ export function mixSharesOfMatched(mixLines, matchedAmount) {
     ...row,
     pct: ((num(row.amount) || 0) / total) * 100,
   }));
+}
+
+/** One saved import: each line's share of that file's mapped takings. */
+export function importLinesFromMix(mix) {
+  const total = num(mix?.matchedAmount);
+  return mixSharesOfMatched(mix?.lines || [], total).map((row) => ({
+    key: row.key,
+    name: row.name,
+    serveLabel: row.serveLabel || null,
+    category: row.category || 'Uncategorised',
+    amount: roundMoney(num(row.amount) || 0),
+    pct: row.pct,
+  }));
+}
+
+/**
+ * Equal-weight average of named imports.
+ * A line missing from an import counts as 0, so the shares still sum to about 100.
+ */
+export function averageImportMixes(imports) {
+  const list = (imports || []).filter((row) => (row?.lines || []).length);
+  const count = list.length;
+  if (!count) return [];
+  const byKey = new Map();
+  list.forEach((row) => {
+    (row.lines || []).forEach((line) => {
+      if (!line?.key) return;
+      const cur = byKey.get(line.key) || {
+        key: line.key,
+        name: line.name || 'Line',
+        serveLabel: line.serveLabel || null,
+        category: line.category || 'Uncategorised',
+        pctSum: 0,
+        amountSum: 0,
+      };
+      cur.pctSum += num(line.pct) || 0;
+      cur.amountSum += num(line.amount) || 0;
+      if (line.name) cur.name = line.name;
+      if (line.serveLabel) cur.serveLabel = line.serveLabel;
+      if (line.category) cur.category = line.category;
+      byKey.set(line.key, cur);
+    });
+  });
+  return [...byKey.values()].map((row) => ({
+    key: row.key,
+    name: row.name,
+    serveLabel: row.serveLabel,
+    category: row.category,
+    amount: roundMoney(row.amountSum / count),
+    pct: row.pctSum / count,
+  })).sort((a, b) => b.pct - a.pct || a.name.localeCompare(b.name));
+}
+
+/**
+ * Mix the forecast should use. With no event target, the target is the
+ * average of each import's mapped takings.
+ */
+export function forecastFromImports(imports, { fallbackTarget = null } = {}) {
+  const list = (imports || []).filter((row) => (row?.lines || []).length);
+  const lines = averageImportMixes(list);
+  const totals = list.map((row) => num(row.total)).filter((n) => n > 0);
+  const averagedTotal = totals.length
+    ? roundMoney(totals.reduce((sum, n) => sum + n, 0) / totals.length)
+    : null;
+  const chosen = num(fallbackTarget);
+  return {
+    lines,
+    target: chosen > 0 ? chosen : averagedTotal,
+    importCount: list.length,
+  };
 }
 
 /** Projected serves for matched lines that have a selling price. */

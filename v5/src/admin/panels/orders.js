@@ -23,10 +23,14 @@ import { parsePlanningNumber, resolveMenuLine } from '../../lib/planning-menu.js
 import { cocktailServesByProduct } from '../../lib/menu-cocktails.js';
 import { groupMenuItems } from '../../lib/menu-serves.js';
 import {
+  createForecastImport,
+  deleteForecastImport,
   isCocktailSchemaMissing,
   isEventPricingLocked,
+  isForecastSchemaMissing,
   isPlanningSchemaMissing,
   listEventCocktails,
+  listForecastImports,
   listEventMenu,
   loadEventPricing,
   patchEventMenuItems,
@@ -64,13 +68,13 @@ import { readTillFile } from '../../lib/till-import.js';
 import { bindMapLinePicks, closeMapLineMenu, salesWizardBody, salesWizardFoot } from '../order-sales-wizard.js';
 import {
   buildForecastLines,
+  forecastFromImports,
   forecastTotals,
   groupForecastLines,
   groupSalesItems,
+  importLinesFromMix,
   keepMixServes,
-  matchedTakingsTarget,
   mixFromSales,
-  mixSharesOfMatched,
   plannedOrderCost,
   scaleCategoryServes,
   sellingPrice,
@@ -160,6 +164,7 @@ export function mountOrdersPanel(route) {
     target: null,
     anchorTarget: null,
     recipes: [],
+    imports: [],
     tab: 'take',
     filter: getTableFilterValues('orders') || {},
     query: getLastProductFilter().query || '',
@@ -627,8 +632,29 @@ export function mountOrdersPanel(route) {
         <span class="plan-kpi-sub muted">planned cases × case cost${missing}</span></div>`;
   }
 
+  function importChipsInner() {
+    const imports = ctx.imports || [];
+    if (!imports.length) return '';
+    const chips = imports.map((row) => `
+      <span class="ord-import-chip">${escapeHtml(row.name)}
+        <button type="button" data-remove-import="${escapeHtml(row.id)}" aria-label="${escapeHtml(`Remove ${row.name}`)}" ${locked() ? 'disabled' : ''}>×</button>
+      </span>`).join('');
+    const note = imports.length === 1
+      ? 'Import another sales file to average it with this one.'
+      : `The forecast is the average of these ${imports.length} imports.`;
+    return `${chips}<span class="ord-import-note muted">${note}</span>`;
+  }
+
+  function syncImportChrome() {
+    const slot = $('ordImports');
+    if (slot) slot.innerHTML = importChipsInner();
+    const btn = $('ordImportCsv');
+    if (btn) btn.textContent = (ctx.imports || []).length ? 'Import another' : 'Import sales CSV';
+  }
+
   function forecastHeadHtml() {
     const dis = locked() ? 'disabled' : '';
+    const importLabel = (ctx.imports || []).length ? 'Import another' : 'Import sales CSV';
     return `
       <div class="ord-forecast-head">
         <label class="admin-field plan-field">
@@ -637,10 +663,11 @@ export function mountOrdersPanel(route) {
             value="${escapeHtml(ctx.target != null ? String(ctx.target) : '')}" placeholder="e.g. 350000" ${dis}>
         </label>
         <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordKeepMix" ${showKeepMix() && !locked() ? '' : 'hidden'}>Keep this mix</button>
-        <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordImportCsv" ${dis}>Import sales CSV</button>
+        <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" id="ordImportCsv" ${dis}>${importLabel}</button>
         <input type="file" id="ordCsvFile" accept=".csv,.tsv,.xlsx,.xls,.txt" hidden>
       </div>
-      <p class="ord-forecast-note muted">Each line’s share of the target, divided by its menu price. A blank price uses the price needed to hit the target GP. Import a sales file to set the mix — items from another event can be mapped onto this menu. With no target yet, the mapped takings become the target.</p>
+      <div class="ord-import-row" id="ordImports">${importChipsInner()}</div>
+      <p class="ord-forecast-note muted">Each line’s share of the target, divided by its menu price. A blank price uses the price needed to hit the target GP. Import a sales file and name it. Import another and the forecast is the average of every named import. With no target yet, the average of the mapped takings becomes the target.</p>
       <div class="plan-kpis" id="ordForecastStats">${forecastStatsHtml()}</div>`;
   }
 
@@ -804,6 +831,54 @@ export function mountOrdersPanel(route) {
     if (k) k.innerHTML = kpisHtml();
     refreshForecastOutputs();
     syncTheadHeight();
+  }
+
+  function zeroServeUpdates(menuLines, keys) {
+    const byKey = new Map((menuLines || []).map((line) => [line.key, line]));
+    return [...new Set(keys || [])].map((key) => {
+      const line = byKey.get(key);
+      if (!line || !(Number(line.projectedServes) > 0)) return null;
+      return {
+        key: line.key,
+        kind: line.kind,
+        itemId: line.itemId,
+        productId: line.productId || null,
+        serves: 0,
+      };
+    }).filter(Boolean);
+  }
+
+  async function applyAveragedForecast(imports, { dropKeys = [] } = {}) {
+    const menuLines = forecastLines();
+    const hasTarget = Number(ctx.target) > 0;
+    const preview = forecastFromImports(imports, { fallbackTarget: hasTarget ? Number(ctx.target) : null });
+    const covered = new Set();
+    let applied = [];
+    let skipped = [];
+    if (preview.lines.length && preview.target > 0) {
+      const fresh = servesForMix(menuLines, preview.lines, preview.target);
+      applied = fresh.applied;
+      skipped = fresh.skipped;
+      applied.forEach((row) => covered.add(row.key));
+    }
+    const zeros = zeroServeUpdates(menuLines, dropKeys.filter((key) => !covered.has(key)));
+    const updates = [...applied, ...zeros];
+    if (imports.length && !applied.length) throw new Error('No mapped lines have a price');
+    if (!hasTarget && preview.target > 0 && imports.length) {
+      await updateEventPricing(ctx.eventId, { target_revenue: preview.target });
+      invalidateEventCache(ctx.eventId);
+      ctx.target = preview.target;
+      if (ctx.event) ctx.event.target_revenue = preview.target;
+      const input = $('ordTarget');
+      if (input) input.value = String(preview.target);
+    }
+    if (updates.length) {
+      rememberServes(updates);
+      ctx.anchorTarget = ctx.target;
+      await persistServes(updates);
+    }
+    syncImportChrome();
+    return { applied, skipped, target: preview.target, fromFile: !hasTarget && imports.length };
   }
 
   function tabsHtml() {
@@ -1648,49 +1723,62 @@ export function mountOrdersPanel(route) {
       caseSizes: ctx.caseSizes,
     };
     const suggestions = suggestSaleMappings(items, lines, matchOptions);
+    const mappings = Object.fromEntries(suggestions.map((row) => [
+      row.saleKey,
+      (row.confidence === 'auto' || row.confidence === 'suggest') ? (row.lineKey || '') : '',
+    ]));
     const state = {
-      step: suggestions.every((row) => row.confidence === 'auto') ? 'review' : 'map',
-      filter: suggestions.some((row) => !row.lineKey) ? 'todo' : 'all',
+      step: suggestions.length && suggestions.every((row) => row.confidence === 'auto') ? 'name' : 'map',
+      filter: Object.values(mappings).some((value) => !value) ? 'todo' : 'all',
       query: '',
-      mappings: Object.fromEntries(suggestions.map((row) => [row.saleKey, row.lineKey || ''])),
+      name: '',
+      manual: new Set(),
+      mappings,
     };
 
     function mappedMix(menuLines) {
       return mixFromSales(rows, menuLines, { ...matchOptions, mappings: state.mappings });
     }
 
+    function previewImports(mix) {
+      return [...(ctx.imports || []), {
+        name: state.name.trim(),
+        total: mix.matchedAmount || 0,
+        lines: importLinesFromMix(mix),
+      }];
+    }
+
     function applyPlan(menuLines = lines) {
       const mix = mappedMix(menuLines);
       const hasTarget = Number(ctx.target) > 0;
-      const fileTarget = matchedTakingsTarget(mix);
-      const applyTarget = hasTarget ? Number(ctx.target) : fileTarget;
-      const mixLines = hasTarget ? mix.lines : mixSharesOfMatched(mix.lines, applyTarget);
-      const { applied } = applyTarget ? servesForMix(menuLines, mixLines, applyTarget) : { applied: [] };
-      const replacing = applied.filter((update) => {
-        const line = menuLines.find((row) => row.key === update.key);
-        return line && Number(line.projectedServes) > 0;
+      const preview = forecastFromImports(previewImports(mix), {
+        fallbackTarget: hasTarget ? Number(ctx.target) : null,
       });
-      return { mix, hasTarget, applied, replacing };
+      const { applied } = preview.target > 0 ? servesForMix(menuLines, preview.lines, preview.target) : { applied: [] };
+      return { mix, hasTarget, preview, applied };
     }
 
     function viewModel() {
       const plan = applyPlan();
+      const others = (ctx.imports || []).length;
       return {
         step: state.step,
         fileName: file.name || 'Sales file',
+        importName: state.name,
+        savedImports: ctx.imports || [],
         items,
         lines,
         mappings: state.mappings,
+        manual: [...state.manual],
         suggestions,
         query: state.query,
         filter: state.filter,
         mix: plan.mix,
+        previewTarget: plan.preview.target,
         target: Number(ctx.target) || 0,
         hasTarget: plan.hasTarget,
-        canApply: plan.applied.length > 0,
-        applyLabel: plan.hasTarget
-          ? (plan.replacing.length ? 'Replace projected serves' : 'Apply mix')
-          : 'Use this take',
+        canApply: importLinesFromMix(plan.mix).length > 0 && plan.applied.length > 0 && Boolean(state.name.trim()),
+        applyLabel: others ? 'Average into forecast' : 'Save import',
       };
     }
 
@@ -1705,7 +1793,8 @@ export function mountOrdersPanel(route) {
     function paint() {
       closeMapLineMenu();
       const queryFocused = document.activeElement?.matches?.('[data-map-query]');
-      const caret = queryFocused ? document.activeElement.selectionStart : null;
+      const nameFocused = document.activeElement?.matches?.('[data-import-name]');
+      const caret = (queryFocused || nameFocused) ? document.activeElement.selectionStart : null;
       const scroll = el.querySelector('[data-map-list]')?.scrollTop || 0;
       const model = viewModel();
       el.querySelector('.admin-modal-body').innerHTML = salesWizardBody(model);
@@ -1718,11 +1807,25 @@ export function mountOrdersPanel(route) {
         const pos = caret ?? input.value.length;
         input.setSelectionRange(pos, pos);
       }
+      const nameInput = el.querySelector('[data-import-name]');
+      if (nameInput && !queryFocused) {
+        nameInput.focus();
+        const pos = nameFocused ? (caret ?? nameInput.value.length) : nameInput.value.length;
+        nameInput.setSelectionRange(pos, pos);
+      }
       bindWizard();
     }
 
     function goTo(step) {
-      if (step === 'review' && !Object.values(state.mappings).some(Boolean)) return;
+      const mapped = Object.values(state.mappings).some(Boolean);
+      if ((step === 'name' || step === 'review') && !mapped) return;
+      if (step === 'review' && !state.name.trim()) {
+        if (state.step !== 'name') {
+          state.step = 'name';
+          paint();
+        }
+        return;
+      }
       if (step === state.step) return;
       state.step = step;
       paint();
@@ -1731,46 +1834,72 @@ export function mountOrdersPanel(route) {
     async function applyMappedMix() {
       const btn = el.querySelector('[data-ok]');
       if (btn) btn.disabled = true;
+      const name = state.name.trim();
       try {
+        if (!name) throw new Error('Name this import');
+        if (name.length > 80) throw new Error('Keep the name under 80 characters');
         await flushSaves();
-        const fromFile = !(Number(ctx.target) > 0);
-        const menuLines = forecastLines();
-        let target = Number(ctx.target);
-        const mix = mappedMix(menuLines);
-        let mixLines = mix.lines;
-        if (fromFile) {
-          target = matchedTakingsTarget(mix);
-          if (!(target > 0)) throw new Error('Nothing in this file is mapped to the menu');
-          mixLines = mixSharesOfMatched(mix.lines, target);
-          await updateEventPricing(ctx.eventId, { target_revenue: target });
-          invalidateEventCache(ctx.eventId);
-          ctx.target = target;
-          ctx.anchorTarget = target;
-          if (ctx.event) ctx.event.target_revenue = target;
-          const input = $('ordTarget');
-          if (input) input.value = String(target);
+        const mix = mappedMix(forecastLines());
+        const stored = importLinesFromMix(mix);
+        if (!stored.length) throw new Error('Nothing in this file is mapped to the menu');
+        let saved;
+        try {
+          saved = await createForecastImport({
+            event_id: ctx.eventId,
+            name,
+            total: mix.matchedAmount || 0,
+            lines: stored,
+          });
+        } catch (err) {
+          if (isForecastSchemaMissing(err)) {
+            throw new Error('Sales imports are not set up on this project yet', { cause: err });
+          }
+          throw err;
         }
-        const fresh = servesForMix(forecastLines(), mixLines, target);
-        if (!fresh.applied.length) throw new Error('No mapped lines have a price');
-        rememberServes(fresh.applied);
-        ctx.anchorTarget = ctx.target;
-        await persistServes(fresh.applied);
+        const previous = ctx.imports || [];
+        ctx.imports = [...previous, saved];
+        let result;
+        try {
+          result = await applyAveragedForecast(ctx.imports);
+        } catch (err) {
+          ctx.imports = previous;
+          await deleteForecastImport(saved.id).catch(() => {});
+          throw err;
+        }
         closeModal();
-        const skipped = fresh.skipped.length ? ` · ${fresh.skipped.length} skipped, no price` : '';
-        const lead = fromFile ? `Target set to ${money(target)} · ` : '';
-        toast(`${lead}Mix applied to ${fresh.applied.length} line${fresh.applied.length === 1 ? '' : 's'}${skipped}`);
+        const count = ctx.imports.length;
+        const skipped = result.skipped.length ? ` · ${result.skipped.length} skipped, no price` : '';
+        const lead = result.fromFile ? `Target set to ${money(result.target)} · ` : '';
+        const tail = count === 1
+          ? `${name} saved`
+          : `${name} averaged with ${count - 1} other import${count === 2 ? '' : 's'}`;
+        toast(`${lead}${tail}${skipped}`);
       } catch (err) {
         if (btn) btn.disabled = false;
         reportError(err, { source: 'admin.orders.csv-mix', silent: true });
-        toast(err.message || 'Could not apply the mix', true);
+        toast(err.message || 'Could not save the import', true);
       }
     }
 
     function bindWizard() {
       el.querySelector('[data-cancel]')?.addEventListener('click', closeModal);
-      el.querySelector('[data-next]')?.addEventListener('click', () => goTo('review'));
-      el.querySelector('[data-back]')?.addEventListener('click', () => goTo('map'));
+      el.querySelector('[data-next]')?.addEventListener('click', () => goTo(state.step === 'map' ? 'name' : 'review'));
+      el.querySelector('[data-back]')?.addEventListener('click', () => goTo(state.step === 'review' ? 'name' : 'map'));
       el.querySelector('[data-ok]')?.addEventListener('click', () => { void applyMappedMix(); });
+      el.querySelector('[data-map-auto]')?.addEventListener('click', () => {
+        let filled = 0;
+        suggestions.forEach((row) => {
+          if (state.manual.has(row.saleKey) || state.mappings[row.saleKey]) return;
+          if (row.confidence !== 'guess' || !row.lineKey) return;
+          state.mappings[row.saleKey] = row.lineKey;
+          filled += 1;
+        });
+        if (filled) state.filter = 'all';
+        paint();
+        toast(filled
+          ? `Lined up ${filled} product${filled === 1 ? '' : 's'}`
+          : 'Nothing else lined up. Choose the rest by hand.');
+      });
       el.querySelectorAll('[data-map-goto]').forEach((btn) => {
         btn.addEventListener('click', () => goTo(btn.dataset.mapGoto));
       });
@@ -1788,9 +1917,17 @@ export function mountOrdersPanel(route) {
           paint();
         });
       }
+      const name = el.querySelector('[data-import-name]');
+      if (name) {
+        name.addEventListener('input', () => {
+          state.name = name.value;
+          paint();
+        });
+      }
       bindMapLinePicks(el, {
         lines,
         onPick: (saleKey, lineKey) => {
+          state.manual.add(saleKey);
           state.mappings[saleKey] = lineKey;
           paint();
         },
@@ -1972,7 +2109,7 @@ export function mountOrdersPanel(route) {
     return true;
   }
 
-  function onPanelClick(e) {
+  async function onPanelClick(e) {
     const actionBtn = e.target.closest('[data-po-action]');
     if (actionBtn && panel.contains(actionBtn)) {
       e.stopPropagation();
@@ -1998,6 +2135,36 @@ export function mountOrdersPanel(route) {
         reportError(err, { source: 'admin.orders.action', silent: true });
         toast(err.message || 'Something went wrong', true);
       });
+      return;
+    }
+    const removeImport = e.target.closest('[data-remove-import]');
+    if (removeImport && panel.contains(removeImport)) {
+      if (locked()) { toast('Orders are locked for this event', true); return; }
+      const id = removeImport.dataset.removeImport;
+      const imp = (ctx.imports || []).find((row) => row.id === id);
+      if (!imp) return;
+      const others = (ctx.imports || []).length - 1;
+      const ok = await confirmDialog({
+        title: 'Remove import',
+        message: others
+          ? `Remove ${imp.name}? The forecast is averaged again without it.`
+          : `Remove ${imp.name}? Projected serves from this import are cleared.`,
+        confirmLabel: 'Remove',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await flushSaves();
+        const dropKeys = (imp.lines || []).map((line) => line.key);
+        await deleteForecastImport(id);
+        ctx.imports = (ctx.imports || []).filter((row) => row.id !== id);
+        await applyAveragedForecast(ctx.imports, { dropKeys });
+        toast(`Removed ${imp.name}`);
+      } catch (err) {
+        reportError(err, { source: 'admin.orders.remove-import', silent: true });
+        toast(err.message || 'Could not remove that import', true);
+        void reload();
+      }
       return;
     }
     if (e.target.closest('#ordImportCsv')) {
@@ -2071,7 +2238,7 @@ export function mountOrdersPanel(route) {
   async function reload() {
     await flushSaves();
     const DB = getDB();
-    const [event, pricing, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries, cocktails, recipes] = await Promise.all([
+    const [event, pricing, items, orders, buffer, products, suppliers, caseSizes, categories, deliveries, cocktails, recipes, imports] = await Promise.all([
       loadEventLite(ctx.eventId),
       loadEventPricing(ctx.eventId),
       listEventMenu(ctx.eventId),
@@ -2087,6 +2254,10 @@ export function mountOrdersPanel(route) {
         throw err;
       }),
       loadRecipesFull().catch(() => []),
+      listForecastImports(ctx.eventId).catch((err) => {
+        if (isForecastSchemaMissing(err)) return [];
+        throw err;
+      }),
     ]);
     if (ctx.abort) return;
     if (!event || !pricing) throw new Error('Event not found');
@@ -2097,6 +2268,7 @@ export function mountOrdersPanel(route) {
     ctx.orders = orders || [];
     ctx.buffer = buffer;
     ctx.recipes = recipes || [];
+    ctx.imports = imports || [];
     const target = Number(event.target_revenue);
     ctx.target = Number.isFinite(target) && event.target_revenue != null && event.target_revenue !== '' ? target : null;
     ctx.anchorTarget = ctx.target;

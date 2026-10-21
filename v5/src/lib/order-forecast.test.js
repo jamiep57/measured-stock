@@ -5,7 +5,10 @@ import {
   groupForecastLines,
   keepMixServes,
   matchedTakingsTarget,
+  averageImportMixes,
+  forecastFromImports,
   groupSalesItems,
+  importLinesFromMix,
   mixFromSales,
   mixPct,
   saleMappingStatus,
@@ -290,6 +293,113 @@ describe('sales mix', () => {
     expect(mix.unmatched[0]).toMatchObject({ name: 'Mystery', reason: 'skipped' });
     const shares = mixSharesOfMatched(mix.lines, matchedTakingsTarget(mix));
     expect(servesForMix([pint], shares, 60).applied[0].serves).toBe(10);
+  });
+
+  it('guesses a distinctive cocktail and the only lager', () => {
+    const lagerPint = {
+      ...priced,
+      key: 'lager-pint',
+      productId: 'p2',
+      name: 'Utopian Lager',
+      productName: 'Utopian Lager',
+      menuName: 'Utopian Lager',
+      serveLabel: 'Pint',
+    };
+    const lagerHalf = { ...lagerPint, key: 'lager-half', serveLabel: 'Half', portion: 0.5 };
+    const margarita = {
+      key: 'cocktail:m',
+      kind: 'cocktail',
+      name: 'Frozen Margarita',
+      productName: '',
+      menuName: 'Frozen Margarita',
+      included: true,
+      category: 'Cocktails',
+    };
+    const items = groupSalesItems([
+      { name: 'Pint Lager - Prime Time', variation: 'Pint', gross_sales: 20 },
+      { name: 'Pimento Frozen Margarita', variation: 'Regular', gross_sales: 30 },
+      { name: 'Smirnoff Vodka & Cola', variation: 'Regular', gross_sales: 10 },
+      { name: 'Hennessy VS', variation: 'Regular', gross_sales: 10 },
+    ]);
+    const suggestions = suggestSaleMappings(items, [lagerPint, lagerHalf, margarita, priced]);
+    const byName = (name) => suggestions.find((row) => items.find((item) => item.key === row.saleKey)?.name === name);
+    expect(byName('Pint Lager - Prime Time')).toMatchObject({ lineKey: 'lager-pint', confidence: 'guess' });
+    expect(byName('Pimento Frozen Margarita')).toMatchObject({ lineKey: 'cocktail:m', confidence: 'guess' });
+    expect(byName('Smirnoff Vodka & Cola')).toMatchObject({ lineKey: '', confidence: 'none' });
+    expect(byName('Hennessy VS')).toMatchObject({ lineKey: '', confidence: 'none' });
+    expect(saleMappingStatus('lager-pint', byName('Pint Lager - Prime Time')).label).toBe('Suggested');
+    expect(saleMappingStatus('', byName('Pint Lager - Prime Time')).label).toBe('Choose a product');
+  });
+
+  it('does not guess a lager when two products are lagers', () => {
+    const one = {
+      ...priced,
+      key: 'one',
+      name: 'Utopian Lager',
+      productName: 'Utopian Lager',
+      menuName: 'Utopian Lager',
+    };
+    const two = {
+      ...priced,
+      key: 'two',
+      productId: 'p2',
+      sku: 'L2',
+      name: 'Heineken Lager',
+      productName: 'Heineken Lager',
+      menuName: 'Heineken Lager',
+    };
+    const items = groupSalesItems([{ name: 'Pint Lager - Prime Time', variation: 'Pint', gross_sales: 10 }]);
+    expect(suggestSaleMappings(items, [one, two])[0]).toMatchObject({ lineKey: '', confidence: 'none' });
+  });
+
+  it('does not guess when two products score the same', () => {
+    const pomegranate = {
+      ...priced,
+      key: 'pom',
+      name: 'Better Sundays Hard Kombucha Pomegranate',
+      productName: 'Better Sundays Hard Kombucha Pomegranate',
+      menuName: 'Better Sundays Hard Kombucha Pomegranate',
+    };
+    const hibiscus = {
+      ...priced,
+      key: 'hib',
+      productId: 'p2',
+      sku: 'B2',
+      name: 'Better Sundays Hard Kombucha Hibiscus',
+      productName: 'Better Sundays Hard Kombucha Hibiscus',
+      menuName: 'Better Sundays Hard Kombucha Hibiscus',
+    };
+    const items = groupSalesItems([{ name: 'Better Sundays Hard Kombucha', variation: 'Regular', gross_sales: 10 }]);
+    expect(suggestSaleMappings(items, [pomegranate, hibiscus])[0].confidence).not.toBe('guess');
+  });
+
+  it('averages named imports and treats a missing line as zero', () => {
+    const averaged = averageImportMixes([
+      { total: 100, lines: [{ key: 'lager', name: 'Lager', category: 'Beer', amount: 100, pct: 100 }] },
+      {
+        total: 200,
+        lines: [
+          { key: 'lager', name: 'Lager', category: 'Beer', amount: 100, pct: 50 },
+          { key: 'pale', name: 'Pale', category: 'Beer', amount: 100, pct: 50 },
+        ],
+      },
+    ]);
+    expect(averaged.map((row) => [row.key, row.pct, row.amount])).toEqual([
+      ['lager', 75, 100],
+      ['pale', 25, 50],
+    ]);
+    expect(averaged.reduce((sum, row) => sum + row.pct, 0)).toBe(100);
+    const forecast = forecastFromImports([
+      { total: 100, lines: averaged },
+      { total: 300, lines: [{ key: 'lager', name: 'Lager', pct: 100, amount: 300 }] },
+    ], { fallbackTarget: null });
+    expect(forecast.target).toBe(200);
+    const mix = mixFromSales(
+      [{ name: 'Hells', variation: 'Pint', gross_sales: 60 }, { name: 'Mystery', variation: 'Regular', gross_sales: 40 }],
+      [pint],
+      { mappings: { [groupSalesItems([{ name: 'Hells', variation: 'Pint', gross_sales: 60 }])[0].key]: 'pint' } },
+    );
+    expect(importLinesFromMix(mix)).toMatchObject([{ key: 'pint', pct: 100, amount: 60 }]);
   });
 
   it('adds two sales items that map onto the same line', () => {

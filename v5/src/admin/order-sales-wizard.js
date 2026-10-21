@@ -1,10 +1,10 @@
 /**
- * Map a Square sales file onto this event's menu, then review the mix.
- * Sales from another event often use different product names.
+ * Map a Square sales file onto this event's menu, name the import, then review the mix.
+ * A later file is averaged with the ones already saved.
  */
 
 import { escapeHtml } from '../lib/util.js';
-import { matchedTakingsTarget, saleMappingStatus, sellingPrice } from '../lib/order-forecast.js';
+import { averageImportMixes, importLinesFromMix, saleMappingStatus, sellingPrice } from '../lib/order-forecast.js';
 
 function money(n) {
   const v = Number(n);
@@ -39,14 +39,36 @@ function visibleItems(model) {
   });
 }
 
+function namedImport(model) {
+  return String(model.importName || '').trim();
+}
+
+function stepButton(id, model, number, title) {
+  const order = ['map', 'name', 'review'];
+  const current = order.indexOf(model.step);
+  const mine = order.indexOf(id);
+  const mapped = mappedItems(model).length > 0;
+  const enabled = id === 'map' || (id === 'name' && mapped) || (id === 'review' && mapped && namedImport(model));
+  const done = mine < current;
+  const cls = `sq-step${model.step === id ? ' is-active' : ''}${done ? ' is-done' : ''}`;
+  return `<li><button type="button" class="${cls}" data-map-goto="${id}" ${enabled ? '' : 'disabled'}><span class="sq-step-badge">${done ? '✓' : number}</span><span class="sq-step-title">${title}</span></button></li>`;
+}
+
 function stepsHtml(model) {
-  const mapped = mappedItems(model).length;
-  const mapClass = `sq-step${model.step === 'map' ? ' is-active' : ''}${model.step === 'review' ? ' is-done' : ''}`;
-  const reviewClass = `sq-step${model.step === 'review' ? ' is-active' : ''}`;
   return `<ol class="sq-steps" aria-label="Import steps">
-    <li><button type="button" class="${mapClass}" data-map-goto="map"><span class="sq-step-badge">${model.step === 'review' ? '✓' : '1'}</span><span class="sq-step-title">Map products</span></button></li>
-    <li><button type="button" class="${reviewClass}" data-map-goto="review" ${mapped ? '' : 'disabled'}><span class="sq-step-badge">2</span><span class="sq-step-title">Review mix</span></button></li>
+    ${stepButton('map', model, '1', 'Map products')}
+    ${stepButton('name', model, '2', 'Name import')}
+    ${stepButton('review', model, '3', 'Review mix')}
   </ol>`;
+}
+
+function guessableCount(model) {
+  const manual = new Set(model.manual || []);
+  return (model.items || []).filter((item) => {
+    if (manual.has(item.key) || model.mappings?.[item.key]) return false;
+    const suggestion = suggestionFor(model.suggestions, item.key);
+    return suggestion.confidence === 'guess' && suggestion.lineKey;
+  }).length;
 }
 
 function choiceLabel(line) {
@@ -97,8 +119,10 @@ function summaryText(model) {
   const mappedAmount = mapped.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const needs = items.filter((item) => statusOf(model, item).kind === 'need').length;
   const similar = items.filter((item) => statusOf(model, item).kind === 'suggest').length;
+  const suggested = items.filter((item) => statusOf(model, item).kind === 'guess').length;
   const bits = [`${mapped.length} of ${items.length} mapped`, `${money(mappedAmount)} of ${money(total)}`];
   if (needs) bits.push(needs === 1 ? '1 still needs a choice' : `${needs} still need a choice`);
+  if (suggested) bits.push(`${suggested} suggested`);
   if (similar) bits.push(`${similar} similar ${similar === 1 ? 'name' : 'names'} to check`);
   return bits.join(' · ');
 }
@@ -126,23 +150,63 @@ function mapHtml(model) {
         <tbody>${rows.map((item) => mapRowHtml(item, model)).join('')}</tbody>
       </table>`
     : empty;
+  const guesses = guessableCount(model);
   const similarNote = model.filter === 'todo' && items.some((item) => statusOf(model, item).kind === 'suggest')
     ? '<p class="ord-map-hint muted">Similar names are already filled in. Switch to All to check them.</p>'
+    : '';
+  const guessNote = guesses
+    ? `<p class="ord-map-hint muted">Auto map can line up ${guesses} more from the names. Check the suggestions before you continue.</p>`
     : '';
   return `<div class="ord-map">
     ${stepsHtml(model)}
     <p class="ord-mix-note"><strong>${escapeHtml(model.fileName || 'Sales file')}</strong> — ${items.length} item${items.length === 1 ? '' : 's'}, ${money(total)}. Match each one to a line on this menu. Leave out anything this event does not sell.</p>
     <p class="ord-map-summary" aria-live="polite">${escapeHtml(summaryText(model))}</p>
     <div class="ord-map-tools">
+      <button type="button" class="ord-map-auto" data-map-auto ${guesses ? '' : 'disabled'}>Auto map</button>
       <div class="sq-seg" role="group" aria-label="Which sales items to show">
         <button type="button" data-map-filter="todo" aria-pressed="${model.filter === 'todo'}">Needs a choice (${needs})</button>
         <button type="button" data-map-filter="all" aria-pressed="${model.filter === 'all'}">All (${items.length})</button>
       </div>
       <input type="search" class="admin-input" data-map-query value="${escapeHtml(model.query || '')}" placeholder="Filter sales items" aria-label="Filter sales items" autocomplete="off">
     </div>
+    ${guessNote}
     ${similarNote}
     <div class="ord-map-list" data-map-list>${table}</div>
   </div>`;
+}
+
+function nameHtml(model) {
+  const others = (model.savedImports || []).map((row) => row.name).filter(Boolean);
+  const already = others.length
+    ? `<p class="ord-mix-note">Already saved: ${escapeHtml(others.join(', '))}. This import is averaged with ${others.length === 1 ? 'that one' : 'those'}. Each import has an equal weight.</p>`
+    : '<p class="ord-mix-note">After this is saved you can import another sales file. The forecast uses the average of every named import.</p>';
+  return `<div class="ord-map">
+    ${stepsHtml(model)}
+    <label class="admin-field ord-import-name">
+      <span class="admin-label">Name this import</span>
+      <input class="admin-input" data-import-name value="${escapeHtml(model.importName || '')}" placeholder="Fall Festival 2024" maxlength="80" autocomplete="off">
+    </label>
+    ${already}
+  </div>`;
+}
+
+function categoriesOf(lines) {
+  const map = new Map();
+  (lines || []).forEach((line) => {
+    const category = line.category || 'Uncategorised';
+    const cur = map.get(category) || { category, amount: 0, pct: 0 };
+    cur.amount += Number(line.amount) || 0;
+    cur.pct += Number(line.pct) || 0;
+    map.set(category, cur);
+  });
+  return [...map.values()].sort((a, b) => b.amount - a.amount || a.category.localeCompare(b.category));
+}
+
+function reviewLines(model) {
+  const current = importLinesFromMix(model.mix);
+  const saved = model.savedImports || [];
+  if (!current.length || !saved.length) return current;
+  return averageImportMixes([...saved, { lines: current }]);
 }
 
 function itemLabel(row) {
@@ -158,14 +222,17 @@ function listOf(rows) {
 
 function reviewHtml(model) {
   const mix = model.mix || { lines: [], unmatched: [], categories: [], total: 0, matchedPct: 0 };
+  const saved = model.savedImports || [];
+  const lines = reviewLines(model);
+  const categories = categoriesOf(lines);
   const byKey = new Map((model.lines || []).map((line) => [line.key, line]));
-  const needsPrice = (mix.lines || []).filter((row) => !sellingPrice(byKey.get(row.key) || {}).price);
-  const cats = mix.categories?.length
-    ? `<ul class="ord-gen-list">${mix.categories.map((row) => `<li><strong>${escapeHtml(row.category)}</strong> — ${escapeHtml(pctText(row.pct))}% · ${money(row.amount)}</li>`).join('')}</ul>`
+  const needsPrice = lines.filter((row) => !sellingPrice(byKey.get(row.key) || {}).price);
+  const cats = categories.length
+    ? `<ul class="ord-gen-list">${categories.map((row) => `<li><strong>${escapeHtml(row.category)}</strong> — ${escapeHtml(pctText(row.pct))}% · ${money(row.amount)}</li>`).join('')}</ul>`
     : '';
-  const matched = mix.lines?.length
+  const matched = lines.length
     ? `<table class="ord-lines"><thead><tr><th>Line</th><th>Category</th><th class="num">Sales</th><th class="num">Mix</th></tr></thead><tbody>
-        ${mix.lines.map((row) => `<tr><td>${escapeHtml(row.name)}${row.serveLabel ? ` · ${escapeHtml(row.serveLabel)}` : ''}</td><td>${escapeHtml(row.category)}</td><td class="num">${money(row.amount)}</td><td class="num">${escapeHtml(pctText(row.pct))}%</td></tr>`).join('')}
+        ${lines.map((row) => `<tr><td>${escapeHtml(row.name)}${row.serveLabel ? ` · ${escapeHtml(row.serveLabel)}` : ''}</td><td>${escapeHtml(row.category)}</td><td class="num">${money(row.amount)}</td><td class="num">${escapeHtml(pctText(row.pct))}%</td></tr>`).join('')}
       </tbody></table>`
     : '<p class="muted">Nothing in this file is mapped to the menu.</p>';
   const skipped = (mix.unmatched || []).filter((row) => row.reason === 'skipped' || row.reason === 'unknown');
@@ -175,18 +242,20 @@ function reviewHtml(model) {
   const priceNote = needsPrice.length
     ? `<p class="ord-mix-note">${escapeHtml(needsPrice.map((row) => row.name).join(', '))} ${needsPrice.length === 1 ? 'is' : 'are'} mapped but ${needsPrice.length === 1 ? 'has' : 'have'} no price, so ${needsPrice.length === 1 ? 'it' : 'they'} will be skipped.</p>`
     : '';
-  const fileTarget = matchedTakingsTarget(mix);
+  const fileTarget = Number(model.previewTarget) > 0 ? Number(model.previewTarget) : null;
+  const names = saved.map((row) => row.name).filter(Boolean);
   const targetNote = model.hasTarget
-    ? `This mix will be scaled to the current target of ${money(model.target)}.`
+    ? `This mix is scaled to the current target of ${money(model.target)}.`
     : (fileTarget
-      ? `No target yet. Applying sets the target to ${money(fileTarget)} — the takings mapped onto this menu.`
+      ? `No target yet. Saving sets the target to ${money(fileTarget)} — ${names.length ? 'the average of the mapped takings.' : 'the takings mapped onto this menu.'}`
       : 'Nothing in this file is mapped to the menu, so there is no take to apply.');
-  const untouched = (model.suggestions || []).length > 0
-    && model.suggestions.every((row) => row.confidence === 'auto' && (model.mappings?.[row.saleKey] || '') === row.lineKey);
-  const matchedNote = untouched ? ' Every item matched a line on this menu.' : '';
+  const averageNote = names.length
+    ? ` Saving averages this file with ${names.join(', ')}. Each import has an equal weight.`
+    : ' The mix is the share of the mapped takings. You can import another sales file afterwards.';
+  const label = names.length ? 'Average mix' : escapeHtml(model.importName || model.fileName || 'Sales file');
   return `<div class="ord-map">
     ${stepsHtml(model)}
-    <p class="ord-mix-note"><strong>${escapeHtml(model.fileName || 'Sales file')}</strong> — ${escapeHtml(pctText(mix.matchedPct))}% of ${money(mix.total)} is mapped to the menu.${escapeHtml(matchedNote)} Applying sets projected serves from that mix and clears planned-case overrides on those products.</p>
+    <p class="ord-mix-note"><strong>${names.length ? 'Average mix' : label}</strong> — ${escapeHtml(pctText(mix.matchedPct))}% of ${money(mix.total)} in this file is mapped to the menu.${escapeHtml(averageNote)}</p>
     <p class="ord-mix-note">${escapeHtml(targetNote)}</p>
     ${cats}
     <div class="ord-mix-preview">${matched}</div>
@@ -196,7 +265,9 @@ function reviewHtml(model) {
 }
 
 export function salesWizardBody(model) {
-  return model.step === 'review' ? reviewHtml(model) : mapHtml(model);
+  if (model.step === 'review') return reviewHtml(model);
+  if (model.step === 'name') return nameHtml(model);
+  return mapHtml(model);
 }
 
 let menuEl = null;
@@ -415,12 +486,18 @@ export function salesWizardFoot(model) {
   if (model.step === 'review') {
     return `<div class="admin-modal-confirm-foot">
       <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-back>Back</button>
-      <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok ${model.canApply ? '' : 'disabled'}>${escapeHtml(model.applyLabel || 'Apply mix')}</button>
+      <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-ok ${model.canApply ? '' : 'disabled'}>${escapeHtml(model.applyLabel || 'Save import')}</button>
+    </div>`;
+  }
+  if (model.step === 'name') {
+    return `<div class="admin-modal-confirm-foot">
+      <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-back>Back</button>
+      <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-next ${namedImport(model) ? '' : 'disabled'}>Review mix</button>
     </div>`;
   }
   const mapped = mappedItems(model).length;
   return `<div class="admin-modal-confirm-foot">
     <button type="button" class="admin-drawer-btn admin-drawer-btn--solid" data-cancel>Cancel</button>
-    <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-next ${mapped ? '' : 'disabled'}>Review mix</button>
+    <button type="button" class="admin-drawer-btn admin-drawer-btn--primary" data-next ${mapped ? '' : 'disabled'}>Name import</button>
   </div>`;
 }

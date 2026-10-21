@@ -397,3 +397,54 @@ export async function replaceCocktailIngredients(cocktailId, ingredients) {
 export function deleteEventCocktail(id) {
   return getDB().remove('event_cocktails', 'id=eq.' + enc(id));
 }
+
+/** True when named forecast imports are not deployed yet (097 not applied). */
+export function isForecastSchemaMissing(err) {
+  const msg = String(err?.message || err || '');
+  return /PGRST205|42P01|does not exist|Could not find the table|schema cache/i.test(msg)
+    && /forecast_imports/i.test(msg);
+}
+
+function normaliseForecastImport(row) {
+  if (!row) return null;
+  let lines = row.lines;
+  if (typeof lines === 'string') {
+    try { lines = JSON.parse(lines); } catch { lines = []; }
+  }
+  return {
+    id: row.id,
+    name: String(row.name || '').trim(),
+    total: Number(row.total) || 0,
+    lines: Array.isArray(lines) ? lines : [],
+    created_at: row.created_at || null,
+  };
+}
+
+export function listForecastImports(eventId) {
+  return getDB()
+    .select(
+      'forecast_imports',
+      '?event_id=eq.' + enc(eventId) + '&select=id,name,total,lines,created_at&order=created_at.asc',
+    )
+    .then((rows) => (rows || []).map(normaliseForecastImport));
+}
+
+export async function createForecastImport(fields) {
+  const payload = {
+    event_id: fields.event_id,
+    name: String(fields.name || '').trim(),
+    total: Number(fields.total) || 0,
+    lines: Array.isArray(fields.lines) ? fields.lines : [],
+  };
+  const rows = await getDB().insert('forecast_imports', payload);
+  const row = normaliseForecastImport(rows?.[0]);
+  if (!row?.id) throw new Error('Could not save this import');
+  if (!row.lines.length) row.lines = payload.lines;
+  if (!row.name) row.name = payload.name;
+  if (!row.total) row.total = payload.total;
+  return row;
+}
+
+export function deleteForecastImport(id) {
+  return getDB().remove('forecast_imports', 'id=eq.' + enc(id));
+}
